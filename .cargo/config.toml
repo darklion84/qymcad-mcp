@@ -1,0 +1,6 @@
+# OpenCASCADE location for the QymCAD kernel bridge (crates/qymcad-kernel/build.rs in QymCAD).
+# Default: Homebrew on Apple Silicon (`brew install opencascade`, 7.8+ required, 7.9.3 tested).
+# Override in the environment for other layouts; the env wins over this file only if `force` is false.
+[env]
+OCCT_INCLUDE_DIR = { value = "/opt/homebrew/opt/opencascade/include/opencascade", force = false }
+OCCT_LIB_DIR = { value = "/opt/homebrew/opt/opencascade/lib", force = false }

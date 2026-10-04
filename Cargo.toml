@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = ["crates/engine", "crates/mcp"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "AGPL-3.0-or-later"
+
+# The QymCAD version this server is built against. Bump ALL FOUR together and follow docs/UPGRADING.md.
+# The .qcad format changes between QymCAD builds: the installed QymCAD.app must be the same release.
+[workspace.dependencies]
+qymcad-core = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
+qymcad-io = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
+qymcad-kernel = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
+qymcad-testkit = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
+qymcad-engine = { path = "crates/engine" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Profiles of a dependency's workspace are not inherited. QymCAD builds its geometry crates at opt-level 3
+# even in dev; without this a debug regenerate is several times slower.
+[profile.dev.package.qymcad-core]
+opt-level = 3
+[profile.dev.package.qymcad-kernel]
+opt-level = 3
+[profile.dev.package.qymcad-meshfit]
+opt-level = 3
+[profile.dev.package."*"]
+opt-level = 2

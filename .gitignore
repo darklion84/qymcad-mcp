@@ -1,0 +1,4 @@
+/target
+*.qcad.bak
+*.tmp~
+/scratch
