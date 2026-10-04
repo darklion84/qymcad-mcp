@@ -171,3 +171,12 @@ Conventions:
   golden tests that edit parameters use a 1 mm³ tolerance. Not investigated further.
 - **Evidence:** observed with a probe test (t = 6/8/10 → +4: built exact, edited −0.48 mm³ every time); also in
   the 2026-10-04 prototype (21923.347 vs 21923.83).
+
+## F-018 The app bundle does not carry the release tag in Info.plist
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `CFBundleShortVersionString` and `CFBundleVersion` are both `0.1.0`. The release tag, commit and
+  date are embedded in the executable as `v0.1.0-dev.20261001d2949f0a72026-10-01macosaarch64`. The server's
+  startup check searches the executable for `v<x.y.z>-dev.<8 digits>`.
+- **Evidence:** observed: `plutil -p ~/Applications/QymCAD.app/Contents/Info.plist`; `strings` on
+  `Contents/MacOS/qymcad`.

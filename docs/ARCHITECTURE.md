@@ -45,18 +45,34 @@ x/y between corners) + a centre point (`Midpoint` of the diagonal) pinned from t
 + centre pinned. Pinning uses `Distance{axis}` from the origin (a magnitude `|Δ|`: the side comes from the
 initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an axis for a plain zero.
 
+## MCP layer (`crates/mcp/src`)
+| File | Owns |
+|---|---|
+| `transport.rs` | newline-delimited JSON-RPC: `initialize` (version negotiation, `instructions`), `ping`, `tools/list`, `tools/call`; notifications ignored |
+| `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema from the argument type), `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
+| `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
+| `tools/{doc,params,sketch,features}.rs` | one tool group each, `fn tools() -> Vec<Tool>` |
+| `lib.rs` | agent instructions; installed-app release check (F-018) |
+
+Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a
+normal result with `isError: true` and the message (the model must see it). Argument structs use
+`deny_unknown_fields` so typos fail loudly.
+
 ## Testing
 - `tests/smoke.rs` — the kernel links and builds.
 - `tests/golden_*.rs` — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
   rebuild path** (`common::gui_edit_param` reproduces QymCAD.app's open → edit parameter → rebuild sequence).
 - `tests/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
+- `crates/mcp/tests/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
+  edits the golden plate purely through tool calls.
+- `crates/mcp/tests/docs_fresh.rs` — docs/TOOLS.md equals the generated registry docs.
 
 ## Roadmap
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Repository skeleton, pinned build, docs, ADRs, smoke test | done |
 | 1 | Engine core: session, regenerate pipeline, params, rect/circle sketches, extrude/cut, offset plane | done |
-| 2 | MCP transport + phase-1 tools, protocol tests, registration | — |
+| 2 | MCP transport + phase-1 tools, protocol tests, registration | done |
 | 3 | Sketch entities & constraints; topology + fillet/chamfer/hole/shell/arrays/mirror/revolve; export + render | — |
 | 4 | Acceptance on real parts (collet test plate, hanging shelf) vs build123d references | — |
 | 5 | Release 0.1.0 | — |

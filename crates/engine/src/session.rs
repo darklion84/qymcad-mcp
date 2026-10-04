@@ -153,8 +153,8 @@ impl Session {
         Ok((value, r))
     }
 
-    /// Run an edit that does not need a rebuild (sketch geometry); on error the document is restored.
-    pub(crate) fn transact<T>(&mut self, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
+    /// Run edits that do not need a rebuild (sketch geometry) as one unit: on error the document is restored.
+    pub fn transaction<T>(&mut self, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
         let before = self.p.clone();
         let r = edit(self);
         if r.is_err() {

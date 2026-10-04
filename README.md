@@ -4,7 +4,8 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent build **n
 [QymCAD](https://github.com/QymIs-Tech/QymCAD) parts** — sketches, extrusions, cuts, fillets, holes, driven by
 named parameters — and save them as `.qcad` files you open and edit in the QymCAD app.
 
-> Status: **early development** (phase 0 of [the plan](docs/ARCHITECTURE.md#roadmap)). Not usable yet.
+> Status: **early development** — documents, parameters, rectangle/circle sketches, datum planes and extrusions
+> work ([roadmap](docs/ARCHITECTURE.md#roadmap), [tools](docs/TOOLS.md)).
 
 ## How it works
 The server links the QymCAD geometry crates (OpenCASCADE kernel) directly and runs headless: no QymCAD window
@@ -25,6 +26,18 @@ brew install opencascade      # 7.8+ required
 cargo build --release         # first build compiles the OCCT bridge, ~2 min
 ```
 Other OCCT locations: set `OCCT_INCLUDE_DIR` and `OCCT_LIB_DIR`.
+
+## Use with Claude Code
+```sh
+cargo build --release
+claude mcp add qymcad --scope project -- "$PWD/target/release/qymcad-mcp"   # run inside your CAD project
+```
+or put this in the project's `.mcp.json`:
+```json
+{ "mcpServers": { "qymcad": { "command": "/absolute/path/to/qymcad-mcp/target/release/qymcad-mcp" } } }
+```
+Any MCP client that speaks stdio works the same way. The server prints its QymCAD release and whether the
+installed QymCAD.app matches to stderr at startup.
 
 ## Development
 See [AGENTS.md](AGENTS.md) (rules, build, test), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),

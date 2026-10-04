@@ -12,3 +12,7 @@ All notable changes to this project are documented here. The format follows
   (lowercase, propagation, usage-checked delete), fully dimensioned rectangle/circle sketches on base/datum
   planes or faces, offset datum planes, extrude with add/cut/intersect/new body, direction and through.
 - Golden plate tests incl. the QymCAD GUI parameter-edit path; engine contract tests. FINDINGS F-016, F-017.
+- MCP server: stdio JSON-RPC transport (protocol 2024-11-05 .. 2025-06-18), tools `doc_new`, `doc_open`,
+  `doc_save`, `doc_info`, `param_set`, `param_delete`, `sketch_create`, `sketch_add` (rect, circle),
+  `sketch_info`, `plane_offset`, `extrude`; agent instructions; installed QymCAD.app release check (F-018);
+  `--dump-tools` generating docs/TOOLS.md; protocol tests.

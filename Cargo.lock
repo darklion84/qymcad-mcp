@@ -831,6 +831,7 @@ name = "qymcad-mcp"
 version = "0.1.0"
 dependencies = [
  "qymcad-engine",
+ "schemars",
  "serde",
  "serde_json",
 ]

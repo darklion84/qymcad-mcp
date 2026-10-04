@@ -74,7 +74,7 @@ impl Session {
     /// Add a rectangle centred at (`cx`, `cy`) of size `w` × `h` in sketch coordinates. Returns its four line
     /// ids (bottom, right, top, left).
     pub fn sketch_rect(&mut self, sketch: Id, cx: &Num, cy: &Num, w: &Num, h: &Num, construction: bool) -> Result<Vec<Id>> {
-        self.transact(|s| s.sketch_rect_inner(sketch, cx, cy, w, h, construction))
+        self.transaction(|s| s.sketch_rect_inner(sketch, cx, cy, w, h, construction))
     }
 
     fn sketch_rect_inner(&mut self, sketch: Id, cx: &Num, cy: &Num, w: &Num, h: &Num, construction: bool) -> Result<Vec<Id>> {
@@ -100,7 +100,7 @@ impl Session {
 
     /// Add a circle centred at (`cx`, `cy`) with diameter `d`. Returns the circle entity id.
     pub fn sketch_circle(&mut self, sketch: Id, cx: &Num, cy: &Num, d: &Num, construction: bool) -> Result<Id> {
-        self.transact(|s| s.sketch_circle_inner(sketch, cx, cy, d, construction))
+        self.transaction(|s| s.sketch_circle_inner(sketch, cx, cy, d, construction))
     }
 
     fn sketch_circle_inner(&mut self, sketch: Id, cx: &Num, cy: &Num, d: &Num, construction: bool) -> Result<Id> {
