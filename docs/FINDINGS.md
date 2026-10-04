@@ -152,3 +152,22 @@ Conventions:
   `set-value` on egui fields does nothing. Real CGEvents after `NSRunningApplication.activate()` work.
   Unfocused keystrokes act as hotkeys (Delete removed a sketch dimension once). Not used by the server.
 - **Evidence:** observed 2026-10-04.
+
+## F-016 `Shape::bbox()` is inflated by edge tolerances after booleans
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `bbox()` comes from `BRepBndLib::Add`, which includes tolerances. A 60 × 40 × 6 plate after hole/pocket
+  cuts reports 60.0126 × 40.0126 × 6.0126 (+0.0063 mm per side). Compare sizes with a tolerance of ~0.05 mm;
+  use volume for exact checks.
+- **Evidence:** test: `crates/engine/tests/golden_plate.rs` `plate_volume_and_bbox`.
+
+## F-017 After a parameter edit a cut can come out 0.001 mm deeper than on a fresh build
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a 30 × 16 pocket cut 3 mm down from a datum plane at the top face is exact when built fresh, but after
+  changing the plate thickness (which moves the plane and the top face) the rebuilt part has 0.48 mm³ less
+  volume, i.e. the pocket is 3.001 deep. Reproducible for any thickness. Probably the coincident-face nudge of
+  one-sided cuts (F-003) applied against the moved plane. 0.004 % of volume: irrelevant for printing, but
+  golden tests that edit parameters use a 1 mm³ tolerance. Not investigated further.
+- **Evidence:** observed with a probe test (t = 6/8/10 → +4: built exact, edited −0.48 mm³ every time); also in
+  the 2026-10-04 prototype (21923.347 vs 21923.83).

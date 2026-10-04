@@ -12,6 +12,7 @@ qymcad-io.workspace = true
 qymcad-kernel.workspace = true
 qymcad-testkit.workspace = true
 serde.workspace = true
+schemars.workspace = true
 
 [lints]
 workspace = true
