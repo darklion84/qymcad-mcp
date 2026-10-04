@@ -187,3 +187,21 @@ fn paths_are_restricted_to_cad_files() {
     let (is_err, msg) = c.tool("doc_save", json!({ "path": "/no/such/dir/x.qcad" }));
     assert!(is_err, "{msg}");
 }
+
+#[test]
+fn symlinks_are_not_followed() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-symlink-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, "keep me").unwrap();
+    let link = dir.join("evil.qcad");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&victim, &link).unwrap();
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let (is_err, msg) = c.tool("doc_save", json!({ "path": link.to_str().unwrap() }));
+    assert!(is_err && msg.as_str().unwrap().contains("symbolic link"), "{msg}");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    let _ = std::fs::remove_dir_all(&dir);
+}

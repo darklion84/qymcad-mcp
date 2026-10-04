@@ -81,7 +81,9 @@ pub fn err(e: qymcad_engine::Error) -> String {
 /// - the extension must be one of `exts` (so a confused or prompt-injected agent cannot overwrite arbitrary files
 ///   such as shell profiles through this server);
 /// - relative paths resolve against the server's working directory;
-/// - with `QYMCAD_MCP_ROOT` set, the file must lie inside that directory (symlinks resolved).
+/// - with `QYMCAD_MCP_ROOT` set, the file must lie inside that directory (symlinks resolved);
+/// - the file itself and QymCAD's save companions (`<path>.tmp~`, `<path>.bak`) must not be symlinks, or a write
+///   would follow the link to an arbitrary file.
 pub fn checked_path(path: &str, exts: &[&str]) -> Result<PathBuf, String> {
     let p = PathBuf::from(path);
     let p = if p.is_absolute() { p } else { std::env::current_dir().map_err(|e| e.to_string())?.join(p) };
@@ -101,5 +103,17 @@ pub fn checked_path(path: &str, exts: &[&str]) -> Result<PathBuf, String> {
             return Err(format!("`{path}` is outside QYMCAD_MCP_ROOT ({})", root.display()));
         }
     }
-    Ok(parent.join(name))
+    let file = parent.join(&name);
+    for candidate in [file.clone(), sibling(&file, ".tmp~"), sibling(&file, ".bak")] {
+        if std::fs::symlink_metadata(&candidate).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(format!("`{}` is a symbolic link; refusing to follow it", candidate.display()));
+        }
+    }
+    Ok(file)
+}
+
+fn sibling(file: &std::path::Path, suffix: &str) -> PathBuf {
+    let mut s = file.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
 }
