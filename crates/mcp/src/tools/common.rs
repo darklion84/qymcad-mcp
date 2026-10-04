@@ -4,6 +4,7 @@ use qymcad_engine::{BaseName, Id, PlaneRef, Rebuild, Session};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::path::PathBuf;
 
 /// An object reference: its numeric id, or the name given when it was created.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
@@ -74,4 +75,31 @@ pub fn rebuild_json(r: &Rebuild) -> Value {
 
 pub fn err(e: qymcad_engine::Error) -> String {
     e.to_string()
+}
+
+/// Validate a file path an agent asked us to read or write (docs/SECURITY.md):
+/// - the extension must be one of `exts` (so a confused or prompt-injected agent cannot overwrite arbitrary files
+///   such as shell profiles through this server);
+/// - relative paths resolve against the server's working directory;
+/// - with `QYMCAD_MCP_ROOT` set, the file must lie inside that directory (symlinks resolved).
+pub fn checked_path(path: &str, exts: &[&str]) -> Result<PathBuf, String> {
+    let p = PathBuf::from(path);
+    let p = if p.is_absolute() { p } else { std::env::current_dir().map_err(|e| e.to_string())?.join(p) };
+    let ext = p.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
+    if !exts.contains(&ext.as_str()) {
+        return Err(format!(
+            "`{path}`: only {} files are allowed here",
+            exts.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let name = p.file_name().ok_or_else(|| format!("`{path}` has no file name"))?.to_owned();
+    let parent = p.parent().ok_or_else(|| format!("`{path}` has no directory"))?;
+    let parent = std::fs::canonicalize(parent).map_err(|e| format!("directory of `{path}`: {e}"))?;
+    if let Some(root) = std::env::var_os("QYMCAD_MCP_ROOT") {
+        let root = std::fs::canonicalize(&root).map_err(|e| format!("QYMCAD_MCP_ROOT: {e}"))?;
+        if !parent.starts_with(&root) {
+            return Err(format!("`{path}` is outside QYMCAD_MCP_ROOT ({})", root.display()));
+        }
+    }
+    Ok(parent.join(name))
 }

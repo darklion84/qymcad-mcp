@@ -173,3 +173,17 @@ fn a_failed_feature_is_an_error_result_and_changes_nothing() {
     let info = c.ok("doc_info", json!({}));
     assert_eq!(info["bodies"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn paths_are_restricted_to_cad_files() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let home = std::env::var("HOME").unwrap();
+    let (is_err, msg) = c.tool("doc_save", json!({ "path": format!("{home}/.zshrc") }));
+    assert!(is_err && msg.as_str().unwrap().contains(".qcad"), "{msg}");
+    let (is_err, _) = c.tool("doc_open", json!({ "path": "/etc/passwd" }));
+    assert!(is_err);
+    let (is_err, msg) = c.tool("doc_save", json!({ "path": "/no/such/dir/x.qcad" }));
+    assert!(is_err, "{msg}");
+}

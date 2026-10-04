@@ -16,3 +16,7 @@ All notable changes to this project are documented here. The format follows
   `doc_save`, `doc_info`, `param_set`, `param_delete`, `sketch_create`, `sketch_add` (rect, circle),
   `sketch_info`, `plane_offset`, `extrude`; agent instructions; installed QymCAD.app release check (F-018);
   `--dump-tools` generating docs/TOOLS.md; protocol tests.
+
+### Security
+- File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to
+  `QYMCAD_MCP_ROOT` (docs/SECURITY.md).

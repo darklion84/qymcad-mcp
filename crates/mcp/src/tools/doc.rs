@@ -1,12 +1,11 @@
 //! Document tools: new, open, save, info.
 
-use super::common::{err, rebuild_json};
+use super::common::{checked_path, err, rebuild_json};
 use super::{tool, Tool};
 use qymcad_engine::Session;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::path::PathBuf;
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +40,8 @@ pub fn tools() -> Vec<Tool> {
             "doc_open",
             "Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry.",
             |st, a: OpenArgs| {
-                let (s, r) = Session::open(&PathBuf::from(&a.path)).map_err(err)?;
+                let path = checked_path(&a.path, &["qcad"])?;
+                let (s, r) = Session::open(&path).map_err(err)?;
                 let info = serde_json::to_value(s.info()).unwrap_or(Value::Null);
                 st.session = Some(s);
                 Ok(json!({ "rebuild": rebuild_json(&r), "doc": info }))
@@ -52,9 +52,12 @@ pub fn tools() -> Vec<Tool> {
             "Save the document as .qcad (open it in the QymCAD app with File > Open; double-click does not work on macOS).",
             |st, a: SaveArgs| {
                 let s = st.doc()?;
-                let path = s.save(a.path.as_deref().map(std::path::Path::new)).map_err(err)?;
-                let abs = std::fs::canonicalize(&path).unwrap_or(path);
-                Ok(json!({ "saved": abs.display().to_string() }))
+                let target = match &a.path {
+                    Some(p) => Some(checked_path(p, &["qcad"])?),
+                    None => None,
+                };
+                let path = s.save(target.as_deref()).map_err(err)?;
+                Ok(json!({ "saved": path.display().to_string() }))
             },
         ),
         tool(

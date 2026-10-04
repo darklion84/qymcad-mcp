@@ -39,6 +39,9 @@ or put this in the project's `.mcp.json`:
 Any MCP client that speaks stdio works the same way. The server prints its QymCAD release and whether the
 installed QymCAD.app matches to stderr at startup.
 
+Paths: the tools read and write only `.qcad` (and export formats); set `QYMCAD_MCP_ROOT` to confine them to one
+directory. See [docs/SECURITY.md](docs/SECURITY.md).
+
 ## Development
 See [AGENTS.md](AGENTS.md) (rules, build, test), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/FINDINGS.md](docs/FINDINGS.md) (QymCAD behaviour we rely on) and [docs/UPGRADING.md](docs/UPGRADING.md).
