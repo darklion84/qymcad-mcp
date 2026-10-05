@@ -630,3 +630,28 @@ fn extrude_target_must_be_a_current_body() {
     assert!(e.to_string().contains("new_body"), "revolve new_body with a target: {e}");
     assert_eq!((s.info().timeline.len(), volume(&s)), (before.0 + 1, before.1), "only the sketch was added");
 }
+
+/// Review #5: "largest" on edges means the longest edge by its true length, as `topology` reports it. QymCAD
+/// scores edges by chord |b − a|, which is 0 for a full circle and made the 10 mm seam win over the rims.
+#[test]
+fn largest_edge_is_the_longest_by_true_length() {
+    let mut s = Session::new_part();
+    cylinder(&mut s, 0.0, 0.0, 20.0.into(), 10.0.into(), Op::Add);
+    let t = s.topology(None, false).unwrap();
+    let len = |id: u32| t.edges.iter().find(|e| e.id == id).unwrap().length;
+    let rims = s.select(None, Element::Edges, &Sel::Largest).unwrap().1;
+    assert_eq!(rims.len(), 2, "both rims tie: {rims:?}");
+    for r in &rims {
+        assert_close(len(*r), 2.0 * PI * 10.0, 1e-9, "rim length");
+    }
+    // Inside a composition too: the longest edge of the top face is the top rim.
+    let top_rim = Sel::And(Box::new(Sel::EdgesOf(Box::new(top()))), Box::new(Sel::Largest));
+    let got = s.select(None, Element::Edges, &top_rim).unwrap().1;
+    assert_eq!(got.len(), 1, "{got:?}");
+    let e = t.edges.iter().find(|e| e.id == got[0]).unwrap();
+    assert_close(e.mid[2], 10.0, 1e-9, "top rim z");
+    // Faces are still ranked by area: a Ø20 disc (314.16) beats... the side (628.3) wins.
+    let f = s.select(None, Element::Faces, &Sel::Largest).unwrap().1;
+    assert_eq!(f.len(), 1);
+    assert_eq!(t.faces.iter().find(|x| x.id == f[0]).unwrap().kind, FaceKind::Cylinder);
+}

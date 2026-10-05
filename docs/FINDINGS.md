@@ -282,3 +282,14 @@ Conventions:
   outward. A fillet larger than the geometry fails with a node error ("fillet R15.00 only works edge by edge").
 - **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
   them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.
+
+## F-3B-8 `Largest` ranks edges by chord, not length
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Project::edge_pool` scores an edge's "area" as |b − a|, so for `Query::Largest` a full circle scores
+  0 and an arc scores its chord: on a Ø20 × 10 cylinder the 10 mm seam is the "largest" edge, not the 62.8 mm
+  rims. `Largest` is evaluated against the whole pool wherever it is nested.
+- **Evidence:** test: `golden_features.rs` `largest_edge_is_the_longest_by_true_length` (returned only the seam
+  before the fix); source: `crates/qymcad-core/src/model.rs` `edge_pool` (~2896), `refs.rs` `Query::Largest`.
+- **How we handle it:** for edge selections the engine replaces every `largest` with the ids of the longest edges
+  by true length (as `topology` reports it) before resolving; edges are stored as pick lists anyway (F-3B-2).

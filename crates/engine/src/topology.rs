@@ -7,7 +7,7 @@
 use crate::error::{Error, Result};
 use crate::session::Session;
 use qymcad_core::feature::FaceKey;
-use qymcad_core::geom::MeshFace;
+use qymcad_core::geom::{MeshEdge, MeshFace};
 use qymcad_core::model::Id;
 use qymcad_core::names::Role as QRole;
 use qymcad_core::refs::{Axis as QAxis, Query, Ref};
@@ -339,21 +339,7 @@ impl Session {
 
         let mut out_edges = Vec::with_capacity(medges.len());
         for e in medges {
-            let chord = norm(sub(e.b, e.a));
-            let (kind, length) = if e.radius > 1e-9 {
-                if chord < 1e-6 {
-                    (EdgeKind::Circle, 2.0 * std::f64::consts::PI * e.radius)
-                } else {
-                    (EdgeKind::Arc, arc_angle(e.a, e.b, e.mid, e.center) * e.radius)
-                }
-            } else {
-                let poly_len = polylines.get(&e.id).map(|p| polyline_length(p));
-                match poly_len {
-                    Some(l) if (l - chord).abs() <= 1e-4 * l.max(1.0) => (EdgeKind::Line, chord),
-                    Some(l) => (EdgeKind::Other, l),
-                    None => (EdgeKind::Line, chord),
-                }
-            };
+            let (kind, length) = edge_kind_length(e, &polylines);
             let round = matches!(kind, EdgeKind::Circle | EdgeKind::Arc);
             out_edges.push(EdgeInfo {
                 id: e.id,
@@ -380,8 +366,46 @@ impl Session {
         Ok((body, self.resolve_sel(body, el, sel)?))
     }
 
+    /// True lengths of the edges of `body`, as `topology` reports them.
+    fn edge_lengths(&self, body: Id) -> HashMap<u32, f64> {
+        let Some(shape) = self.shapes.get(&body) else { return HashMap::new() };
+        let polylines: HashMap<u32, Vec<[f32; 3]>> = {
+            let _gate = qymcad_kernel::kernel_gate();
+            shape.edges_info().into_iter().map(|e| (e.id, e.poly)).rev().collect()
+        };
+        let medges = self.p.regen_edges.get(&body).map(Vec::as_slice).unwrap_or_default();
+        medges.iter().map(|e| (e.id, edge_kind_length(e, &polylines).1)).collect()
+    }
+
+    /// QymCAD ranks `Largest` edges by chord |b − a| (`Project::edge_pool`): a full circle scores 0. Replace every
+    /// `Largest` evaluated against edges with the ids of the longest edges by true length. Upstream evaluates
+    /// `Largest` against the whole pool wherever it is nested, so the substitution keeps the meaning; edge
+    /// selections are stored as pick lists anyway (F-3B-2).
+    fn lower_largest_edges(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Sel {
+        let sub = |x: &Sel, el: Element, lengths: &mut Option<HashMap<u32, f64>>| Box::new(self.lower_largest_edges(body, el, x, lengths));
+        match sel {
+            Sel::Largest if el == Element::Edges => {
+                let l = lengths.get_or_insert_with(|| self.edge_lengths(body));
+                let best = l.values().copied().fold(f64::MIN, f64::max);
+                let mut ids: Vec<u32> =
+                    l.iter().filter(|(_, v)| (best - **v).abs() <= 1e-9 * best.abs().max(1.0)).map(|(k, _)| *k).collect();
+                ids.sort_unstable();
+                Sel::Ids(ids)
+            }
+            Sel::EdgesOf(f) => Sel::EdgesOf(sub(f, Element::Faces, lengths)),
+            Sel::TangentChain { seed, tol_deg } => Sel::TangentChain { seed: sub(seed, Element::Edges, lengths), tol_deg: *tol_deg },
+            Sel::Between(a, b) => Sel::Between(sub(a, Element::Faces, lengths), sub(b, Element::Faces, lengths)),
+            Sel::Union(v) => Sel::Union(v.iter().map(|x| *sub(x, el, lengths)).collect()),
+            Sel::Minus(a, b) => Sel::Minus(sub(a, el, lengths), sub(b, el, lengths)),
+            Sel::And(a, b) => Sel::And(sub(a, el, lengths), sub(b, el, lengths)),
+            other => other.clone(),
+        }
+    }
+
     /// Resolve `sel` on `body`. Explicit ids that are not on the body are an error (stale or foreign ids).
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
+        let lowered = self.lower_largest_edges(body, el, sel, &mut None);
+        let sel = &lowered;
         let q = sel.query(el)?;
         if let Sel::Ids(ids) = sel {
             let live: Vec<u32> = match el {
@@ -493,6 +517,24 @@ fn planar_normal(f: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3
     let total = ns.iter().fold([0.0; 3], |acc, (n, w)| [acc[0] + n[0] * w, acc[1] + n[1] * w, acc[2] + n[2] * w]);
     let avg = unit(total).ok()?;
     ns.iter().all(|(n, _)| dot(*n, avg) > 0.99999).then_some(avg)
+}
+
+/// An edge's kind and true length: exact for lines and circles/arcs, the polyline length otherwise.
+fn edge_kind_length(e: &MeshEdge, polylines: &HashMap<u32, Vec<[f32; 3]>>) -> (EdgeKind, f64) {
+    let chord = norm(sub(e.b, e.a));
+    if e.radius > 1e-9 {
+        if chord < 1e-6 {
+            (EdgeKind::Circle, 2.0 * std::f64::consts::PI * e.radius)
+        } else {
+            (EdgeKind::Arc, arc_angle(e.a, e.b, e.mid, e.center) * e.radius)
+        }
+    } else {
+        match polylines.get(&e.id).map(|p| polyline_length(p)) {
+            Some(l) if (l - chord).abs() <= 1e-4 * l.max(1.0) => (EdgeKind::Line, chord),
+            Some(l) => (EdgeKind::Other, l),
+            None => (EdgeKind::Line, chord),
+        }
+    }
 }
 
 /// The angle an arc spans, radians: from `a` to `b` through `mid` about `c`.
