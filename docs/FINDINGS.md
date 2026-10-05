@@ -194,3 +194,32 @@ Conventions:
   messenger configuration anywhere in the kernel (`grep Messenger` finds nothing).
 - **How we handle it:** the server moves fd 1 to stderr at startup and speaks the protocol on a duplicate of the
   original stdout (ADR 0005).
+
+## F-3C-2 The app exports STEP/GLB/3MF as a component tree; `write_step` and the flat mesh writers do not
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** File > Export in QymCAD.app writes STEP via `write_step_tree` and GLB/3MF via `export_glb_tree` /
+  `export_3mf_tree` with `project.export_tree(root, ..)`: component names, colours, placements, and **one body per
+  part** (`active_body`). STL/OBJ and IGES go out flat. We write every format flat: `write_step(&[(shape,
+  body_world_transform)])`, `export_{stl,3mf,glb,obj}(meshes)` with `mesh.transform(body_world_transform)` — one
+  solid/object per result body (named `body_<n>` in 3MF/GLB), no colours, no tree. Flat keeps every result body
+  of a multi-body part, which the tree would drop. STEP written this way reads back (`read_exact`) as one shape per
+  body with the same volume (within 1e-3 mm³) and `write.step.unit = MM`. Mesh deflection presets are the app's:
+  draft 0.2, standard 0.05, high 0.02, max 0.005 mm; meshes are re-tessellated from the live B-rep with
+  `Shape::tessellate_merged(deflection)`. GLB positions are metres with +Y up: (x, y, z) mm → (x, z, −y)/1000.
+- **Evidence:** source: `crates/qymcad/src/gui/io_jobs.rs` `write_exact_to` (~888-934), `write_mesh_to` (~727-800),
+  `mesh_job` / `tree_to_write` (~681, ~876); `crates/qymcad-core/src/model/assembly.rs` `export_node` (~344);
+  `crates/qymcad/src/gui/panels_windows.rs` `mesh_quality_dialog` (~1721-1727); `crates/qymcad-io/src/gltf.rs`
+  (~24). test: `crates/engine/tests/golden_export.rs` (`step_reads_back_with_the_same_volume`,
+  `glb_is_in_metres_with_y_up`, `threemf_is_in_millimetres`).
+
+## F-3C-3 Mesh quality presets do not change small holes: the kernel's angular deflection (0.3 rad) decides
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qym_shape_tessellate` meshes with `BRepMesh_IncrementalMesh(shape, defl, false, 0.3, true)`. On the
+  golden plate (Ø4.5 holes) draft, standard and high give the identical mesh (716 triangles, volume error
+  1.42 mm³ = 0.011 %); only max (0.005 mm) refines it (1116 triangles, 0.56 mm³). The linear deflection matters only
+  for larger radii. For printing this is harmless; do not expect `quality` to change a small part's file.
+- **Evidence:** observed with `quality_presets_change_the_tessellation` instrumented (counts and errors above);
+  test: `crates/engine/tests/golden_export.rs` `quality_presets_change_the_tessellation`; source:
+  `crates/qymcad-kernel/src/occt_bridge.cpp` `doc_from_shape` (~143-152).

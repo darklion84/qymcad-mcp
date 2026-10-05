@@ -16,6 +16,7 @@ pub fn instructions(app_note: &str) -> String {
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\
+         render (view iso/top/front/...) returns a picture to check the shape; export writes STEP/STL/3MF/GLB/OBJ.\n\
          Every feature is atomic: on error nothing changes and the message says why. Objects can be referred to \
          by id or by the name given at creation.\n\
          The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}",

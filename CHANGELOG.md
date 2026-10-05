@@ -16,7 +16,17 @@ All notable changes to this project are documented here. The format follows
   `doc_save`, `doc_info`, `param_set`, `param_delete`, `sketch_create`, `sketch_add` (rect, circle),
   `sketch_info`, `plane_offset`, `extrude`; agent instructions; installed QymCAD.app release check (F-018);
   `--dump-tools` generating docs/TOOLS.md; protocol tests.
+- `export` tool / `Session::export`: STEP (exact), STL, 3MF, GLB, OBJ of the result bodies (or selected ones), with
+  the app's mesh quality presets; per-body mesh volume in the result. Golden read-back tests for every format.
+- `render` tool / `Session::render`: shaded orthographic PNG (iso/top/bottom/front/back/left/right) with feature
+  edges, returned as an MCP image item. CPU rasterizer adapted from QymCAD's thumbnail renderer; PNG via `flate2`
+  (ADR 0004). FINDINGS F-3C-1..F-3C-3.
+
+### Fixed
+- OpenCASCADE's STEP-writer statistics no longer corrupt the stdio protocol: the server speaks JSON-RPC on a
+  duplicate of stdout and redirects fd 1 to stderr (ADR 0005).
 
 ### Security
 - File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to
-  `QYMCAD_MCP_ROOT` (docs/SECURITY.md).
+  `QYMCAD_MCP_ROOT` (docs/SECURITY.md). `export` accepts only its format's extensions (.step/.stp, .stl, .3mf,
+  .glb, .obj) under the same rules.

@@ -21,6 +21,9 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `params.rs` | parameters: lowercase names (F-001), evaluation, propagation to sketches and features (F-002), usage lookup |
 | `sketch.rs` | sketches on base/datum planes or faces; fully dimensioned entities; contour/nesting/DOF report |
 | `features.rs` | datum planes; extrude/cut/add/intersect |
+| `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-3C-2) |
+| `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
+| `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
 | `info.rs` | `DocInfo` snapshot for the agent |
 | `value.rs` | `Num` (number or expression) |
 | `error.rs` | `Error` with agent-oriented messages |
@@ -51,8 +54,9 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 | `transport.rs` | newline-delimited JSON-RPC: `initialize` (version negotiation, `instructions`), `ping`, `tools/list`, `tools/call`; notifications ignored |
 | `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema from the argument type), `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
 | `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
-| `tools/{doc,params,sketch,features}.rs` | one tool group each, `fn tools() -> Vec<Tool>` |
+| `tools/{doc,params,sketch,features,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
 | `lib.rs` | agent instructions; installed-app release check (F-018) |
+| `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-3C-1) |
 
 Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a
 normal result with `isError: true` and the message (the model must see it). Argument structs use
@@ -62,6 +66,9 @@ normal result with `isError: true` and the message (the model must see it). Argu
 - `tests/smoke.rs` — the kernel links and builds.
 - `tests/golden_*.rs` — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
   rebuild path** (`common::gui_edit_param` reproduces QymCAD.app's open → edit parameter → rebuild sequence).
+- `tests/golden_export.rs` — every export format read back (STEP volume via `read_exact`, STL/3MF mesh volume and
+  bbox, GLB metres/+Y up, OBJ triangle count), quality presets, body selection; renders decoded with the `png`
+  crate (size, coverage, plate aspect 1.5, holes show background).
 - `tests/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
 - `crates/mcp/tests/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
   edits the golden plate purely through tool calls.
