@@ -90,7 +90,20 @@ fn lists_tools_with_object_schemas() {
     c.init();
     let tools = c.request("tools/list", json!({}))["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    for want in ["doc_new", "doc_open", "doc_save", "doc_info", "param_set", "sketch_create", "sketch_add", "extrude", "plane_offset"] {
+    for want in [
+        "doc_new",
+        "doc_open",
+        "doc_save",
+        "doc_info",
+        "param_set",
+        "sketch_create",
+        "sketch_add",
+        "sketch_info",
+        "sketch_constrain",
+        "sketch_remove",
+        "extrude",
+        "plane_offset",
+    ] {
         assert!(names.contains(&want), "missing {want} in {names:?}");
     }
     for t in &tools {
@@ -204,4 +217,75 @@ fn symlinks_are_not_followed() {
     assert!(is_err && msg.as_str().unwrap().contains("symbolic link"), "{msg}");
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// New entity types and sketch_constrain end to end: a tombstone (polyline + arc), a hexagon pocket and a slot
+/// hole, all parametric; then a free triangle dimensioned with sketch_constrain; a conflict and a bad reference.
+#[test]
+fn sketch_entities_and_constraints_end_to_end() {
+    use std::f64::consts::PI;
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    for (k, v) in [("w", 40.0), ("hh", 30.0), ("t", 5.0), ("r", 6.0), ("l", 10.0)] {
+        c.ok("param_set", json!({ "name": k, "value": v }));
+    }
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
+    let r = c.ok(
+        "sketch_add",
+        json!({ "sketch": "s", "entities": [
+            { "type": "polyline", "points": [["-w/2", "hh"], ["-w/2", 0], ["w/2", 0], ["w/2", "hh"]] },
+            { "type": "arc", "cy": "hh", "r": "w/2", "start_angle": 0, "end_angle": 180 },
+            { "type": "polygon", "cy": 12, "sides": 6, "r": "r" },
+            { "type": "slot", "x1": "-l/2", "y1": 32, "x2": "l/2", "y2": 32, "width": 6 },
+        ]}),
+    );
+    assert_eq!(r["sketch"]["dof"], json!([0, 0]), "fully defined: {}", r["sketch"]["constraints"]);
+    assert_eq!(r["created"].as_array().unwrap().len(), 4);
+    assert_eq!(r["created"][1]["type"], "arc");
+    assert_eq!(r["sketch"]["contours"].as_array().unwrap().len(), 3, "outline + two holes");
+    let e = c.ok("extrude", json!({ "sketch": "s", "height": "t" }));
+    let area = |w: f64, hh: f64, r: f64, l: f64| w * hh + PI * (w / 2.0).powi(2) / 2.0 - 1.5 * 3f64.sqrt() * r * r - (PI * 9.0 + 6.0 * l);
+    let vol = |r: &Value| r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
+    assert!((vol(&e) - area(40.0, 30.0, 6.0, 10.0) * 5.0).abs() < 1e-2, "volume {}", vol(&e));
+    let p = c.ok("param_set", json!({ "name": "r", "value": 7 }));
+    assert!((vol(&p) - area(40.0, 30.0, 7.0, 10.0) * 5.0).abs() < 1e-2, "r=7: {}", vol(&p));
+    let p = c.ok("param_set", json!({ "name": "l", "value": 14 }));
+    assert!((vol(&p) - area(40.0, 30.0, 7.0, 14.0) * 5.0).abs() < 1e-2, "l=14: {}", vol(&p));
+
+    // A free triangle, dimensioned with sketch_constrain.
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "tri" }));
+    let r = c.ok(
+        "sketch_add",
+        json!({ "sketch": "tri", "entities": [{ "type": "polyline", "points": [[0, 0], [30, 0], [0, 20]], "closed": true, "dimensioned": false }] }),
+    );
+    assert_eq!(r["sketch"]["dof"], json!([6, 0]));
+    let lines = r["created"][0]["entities"].clone();
+    let pts = r["created"][0]["points"].clone();
+    c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "coincident", "refs": [pts[0], "origin"] }));
+    c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "horizontal", "refs": [lines[0]] }));
+    c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "vertical", "refs": [lines[2]] }));
+    c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [lines[0]], "value": "w" }));
+    let r = c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [pts[2], "x_axis"], "value": 20 }));
+    assert_eq!(r["dof"], json!([0, 0]), "{r}");
+    let i = r["index"].as_u64().unwrap() as usize;
+    assert_eq!(r["sketch"]["constraints"][i]["kind"], "distance_point_line");
+    // The first contour of "tri" is a 40 × 20 right triangle.
+    let x = r["sketch"]["points"].as_array().unwrap().iter().find(|p| p["id"] == pts[1]).unwrap()["x"].as_f64().unwrap();
+    assert!((x - 40.0).abs() < 1e-6, "p1.x = w: {x}");
+
+    let (is_err, msg) = c.tool("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [pts[1], pts[2]], "value": 99 }));
+    assert!(is_err && msg.as_str().unwrap().contains("over-constrains"), "{msg}");
+    let (is_err, msg) = c.tool("sketch_constrain", json!({ "sketch": "tri", "kind": "horizontal", "refs": [123456] }));
+    assert!(is_err && msg.as_str().unwrap().contains("not found"), "{msg}");
+    let (is_err, msg) =
+        c.tool("sketch_add", json!({ "sketch": "tri", "entities": [{ "type": "line", "x1": 0, "y1": 0, "x2": 1, "y2": 1, "bogus": 1 }] }));
+    assert!(is_err && msg.as_str().unwrap().contains("bogus"), "unknown fields are rejected: {msg}");
+    let info = c.ok("sketch_info", json!({ "sketch": "tri" }));
+    assert_eq!(info["dof"], json!([0, 0]), "failed calls changed nothing");
+    let n = info["constraints"].as_array().unwrap().len();
+    let r = c.ok("sketch_remove", json!({ "sketch": "tri", "constraint": n - 1 }));
+    assert_eq!(r["sketch"]["dof"], json!([1, 0]));
+    let (is_err, _) = c.tool("sketch_remove", json!({ "sketch": "tri" }));
+    assert!(is_err);
 }

@@ -180,3 +180,89 @@ Conventions:
   startup check searches the executable for `v<x.y.z>-dev.<8 digits>`.
 - **Evidence:** observed: `plutil -p ~/Applications/QymCAD.app/Contents/Info.plist`; `strings` on
   `Contents/MacOS/qymcad`.
+
+## F-3A-1 The constants `pi`, `tau`, `e` shadow parameters of the same name
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** the expression evaluator resolves a bare name as a constant first and only then as a variable, so a
+  parameter named `e` (or `pi`, `tau`) is never read: a dimension `e` evaluates to 2.718..., silently.
+- **Evidence:**
+  - observed: a hexagon dimensioned by a vertex at `["e", 0]` with parameter `e = 8` came out with circumradius
+    2.718 (area 19.2 instead of 166.3).
+  - source: `crates/qymcad-core/src/expr.rs` (~224: `constant(&name).or_else(|| self.vars.get(&name))`, ~256).
+  - test: `crates/engine/tests/sketch_behaviour.rs` `constant_names_are_not_parameters`.
+- **How we handle it:** `param_set` refuses these names (case-insensitive).
+
+## F-3A-2 One sketch solve stops short when an angle dimension's arm must change length
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** the solver holds the arms of every `Angle`/`AngleLines` softly at their pre-solve lengths
+  (`w_len = 0.1`, arms already set by a `Distance` excepted). An edit that needs an arm to change length ends one
+  `solve_sketch` (120 iterations) at a compromise; each further call gains only a fraction. Arcs whose ends are held
+  by angle dimensions therefore lag a radius change, and a triangle given a new angle converges at ~0.85× per call.
+  The GUI solves once per parameter edit, so the part comes out slightly wrong there.
+- **Evidence:**
+  - observed: sector arc (radius + two `AngleLines`), radius 20 → 25: residuals 0.119, 3.5e-3, 2.9e-6, 2.5e-9 on four
+    successive calls; the same edit through the GUI path gave r = 24.996 (−0.5 mm³ on 1472.6). A circle (radius
+    only) converges in one call. Replacing the angles by coordinate dimensions: residual 8e-16 after one call.
+  - source: `crates/qymcad-core/src/solver.rs` (~231-275, `angle_arms`).
+  - test: `crates/engine/tests/golden_sketch.rs` `sector_gui_radius_edit_rebuilds`,
+    `hexagon_gui_radius_edit_with_rotation`; `sketch_behaviour.rs` `a_dimension_moves_free_geometry`.
+- **How we handle it:** the engine re-solves until the residual stops dropping (`solve_settled`, ≤ 200 calls).
+  Parametric arcs and parametric polygon rotations are dimensioned from the centre by `(r)*cos(a)` / `(r)*sin(a)`
+  coordinate distances instead of angle dimensions, so a GUI edit settles in one solve. Plain-number arcs keep
+  radius + angle dimensions (friendlier to edit by hand). Angle dimensions added with `sketch_constrain` and driven
+  by a parameter may still land slightly off after a GUI edit — not measured in the app.
+
+## F-3A-3 A tangency at its own contact point is invisible to the rank analysis (QymCAD's slot reports 4 + 4)
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Tangent{a, b, c}` where `a` or `b` already lies on the circle (an arc endpoint) is a second-order
+  condition: its Jacobian row is parallel to the arc's intrinsic `PointOnCircle`. `add_slot_entity` uses four such
+  tangencies, so a slot with its centres and radius dimensioned still reports `sketch_dof` = (4, 4). The GUI hides
+  the redundancy markers for sketches with tangencies but shows the dof count from `sketch_dof`. Adding such a
+  tangent by rank (as `sketch_constrain` does) would be refused as redundant.
+- **Evidence:**
+  - observed: fully dimensioned slot → (4, 4).
+  - source: `crates/qymcad/src/gui/redundant_flag.rs` (module doc and tests), `crates/qymcad-ui-state/src/lib.rs`
+    `flagged_redundant` (~8972).
+  - test: `golden_sketch.rs` `slot_is_fully_defined_and_extrudes`; `sketch_behaviour.rs`
+    `a_line_ending_on_an_arc_can_be_made_tangent`.
+- **How we handle it:** the slot's tangencies are rewritten as `Perpendicular` between the side and the radius to
+  its contact point (same geometry, first order); `sketch_constrain` tangent on a line that ends on the arc does the
+  same. The GUI then shows perpendicular glyphs instead of tangent ones.
+
+## F-3A-4 Entity adders and the points they share
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `add_line_entity` (and rect/arc/slot/polygon vertices) reuse any existing non-system point within
+  1e-6 (`sketch_point_at`), so a polyline end and an arc end at the same coordinates become one point; the frame
+  (origin, anchor, axis guides) is never adopted. Circle/arc/polygon/slot centres always get a node of their own
+  (`radius_center_at`). `add_arc_entity` and `add_slot_entity` return `()` (new entities are found by diffing
+  `entities`; the slot pushes side, arc around c2, side, arc around c1). `add_polygon_param` adds a construction
+  circle, `PointOnCircle` per vertex, n−1 `Equal` and a radius `Diameter` without expression: 3 dof left (centre,
+  rotation).
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` (~3043-3105, 3141-3265); test: `golden_sketch.rs`
+  `three_lines_close_a_triangle`, `arc_joins_a_polyline_into_a_tombstone`.
+
+## F-3A-5 Signs and units of dimension values
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Angle`/`AngleLines` are unsigned, 0..180 (`atan2(|cross|, dot)`): the side comes from the geometry.
+  `DistancePL.d` is signed (the side); `eval_parameters` writes `±|expr|` keeping the stored sign. A `Diameter`'s
+  expression value goes to `d` unchanged — a diameter when `diam`, a radius otherwise.
+- **Evidence:** source: `crates/qymcad-core/src/solver.rs` (~1093-1128, 1166-1180), `crates/qymcad-core/src/model.rs`
+  `eval_parameters` (~2412-2431). test: `golden_sketch.rs` `hexagon_rotation_follows_an_expression`,
+  `sketch_entities_and_constraints_end_to_end` (protocol, point-to-axis distance).
+- **How we handle it:** angles are folded into (−180, 180] and their expressions rewritten (`-(a)`, `(a)-360`) so
+  they evaluate to the folded magnitude; point-line distances take their sign from the current geometry.
+
+## F-3A-6 A sketch edit does not rebuild the features built from it
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `mark_sketch_dirty` marks only the sketch node; the bodies change at the next regenerate.
+  `dependents_of(sketch id)` lists the features that read the sketch.
+- **Evidence:** source: `crates/qymcad-core/src/model/timeline.rs` (~1384, 1514); test: `sketch_behaviour.rs`
+  `editing_a_sketch_rebuilds_its_features`.
+- **How we handle it:** `Session::sketch_edit` rebuilds when the sketch has dependents and rolls the edit back if a
+  feature that built before now fails; the sketch tools use it.
