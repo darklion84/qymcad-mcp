@@ -332,3 +332,17 @@ Conventions:
   `golden_features.rs` `array_copies_are_bounded` (1089 and 1001 copies were built before the bound).
 - **How we handle it:** at most 1000 copies per array in total (`patterns::MAX_ARRAY_COPIES`), checked at creation
   and in `param_set` before rebuilding (the edit is refused and rolled back). The QymCAD GUI is not limited.
+
+## F-3B-12 A full rebuild does not reproduce parameter-edited bodies bit for bit
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** after a parameter edit (F-017) the bodies differ slightly from a fresh build of the same recipe. The
+  engine's rebuild retried a failed pass with the whole timeline dirty (F-005), which replaced every old body's
+  shape with a fresh one; `atomic` then restored the document but kept those shapes. A rolled-back feature moved
+  the plate of F-017 from 22559.52 to 22560 mm³.
+- **Evidence:** test: `golden_features.rs` `a_rolled_back_feature_leaves_old_bodies_bit_identical` (failed with
+  exactly those volumes before the fix).
+- **How we handle it:** an edit's retry pass marks dirty only the nodes the edit created (`rebuild_retrying`);
+  old bodies are never rebuilt by a feature call, whether it succeeds or fails. `open`, `param_set` and
+  `ensure_topology` keep the full retry. Note: no current test needs the retry pass at all (all engine tests pass
+  with it disabled), so F-005 should be re-verified.

@@ -809,3 +809,27 @@ fn face_axis_default_body_is_the_current_body_of_the_active_part() {
     let v = r.bodies.iter().find(|b| b.id == tube).unwrap().volume;
     assert_close(v, PI * (400.0 - 100.0) * 30.0, 0.5, "tube about the hub's axis");
 }
+
+/// Review #20: a rolled-back feature leaves every existing body bit-identical. The failed edit makes the rebuild
+/// retry with everything dirty (F-005); after a parameter edit a full rebuild does not reproduce the bodies
+/// exactly (F-017: the pocket comes out 0.001 mm different), so keeping the retried shapes would move old
+/// geometry although "nothing changed".
+#[test]
+fn a_rolled_back_feature_leaves_old_bodies_bit_identical() {
+    let mut s = Session::new_part();
+    s.param_set("t", &Num::Value(6.0)).unwrap();
+    let plate = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(plate, &0.0.into(), &0.0.into(), &60.0.into(), &40.0.into(), false).unwrap();
+    s.extrude(&extrude(plate, n("t"), Op::Add)).unwrap();
+    let (top_plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &n("t"), None).unwrap();
+    let pocket = s.sketch_create(&PlaneRef::Plane(top_plane), None).unwrap();
+    s.sketch_rect(pocket, &0.0.into(), &0.0.into(), &30.0.into(), &16.0.into(), false).unwrap();
+    s.extrude(&Extrude { direction: Direction::Reverse, ..extrude(pocket, 3.0.into(), Op::Cut) }).unwrap();
+    s.param_set("t", &Num::Value(10.0)).unwrap();
+    let before: Vec<(Id, u64)> = s.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
+    let e = s.fillet(None, &along_z(), &100.0.into(), None).unwrap_err();
+    assert!(matches!(e, Error::Rebuild(_)), "{e}");
+    let after: Vec<(Id, u64)> = s.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
+    let show = |v: &[(Id, u64)]| v.iter().map(|(i, b)| format!("{i}: {}", f64::from_bits(*b))).collect::<Vec<_>>();
+    assert_eq!(after, before, "volumes after rollback {:?} vs before {:?}", show(&after), show(&before));
+}

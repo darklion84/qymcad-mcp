@@ -108,13 +108,25 @@ impl Session {
     /// the same edit is resolved only during regenerate (FINDINGS F-005), and `retryable()` errors need a pass
     /// after their source exists.
     pub fn rebuild(&mut self) -> Rebuild {
+        self.rebuild_retrying(None)
+    }
+
+    /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
+    /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
+    /// after a parameter edit is not bit-identical (F-017) — old geometry would move although the edit failed and
+    /// was rolled back, or had nothing to do with it (F-3B-12). F-005 still holds: a datum created by the edit is
+    /// one of its nodes.
+    fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         let mut built = report.built;
         let (errors, shapes) = if report.errors.is_empty() {
             (report.errors, shapes)
         } else {
-            self.p.mark_all_dirty();
+            match only {
+                None => self.p.mark_all_dirty(),
+                Some(nodes) => self.p.timeline.iter_mut().filter(|n| nodes.contains(&n.id)).for_each(|n| n.dirty = true),
+            }
             let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
             built.extend(again.built);
             (again.errors, shapes)
@@ -143,7 +155,8 @@ impl Session {
                 return Err(e);
             }
         };
-        let r = self.rebuild();
+        let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
+        let r = self.rebuild_retrying(Some(&new_nodes));
         let new_errors: Vec<String> =
             r.errors.iter().filter(|i| !old_nodes.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
         if !new_errors.is_empty() {
