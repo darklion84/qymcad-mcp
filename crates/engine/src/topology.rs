@@ -257,13 +257,90 @@ impl Sel {
                 Query::Between(Box::new(a.query(Element::Faces)?), Box::new(b.query(Element::Faces)?))
             }
             Sel::Union(v) => {
-                let mut it = v.iter();
-                let first = it.next().ok_or_else(|| Error::Invalid("`union` needs at least one selection".into()))?.query(el)?;
-                it.try_fold(first, |acc, s| Ok::<_, Error>(Query::Union(Box::new(acc), Box::new(s.query(el)?))))?
+                if v.is_empty() {
+                    return Err(Error::Invalid("`union` needs at least one selection".into()));
+                }
+                // Nested unions merge; a union of id lists is one flat list (as upstream `Ref::picks` does);
+                // anything else becomes a balanced tree rather than a `Union(Union(..))` ladder, whose depth
+                // grows with the count and breaks saving (F-3B-10).
+                let mut flat = Vec::new();
+                flatten_union(v, &mut flat);
+                if flat.iter().all(|s| matches!(s, Sel::Ids(_))) {
+                    let mut ids: Vec<u32> = Vec::new();
+                    for id in flat.iter().flat_map(|s| if let Sel::Ids(v) = s { v.clone() } else { Vec::new() }) {
+                        if !ids.contains(&id) {
+                            ids.push(id);
+                        }
+                    }
+                    return Sel::Ids(ids).query(el);
+                }
+                balanced(flat.iter().map(|s| s.query(el)).collect::<Result<Vec<_>>>()?)?
             }
             Sel::Minus(a, b) => Query::Minus(Box::new(a.query(el)?), Box::new(b.query(el)?)),
             Sel::And(a, b) => Query::Filter(Box::new(a.query(el)?), Box::new(b.query(el)?)),
         })
+    }
+}
+
+/// Largest selection accepted, in parts (a union of id lists counts as one).
+const MAX_SEL_PARTS: usize = 512;
+/// Deepest query stored. A `Union` ladder 150 deep still saved, 300 did not (RON's recursion limit counts the
+/// document's own nesting too, F-3B-10); 48 leaves a wide margin and is far beyond any real description.
+const MAX_QUERY_DEPTH: usize = 48;
+
+impl Sel {
+    /// The QymCAD query for `el`, within the size and depth budget. Every stored or resolved selection goes
+    /// through here.
+    pub(crate) fn to_query(&self, el: Element) -> Result<Query> {
+        let parts = self.parts();
+        if parts > MAX_SEL_PARTS {
+            return Err(Error::Invalid(format!("selection has {parts} parts, at most {MAX_SEL_PARTS}: use ids or a broader description")));
+        }
+        let q = self.query(el)?;
+        let depth = query_depth(&q);
+        if depth > MAX_QUERY_DEPTH {
+            return Err(Error::Invalid(format!("selection nested {depth} levels deep, at most {MAX_QUERY_DEPTH}")));
+        }
+        Ok(q)
+    }
+
+    fn parts(&self) -> usize {
+        match self {
+            Sel::Union(v) if v.iter().all(|s| matches!(s, Sel::Ids(_))) => 1,
+            Sel::Union(v) => 1 + v.iter().map(Sel::parts).sum::<usize>(),
+            Sel::EdgesOf(a) | Sel::TangentChain { seed: a, .. } => 1 + a.parts(),
+            Sel::Between(a, b) | Sel::Minus(a, b) | Sel::And(a, b) => 1 + a.parts() + b.parts(),
+            _ => 1,
+        }
+    }
+}
+
+fn flatten_union<'a>(v: &'a [Sel], out: &mut Vec<&'a Sel>) {
+    for s in v {
+        match s {
+            Sel::Union(inner) => flatten_union(inner, out),
+            other => out.push(other),
+        }
+    }
+}
+
+/// A balanced `Union` tree over `qs` (non-empty): depth log2(n) instead of n.
+fn balanced(mut qs: Vec<Query>) -> Result<Query> {
+    match qs.len() {
+        0 => Err(Error::Invalid("`union` needs at least one selection".into())),
+        1 => Ok(qs.pop().expect("one")),
+        n => {
+            let right = qs.split_off(n / 2);
+            Ok(Query::Union(Box::new(balanced(qs)?), Box::new(balanced(right)?)))
+        }
+    }
+}
+
+fn query_depth(q: &Query) -> usize {
+    1 + match q {
+        Query::Adjacent(a) | Query::TangentChain { seed: a, .. } => query_depth(a),
+        Query::Between(a, b) | Query::Union(a, b) | Query::Minus(a, b) | Query::Filter(a, b) => query_depth(a).max(query_depth(b)),
+        _ => 0,
     }
 }
 
@@ -435,7 +512,7 @@ impl Session {
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
         let lowered = self.lower_largest_edges(body, el, sel, &mut None);
         let sel = &lowered;
-        let q = sel.query(el)?;
+        let q = sel.to_query(el)?;
         self.check_ids(body, el, sel)?;
         let r = Ref::many(q);
         let found = match el {

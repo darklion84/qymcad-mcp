@@ -142,7 +142,7 @@ impl Session {
             };
             let id = s.p.add_shell_mode(src, t, if open_faces.is_some_and(Sel::is_ids) { ids } else { Vec::new() }, qside);
             if let Some(sel) = open_faces.filter(|s| !s.is_ids()) {
-                let q = sel.query(Element::Faces)?;
+                let q = sel.to_query(Element::Faces)?;
                 if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
                     *faces = Ref::many(q);
                 }
@@ -165,7 +165,7 @@ impl Session {
             let key = s.planar_face(src, face)?;
             let id = s.p.add_push_face(src, key, d);
             if !face.is_ids() {
-                let q = face.query(Element::Faces)?;
+                let q = face.to_query(Element::Faces)?;
                 if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {
                     *r = Ref { query: q, expect: Cardinality::One, hint: Fingerprint { centroid: key.centroid, normal: key.normal } };
                 }
@@ -210,7 +210,7 @@ impl Session {
             let at = a.at.unwrap_or(key.centroid);
             let id = s.p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 });
             if !a.face.is_ids() {
-                let q = a.face.query(Element::Faces)?;
+                let q = a.face.to_query(Element::Faces)?;
                 if let Some(FeatureKind::Hole { face: r, .. }) = s.node_kind_mut(id) {
                     r.query = q;
                 }

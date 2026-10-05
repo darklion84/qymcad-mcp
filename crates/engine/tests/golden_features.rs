@@ -701,3 +701,40 @@ fn nested_ids_are_validated() {
     // Valid nested ids still work.
     assert_eq!(s.select(None, Element::Edges, &Sel::EdgesOf(Box::new(ids(vec![face])))).unwrap().1.len(), 4);
 }
+
+/// Review #9: a union of many selections must not become a query ladder so deep that the saved document no
+/// longer opens (RON's recursion limit; upstream refs.rs warns about `Union(Union(..))` ladders).
+#[test]
+fn a_wide_union_saves_and_reopens() {
+    let (a, b, h, t) = (40.0, 30.0, 20.0, 2.0);
+    let (mut s, _) = block(a, b, h);
+    // 300 children: a left-deep ladder failed to save ("Exceeded recursion limit"); 150 still worked.
+    let wide = Sel::Union((0..300).map(|_| Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 5.0 }).collect());
+    s.shell(None, Some(&wide), &t.into(), Side::Inward, None).unwrap();
+    let expected = a * b * h - (a - 2.0 * t) * (b - 2.0 * t) * (h - t);
+    assert_close(volume(&s), expected, 1e-3, "shell open at the top");
+    let path = scratch("wide_union.qcad");
+    s.save(Some(&path)).unwrap();
+    let (o, r) = Session::open(&path).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_close(volume(&o), expected, 1e-3, "after reopening");
+}
+
+/// Review #9: selections have a size and depth budget, so no agent-written nesting can build a ladder either.
+#[test]
+fn selection_budget() {
+    let (mut s, _) = block(40.0, 30.0, 10.0);
+    let mut deep = top();
+    for _ in 0..60 {
+        deep = Sel::Minus(Box::new(deep), Box::new(Sel::Facing { dir: [0.0, 0.0, -1.0], tol_deg: 5.0 }));
+    }
+    let e = s.select(None, Element::Faces, &deep).unwrap_err();
+    assert!(e.to_string().contains("nested"), "{e}");
+    let wide = Sel::Union((0..600).map(|_| top()).collect());
+    let e = s.select(None, Element::Faces, &wide).unwrap_err();
+    assert!(e.to_string().contains("parts"), "{e}");
+    // Many ids are one flat list, not a tree: a 600-id union is fine.
+    let id = s.select(None, Element::Faces, &top()).unwrap().1[0];
+    let ids = Sel::Union((0..600).map(|_| Sel::Ids(vec![id])).collect());
+    assert_eq!(s.select(None, Element::Faces, &ids).unwrap().1, vec![id]);
+}

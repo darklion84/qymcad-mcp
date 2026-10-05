@@ -306,3 +306,17 @@ Conventions:
 - **How we handle it:** `value::check_expr` (≤ 1000 characters; ≤ 64 nested parentheses, `^`, consecutive signs)
   runs in `Num::eval`, through which every feature and sketch dimension passes before it is stored, and in
   `param_set`. Files are not checked on open (docs/SECURITY.md: open trusted files only).
+
+## F-3B-10 A deep query ladder makes the document unsaveable
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a stored `refs::Query` is written as nested RON; past the format's recursion limit `save` fails with
+  "Exceeded recursion limit, try increasing `ron::Options::recursion_limit`" (and such a file would not load).
+  A left-deep `Union(Union(..))` of 150 face descriptions still saved; 300 did not. Upstream `refs.rs` warns
+  about the same ladder for pick lists (`Ref::picks` uses a flat `Ids`).
+- **Evidence:** observed with a probe (shell open faces = union of n `facing` descriptions: n = 150 saved and
+  reopened; 300, 600, 1200 failed to save), 2026-10-05; test: `golden_features.rs`
+  `a_wide_union_saves_and_reopens` (failed at save before the fix), `selection_budget`.
+- **How we handle it:** unions of id lists become one flat `Ids`; other unions become balanced trees (depth
+  log2 n); every stored or resolved selection is limited to 512 parts and a query depth of 48
+  (`Sel::to_query`).
