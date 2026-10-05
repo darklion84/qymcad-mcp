@@ -287,20 +287,11 @@ impl Session {
         if a.dimensioned {
             let mut dims: Vec<Constraint> = self.pin_dims(si, center, &a.cx, c.0, &a.cy, c.1).into();
             match form {
-                Form::Angles { r, vr, a0, va0, a1, va1 } if [r, a0, a1].iter().all(|x| x.expr().is_none()) => {
-                    // Plain numbers: the radius and the two angles, as a person would dimension it in the GUI.
-                    dims.push(radius_dim(center, vr, String::new()));
-                    dims.push(self.angle_dim(si, center, ps, a0, va0));
-                    dims.push(self.angle_dim(si, center, pe, a1, va1));
-                }
                 Form::Angles { r, vr, a0, va0, a1, va1 } => {
-                    // Parametric: angle dimensions converge too slowly when the radius changes (one QymCAD solve
-                    // leaves the arc short, FINDINGS F-3A-2), so the endpoints are dimensioned from the centre by
-                    // `r*cos(a)` / `r*sin(a)` instead; the radius follows from them.
-                    let [sx, sy] = polar_dims(center, ps, r, vr, a0, va0);
-                    let [ex, ey] = polar_dims(center, pe, r, vr, a1, va1);
-                    let steep = (ep.1 - c.1).abs() >= (ep.0 - c.0).abs();
-                    dims.extend([sx, sy, if steep { ex } else { ey }]);
+                    dims.push(radius_dim(center, vr, r.expr().unwrap_or_default()));
+                    let parametric = [r, a0, a1].iter().any(|x| x.expr().is_some());
+                    dims.push(self.direction_dim(si, center, ps, r, vr, a0, va0, parametric));
+                    dims.push(self.direction_dim(si, center, pe, r, vr, a1, va1, parametric));
                 }
                 Form::Points { s, e } => {
                     dims.extend(self.pin_dims(si, ps, &s.0, sp.0, &s.1, sp.1));
@@ -375,15 +366,8 @@ impl Session {
                 if g.dimensioned {
                     let mut dims: Vec<Constraint> = self.pin_dims(si, center, &g.cx, c.0, &g.cy, c.1).into();
                     let va = ang.eval(&vars)?;
-                    if ang.expr().is_none() {
-                        dims.push(self.angle_dim(si, center, v0, ang, va));
-                    } else {
-                        // A parametric rotation: an angle dimension converges too slowly when the radius changes
-                        // (FINDINGS F-3A-2); the first vertex is dimensioned from the centre by r·cos/r·sin, which
-                        // also sets the size, so the radius dimension goes.
-                        self.p.sketches[si].constraints.remove(ri);
-                        dims.extend(polar_dims(center, v0, r, vr, ang, va));
-                    }
+                    let parametric = r.expr().is_some() || ang.expr().is_some();
+                    dims.push(self.direction_dim(si, center, v0, r, vr, ang, va, parametric));
                     self.add_independent(si, dims);
                 }
             }
@@ -438,13 +422,19 @@ impl Session {
         Ok(Added { entities, points: vec![p1, p2] })
     }
 
-    /// The driving dimension of the direction from `center` to `p`, `deg` degrees counter-clockwise from +x.
-    /// QymCAD's angles are unsigned (0..180, the side comes from the geometry), so the value is folded into that
-    /// range and an expression is rewritten to evaluate to the folded value (`angle_expr`). A plain 0/180 is a
-    /// horizontal constraint and a plain ±90 a vertical one (no dimension needed, and no kink at 0).
-    fn angle_dim(&mut self, si: usize, center: Id, p: Id, a: &Num, deg: f64) -> Constraint {
-        let folded = fold(deg);
-        let m = folded.abs();
+    /// The driving dimension of the direction from `center` to `p` (on the circle of radius `r` around it), `deg`
+    /// degrees counter-clockwise from +x.
+    ///
+    /// - A plain 0/180 is a horizontal constraint, a plain ±90 a vertical one (no dimension, no kink).
+    /// - Other plain angles of a plain-number entity: an angle dimension to the x axis, as a person would draw it.
+    ///   QymCAD angles are unsigned (0..180), so the value is folded and the side comes from the geometry.
+    /// - Parametric (the angle or the radius is an expression): an arc-length dimension from a construction point
+    ///   on the +x side of the centre, `len = r·a·π/180`. QymCAD's arc length is directed (counter-clockwise,
+    ///   0..360°), so the parameter may sweep the whole turn (FINDINGS F-3A-7), and it has no soft arm-length
+    ///   term, so a radius change settles in one solve (F-3A-2).
+    #[allow(clippy::too_many_arguments)]
+    fn direction_dim(&mut self, si: usize, center: Id, p: Id, r: &Num, vr: f64, a: &Num, deg: f64, parametric: bool) -> Constraint {
+        let m = fold(deg).abs();
         if a.expr().is_none() {
             if m < 1e-9 || (m - 180.0).abs() < 1e-9 {
                 return Constraint::Horizontal { a: center, b: p };
@@ -453,19 +443,47 @@ impl Session {
                 return Constraint::Vertical { a: center, b: p };
             }
         }
-        let (o, gx) = self.p.ensure_axis(si, 0);
-        Constraint::AngleLines { a: o, b: gx, c: center, d: p, deg: m, expr: angle_expr(a, deg), driven: false, off: 0.0, at: None }
+        if !parametric {
+            let (o, gx) = self.p.ensure_axis(si, 0);
+            return Constraint::AngleLines { a: o, b: gx, c: center, d: p, deg: m, expr: String::new(), driven: false, off: 0.0, at: None };
+        }
+        let reference = self.angle_reference(si, center, vr);
+        // The turn the value lies in: the dimension measures 0..360 from the reference.
+        let turn = (deg / 360.0).floor() * 360.0;
+        let txt = |n: &Num, v: f64| n.expr().unwrap_or_else(|| format!("{v}"));
+        let ae = if turn == 0.0 { txt(a, deg) } else { format!("({})-{turn}", txt(a, deg)) };
+        let len = vr * (deg - turn).to_radians();
+        Constraint::ArcLength {
+            c: center,
+            a: reference,
+            b: p,
+            ccw: true,
+            len,
+            off: 0.0,
+            expr: format!("({})*({ae})*pi/180", txt(r, vr)),
+            driven: false,
+        }
     }
-}
 
-/// Dimensions of point `p` from `center` at radius `r` and angle `a` (degrees): `[x, y]` distances along the
-/// axes whose expressions are `(r)*cos(a)` / `(r)*sin(a)` (magnitudes, side from the geometry).
-fn polar_dims(center: Id, p: Id, r: &Num, vr: f64, a: &Num, va: f64) -> [Constraint; 2] {
-    let txt = |n: &Num, v: f64| n.expr().unwrap_or_else(|| format!("{v}"));
-    let (re, ae) = (txt(r, vr), txt(a, va));
-    let (dx, dy) = (vr * va.to_radians().cos(), vr * va.to_radians().sin());
-    let mk = |axis: u8, d: f64, e: String| super::dist(p, center, axis, d.abs(), Num::Expr(e).magnitude_expr(d));
-    [mk(1, dx, format!("({re})*cos({ae})")), mk(2, dy, format!("({re})*sin({ae})"))]
+    /// A construction point on the circle around `center`, on its +x side (`Horizontal` + `PointOnCircle`):
+    /// the zero of the arc-length dimensions that give directions from that centre. One per centre.
+    fn angle_reference(&mut self, si: usize, center: Id, r: f64) -> Id {
+        let s = &self.p.sketches[si];
+        let existing = s.constraints.iter().find_map(|c| match *c {
+            Constraint::ArcLength { c, a, .. } if c == center => Some(a),
+            _ => None,
+        });
+        if let Some(id) = existing {
+            return id;
+        }
+        let (cx, cy) = s.points.iter().find(|q| q.id == center).map(|q| (q.x, q.y)).unwrap_or((0.0, 0.0));
+        let id = self.p.alloc_id();
+        let s = &mut self.p.sketches[si];
+        s.points.push(qymcad_core::model::SketchPoint { id, x: cx + r, y: cy });
+        s.constraints.push(Constraint::Horizontal { a: center, b: id });
+        s.constraints.push(Constraint::PointOnCircle { p: id, c: center });
+        id
+    }
 }
 
 /// `deg` mapped into (-180, 180].
@@ -475,23 +493,6 @@ fn fold(deg: f64) -> f64 {
         f + 360.0
     } else {
         f
-    }
-}
-
-/// The expression for an unsigned angle dimension whose geometric angle is `deg`: shifted by whole turns into
-/// (-180, 180] and negated when negative, so it evaluates to `|fold(deg)|` and follows the parameter.
-fn angle_expr(a: &Num, deg: f64) -> String {
-    let Some(e) = a.expr() else { return String::new() };
-    let turns = ((deg - fold(deg)) / 360.0).round() as i64 * 360;
-    let base = match turns {
-        0 => e,
-        t if t > 0 => format!("({e})-{t}"),
-        t => format!("({e})+{}", -t),
-    };
-    if fold(deg) < 0.0 {
-        format!("-({base})")
-    } else {
-        base
     }
 }
 
@@ -582,14 +583,6 @@ mod tests {
 
     #[test]
     fn angles_fold_into_the_unsigned_range() {
-        let ev = |a: &Num, deg: f64| -> f64 {
-            let e = angle_expr(a, deg);
-            qymcad_core::expr::eval(&e, &HashMap::from([("a".to_string(), deg)])).unwrap()
-        };
-        let a = Num::Expr("a".into());
-        for deg in [30.0, 150.0, 180.0, 210.0, 270.0, 359.0, -30.0, -170.0, 400.0, -400.0] {
-            assert!((ev(&a, deg) - fold(deg).abs()).abs() < 1e-9, "{deg}: {} vs {}", angle_expr(&a, deg), fold(deg).abs());
-        }
         assert_eq!(fold(180.0), 180.0);
         assert_eq!(fold(-180.0), 180.0);
         assert_eq!(half("w"), "w/2");

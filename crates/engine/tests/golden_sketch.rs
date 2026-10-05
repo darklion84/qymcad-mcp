@@ -407,3 +407,93 @@ fn hexagon_gui_radius_edit_with_rotation() {
     s.save(Some(&path)).unwrap();
     assert_close(gui_edit_param(&path, "r", "20"), hex_area(20.0) * 3.0, 1e-3, "GUI r=20");
 }
+
+// ---------- parameters that change the sign of a coordinate (review round 1, #1, #4) ----------
+
+/// rot 30° → 120°: cos changes sign. The first vertex must sit at 120° and the hexagon's x extent becomes the
+/// across-corners size 2r (vertices at 0°/180°).
+#[test]
+fn hexagon_rotation_crosses_90_degrees() {
+    let (mut s, sk, added) = hexagon(Some(n("rot")));
+    extrude(&mut s, sk, v(3.0));
+    let r = s.param_set("rot", &v(120.0)).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let p = d.points.iter().find(|p| p.id == added.points[1]).unwrap();
+    assert_close(p.x, 5.0 + 10.0 * 120f64.to_radians().cos(), 1e-6, "vertex x at 120°");
+    assert_close(p.y, -3.0 + 10.0 * 120f64.to_radians().sin(), 1e-6, "vertex y at 120°");
+    let bb = r.bodies[0].bbox;
+    assert_close(bb[3] - bb[0], 20.0, 0.05, "x extent = 2r");
+    assert_close(volume(&r), hex_area(10.0) * 3.0, 1e-3, "volume");
+}
+
+#[test]
+fn hexagon_rotation_crosses_90_degrees_gui() {
+    let (mut s, sk, _) = hexagon(Some(n("rot")));
+    extrude(&mut s, sk, v(3.0));
+    let path = scratch("hexagon_rot_cross_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    let (vol, bb) = gui_edit_param_body(&path, "rot", "120");
+    assert_close(vol, hex_area(10.0) * 3.0, 1e-3, "GUI volume");
+    assert_close(bb[3] - bb[0], 20.0, 0.05, "GUI x extent = 2r");
+    assert_close((bb[0] + bb[3]) / 2.0, 5.0, 0.05, "GUI centre x");
+}
+
+/// a1 120° → 240°: the sector grows from 90° to 210° (cos 120° = cos 240°, so an x dimension alone cannot tell).
+#[test]
+fn sector_end_angle_crosses_180_degrees() {
+    let (mut s, sk) = sector();
+    extrude(&mut s, sk, v(3.0));
+    let r = s.param_set("a1", &v(240.0)).unwrap();
+    assert_close(volume(&r), sector_area(20.0, 210.0) * 3.0, 1e-3, "a1=240");
+}
+
+#[test]
+fn sector_end_angle_crosses_180_degrees_gui() {
+    let (mut s, sk) = sector();
+    extrude(&mut s, sk, v(3.0));
+    let path = scratch("sector_cross_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    assert_close(gui_edit_param(&path, "a1", "240"), sector_area(20.0, 210.0) * 3.0, 1e-3, "GUI a1=240");
+}
+
+/// A 10 × 10 square centred at x = t − 20, t 10 → 30: the centre moves from −10 to +10.
+fn shifted_square() -> (Session, Id) {
+    let (mut s, sk) = part(&[("t", 10.0)]);
+    s.sketch_rect(sk, &n("t-20"), &v(0.0), &v(10.0), &v(10.0), false).unwrap();
+    extrude(&mut s, sk, v(1.0));
+    (s, sk)
+}
+
+#[test]
+#[ignore = "QymCAD dimensions keep their side (F-3A-7): a coordinate expression cannot cross zero; design decision pending"]
+fn a_coordinate_crosses_zero() {
+    let (mut s, _) = shifted_square();
+    let r = s.param_set("t", &v(30.0)).unwrap();
+    let bb = r.bodies[0].bbox;
+    assert_close((bb[0] + bb[3]) / 2.0, 10.0, 0.05, "centre x = t − 20");
+}
+
+/// Until it is supported, crossing zero must fail loudly and leave the document as it was (review #1/#2).
+#[test]
+fn a_coordinate_that_would_cross_zero_is_refused() {
+    let (mut s, _) = shifted_square();
+    let e = s.param_set("t", &v(30.0)).unwrap_err();
+    assert!(e.to_string().contains("does not solve"), "{e}");
+    assert_eq!(s.params().iter().find(|p| p.name == "t").unwrap().value, 10.0, "parameter restored");
+    let bb = s.result_bodies()[0].bbox;
+    assert_close((bb[0] + bb[3]) / 2.0, -10.0, 0.05, "geometry restored");
+}
+
+/// Review #7: a parametric radius with a literal, non-cardinal rotation. The GUI path solves once, so the rotation
+/// must not be an angle dimension (F-3A-2). After r 10 → 20 at 30° the x extent is across flats: √3·r.
+#[test]
+fn hexagon_parametric_radius_literal_angle_gui() {
+    let (mut s, sk, _) = hexagon(Some(v(30.0)));
+    assert_eq!(dof(&s, sk), (0, 0));
+    extrude(&mut s, sk, v(3.0));
+    let path = scratch("hexagon_lit_angle_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    let (vol, bb) = gui_edit_param_body(&path, "r", "20");
+    assert_close(vol, hex_area(20.0) * 3.0, 1e-3, "GUI r=20");
+    assert_close(bb[3] - bb[0], 20.0 * 3f64.sqrt(), 0.05, "GUI x extent across flats");
+}
