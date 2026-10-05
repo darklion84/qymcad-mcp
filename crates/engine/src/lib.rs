@@ -4,18 +4,23 @@
 //! and nowhere else (see docs/ARCHITECTURE.md and docs/UPGRADING.md).
 
 mod error;
+mod export;
 mod features;
 mod info;
 mod params;
+mod pngfile;
+mod render;
 mod session;
 mod sketch;
 mod value;
 
 pub use error::{Error, Result};
+pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};
 pub use features::{Direction, Extrude, Op};
 pub use info::{DocInfo, NodeInfo};
 pub use params::ParamInfo;
 pub use qymcad_core::model::Id;
+pub use render::{Rendered, View, RENDER_BACKGROUND, RENDER_MAX_SIDE, RENDER_MIN_SIDE};
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{BaseName, ContourInfo, PlaneRef, SketchInfo};
 pub use value::Num;

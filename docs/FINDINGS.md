@@ -180,3 +180,17 @@ Conventions:
   startup check searches the executable for `v<x.y.z>-dev.<8 digits>`.
 - **Evidence:** observed: `plutil -p ~/Applications/QymCAD.app/Contents/Info.plist`; `strings` on
   `Contents/MacOS/qymcad`.
+
+## F-3C-1 OpenCASCADE prints to stdout on every STEP write
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qymcad_kernel::write_step` (`qym_step_write`, `STEPControl_Writer`) prints a coloured block to fd 1:
+  `Statistics on Transfer (Write)`, `Transfer Mode = 0 I.E. As Is`, `Step File Name : <path>(350 ents) Write Done`
+  (ANSI escapes included), on every call, not only the first. On an MCP stdio server this corrupts the JSON-RPC
+  stream (the client reads `\u001b[32;1m` as a response).
+- **Evidence:** observed: piping requests into `qymcad-mcp` before the fix, stdout contained the block before
+  each `export` reply; test: `crates/mcp/tests/protocol.rs` `exports_through_mcp` failed with
+  `bad response "\u{1b}[32;1m\n"`. source: `crates/qymcad-kernel/src/occt_io.cpp` `qym_step_write` (~2510), no
+  messenger configuration anywhere in the kernel (`grep Messenger` finds nothing).
+- **How we handle it:** the server moves fd 1 to stderr at startup and speaks the protocol on a duplicate of the
+  original stdout (ADR 0005).

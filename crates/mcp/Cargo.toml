@@ -18,6 +18,8 @@ qymcad-engine.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
+# `dup2` to move OCCT's stdout chatter off the protocol channel (ADR 0005). Already in the tree via qymcad-io.
+libc = "0.2"
 
 [lints]
 workspace = true

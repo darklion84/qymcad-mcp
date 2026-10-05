@@ -90,7 +90,19 @@ fn lists_tools_with_object_schemas() {
     c.init();
     let tools = c.request("tools/list", json!({}))["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    for want in ["doc_new", "doc_open", "doc_save", "doc_info", "param_set", "sketch_create", "sketch_add", "extrude", "plane_offset"] {
+    for want in [
+        "doc_new",
+        "doc_open",
+        "doc_save",
+        "doc_info",
+        "param_set",
+        "sketch_create",
+        "sketch_add",
+        "extrude",
+        "plane_offset",
+        "export",
+        "render",
+    ] {
         assert!(names.contains(&want), "missing {want} in {names:?}");
     }
     for t in &tools {
@@ -204,4 +216,108 @@ fn symlinks_are_not_followed() {
     assert!(is_err && msg.as_str().unwrap().contains("symbolic link"), "{msg}");
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A 20 × 10 × 5 box, built through MCP calls.
+fn build_box(c: &mut Client) {
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
+    c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "w": 20, "h": 10 }] }));
+    c.ok("extrude", json!({ "sketch": "s", "height": 5, "name": "box" }));
+}
+
+#[test]
+fn exports_through_mcp() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-export-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut c = Client::start();
+    build_box(&mut c);
+    let stl = dir.join("box.stl");
+    let r = c.ok("export", json!({ "format": "stl", "path": stl.to_str().unwrap(), "quality": "draft" }));
+    assert_eq!(r["triangles"], json!(12), "a box is 12 triangles: {r}");
+    assert_eq!(r["bodies"][0]["name"], "box");
+    assert!((r["bodies"][0]["mesh_volume"].as_f64().unwrap() - 1000.0).abs() < 1e-6, "{r}");
+    assert_eq!(std::fs::metadata(&stl).unwrap().len(), 84 + 12 * 50);
+    let step = dir.join("box.stp");
+    let r = c.ok("export", json!({ "format": "step", "path": step.to_str().unwrap(), "bodies": ["box"] }));
+    assert!(r["bytes"].as_u64().unwrap() > 1000, "{r}");
+    assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
+    // OCCT prints transfer statistics to fd 1 on every STEP write; the protocol stream must stay clean (F-3C-1)
+    c.ok("export", json!({ "format": "step", "path": step.to_str().unwrap() }));
+    assert_eq!(c.request("ping", json!({}))["result"], json!({}));
+    // the extension must be the format's
+    let (is_err, msg) = c.tool("export", json!({ "format": "stl", "path": dir.join("box.step").to_str().unwrap() }));
+    assert!(is_err && msg.as_str().unwrap().contains(".stl"), "{msg}");
+    let (is_err, msg) = c.tool("export", json!({ "format": "png", "path": dir.join("x.png").to_str().unwrap() }));
+    assert!(is_err && msg.as_str().unwrap().contains("bad arguments"), "{msg}");
+    let (is_err, msg) = c.tool("export", json!({ "format": "stl", "path": stl.to_str().unwrap(), "bodies": ["nope"] }));
+    assert!(is_err && msg.as_str().unwrap().contains("nope"), "{msg}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn export_paths_are_restricted() {
+    let mut c = Client::start();
+    build_box(&mut c);
+    let home = std::env::var("HOME").unwrap();
+    for (format, path) in
+        [("stl", format!("{home}/.zshrc")), ("step", format!("{home}/.ssh/authorized_keys")), ("obj", "/etc/hosts".into())]
+    {
+        let (is_err, msg) = c.tool("export", json!({ "format": format, "path": path }));
+        assert!(is_err && msg.as_str().unwrap().contains("only"), "{format} {path}: {msg}");
+    }
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-export-link-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, "keep me").unwrap();
+    let link = dir.join("evil.stl");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&victim, &link).unwrap();
+    let (is_err, msg) = c.tool("export", json!({ "format": "stl", "path": link.to_str().unwrap() }));
+    assert!(is_err && msg.as_str().unwrap().contains("symbolic link"), "{msg}");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Decode standard base64 (test-side, independent of the server's encoder).
+fn unbase64(s: &str) -> Vec<u8> {
+    let val = |c: u8| match c {
+        b'A'..=b'Z' => c - b'A',
+        b'a'..=b'z' => c - b'a' + 26,
+        b'0'..=b'9' => c - b'0' + 52,
+        b'+' => 62,
+        b'/' => 63,
+        _ => panic!("not base64: {c}"),
+    } as u32;
+    assert_eq!(s.len() % 4, 0, "padded base64");
+    let mut out = Vec::new();
+    for q in s.as_bytes().chunks(4) {
+        let pad = q.iter().filter(|c| **c == b'=').count();
+        let n = q.iter().take(4 - pad).enumerate().fold(0u32, |n, (k, c)| n | val(*c) << (18 - 6 * k));
+        out.extend_from_slice(&n.to_be_bytes()[1..4 - pad]);
+    }
+    out
+}
+
+#[test]
+fn render_returns_an_image() {
+    let mut c = Client::start();
+    build_box(&mut c);
+    let v = c.request("tools/call", json!({ "name": "render", "arguments": { "view": "top", "width": 200, "height": 100 } }));
+    let content = v["result"]["content"].as_array().unwrap_or_else(|| panic!("{v}"));
+    assert_ne!(v["result"]["isError"], json!(true), "{v}");
+    assert_eq!(content[0]["type"], "image");
+    assert_eq!(content[0]["mimeType"], "image/png");
+    let png = unbase64(content[0]["data"].as_str().unwrap());
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), 200, "IHDR width");
+    assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), 100, "IHDR height");
+    assert_eq!(&png[png.len() - 8..png.len() - 4], b"IEND");
+    let text = content[1]["text"].as_str().unwrap();
+    assert!(text.starts_with("top view") && text.contains("-10..10"), "{text}");
+    let (is_err, msg) = c.tool("render", json!({ "width": 4 }));
+    assert!(is_err && msg.as_str().unwrap().contains("width"), "{msg}");
+    let (is_err, _) = c.tool("render", json!({ "view": "sideways" }));
+    assert!(is_err);
 }
