@@ -63,8 +63,9 @@ pub enum ConstraintKind {
     Symmetric,
     /// [point]: pinned where it is now.
     Fix,
-    /// [point, point], [line] (its length), [point, line] or [line, line] (perpendicular distance). Circles and
-    /// arcs stand for their centre. `axis` x/y measures only along that axis (point pairs and lines).
+    /// [point, point], [line] (its length), [point, line] or [line, line] (perpendicular distance; the lines are
+    /// made parallel too unless they already are constrained so). Circles and arcs stand for their centre. `axis`
+    /// x/y measures only along that axis (point pairs and lines).
     Distance,
     /// [line, line]: the angle between them, degrees (0..180). The line directions are picked from the
     /// current geometry so the closer of θ and 180−θ is meant.
@@ -150,6 +151,23 @@ impl Session {
         let c = self.build_constraint(si, spec, &gs)?;
         let is_dim = c.dim_value().is_some();
         let before = self.p.sketch_dof(si);
+        // A distance between two lines measures from a point of the first to the second; it means "the distance
+        // between them" only when they are parallel, so parallelism is added with it unless already implied.
+        if let (ConstraintKind::Distance, [G::Line(a, b), G::Line(c2, d)]) = (spec.kind, gs.as_slice()) {
+            let par = Constraint::Parallel { a: *a, b: *b, c: *c2, d: *d };
+            let n = self.p.sketches[si].constraints.len();
+            self.p.sketches[si].constraints.push(par);
+            let implied = self.p.sketch_dof(si).0 == before.0;
+            let holds = self.p.sketch_residuals(si).get(n).is_some_and(|r| *r < 1e-9);
+            if implied || spec.reference {
+                self.p.sketches[si].constraints.pop();
+                if spec.reference && !(implied && holds) {
+                    return Err(Error::Invalid(
+                        "a reference distance between lines needs them parallel; add `parallel` first, or measure from a point".into(),
+                    ));
+                }
+            }
+        }
         let idx = self.p.sketches[si].constraints.len();
         self.p.sketches[si].constraints.push(c);
         if !spec.reference {

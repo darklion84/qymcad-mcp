@@ -284,3 +284,32 @@ fn removing_an_entity_keeps_splines() {
         assert!(sk.points.iter().any(|q| q.id == *id), "spline control point {id} was dropped");
     }
 }
+
+/// Review #6: a distance between two lines is only meaningful when they are parallel. The line (0,5)-(5,0)
+/// crosses the x axis; "distance 5 to the x axis" must make it parallel at y = 5, not measure one endpoint.
+#[test]
+fn a_distance_between_lines_makes_them_parallel() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let l =
+        s.sketch_line(sk, &LineSpec { x1: v(0.0), y1: v(5.0), x2: v(5.0), y2: v(0.0), construction: false, dimensioned: false }).unwrap();
+    let r = s
+        .sketch_constrain(sk, &c(ConstraintKind::Distance, &[id(l.entities[0]), SketchRef::Frame(FrameRef::XAxis)], Some(v(5.0))))
+        .unwrap();
+    assert_eq!(r.dof, (2, 0), "4 freedoms − parallel − distance");
+    let d = s.sketch_detail(sk).unwrap();
+    for p in &l.points {
+        let q = d.points.iter().find(|q| q.id == *p).unwrap();
+        assert_close(q.y, 5.0, 1e-6, "both ends at y = 5");
+    }
+    // Already parallel: no second parallel is added.
+    let r = s.sketch_constrain(sk, &c(ConstraintKind::Distance, &[id(l.entities[0]), SketchRef::Frame(FrameRef::XAxis)], Some(v(5.0))));
+    assert!(r.is_err(), "the same distance again over-constrains");
+    // A reference distance between non-parallel lines is refused (it would have to add a constraint).
+    let l2 =
+        s.sketch_line(sk, &LineSpec { x1: v(0.0), y1: v(-5.0), x2: v(5.0), y2: v(-9.0), construction: false, dimensioned: false }).unwrap();
+    let mut spec = c(ConstraintKind::Distance, &[id(l2.entities[0]), SketchRef::Frame(FrameRef::XAxis)], None);
+    spec.reference = true;
+    let e = s.sketch_constrain(sk, &spec).unwrap_err();
+    assert!(e.to_string().contains("parallel"), "{e}");
+}
