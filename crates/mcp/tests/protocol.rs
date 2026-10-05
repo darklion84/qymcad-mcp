@@ -333,3 +333,32 @@ fn a_pathological_expression_does_not_kill_the_server() {
     assert!(is_err, "{msg}");
     assert_eq!(c.request("ping", json!({}))["result"], json!({}));
 }
+
+/// Review #2 and #16: vectors are exactly three finite numbers (a stray string was dropped silently, turning
+/// [1, "x", 0, 0] into [1, 0, 0]); tolerances are degrees in [0, 90).
+#[test]
+fn numbers_are_parsed_strictly() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
+    c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "circle", "cx": 30, "d": 10 }] }));
+    c.ok("extrude", json!({ "sketch": "s", "height": 5 }));
+    let bad = [
+        ("select", json!({ "faces": { "facing": [1, "x", 0, 0] } })),
+        ("select", json!({ "faces": { "facing": [0, 0] } })),
+        ("select", json!({ "edges": { "along": [0, 0, 1, 5] } })),
+        ("circular_array", json!({ "count": 3, "axis": { "origin": [0, 0, "z"], "dir": [0, 0, 1] } })),
+        ("circular_array", json!({ "count": 3, "axis": { "origin": [0, 0, 0], "dir": [0, 0, 1, 0] } })),
+        ("topology", json!({ "facing": [0, 0, 1], "tol_deg": 120 })),
+        ("topology", json!({ "along": "z", "tol_deg": -1 })),
+        ("topology", json!({ "facing": [0, "up", 1] })),
+    ];
+    for (tool, args) in bad {
+        let (is_err, msg) = c.tool(tool, args.clone());
+        assert!(is_err, "{tool} {args} was accepted: {msg}");
+    }
+    // Well-formed ones still work.
+    c.ok("select", json!({ "faces": { "facing": [0, 0, 1] } }));
+    c.ok("topology", json!({ "facing": "+z", "tol_deg": 10 }));
+}

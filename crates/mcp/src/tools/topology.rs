@@ -88,10 +88,7 @@ impl SelArg {
         let tol = |default: f64| -> Result<f64, String> {
             match o.get("tol_deg") {
                 None => Ok(default),
-                Some(t) => t
-                    .as_f64()
-                    .filter(|t| *t >= 0.0 && *t < 90.0)
-                    .ok_or_else(|| format!("tol_deg must be a number of degrees in [0, 90), got {t}")),
+                Some(t) => tol_deg(t.as_f64().ok_or_else(|| format!("tol_deg must be a number, got {t}"))?),
             }
         };
         let pair = |what: &str| -> Result<(Box<SelArg>, Box<SelArg>), String> {
@@ -176,14 +173,30 @@ fn id_u32(v: &Value) -> Result<u32, String> {
     v.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| format!("not a face/edge id: {v}"))
 }
 
+/// Exactly three finite numbers, `[x, y, z]`. Anything else is an error (never dropped or padded).
+fn vec3(v: &Value) -> Result<[f64; 3], String> {
+    let bad = || format!("expected [x, y, z] (three finite numbers), got {v}");
+    let a = v.as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
+    let mut out = [0.0; 3];
+    for (o, x) in out.iter_mut().zip(a) {
+        *o = x.as_f64().filter(|f| f.is_finite()).ok_or_else(bad)?;
+    }
+    Ok(out)
+}
+
+/// A tolerance in degrees: finite, in [0, 90).
+fn tol_deg(t: f64) -> Result<f64, String> {
+    if t.is_finite() && (0.0..90.0).contains(&t) {
+        Ok(t)
+    } else {
+        Err(format!("tol_deg must be a number of degrees in [0, 90), got {t}"))
+    }
+}
+
 /// "+x" / "-y" / "z" (= "+z", case-insensitive) or [x, y, z].
 fn dir(v: &Value) -> Result<[f64; 3], String> {
-    if let Some(a) = v.as_array() {
-        let n: Vec<f64> = a.iter().filter_map(Value::as_f64).collect();
-        return match n.as_slice() {
-            [x, y, z] => Ok([*x, *y, *z]),
-            _ => Err(format!("a direction is \"+x\" ... \"-z\" or [x, y, z], got {v}")),
-        };
+    if v.is_array() {
+        return vec3(v);
     }
     let (axis, max) = signed_axis(v)?;
     let s = if max { 1.0 } else { -1.0 };
@@ -243,12 +256,6 @@ impl AxisArg {
     }
 
     fn parse(v: &Value) -> Result<AxisArg, String> {
-        let point = |v: &Value| -> Result<[f64; 3], String> {
-            match v.as_array().map(|a| a.iter().filter_map(Value::as_f64).collect::<Vec<_>>()).as_deref() {
-                Some([x, y, z]) => Ok([*x, *y, *z]),
-                _ => Err(format!("expected [x, y, z], got {v}")),
-            }
-        };
         match v {
             Value::String(s) => match s.as_str() {
                 "sketch_x" => Ok(AxisArg::SketchX),
@@ -265,7 +272,7 @@ impl AxisArg {
                     ["line"] => Ok(AxisArg::Line(id("line")?)),
                     ["datum"] => Ok(AxisArg::Datum(id("datum")?)),
                     _ if o.contains_key("origin") && o.contains_key("dir") && o.len() == 2 => {
-                        Ok(AxisArg::Through { origin: point(&o["origin"])?, dir: point(&o["dir"])? })
+                        Ok(AxisArg::Through { origin: vec3(&o["origin"])?, dir: vec3(&o["dir"])? })
                     }
                     _ if o.contains_key("face") && o.keys().all(|k| k == "face" || k == "body") => {
                         let face = id_u32(&o["face"])?;
@@ -410,14 +417,14 @@ pub struct SelectArgs {
 
 fn unit(d: [f64; 3]) -> Result<[f64; 3], String> {
     let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    if l < 1e-12 {
+    if !l.is_finite() || l < 1e-12 {
         return Err("a direction needs a length".into());
     }
     Ok([d[0] / l, d[1] / l, d[2] / l])
 }
 
 fn topology_json(t: &Topology, a: &TopologyArgs) -> Result<Value, String> {
-    let cos = a.tol_deg.unwrap_or(5.0).to_radians().cos();
+    let cos = tol_deg(a.tol_deg.unwrap_or(5.0))?.to_radians().cos();
     let facing = a.facing.map(|d| unit(d.0)).transpose()?;
     let along = a.along.map(|d| unit(d.0)).transpose()?;
     let limit = a.limit.unwrap_or(60);
