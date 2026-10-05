@@ -354,3 +354,30 @@ fn a_reference_radius_on_an_arc_does_not_go_stale() {
         }
     }
 }
+
+/// Review #3 (F-3A-4): a circle drawn on an ordinary point (a polyline vertex) takes that point as its centre; a
+/// second circle there gets a node of its own (one radius variable per centre). Either way the sketch stays fully
+/// defined without redundancy.
+#[test]
+fn circles_on_a_vertex_share_or_get_their_centre() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let pl = s
+        .sketch_polyline(
+            sk,
+            &PolylineSpec {
+                points: vec![Xy(v(0.0), v(0.0)), Xy(v(10.0), v(0.0)), Xy(v(10.0), v(8.0))],
+                closed: true,
+                construction: false,
+                dimensioned: true,
+            },
+        )
+        .unwrap();
+    let c1 = s.sketch_circle(sk, &v(10.0), &v(0.0), &v(4.0), false).unwrap();
+    let c2 = s.sketch_circle(sk, &v(10.0), &v(0.0), &v(2.0), false).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let centre = |e: Id| d.entities.iter().find(|x| x.id == e).unwrap().points[0];
+    assert_eq!(centre(c1), pl.points[1], "the first circle's centre is the vertex");
+    assert_ne!(centre(c2), centre(c1), "a second circle there has its own centre");
+    assert_eq!(d.summary.dof, (0, 0));
+}

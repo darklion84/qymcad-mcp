@@ -95,9 +95,9 @@ impl Session {
         }
         let lines = self.p.add_rect_entity(si, vx - vw / 2.0, vy - vh / 2.0, vx + vw / 2.0, vy + vh / 2.0, purpose(construction));
         let [bl, br, tr, tl] = self.rect_corners(si, &lines)?;
-        let s = &mut self.p.sketches[si];
-        s.constraints.push(dist(br, bl, 1, vw, w.magnitude_expr(vw)));
-        s.constraints.push(dist(tl, bl, 2, vh, h.magnitude_expr(vh)));
+        // Corners may be shared with earlier geometry (QymCAD merges points within 1e-6): only independent
+        // dimensions are added, as for every other entity.
+        self.add_independent(si, [dist(br, bl, 1, vw, w.magnitude_expr(vw)), dist(tl, bl, 2, vh, h.magnitude_expr(vh))]);
         let c = self.p.alloc_id();
         let s = &mut self.p.sketches[si];
         s.points.push(SketchPoint { id: c, x: vx, y: vy });
@@ -220,9 +220,11 @@ impl Session {
     /// Fix point `p` at (`x`, `y`) from the sketch origin with driving dimensions. A plain zero puts the point
     /// on the axis instead (a zero distance has no side). Distances are magnitudes `|Δ|`: the side comes from
     /// the initial geometry and the expression is negated when its value is negative (see `Num::magnitude_expr`).
+    /// Only the independent dimensions are added: the point may be shared with earlier, already dimensioned
+    /// geometry (a circle centred on a polyline vertex takes that vertex as its centre, FINDINGS F-3A-4).
     fn pin_point(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) {
         let dims = self.pin_dims(si, p, x, vx, y, vy);
-        self.p.sketches[si].constraints.extend(dims);
+        self.add_independent(si, dims);
     }
 
     /// The two dimensions of `pin_point` ([x, y]), not yet added.
