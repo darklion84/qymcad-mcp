@@ -17,6 +17,9 @@ pub fn instructions(app_note: &str) -> String {
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\
+         A sketch coordinate keeps the sign it was created with: choose the origin so that a parametric coordinate \
+         (e.g. \"t-20\") stays on one side of the axis for every value the user may set; an edit that would cross \
+         zero is refused.\n\
          Every feature is atomic: on error nothing changes and the message says why. Objects can be referred to \
          by id or by the name given at creation.\n\
          The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}",

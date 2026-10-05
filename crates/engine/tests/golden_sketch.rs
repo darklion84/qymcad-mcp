@@ -464,16 +464,8 @@ fn shifted_square() -> (Session, Id) {
     (s, sk)
 }
 
-#[test]
-#[ignore = "QymCAD dimensions keep their side (F-3A-7): a coordinate expression cannot cross zero; design decision pending"]
-fn a_coordinate_crosses_zero() {
-    let (mut s, _) = shifted_square();
-    let r = s.param_set("t", &v(30.0)).unwrap();
-    let bb = r.bodies[0].bbox;
-    assert_close((bb[0] + bb[3]) / 2.0, 10.0, 0.05, "centre x = t − 20");
-}
-
-/// Until it is supported, crossing zero must fail loudly and leave the document as it was (review #1/#2).
+/// A coordinate expression cannot cross zero in QymCAD (F-3A-7); the edit fails loudly and leaves the document as it
+/// was (review #1/#2, decision L1: refuse, and tell the agent to place the origin so coordinates keep their sign).
 #[test]
 fn a_coordinate_that_would_cross_zero_is_refused() {
     let (mut s, _) = shifted_square();

@@ -293,12 +293,15 @@ Conventions:
     506.8 instead of 779.4; sector a1 120° → 240°: 300π instead of 700π on both paths; square at x = `t-20`,
     t 10 → 30: committed as a least-squares compromise centred at 0.
   - test: `golden_sketch.rs` `hexagon_rotation_crosses_90_degrees(_gui)`, `sector_end_angle_crosses_180_degrees(_gui)`,
-    `a_coordinate_that_would_cross_zero_is_refused`, `a_coordinate_crosses_zero` (ignored: not supported).
+    `a_coordinate_that_would_cross_zero_is_refused`.
 - **How we handle it:** parametric directions (arc ends, polygon rotation) are `ArcLength` dimensions from a
   construction point on the +x side of the centre (`Horizontal` + `PointOnCircle`, role `angle_reference` in
   `sketch_info`), `len = (r)*(a)*pi/180`, valid while the angle stays in the turn it was created in ([0°, 360°)
   for 0..359°). Linear coordinates still cannot cross zero: `param_set` refuses such an edit and rolls back
-  (F-3A-2 settled solve + residual check); in the app the sketch would not solve. Design decision pending.
+  (F-3A-2 settled solve + residual check); in the app the sketch would not solve. Decision (2026-10-05): keep the
+  refusal, and the server instructions tell the agent to place the origin so parametric coordinates keep their
+  sign. Splitting sums into positive terms (works for some expressions only) and far anchors (zoom the GUI view
+  out) were rejected.
 
 ## F-3A-8 Deleting an entity drops every spline's control points
 
