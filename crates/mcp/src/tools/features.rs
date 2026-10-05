@@ -40,7 +40,8 @@ pub struct ExtrudeArgs {
     /// Go through the whole body (cut/add/intersect only).
     #[serde(default)]
     pub through: bool,
-    /// Body to modify (id or name). Default: the part's current body.
+    /// Body to modify (id or name); must be a current body, not one consumed by a later feature. Default: the
+    /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
     #[serde(default)]
@@ -66,7 +67,8 @@ pub struct RevolveArgs {
     /// add (default; creates the first body), cut, intersect, new_body.
     #[serde(default)]
     pub op: Op,
-    /// Body to modify (id or name). Default: the part's current body.
+    /// Body to modify (id or name); must be a current body, not one consumed by a later feature. Default: the
+    /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
     #[serde(default)]

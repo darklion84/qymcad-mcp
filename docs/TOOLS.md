@@ -629,7 +629,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
           "type": "null"
         }
       ],
-      "description": "Body to modify (id or name). Default: the part's current body."
+      "description": "Body to modify (id or name); must be a current body, not one consumed by a later feature. Default: the\npart's current body. Not allowed with op new_body."
     },
     "through": {
       "default": false,
@@ -797,7 +797,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
           "type": "null"
         }
       ],
-      "description": "Body to modify (id or name). Default: the part's current body."
+      "description": "Body to modify (id or name); must be a current body, not one consumed by a later feature. Default: the\npart's current body. Not allowed with op new_body."
     }
   },
   "required": [

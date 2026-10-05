@@ -598,3 +598,35 @@ fn non_finite_dimensions_are_refused() {
     }
     assert_eq!((s.info().timeline.len(), volume(&s)), before, "nothing changed");
 }
+
+/// Review #15: an extrude into a consumed body would branch a ghost chain (F-009); new_body with a target is
+/// contradictory. Both are refused and nothing changes.
+#[test]
+fn extrude_target_must_be_a_current_body() {
+    let (mut s, block_id) = block(40.0, 30.0, 10.0);
+    s.fillet(None, &along_z(), &2.0.into(), None).unwrap();
+    let before = (s.info().timeline.len(), volume(&s));
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_circle(sk, &0.0.into(), &0.0.into(), &5.0.into(), false).unwrap();
+    let cut = |target, op| Extrude {
+        sketch: sk,
+        profiles: None,
+        height: 5.0.into(),
+        op,
+        direction: Direction::Normal,
+        through: false,
+        target,
+        name: None,
+    };
+    let e = s.extrude(&cut(Some(block_id), Op::Cut)).unwrap_err();
+    assert!(e.to_string().contains("consumed"), "consumed target: {e}");
+    let e = s.extrude(&cut(Some(999_999), Op::Cut)).unwrap_err();
+    assert!(matches!(e, Error::NotFound(_)), "unknown target: {e}");
+    let current = s.result_bodies()[0].id;
+    let e = s.extrude(&cut(Some(current), Op::NewBody)).unwrap_err();
+    assert!(e.to_string().contains("new_body"), "new_body with a target: {e}");
+    let rv = Revolve { target: Some(current), ..revolve(sk, AxisRef::SketchY, 90.0.into(), Direction::Normal, Op::NewBody) };
+    let e = s.revolve(&rv).unwrap_err();
+    assert!(e.to_string().contains("new_body"), "revolve new_body with a target: {e}");
+    assert_eq!((s.info().timeline.len(), volume(&s)), (before.0 + 1, before.1), "only the sketch was added");
+}

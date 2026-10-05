@@ -67,9 +67,10 @@ impl Session {
             };
             let reach: Reach = a.direction.into();
             let turn = RevolveTurn { angle, reach };
-            let src = match a.target {
-                Some(t) => Some(s.source_body(Some(t))?),
-                None => s.tip_body(),
+            let src = match (a.target, a.op) {
+                (Some(_), Op::NewBody) => return Err(Error::Invalid("op new_body makes a separate body; omit `target`".into())),
+                (Some(t), _) => Some(s.source_body(Some(t))?),
+                (None, _) => s.tip_body(),
             };
             let id = match (a.op, src) {
                 (Op::NewBody, _) | (Op::Add, None) => s.p.add_revolve_axis_ex(a.sketch, profiles, ax, turn),
