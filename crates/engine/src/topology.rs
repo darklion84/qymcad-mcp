@@ -402,24 +402,41 @@ impl Session {
         }
     }
 
+    /// Every explicit id anywhere in `sel` must be a face or an edge of `body`, as its position requires (inside
+    /// `edges_of`/`between` ids are faces; a `tangent_chain` seed is edges). QymCAD would drop an unknown id
+    /// silently.
+    fn check_ids(&self, body: Id, el: Element, sel: &Sel) -> Result<()> {
+        let b = |x: &Sel, el| self.check_ids(body, el, x);
+        match sel {
+            Sel::Ids(ids) => {
+                let live: Vec<u32> = match el {
+                    Element::Faces => self.p.regen_faces.get(&body).map(|v| v.iter().map(|f| f.id).collect()).unwrap_or_default(),
+                    Element::Edges => self.p.regen_edges.get(&body).map(|v| v.iter().map(|e| e.id).collect()).unwrap_or_default(),
+                };
+                let unknown: Vec<u32> = ids.iter().copied().filter(|i| !live.contains(i)).collect();
+                if !unknown.is_empty() {
+                    return Err(Error::NotFound(format!(
+                        "{} {unknown:?} not on body {body} (ids belong to one body and change with every feature: call topology on the current body)",
+                        el.name()
+                    )));
+                }
+                Ok(())
+            }
+            Sel::EdgesOf(f) => b(f, Element::Faces),
+            Sel::TangentChain { seed, .. } => b(seed, Element::Edges),
+            Sel::Between(x, y) => b(x, Element::Faces).and(b(y, Element::Faces)),
+            Sel::Union(v) => v.iter().try_for_each(|x| b(x, el)),
+            Sel::Minus(x, y) | Sel::And(x, y) => b(x, el).and(b(y, el)),
+            Sel::OfFeature { .. } | Sel::Facing { .. } | Sel::Along { .. } | Sel::Extreme { .. } | Sel::Largest => Ok(()),
+        }
+    }
+
     /// Resolve `sel` on `body`. Explicit ids that are not on the body are an error (stale or foreign ids).
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
         let lowered = self.lower_largest_edges(body, el, sel, &mut None);
         let sel = &lowered;
         let q = sel.query(el)?;
-        if let Sel::Ids(ids) = sel {
-            let live: Vec<u32> = match el {
-                Element::Faces => self.p.regen_faces.get(&body).map(|v| v.iter().map(|f| f.id).collect()).unwrap_or_default(),
-                Element::Edges => self.p.regen_edges.get(&body).map(|v| v.iter().map(|e| e.id).collect()).unwrap_or_default(),
-            };
-            let unknown: Vec<u32> = ids.iter().copied().filter(|i| !live.contains(i)).collect();
-            if !unknown.is_empty() {
-                return Err(Error::NotFound(format!(
-                    "{} {unknown:?} not on body {body} (ids belong to one body and change with every feature: call topology on the current body)",
-                    el.name()
-                )));
-            }
-        }
+        self.check_ids(body, el, sel)?;
         let r = Ref::many(q);
         let found = match el {
             Element::Faces => self.p.resolve_face_refs(body, &r, "select"),

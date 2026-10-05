@@ -681,3 +681,23 @@ fn over_deep_or_long_expressions_are_refused() {
     assert_eq!(Num::Expr(ok).eval(&Default::default()).unwrap(), 1.0);
     assert_eq!(Num::Expr(format!("{}1", "-".repeat(64))).eval(&Default::default()).unwrap(), 1.0);
 }
+
+/// Review #8: ids nested anywhere in a selection are checked against the body, as faces or as edges depending
+/// on where they stand; a foreign id must not be dropped silently.
+#[test]
+fn nested_ids_are_validated() {
+    let (mut s, _) = block(40.0, 30.0, 10.0);
+    let t = s.topology(None, false).unwrap();
+    let (edge, face) = (t.edges[0].id, t.faces[0].id);
+    let ids = |v: Vec<u32>| Sel::Ids(v);
+    let e = s.select(None, Element::Edges, &Sel::Union(vec![ids(vec![edge]), ids(vec![424242])])).unwrap_err();
+    assert!(e.to_string().contains("424242"), "union: {e}");
+    let e = s.select(None, Element::Edges, &Sel::EdgesOf(Box::new(ids(vec![edge])))).unwrap_err();
+    assert!(e.to_string().contains("faces") && e.to_string().contains(&edge.to_string()), "an edge id where a face is expected: {e}");
+    let e = s.select(None, Element::Edges, &Sel::TangentChain { seed: Box::new(ids(vec![face])), tol_deg: 5.0 }).unwrap_err();
+    assert!(e.to_string().contains("edges"), "a face id as a chain seed: {e}");
+    let e = s.select(None, Element::Faces, &Sel::Minus(Box::new(top()), Box::new(ids(vec![7])))).unwrap_err();
+    assert!(e.to_string().contains("[7]"), "minus: {e}");
+    // Valid nested ids still work.
+    assert_eq!(s.select(None, Element::Edges, &Sel::EdgesOf(Box::new(ids(vec![face])))).unwrap().1.len(), 4);
+}
