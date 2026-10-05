@@ -8,7 +8,7 @@ use crate::sketch::{BaseName, PlaneRef};
 use crate::topology::{face_key, Axis};
 use crate::value::Num;
 use qymcad_core::feature::FeatureKind;
-use qymcad_core::model::{ArrayAxis, DatumAxis, Id};
+use qymcad_core::model::{ArrayAxis, AxisDef, DatumAxis, Id};
 
 /// Most copies one array may make, all directions multiplied. An array copies the whole body and every later
 /// rebuild repeats it: 1000 copies of a trivial Ø2 cylinder took 1.2 s (debug and release alike, linear in the
@@ -54,14 +54,9 @@ impl Session {
             AxisRef::World(Axis::Z) => 0,
             AxisRef::World(a) => {
                 let dir = if *a == Axis::X { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-                self.p.add_datum_axis(DatumAxis::manual(format!("axis {a:?}"), [0.0; 3], dir))
+                self.fixed_axis(&format!("axis {a:?}"), [0.0; 3], dir)?
             }
-            AxisRef::Through { origin, dir } => {
-                if dir.iter().map(|v| v * v).sum::<f64>().sqrt() < 1e-12 {
-                    return Err(Error::Invalid("axis direction has no length".into()));
-                }
-                self.p.add_datum_axis(DatumAxis::manual("axis", *origin, *dir))
-            }
+            AxisRef::Through { origin, dir } => self.fixed_axis("axis", *origin, *dir)?,
             AxisRef::FaceAxis { body, face } => {
                 let body = &match body {
                     Some(b) => *b,
@@ -91,6 +86,29 @@ impl Session {
                     "a sketch axis or line only works for revolve; give a world axis, a face or a datum axis".into(),
                 ))
             }
+        })
+    }
+
+    /// A fixed (manual) datum axis through `origin` along `dir`: an existing one on the same line with the same
+    /// sense is reused, so repeated features about one axis share one datum.
+    fn fixed_axis(&mut self, name: &str, origin: [f64; 3], dir: [f64; 3]) -> Result<Id> {
+        let unit = |d: [f64; 3]| {
+            let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            (l.is_finite() && l > 1e-12).then(|| [d[0] / l, d[1] / l, d[2] / l])
+        };
+        let u = unit(dir).ok_or_else(|| Error::Invalid("axis direction has no length".into()))?;
+        let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        let small = |v: [f64; 3]| v.iter().map(|x| x * x).sum::<f64>().sqrt() < 1e-9;
+        let same = self.p.datum_axes.iter().find(|a| match a.def {
+            AxisDef::Manual { origin: o, dir: d } => unit(d).is_some_and(|w| {
+                let off = [o[0] - origin[0], o[1] - origin[1], o[2] - origin[2]];
+                w[0] * u[0] + w[1] * u[1] + w[2] * u[2] > 0.0 && small(cross(w, u)) && small(cross(off, u))
+            }),
+            _ => false,
+        });
+        Ok(match same {
+            Some(a) => a.id,
+            None => self.p.add_datum_axis(DatumAxis::manual(name, origin, dir)),
         })
     }
 

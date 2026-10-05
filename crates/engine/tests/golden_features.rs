@@ -906,3 +906,20 @@ fn revolve_intersect() {
     s.revolve(&revolve(sk, AxisRef::SketchY, 360.0.into(), Direction::Normal, Op::Intersect)).unwrap();
     assert_close(volume(&s), PI * 100.0 * 20.0, 1e-3, "block ∩ cylinder");
 }
+
+/// Review #26: a fixed axis that already exists as a datum is reused instead of minting a new datum per call.
+#[test]
+fn identical_fixed_axes_share_one_datum() {
+    let datums = |s: &Session| s.info().timeline.iter().filter(|n| n.kind == "DatumAxis").count();
+    let mut s = Session::new_part();
+    cylinder(&mut s, 0.0, 30.0, 10.0.into(), 5.0.into(), Op::Add);
+    s.circular_array(None, &2.0.into(), &360.0.into(), Some(&AxisRef::World(Axis::X)), None).unwrap();
+    s.circular_array(None, &2.0.into(), &360.0.into(), Some(&AxisRef::Through { origin: [5.0, 0.0, 0.0], dir: [2.0, 0.0, 0.0] }), None)
+        .unwrap();
+    assert_eq!(datums(&s), 1, "world X and a parallel line through the origin are the same axis");
+    s.circular_array(None, &2.0.into(), &360.0.into(), Some(&AxisRef::Through { origin: [0.0, 0.0, 1.0], dir: [1.0, 0.0, 0.0] }), None)
+        .unwrap();
+    assert_eq!(datums(&s), 2, "a different line gets its own datum");
+    s.circular_array(None, &2.0.into(), &360.0.into(), Some(&AxisRef::Through { origin: [0.0; 3], dir: [-1.0, 0.0, 0.0] }), None).unwrap();
+    assert_eq!(datums(&s), 3, "the opposite sense turns the other way: its own datum");
+}
