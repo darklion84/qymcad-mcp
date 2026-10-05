@@ -313,3 +313,44 @@ fn a_distance_between_lines_makes_them_parallel() {
     let e = s.sketch_constrain(sk, &spec).unwrap_err();
     assert!(e.to_string().contains("parallel"), "{e}");
 }
+
+fn param_arc() -> (Session, Id, Added) {
+    let mut s = Session::new_part();
+    s.param_set("r", &v(20.0)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let arc = s
+        .sketch_arc(
+            sk,
+            &ArcSpec {
+                cx: v(0.0),
+                cy: v(0.0),
+                r: Some(n("r")),
+                start_angle: Some(v(30.0)),
+                end_angle: Some(v(120.0)),
+                start: None,
+                end: None,
+                ccw: true,
+                construction: false,
+                dimensioned: true,
+            },
+        )
+        .unwrap();
+    (s, sk, arc)
+}
+
+/// Review #8: QymCAD refreshes reference radius/diameter dimensions from circles only, so on an arc the shown
+/// value would go stale after the arc changes.
+#[test]
+fn a_reference_radius_on_an_arc_does_not_go_stale() {
+    let (mut s, sk, arc) = param_arc();
+    let mut spec = c(ConstraintKind::Radius, &[id(arc.entities[0])], None);
+    spec.reference = true;
+    match s.sketch_constrain(sk, &spec) {
+        Err(e) => assert!(e.to_string().contains("arc"), "{e}"),
+        Ok(r) => {
+            s.param_set("r", &v(25.0)).unwrap();
+            let dim = &s.sketch_detail(sk).unwrap().constraints[r.index.unwrap()];
+            assert_close(dim.value.unwrap(), 25.0, 1e-6, "reference radius after r = 25");
+        }
+    }
+}
