@@ -27,6 +27,14 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - `param_set` refuses the names `pi`, `tau`, `e`: QymCAD reads them as constants (F-3A-1).
 - Sketches are solved until they settle (one QymCAD solve can stop short, F-3A-2).
+- A parameter edit that leaves a sketch unsolved is refused and rolled back (was committed silently).
+- Parametric arc ends and polygon rotations are arc-length dimensions from a reference point, so they follow a
+  parameter across 90°/180° (QymCAD dimensions keep their side, F-3A-7) and settle in one GUI solve; this also
+  covers a parametric radius with a literal angle.
+- Removing a sketch entity keeps spline control points (F-3A-8).
+- A distance between two lines adds parallelism; reference radius/diameter on arcs is refused (F-3A-9).
+- Rect and circle add only independent dimensions (a circle centred on a dimensioned vertex was over-constrained).
+- `param_delete` works for an old parameter named `pi`/`tau`/`e`; `sketch_add` refuses an empty list.
 
 ### Security
 - File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to

@@ -50,14 +50,17 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 
 New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
 radius, angles — and add each only if it removes a degree of freedom (`add_constraint_if_independent`): a point
-shared with earlier geometry is not dimensioned twice, so the result is (0, 0) without redundancy. Exceptions,
-because QymCAD's solver/rank analysis needs them (FINDINGS F-3A-2, F-3A-3): parametric arcs and polygon rotations
-are pinned from their centre by `(r)*cos(a)` / `(r)*sin(a)` instead of angle dimensions, and the slot's tangencies
-are first-order perpendiculars. Every sketch edit is solved until it settles and must reach residual ≤ 1e-6.
+shared with earlier geometry is not dimensioned twice, so the result is (0, 0) without redundancy (rect and circle
+too). Exceptions, because QymCAD's solver/rank analysis needs them (FINDINGS F-3A-2, F-3A-3, F-3A-7): a parametric
+direction (arc end, polygon rotation) is an `ArcLength` from an `angle_reference` construction point on the +x side
+of the centre — QymCAD's only directed dimension, and one without the slow angle arms — and the slot's tangencies
+are first-order perpendiculars. Every sketch edit is solved until it settles and must reach residual ≤ 1e-6;
+`param_set` rolls back an edit that leaves any sketch unsolved. Linear coordinate expressions cannot change sign
+(QymCAD dimensions keep their side); such an edit is refused.
 
 `sketch_constrain` resolves ids to points/lines/circles (plus `origin`, `x_axis`, `y_axis`), builds the QymCAD
 constraint, and compares `sketch_dof` before/after: more redundancy → refused (a satisfied, fully implied geometric
-constraint is just not added); then it must solve. `sketch_edit` wraps sketch tools: on success, features that
+constraint is just not added); then it must solve. A distance between two lines adds `Parallel` with it. `sketch_edit` wraps sketch tools: on success, features that
 read the sketch are rebuilt; a newly failing feature rolls the edit back.
 
 ## MCP layer (`crates/mcp/src`)

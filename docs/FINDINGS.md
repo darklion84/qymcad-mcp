@@ -207,12 +207,14 @@ Conventions:
     only) converges in one call. Replacing the angles by coordinate dimensions: residual 8e-16 after one call.
   - source: `crates/qymcad-core/src/solver.rs` (~231-275, `angle_arms`).
   - test: `crates/engine/tests/golden_sketch.rs` `sector_gui_radius_edit_rebuilds`,
-    `hexagon_gui_radius_edit_with_rotation`; `sketch_behaviour.rs` `a_dimension_moves_free_geometry`.
+    `hexagon_gui_radius_edit_with_rotation`, `hexagon_parametric_radius_literal_angle_gui`; `sketch_behaviour.rs`
+    `a_dimension_moves_free_geometry`.
 - **How we handle it:** the engine re-solves until the residual stops dropping (`solve_settled`, ≤ 200 calls).
-  Parametric arcs and parametric polygon rotations are dimensioned from the centre by `(r)*cos(a)` / `(r)*sin(a)`
-  coordinate distances instead of angle dimensions, so a GUI edit settles in one solve. Plain-number arcs keep
-  radius + angle dimensions (friendlier to edit by hand). Angle dimensions added with `sketch_constrain` and driven
-  by a parameter may still land slightly off after a GUI edit — not measured in the app.
+  When the radius or the angle of an arc end or a polygon rotation is parametric, the direction is an `ArcLength`
+  from a reference point instead of an angle dimension (F-3A-7): no arms, so a GUI edit settles in one solve.
+  Plain-number arcs/rotations keep radius + angle dimensions (friendlier to edit by hand; only a hand edit in the
+  app can change them). Angle dimensions added with `sketch_constrain` and driven by a parameter may still land
+  slightly off after a GUI edit — not measured in the app.
 
 ## F-3A-3 A tangency at its own contact point is invisible to the rank analysis (QymCAD's slot reports 4 + 4)
 
@@ -237,13 +239,18 @@ Conventions:
 - **Version:** v0.1.0-dev.20261001
 - **What:** `add_line_entity` (and rect/arc/slot/polygon vertices) reuse any existing non-system point within
   1e-6 (`sketch_point_at`), so a polyline end and an arc end at the same coordinates become one point; the frame
-  (origin, anchor, axis guides) is never adopted. Circle/arc/polygon/slot centres always get a node of their own
-  (`radius_center_at`). `add_arc_entity` and `add_slot_entity` return `()` (new entities are found by diffing
+  (origin, anchor, axis guides) is never adopted. A circle/arc/polygon/slot centre (`radius_center_at`) also reuses
+  an ordinary point there — a circle centred on a polyline vertex takes the vertex as its centre — and gets a node
+  of its own only when the point found is already some curve's centre (one radius variable per centre). An entity
+  may therefore share points that earlier geometry already dimensions. `add_arc_entity` and `add_slot_entity` return `()` (new entities are found by diffing
   `entities`; the slot pushes side, arc around c2, side, arc around c1). `add_polygon_param` adds a construction
   circle, `PointOnCircle` per vertex, n−1 `Equal` and a radius `Diameter` without expression: 3 dof left (centre,
   rotation).
-- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` (~3043-3105, 3141-3265); test: `golden_sketch.rs`
-  `three_lines_close_a_triangle`, `arc_joins_a_polyline_into_a_tombstone`.
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` (~3043-3105, `radius_center_at` ~3095, 3141-3265);
+  test: `golden_sketch.rs` `three_lines_close_a_triangle`, `arc_joins_a_polyline_into_a_tombstone`;
+  `sketch_behaviour.rs` `circles_on_a_vertex_share_or_get_their_centre`.
+- **How we handle it:** every entity, rect and circle included, adds its dimensions only when independent
+  (`add_constraint_if_independent`, F-3A-11), so a shared point is not dimensioned twice.
 
 ## F-3A-5 Signs and units of dimension values
 
@@ -254,8 +261,10 @@ Conventions:
 - **Evidence:** source: `crates/qymcad-core/src/solver.rs` (~1093-1128, 1166-1180), `crates/qymcad-core/src/model.rs`
   `eval_parameters` (~2412-2431). test: `golden_sketch.rs` `hexagon_rotation_follows_an_expression`,
   `sketch_entities_and_constraints_end_to_end` (protocol, point-to-axis distance).
-- **How we handle it:** angles are folded into (−180, 180] and their expressions rewritten (`-(a)`, `(a)-360`) so
-  they evaluate to the folded magnitude; point-line distances take their sign from the current geometry.
+- **How we handle it:** angle dimensions are used only for plain numbers (folded into 0..180, the side from the
+  geometry; 0/180 become horizontal and ±90 vertical constraints); parametric directions use `ArcLength` (F-3A-7).
+  Point-line distances take their sign from the current geometry. (An earlier `angle_expr` that rewrote angle
+  expressions was never reached and has been removed.)
 
 ## F-3A-6 A sketch edit does not rebuild the features built from it
 
@@ -266,3 +275,71 @@ Conventions:
   `editing_a_sketch_rebuilds_its_features`.
 - **How we handle it:** `Session::sketch_edit` rebuilds when the sketch has dependents and rolls the edit back if a
   feature that built before now fails; the sketch tools use it.
+
+## F-3A-7 Dimensions keep their side: a coordinate expression cannot change sign; arc length is directed
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** an axis `Distance` measures `|Δ|` (residual `|Δ| − d`), and `eval_parameters` writes `d = expr` as is, so
+  an expression that turns negative can never be met. `DistancePL` is re-signed as `±|expr|` with the stored sign,
+  so it keeps its side whatever the expression does. The solver's side flip (mirror a point and re-solve) fires only
+  for a violated axis dimension, never for a negative `d`. So a point dimensioned `t-20` cannot cross the axis when
+  `t` goes 10 → 30, and `r*cos(rot)` breaks when `rot` crosses 90°, in the app as well. The exception is
+  `ArcLength`: `R·θ` with θ the counter-clockwise sweep from `a` to `b` in [0, 2π), so it gives a direction over a
+  whole turn.
+- **Evidence:**
+  - source: `crates/qymcad-core/src/solver.rs` (~988-1013 axis residual, 41-114 side flip, 1156-1165 arc length),
+    `crates/qymcad-core/src/model.rs` `eval_parameters` (~2416 Distance, ~2425 DistancePL, ~2436 ArcLength).
+  - observed before the fix: hexagon rot 30° → 120°: first vertex stayed at x = 4.99 (expected 0.0), GUI volume
+    506.8 instead of 779.4; sector a1 120° → 240°: 300π instead of 700π on both paths; square at x = `t-20`,
+    t 10 → 30: committed as a least-squares compromise centred at 0.
+  - test: `golden_sketch.rs` `hexagon_rotation_crosses_90_degrees(_gui)`, `sector_end_angle_crosses_180_degrees(_gui)`,
+    `a_coordinate_that_would_cross_zero_is_refused`, `a_coordinate_crosses_zero` (ignored: not supported).
+- **How we handle it:** parametric directions (arc ends, polygon rotation) are `ArcLength` dimensions from a
+  construction point on the +x side of the centre (`Horizontal` + `PointOnCircle`, role `angle_reference` in
+  `sketch_info`), `len = (r)*(a)*pi/180`, valid while the angle stays in the turn it was created in ([0°, 360°)
+  for 0..359°). Linear coordinates still cannot cross zero: `param_set` refuses such an edit and rolls back
+  (F-3A-2 settled solve + residual check); in the app the sketch would not solve. Design decision pending.
+
+## F-3A-8 Deleting an entity drops every spline's control points
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `delete_entities` keeps only points used by entities, the frame and midpoints; spline control points
+  are none of these, so removing any entity removes them (and the splines are left pointing at missing points).
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `delete_entities` (~665-708); observed: "spline
+  control point 4 was dropped"; test: `sketch_behaviour.rs` `removing_an_entity_keeps_splines`.
+- **How we handle it:** `sketch_remove_entity` marks spline points as midpoints of themselves for the call (a
+  protected kind) and removes the markers after.
+
+## F-3A-9 Reference radius/diameter dimensions are refreshed from circles only
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `update_driven_dims` takes radii from `Circle` entities; a reference radius on an arc keeps its creation
+  value (20 after the arc's radius became 25).
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `update_driven_dims` (~2641-2650, 2681-2685);
+  test: `sketch_behaviour.rs` `a_reference_radius_on_an_arc_does_not_go_stale`.
+- **How we handle it:** `sketch_constrain` refuses reference radius/diameter dimensions on arcs.
+
+## F-3A-10 Reference (driven) dimensions take no part in solving or counting
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `is_driven()` constraints are filtered out before `solver::dof` (`sketch_dof`), before the solve
+  (`solve_sketch_inner`) and in `add_constraint_if_independent`; their values are rewritten from the geometry after
+  each solve (`update_driven_dims`). Adding one never changes dof or redundancy.
+- **Evidence:** source: `crates/qymcad-core/src/model.rs` `is_driven` (~1113), `crates/qymcad-core/src/model/sketch.rs`
+  `sketch_dof` (~292-298), `add_constraint_if_independent` (~355-371), `solve_sketch_inner` (~2506-2515); test:
+  `sketch_behaviour.rs` `a_conflicting_dimension_is_refused_and_rolled_back` (reference part: dof stays (0, 0)).
+- **How we rely on it:** `sketch_constrain` skips the over-constraint check for reference dimensions.
+
+## F-3A-11 Independence is the rank of a numeric Jacobian at the current geometry
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `add_constraint_if_independent` (and `sketch_dof`) compute the rank of a forward-difference Jacobian
+  (`h = 1e-6`) of all non-driven constraints plus the entity intrinsics, at the current coordinates. A constraint is
+  added only if the dof drops. It is local: a constraint that holds only after a large move, or a second-order one
+  (F-3A-3), is judged by the current configuration; satisfaction is not checked.
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `add_constraint_if_independent` (~355-371),
+  `crates/qymcad-core/src/solver.rs` `dof` (~1217-1257); test: `golden_sketch.rs` `three_lines_close_a_triangle`,
+  `sketch_behaviour.rs` `circles_on_a_vertex_share_or_get_their_centre`, `an_implied_constraint_is_not_added`.
+- **How we rely on it:** entity dimensions are filtered through it; `sketch_constrain` compares `sketch_dof` before
+  and after (more redundancy = refused; a fully implied geometric constraint is checked for satisfaction by its own
+  residual before being skipped) and still requires the solve to reach residual ≤ 1e-6.
