@@ -180,3 +180,99 @@ Conventions:
   startup check searches the executable for `v<x.y.z>-dev.<8 digits>`.
 - **Evidence:** observed: `plutil -p ~/Applications/QymCAD.app/Contents/Info.plist`; `strings` on
   `Contents/MacOS/qymcad`.
+
+## F-3B-1 A reopened document has no edges (and, without the app's restore, no faces) until bodies rebuild
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `regen_faces` / `regen_edges` are derived and not saved. QymCAD.app's `finish_project_load` puts the
+  faces stored in `Body.faces` back into `regen_faces`, but nothing restores `regen_edges`: they are copied only
+  in the post pass of a regenerate, for the bodies rebuilt in that pass. A headless `load_project_with_brep` has
+  neither. Everything that reads topology (face/edge selections, sketches on faces) sees an empty body.
+- **Evidence:**
+  - observed: `topology` right after `Session::open` found no faces for the current body (probe, 2026-10-04).
+  - source: `crates/qymcad/src/gui/io_jobs.rs` `finish_project_load` (~131-137, faces restored, edges not);
+    `crates/qymcad-core/src/model/regen.rs` (~1265-1276, edges copied for `report.built` only).
+  - test: `crates/engine/tests/golden_features.rs` `topology_is_available_after_open`,
+    `hole_diameter_follows_its_parameter` (reopen, then edit).
+- **How we handle it:** `Session::open` restores `regen_faces` from `Body.faces` exactly like the app
+  (`session::restore_faces`; `tests/common::gui_edit_param` does the same so the GUI-path tests stay faithful).
+  `topology`, `select` and every 3B feature call `Session::ensure_topology`, which rebuilds everything once when
+  a current body lacks faces or edges.
+
+## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a fillet/chamfer whose edges are a descriptive `refs::Ref` (`add_fillet_ref`) resolves it against
+  `regen_edges` of its source. When the source was not rebuilt earlier (a reopened document, F-3B-1, then an edit
+  of the fillet's own parameter), the pool is empty, the query yields nothing, and for a query without explicit
+  descriptors (`Adjacent(OfFeature ..)`, `Oriented`, `Extreme` ...) the empty list reaches the kernel as "every
+  edge" (F-3B-3). The node stays green. A full rebuild right after opening does the same, because edges are only
+  copied in the post pass. Pick lists (`add_fillet(ids)`) are resolved against the kernel's live edges instead
+  (`live_edge_refs`) and are unaffected.
+- **Evidence:**
+  - test: `golden_features.rs` `stored_edge_query_rounds_everything_after_reopen_upstream_bug`: a cylinder with a
+    rim fillet stored as `Adjacent(OfFeature(cap end))`, reopened through the GUI path, radius 2 -> 4: both rims
+    rounded (removed 2 x 412.2 mm³). The test asserts the bug; when it fails, QymCAD fixed it.
+  - observed: a block with an `Oriented`-query fillet on the 4 vertical edges, reopened and fully rebuilt, had 26
+    faces (all 12 edges rounded) instead of 10.
+  - source: `regen.rs` `prep_fillet` (~1317-1380), `live_fillet_edges` (~2614-2632).
+- **How we handle it:** `fillet` and `chamfer` resolve the agent's selection (ids or description) at creation
+  and store a pick list of persistent edge names. Those survive upstream edits that keep the faces' recipes
+  (test `descriptive_fillet_survives_an_upstream_edit`, through the server and the GUI path) and QymCAD warns
+  `EdgesDropped` when some vanish. Face selections (hole, shell, push face) are stored as queries: the app restores
+  faces on open, so they keep working (test `hole_diameter_follows_its_parameter`). Edge queries that *grow* with
+  the topology are therefore not available until this is fixed upstream.
+
+## F-3B-3 An empty edge list means "every edge"
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** fillet/chamfer with an empty edge list round/bevel the whole body. A pick list that lost all its
+  edges is refused (`EdgesNotFound`), but a descriptive query that resolves to nothing is passed on as empty.
+- **Evidence:** source: `regen.rs` `prep_fillet` / `prep_chamfer` (`asked_edges` is computed from
+  `picked_descs()`, empty for descriptive queries); consequence observed in F-3B-2.
+- **How we handle it:** a selection that resolves to no edge is refused at creation (test
+  `stale_and_foreign_ids_are_clear_errors`); edges are stored as pick lists (F-3B-2).
+
+## F-3B-4 Revolve: axis and direction
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `RevolveAxis { axis: 0 = sketch x, 1 = sketch y; datum; line }`; a sketch line wins over a datum axis,
+  which wins over x/y. `Reach::Forward` sweeps `[0, angle]` by the right-hand rule about the axis direction (a
+  profile at +X on XY revolved 180° about sketch y lands at z <= 0); `Backward` starts at `-angle`; `BothWays` at
+  `-angle/2`. With a body `src`, `add_revolve_multi_op` joins (1), cuts (0) or intersects (2) in one node.
+- **Evidence:** test: `golden_features.rs` `revolve_direction` (bbox z per direction), `revolve_tube_angles_and_axes`,
+  `revolve_cut_groove`; source: `regen.rs` `prep_revolve` (~2505-2560), `revolve_axis_local` (~2463).
+- **How we handle it:** world axes and `{origin, dir}` become manual datum axes; world Z needs one too for a
+  revolve (datum 0 means "none").
+
+## F-3B-5 Arrays copy the whole body; circular step is 360/count or angle/count
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** linear/circular arrays and mirror take a source *body* and produce one body holding all copies (a
+  mirror with `keep` fuses both halves). Circular step: `360/count` when `|angle| >= 359.9`, otherwise
+  `angle/count` (3 copies over 90° stand at 0/30/60°). Counts are feature dimensions (`count`, `count2`), so a
+  parameter can drive them; steps are `dx dy dz dx2 dy2 dz2`.
+- **Evidence:** test: `golden_features.rs` `circular_arrays_of_a_boss`, `linear_arrays_of_a_boss` (count from a
+  parameter), `mirror_keeps_or_replaces`; source: `regen.rs` `prep_circulararray` (~2266-2290),
+  `prep_lineararray` (~2229).
+
+## F-3B-6 Hole tool details
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a flat-bottomed cylinder along −normal from `at` projected onto the face; `depth` includes the
+  counterbore/countersink; a countersink is a cone from `dia2` at the face to `diameter` over `depth2`. If
+  `dia2 <= diameter` or `depth2 <= 0` the step is silently omitted (a plain hole). The position is stored as
+  numbers (no feature dimension); there is no "through" flag.
+- **Evidence:** test: `golden_features.rs` `holes_*`; source: `crates/qymcad-kernel/src/occt_io.cpp`
+  `make_hole_tool` (~128-142), `regen.rs` `prep_hole` (~2064-2110).
+- **How we handle it:** the engine refuses a step that would be omitted; `through` is a depth longer than the
+  body's bbox diagonal at creation.
+
+## F-3B-7 Seam edges and planar normals
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a cylindrical face's closing line is an edge whose `edge_face_pairs` entry names the same face twice;
+  descriptions such as "along z" include it, but fillet/chamfer ignore it. `MeshFace.normal` of a planar face is
+  outward. A fillet larger than the geometry fails with a node error ("fillet R15.00 only works edge by edge").
+- **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
+  them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.

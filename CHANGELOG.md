@@ -16,7 +16,13 @@ All notable changes to this project are documented here. The format follows
   `doc_save`, `doc_info`, `param_set`, `param_delete`, `sketch_create`, `sketch_add` (rect, circle),
   `sketch_info`, `plane_offset`, `extrude`; agent instructions; installed QymCAD.app release check (F-018);
   `--dump-tools` generating docs/TOOLS.md; protocol tests.
-
+- Topology and finishing features (phase 3B). Engine: `topology` (face/edge kinds, geometry, adjacency, seams),
+  selections (ids or descriptions mapped onto QymCAD's `refs::Query`) with `select`, `revolve` (sketch/world/datum/
+  face axes, add/cut/intersect/new body), `fillet`, `chamfer` (symmetric or two distances), `hole` (plain/
+  counterbore/countersink, blind or through), `shell`, `push_face`, `linear_array`, `circular_array`, `mirror`; all
+  atomic, every dimension may be an expression. `Session::open` restores faces like the app. MCP tools of the same
+  names. Golden tests with hand-computed volumes, GUI-path tests, protocol tests. FINDINGS F-3B-1..F-3B-7
+  (notably: stored edge queries break after reopening, so edges are stored as pick lists).
 ### Security
 - File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to
   `QYMCAD_MCP_ROOT` (docs/SECURITY.md).
