@@ -58,6 +58,7 @@ impl Session {
         let qymcad_io::LoadedProject { mut project, breps } =
             qymcad_io::load_project_with_brep(s).map_err(|e| Error::Io(format!("cannot open {s}: {e}")))?;
         project.ensure_document();
+        restore_faces(&mut project);
         let shapes: HashMap<Id, Shape> = {
             let _gate = qymcad_kernel::kernel_gate();
             breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
@@ -223,5 +224,16 @@ impl Session {
 
     fn issue(&self, node: Id, message: String) -> NodeIssue {
         NodeIssue { node, name: self.node_name(node), message }
+    }
+}
+
+/// Like QymCAD.app's `finish_project_load`: the B-rep faces stored in the bodies go back into `regen_faces`, so
+/// face references resolve by id without a rebuild. Edges are NOT restored by the app either (F-3B-1).
+pub(crate) fn restore_faces(p: &mut Project) {
+    for i in 0..p.bodies.len() {
+        if let (Some(body), false) = (p.mesh_id(i), p.bodies[i].faces.is_empty()) {
+            let faces = p.bodies[i].faces.clone();
+            p.regen_faces.insert(body, faces);
+        }
     }
 }

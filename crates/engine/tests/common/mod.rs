@@ -18,11 +18,18 @@ pub fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
 
 /// Reproduce what QymCAD.app (v0.1.0-dev.20261001) does when a person opens `path`, edits parameter `name` in
 /// the Parameters window and the model rebuilds:
-/// `spawn_project_load` -> `finish_project_load` (`settle_params_seen`) -> `apply_param_edit` -> `spawn_regen`
+/// `spawn_project_load` -> `finish_project_load` (`settle_params_seen`, faces back into `regen_faces`) -> `apply_param_edit` -> `spawn_regen`
 /// (`mark_changed_params_dirty`). Returns the volume of the final body. See FINDINGS F-001.
 pub fn gui_edit_param(path: &std::path::Path, name: &str, expr: &str) -> f64 {
     let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     project.ensure_document();
+    // finish_project_load: faces stored in the bodies go back into `regen_faces` (edges are not restored).
+    for i in 0..project.bodies.len() {
+        if let (Some(body), false) = (project.mesh_id(i), project.bodies[i].faces.is_empty()) {
+            let faces = project.bodies[i].faces.clone();
+            project.regen_faces.insert(body, faces);
+        }
+    }
     let shapes: HashMap<Id, qymcad_kernel::Shape> = {
         let _g = qymcad_kernel::kernel_gate();
         breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect()
