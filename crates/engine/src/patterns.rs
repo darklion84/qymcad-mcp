@@ -41,8 +41,9 @@ pub enum AxisRef {
     Datum(Id),
     /// A fixed axis through `origin` along `dir` (creates a datum axis).
     Through { origin: [f64; 3], dir: [f64; 3] },
-    /// The axis of a cylindrical or conical face (creates a datum axis that follows the face).
-    FaceAxis { body: Id, face: u32 },
+    /// The axis of a cylindrical or conical face (creates a datum axis that follows the face). `body` defaults
+    /// to the current body of the active part.
+    FaceAxis { body: Option<Id>, face: u32 },
 }
 
 impl Session {
@@ -62,6 +63,10 @@ impl Session {
                 self.p.add_datum_axis(DatumAxis::manual("axis", *origin, *dir))
             }
             AxisRef::FaceAxis { body, face } => {
+                let body = &match body {
+                    Some(b) => *b,
+                    None => self.tip_body().ok_or_else(|| Error::Invalid("the part has no body yet".into()))?,
+                };
                 let ok = self.p.regen_faces.get(body).is_some_and(|fs| fs.iter().any(|f| f.id == *face));
                 if !ok {
                     return Err(Error::NotFound(format!("face {face} of body {body} (re-read topology after each feature)")));

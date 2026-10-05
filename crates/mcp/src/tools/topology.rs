@@ -237,13 +237,8 @@ impl AxisArg {
             AxisArg::Line(l) => AxisRef::Line(*l),
             AxisArg::Datum(d) => AxisRef::Datum(*d),
             AxisArg::Through { origin, dir } => AxisRef::Through { origin: *origin, dir: *dir },
-            AxisArg::Face { face, body } => {
-                let body = match body {
-                    Some(b) => b.resolve(s)?,
-                    None => s.result_bodies().last().map(|b| b.id).ok_or("the part has no body yet")?,
-                };
-                AxisRef::FaceAxis { body, face: *face }
-            }
+            // The default body is resolved by the engine (the current body of the active part).
+            AxisArg::Face { face, body } => AxisRef::FaceAxis { body: body.as_ref().map(|b| b.resolve(s)).transpose()?, face: *face },
         })
     }
 

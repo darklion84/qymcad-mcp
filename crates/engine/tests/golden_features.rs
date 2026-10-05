@@ -514,7 +514,8 @@ fn circular_arrays_of_a_boss() {
     let hub = cylinder(&mut s, 0.0, 0.0, 10.0.into(), 5.0.into(), Op::Add);
     let side = s.topology(Some(hub), false).unwrap().faces.iter().find(|f| f.kind == FaceKind::Cylinder).unwrap().id;
     cylinder(&mut s, 30.0, 0.0, 10.0.into(), 5.0.into(), Op::NewBody);
-    let (arr, r) = s.circular_array(None, &4.0.into(), &360.0.into(), Some(&AxisRef::FaceAxis { body: hub, face: side }), None).unwrap();
+    let (arr, r) =
+        s.circular_array(None, &4.0.into(), &360.0.into(), Some(&AxisRef::FaceAxis { body: Some(hub), face: side }), None).unwrap();
     let v = r.bodies.iter().find(|b| b.id == arr).unwrap().volume;
     assert_close(v, 4.0 * boss, 1e-3, "4 around the hub's axis");
 }
@@ -761,4 +762,50 @@ fn array_copies_are_bounded() {
     assert_close(volume(&s), 2.0 * boss, 1e-6, "geometry unchanged");
     s.param_set("k", &Num::Value(4.0)).unwrap();
     assert_close(volume(&s), 4.0 * boss, 1e-6, "k = 4 still fine");
+}
+
+/// Review #1: a face axis without a body means the face of the CURRENT body of the active part, like every
+/// other default — not the last result body of the document, which in a multi-part document can belong to
+/// another part.
+#[test]
+fn face_axis_default_body_is_the_current_body_of_the_active_part() {
+    // Part A (active): a Ø10 hub on the world Z axis. Part B, added after it: a 5 mm box.
+    let mut s = Session::new_part();
+    let hub = cylinder(&mut s, 0.0, 0.0, 10.0.into(), 30.0.into(), Op::Add);
+    let path = scratch("two_parts.qcad");
+    s.save(Some(&path)).unwrap();
+    {
+        let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+        let part_a = project.active_component;
+        let shapes = {
+            let _g = qymcad_kernel::kernel_gate();
+            breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
+        };
+        project.set_active_component(Some(project.root));
+        let part_b = project.add_part("B");
+        project.set_active_component(Some(part_b));
+        project.add_box(5.0, 5.0, 5.0);
+        let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        for (id, f) in report.built {
+            project.set_body_faces(id, f);
+        }
+        project.set_active_component(part_a);
+        let breps: Vec<_> = {
+            let _g = qymcad_kernel::kernel_gate();
+            shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
+        };
+        qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    }
+    let (mut s, _) = Session::open(&path).unwrap();
+    let last = s.result_bodies().last().unwrap().id;
+    assert_ne!(last, hub, "setup: the document's last result body is part B's box");
+    let side = s.topology(None, false).unwrap().faces.iter().find(|f| f.kind == FaceKind::Cylinder).unwrap().id;
+    // A tube revolved about the hub's axis, the axis given by the face alone.
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XZ), None).unwrap();
+    s.sketch_rect(sk, &15.0.into(), &15.0.into(), &10.0.into(), &30.0.into(), false).unwrap();
+    let axis = AxisRef::FaceAxis { body: None, face: side };
+    let (tube, r) = s.revolve(&revolve(sk, axis, 360.0.into(), Direction::Normal, Op::NewBody)).unwrap();
+    let v = r.bodies.iter().find(|b| b.id == tube).unwrap().volume;
+    assert_close(v, PI * (400.0 - 100.0) * 30.0, 0.5, "tube about the hub's axis");
 }
