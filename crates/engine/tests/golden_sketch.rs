@@ -298,7 +298,7 @@ fn arc_joins_a_polyline_into_a_tombstone() {
     assert_close(volume(&r), tomb_area(24.0, 10.0) * 2.0, 1e-3, "hh=10");
 }
 
-/// A circular sector: radius r between angles a0 and a1, area r²·(a1 − a0)/2.
+/// A circular sector: radius r between angles a0 and a1 (degrees), area r²·θ/2 with θ = (a1 − a0) in radians.
 fn sector() -> (Session, Id) {
     let (mut s, sk) = part(&[("r", 20.0), ("a0", 30.0), ("a1", 120.0)]);
     s.sketch_arc(
@@ -496,4 +496,11 @@ fn hexagon_parametric_radius_literal_angle_gui() {
     let (vol, bb) = gui_edit_param_body(&path, "r", "20");
     assert_close(vol, hex_area(20.0) * 3.0, 1e-3, "GUI r=20");
     assert_close(bb[3] - bb[0], 20.0 * 3f64.sqrt(), 0.05, "GUI x extent across flats");
+}
+
+#[test]
+fn the_angle_reference_point_is_labelled() {
+    let (s, sk) = sector();
+    let d = s.sketch_detail(sk).unwrap();
+    assert_eq!(d.points.iter().filter(|p| p.role == Some("angle_reference")).count(), 1, "{:?}", d.points);
 }

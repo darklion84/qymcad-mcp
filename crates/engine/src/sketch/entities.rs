@@ -4,7 +4,8 @@
 //! the GUI) and then, unless `dimensioned` is false, fixed by driving dimensions built from the given values and
 //! expressions. Candidate dimensions are added only when they remove a degree of freedom
 //! (`Session::add_independent`): a point shared with earlier geometry, or determined by the entity's own
-//! constraints, is not dimensioned twice. The result reports the sketch's remaining degrees of freedom.
+//! constraints, is not dimensioned twice. The result lists the new entity and point ids; the sketch's remaining
+//! degrees of freedom come from `sketch_info` / `sketch_dof`.
 
 use super::purpose;
 use crate::error::{Error, Result};
@@ -374,7 +375,9 @@ impl Session {
             None if g.dimensioned => {
                 // The vertex sets the size: the tool's own radius dimension would make its pin redundant.
                 self.p.sketches[si].constraints.remove(ri);
-                let Some(Xy(x, y)) = &g.vertex else { unreachable!("vertex form") };
+                let Some(Xy(x, y)) = &g.vertex else {
+                    return Err(Error::Invalid("give either `r` (and optionally `angle`) or `vertex`".into()));
+                };
                 let mut dims: Vec<Constraint> = self.pin_dims(si, center, &g.cx, c.0, &g.cy, c.1).into();
                 dims.extend(self.pin_dims(si, v0, x, v.0, y, v.1));
                 self.add_independent(si, dims);
@@ -469,8 +472,18 @@ impl Session {
     /// the zero of the arc-length dimensions that give directions from that centre. One per centre.
     fn angle_reference(&mut self, si: usize, center: Id, r: f64) -> Id {
         let s = &self.p.sketches[si];
+        let on_entity = |p: Id| {
+            s.entities.iter().any(|e| match e.kind {
+                EntityKind::Line { a, b } => a == p || b == p,
+                EntityKind::Arc { center, a, b, .. } => center == p || a == p || b == p,
+                EntityKind::Circle { center, .. } => center == p,
+                EntityKind::Ellipse { c, ma, mi } => c == p || ma == p || mi == p,
+            })
+        };
         let existing = s.constraints.iter().find_map(|c| match *c {
-            Constraint::ArcLength { c, a, .. } if c == center => Some(a),
+            Constraint::Horizontal { a, b } if a == center && !on_entity(b) => {
+                s.constraints.iter().any(|k| matches!(*k, Constraint::PointOnCircle { p, c } if p == b && c == center)).then_some(b)
+            }
             _ => None,
         });
         if let Some(id) = existing {

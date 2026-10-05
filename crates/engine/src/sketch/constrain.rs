@@ -27,8 +27,11 @@ pub enum SketchRef {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FrameRef {
+    /// The sketch origin (0, 0), a point.
     Origin,
+    /// The x axis, a line through the origin.
     XAxis,
+    /// The y axis, a line through the origin.
     YAxis,
 }
 
@@ -405,7 +408,8 @@ impl Session {
             }
             (K::Diameter | K::Radius, [G::Curve { center, r }]) => {
                 let diam = kind == K::Diameter;
-                let is_circle = self.p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Circle { center: c, .. } if c == *center));
+                let is_circle =
+                    self.p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Circle { center: c, .. } if c == *center));
                 if driven && !is_circle {
                     // QymCAD refreshes reference radii from circles only: on an arc the value would go stale, in
                     // the app as well (FINDINGS F-3A-9).

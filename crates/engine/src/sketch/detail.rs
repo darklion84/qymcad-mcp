@@ -12,7 +12,8 @@ pub struct PointInfo {
     pub id: Id,
     pub x: f64,
     pub y: f64,
-    /// Frame points: `origin` (0,0), `frame` (the axes' anchor at 0,0), `x_axis` (1,0), `y_axis` (0,1).
+    /// Frame points: `origin` (0,0), `frame` (the axes' anchor at 0,0), `x_axis` (1,0), `y_axis` (0,1);
+    /// `angle_reference`: a construction point on the +x side of a centre, the zero of its direction dimensions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<&'static str>,
 }
@@ -87,11 +88,20 @@ impl Session {
                 EntityInfo { id: e.id, kind, points, r, ccw, construction: e.construction }
             })
             .collect();
+        let angle_refs: Vec<Id> = s
+            .constraints
+            .iter()
+            .filter_map(|c| match *c {
+                Constraint::ArcLength { a, .. } if !s.entities.iter().any(|e| entity_uses(&e.kind, a)) => Some(a),
+                _ => None,
+            })
+            .collect();
         let role = |id: Id| match id {
             _ if id == s.origin => Some("origin"),
             _ if id == s.frame => Some("frame"),
             _ if id == s.axis_pts[0] => Some("x_axis"),
             _ if id == s.axis_pts[1] => Some("y_axis"),
+            _ if angle_refs.contains(&id) => Some("angle_reference"),
             _ => None,
         };
         let points = s.points.iter().map(|p| PointInfo { id: p.id, x: p.x, y: p.y, role: role(p.id) }).collect();
@@ -137,4 +147,13 @@ fn snake(s: &str) -> String {
         out.extend(ch.to_lowercase());
     }
     out
+}
+
+fn entity_uses(k: &EntityKind, p: Id) -> bool {
+    match *k {
+        EntityKind::Line { a, b } => a == p || b == p,
+        EntityKind::Arc { center, a, b, .. } => center == p || a == p || b == p,
+        EntityKind::Circle { center, .. } => center == p,
+        EntityKind::Ellipse { c, ma, mi } => c == p || ma == p || mi == p,
+    }
 }
