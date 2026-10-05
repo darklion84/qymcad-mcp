@@ -17,7 +17,10 @@ pub use info::{DocInfo, NodeInfo};
 pub use params::ParamInfo;
 pub use qymcad_core::model::Id;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
-pub use sketch::{BaseName, ContourInfo, PlaneRef, SketchInfo};
+pub use sketch::{
+    Added, ArcSpec, BaseName, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, DistAxis, EntityInfo, FrameRef,
+    LineSpec, PlaneRef, PointInfo, PolygonSpec, PolylineSpec, SketchDetail, SketchInfo, SketchRef, SlotSpec, Xy,
+};
 pub use value::Num;
 
 /// The QymCAD release this engine is built against. Must match the tag in the workspace Cargo.toml.

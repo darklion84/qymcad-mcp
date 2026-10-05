@@ -96,7 +96,7 @@ impl Session {
         self.p.eval_parameters();
         for si in 0..self.p.sketches.len() {
             if self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some()) {
-                self.p.solve_sketch(si);
+                self.solve_settled(si);
                 let sid = self.p.sketches[si].id;
                 self.p.mark_sketch_dirty(sid);
             }
@@ -113,6 +113,11 @@ impl Session {
 
 fn normalize_name(name: &str) -> Result<String> {
     let n = name.trim().to_lowercase();
+    // QymCAD resolves these constants before parameters, so a parameter with such a name is never read
+    // (FINDINGS F-3A-1).
+    if ["pi", "tau", "e"].contains(&n.as_str()) {
+        return Err(Error::Invalid(format!("`{name}` is a built-in constant in expressions; choose another parameter name")));
+    }
     qymcad_core::drivers::check_ident(&n).map_err(|e| {
         Error::Invalid(format!("`{name}` is not a valid parameter name ({e:?}); use letters, digits and _ starting with a letter"))
     })?;
