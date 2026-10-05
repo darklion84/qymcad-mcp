@@ -293,3 +293,16 @@ Conventions:
   before the fix); source: `crates/qymcad-core/src/model.rs` `edge_pool` (~2896), `refs.rs` `Query::Largest`.
 - **How we handle it:** for edge selections the engine replaces every `largest` with the ids of the longest edges
   by true length (as `topology` reports it) before resolving; edges are stored as pick lists anyway (F-3B-2).
+
+## F-3B-9 The expression evaluator has no recursion limit
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qymcad_core::expr::eval` is recursive descent (expr → term → power → unary → atom): each `(` costs
+  five frames, each unary sign and each `^` (right-recursive) one or two, with no depth or length cap. 100 000
+  `(` abort the process with a stack overflow. Parameters are evaluated by the same parser
+  (`eval_parameters`), so a file carrying such an expression would crash on open too.
+- **Evidence:** test: `crates/mcp/tests/protocol.rs` `a_pathological_expression_does_not_kill_the_server` (the
+  server died, EOF on stdout, before the gate); source: `crates/qymcad-core/src/expr.rs` (~131-234).
+- **How we handle it:** `value::check_expr` (≤ 1000 characters; ≤ 64 nested parentheses, `^`, consecutive signs)
+  runs in `Num::eval`, through which every feature and sketch dimension passes before it is stored, and in
+  `param_set`. Files are not checked on open (docs/SECURITY.md: open trusted files only).

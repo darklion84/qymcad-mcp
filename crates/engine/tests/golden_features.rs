@@ -655,3 +655,29 @@ fn largest_edge_is_the_longest_by_true_length() {
     assert_eq!(f.len(), 1);
     assert_eq!(t.faces.iter().find(|x| x.id == f[0]).unwrap().kind, FaceKind::Cylinder);
 }
+
+/// Review #27: QymCAD's expression parser recurses per '(' level, per unary sign and per '^'; an agent string
+/// deep enough overflows the stack and kills the server. Expressions are bounded in length and nesting before
+/// they reach it, for feature dimensions and for parameters alike. (Shallow over-limit strings here, so this
+/// test fails cleanly rather than crashing when the gate is missing.)
+#[test]
+fn over_deep_or_long_expressions_are_refused() {
+    let (mut s, _) = block(40.0, 30.0, 10.0);
+    let deep = format!("{}1{}", "(".repeat(65), ")".repeat(65));
+    let signs = format!("{}1", "-".repeat(65));
+    let carets = format!("1{}", "^1".repeat(65));
+    let long = format!("1{}", "+0".repeat(500));
+    for bad in [&deep, &signs, &carets, &long] {
+        let e = Num::Expr(bad.clone()).eval(&Default::default()).unwrap_err();
+        assert!(matches!(e, Error::Expr(_)), "eval {}: {e}", &bad[..20]);
+        let e = s.fillet(None, &along_z(), &n(bad), None).unwrap_err();
+        assert!(matches!(e, Error::Expr(_)), "fillet {}: {e}", &bad[..20]);
+        let e = s.param_set("x", &n(bad)).unwrap_err();
+        assert!(matches!(e, Error::Expr(_)), "param_set {}: {e}", &bad[..20]);
+    }
+    assert!(s.params().is_empty());
+    // At the limits it still works.
+    let ok = format!("{}1{}", "(".repeat(64), ")".repeat(64));
+    assert_eq!(Num::Expr(ok).eval(&Default::default()).unwrap(), 1.0);
+    assert_eq!(Num::Expr(format!("{}1", "-".repeat(64))).eval(&Default::default()).unwrap(), 1.0);
+}

@@ -318,3 +318,18 @@ fn revolve_shell_array_mirror() {
     let (is_err, msg) = c.tool("revolve", json!({ "sketch": "s", "axis": "W" }));
     assert!(is_err && msg.as_str().unwrap().contains("unknown axis"), "{msg}");
 }
+
+/// Review #27: an expression deep enough to overflow QymCAD's recursive parser must be refused, not crash the
+/// server: the process answers a ping afterwards.
+#[test]
+fn a_pathological_expression_does_not_kill_the_server() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let deep = format!("{}1{}", "(".repeat(100_000), ")".repeat(100_000));
+    let (is_err, msg) = c.tool("param_set", json!({ "name": "x", "value": deep }));
+    assert!(is_err && msg.as_str().unwrap().contains("expression error"), "{msg}");
+    let (is_err, msg) = c.tool("plane_offset", json!({ "base": "XY", "dist": format!("{}1", "-".repeat(100_000)) }));
+    assert!(is_err, "{msg}");
+    assert_eq!(c.request("ping", json!({}))["result"], json!({}));
+}

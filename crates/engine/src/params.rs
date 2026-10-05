@@ -23,9 +23,12 @@ impl Session {
     pub fn param_set(&mut self, name: &str, value: &Num) -> Result<Rebuild> {
         let name = normalize_name(name)?;
         let expr = match value {
+            Num::Value(v) if !v.is_finite() => return Err(Error::Expr(format!("number {v} is not finite"))),
             Num::Value(v) => format!("{v}"),
             Num::Expr(_) => value.expr().unwrap_or_default(),
         };
+        // QymCAD evaluates it (eval_parameters) with a recursive parser that has no depth cap.
+        crate::value::check_expr(&expr)?;
         let before = self.p.clone();
         match self.p.parameters.iter_mut().find(|q| q.name.eq_ignore_ascii_case(&name)) {
             Some(q) => {
