@@ -65,6 +65,7 @@ impl Session {
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
+        sess.restore_edges();
         sess.p.eval_parameters();
         if missing {
             sess.p.mark_all_dirty();
@@ -229,6 +230,28 @@ impl Session {
 
 /// Like QymCAD.app's `finish_project_load`: the B-rep faces stored in the bodies go back into `regen_faces`, so
 /// face references resolve by id without a rebuild. Edges are NOT restored by the app either (F-3B-1).
+impl Session {
+    /// Fill `regen_edges` for live bodies that lack them, from their B-reps, through the same `Kernel::edges` the
+    /// regenerate post pass uses (F-3B-1). Without it a stored edge query resolves against an empty pool and rounds
+    /// every edge (F-3B-2), on the first rebuild after opening.
+    pub(crate) fn restore_edges(&mut self) {
+        use qymcad_core::feature::Kernel;
+        let need: Vec<Id> = self.shapes.keys().copied().filter(|b| !self.p.regen_edges.contains_key(b)).collect();
+        if need.is_empty() {
+            return;
+        }
+        let _gate = qymcad_kernel::kernel_gate();
+        let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut self.shapes)), ..Default::default() };
+        for b in need {
+            let edges = kernel.edges(b);
+            if !edges.is_empty() {
+                self.p.regen_edges.insert(b, edges);
+            }
+        }
+        self.shapes = kernel.shapes.into_inner();
+    }
+}
+
 pub(crate) fn restore_faces(p: &mut Project) {
     for i in 0..p.bodies.len() {
         if let (Some(body), false) = (p.mesh_id(i), p.bodies[i].faces.is_empty()) {

@@ -258,6 +258,41 @@ fn stored_edge_query_rounds_everything_after_reopen_upstream_bug() {
     assert_close(v, PI * 400.0 * 10.0 - 2.0 * one_rim, 0.05, "both rims rounded (upstream bug)");
 }
 
+/// The server is immune to F-3B-2 on files it opens: `Session::open` restores the edge pool from the live B-reps, so
+/// inspecting a document with a stored edge query changes nothing, and editing the fillet's radius rounds one rim.
+#[test]
+fn stored_edge_query_is_safe_to_inspect_and_edit_after_open() {
+    use qymcad_core::feature::FeatureKind;
+    use qymcad_core::refs::{Query, Ref};
+    let mut s = Session::new_part();
+    s.param_set("r", &Num::Value(2.0)).unwrap();
+    let cyl = cylinder(&mut s, 0.0, 0.0, 40.0.into(), 10.0.into(), Op::Add);
+    let rim = Sel::EdgesOf(Box::new(Sel::OfFeature { feature: cyl, role: Some(Role::CapEnd) }));
+    let (fillet, _) = s.fillet(None, &rim, &n("r"), None).unwrap();
+    let path = scratch("stored_edge_query_open.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let node = project.timeline.iter_mut().find(|n| n.id == fillet).unwrap();
+    let FeatureKind::Fillet { edges, .. } = &mut node.kind else { panic!("not a fillet") };
+    let cap = Query::OfFeature { feature: cyl, role: Some(qymcad_core::names::Role::CapEnd) };
+    *edges = Ref::many(Query::Adjacent(Box::new(cap)));
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+
+    let one_rim_r2 = cylinder_rim_fillet(20.0, 10.0, 2.0);
+    let (mut o, r) = Session::open(&path).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_close(volume(&o), one_rim_r2, 0.05, "opened as saved");
+    o.topology(None, true).unwrap();
+    o.select(None, Element::Edges, &Sel::Ids(vec![])).ok();
+    assert_close(volume(&o), one_rim_r2, 0.05, "inspection does not change the geometry");
+    o.param_set("r", &Num::Value(4.0)).unwrap();
+    assert_close(volume(&o), cylinder_rim_fillet(20.0, 10.0, 4.0), 0.05, "radius edit rounds one rim");
+    // and straight after opening, without an inspection first
+    let (mut o, _) = Session::open(&path).unwrap();
+    o.param_set("r", &Num::Value(4.0)).unwrap();
+    assert_close(volume(&o), cylinder_rim_fillet(20.0, 10.0, 4.0), 0.05, "radius edit right after open");
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Revolve
 

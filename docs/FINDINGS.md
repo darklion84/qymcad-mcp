@@ -196,8 +196,10 @@ Conventions:
     `hole_diameter_follows_its_parameter` (reopen, then edit).
 - **How we handle it:** `Session::open` restores `regen_faces` from `Body.faces` exactly like the app
   (`session::restore_faces`; `tests/common::gui_edit_param` does the same so the GUI-path tests stay faithful).
-  `topology`, `select` and every 3B feature call `Session::ensure_topology`, which rebuilds everything once when
-  a current body lacks faces or edges.
+  It also restores `regen_edges` from the live B-reps through `Kernel::edges`, the call the regenerate post pass
+  makes (`Session::restore_edges`), so nothing is rebuilt to get edges. `topology`, `select` and every 3B feature
+  call `Session::ensure_topology`, which does the same and rebuilds everything once only when a current body has
+  no faces (a file saved without them).
 
 ## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
 
@@ -221,7 +223,11 @@ Conventions:
   (test `descriptive_fillet_survives_an_upstream_edit`, through the server and the GUI path) and QymCAD warns
   `EdgesDropped` when some vanish. Face selections (hole, shell, push face) are stored as queries: the app restores
   faces on open, so they keep working (test `hole_diameter_follows_its_parameter`). Edge queries that *grow* with
-  the topology are therefore not available until this is fixed upstream.
+  the topology are therefore not available until this is fixed upstream. Documents that already store edge queries
+  (made in the app) are safe in this server: the edges restored on open (F-3B-1) give the query its real pool, so
+  inspecting them changes nothing and a radius edit rounds the intended edges (test
+  `stored_edge_query_is_safe_to_inspect_and_edit_after_open`; before the fix, `topology` alone removed 105.5 mm³).
+  The app itself still shows the bug.
 
 ## F-3B-3 An empty edge list means "every edge"
 

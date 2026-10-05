@@ -420,9 +420,11 @@ impl Session {
         Ok(face_key(f))
     }
 
-    /// A document opened from a file has live B-reps but no edges (and, before `Session::open` restores them, no
-    /// faces) until its nodes rebuild (F-3B-1): rebuild everything once if a current body lacks them.
+    /// A document opened from a file has live B-reps but no edges, and no faces when the file did not store them
+    /// (F-3B-1). Edges come back from the B-reps (`restore_edges`, no rebuild, so stored edge queries keep their
+    /// meaning, F-3B-2); missing faces need one full rebuild.
     pub(crate) fn ensure_topology(&mut self) {
+        self.restore_edges();
         let consumed = self.p.consumed_bodies();
         let missing = self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).any(|b| {
             !consumed.contains(&b)
