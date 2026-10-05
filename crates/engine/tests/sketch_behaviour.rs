@@ -229,3 +229,34 @@ fn constant_names_are_not_parameters() {
         assert!(e.to_string().contains("built-in constant"), "{e}");
     }
 }
+
+/// Review #2: a parameter edit that leaves a sketch unsolvable is refused and rolled back. A line's angle to the
+/// x axis is driven by `a`; 200° is beyond what an angle between lines can be (0..180).
+#[test]
+fn a_parameter_edit_that_breaks_a_sketch_is_refused() {
+    let mut s = Session::new_part();
+    s.param_set("a", &v(45.0)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let l =
+        s.sketch_line(sk, &LineSpec { x1: v(0.0), y1: v(0.0), x2: v(10.0), y2: v(10.0), construction: false, dimensioned: false }).unwrap();
+    s.sketch_constrain(sk, &c(ConstraintKind::Angle, &[id(l.entities[0]), SketchRef::Frame(FrameRef::XAxis)], Some(n("a")))).unwrap();
+    let before = s.sketch_detail(sk).unwrap();
+    let e = s.param_set("a", &v(200.0)).unwrap_err();
+    assert!(e.to_string().contains("does not solve"), "{e}");
+    assert_eq!(s.params()[0].value, 45.0, "parameter restored");
+    assert_eq!(s.sketch_detail(sk).unwrap(), before, "sketch restored");
+}
+
+/// Review #9: a document written elsewhere may hold a parameter named `e`; it cannot be set, but it can be deleted.
+#[test]
+fn an_old_parameter_with_a_constant_name_can_be_deleted() {
+    let mut p = qymcad_core::model::Project::default();
+    p.new_document();
+    p.parameters.push(qymcad_core::model::Param { name: "e".into(), expr: "3".into(), value: 3.0 });
+    let path = scratch("param_e.qcad");
+    qymcad_io::save_project_guarded_with_brep(&p, path.to_str().unwrap(), &[]).unwrap();
+    let (mut s, _) = Session::open(&path).unwrap();
+    assert!(s.param_set("e", &v(4.0)).is_err());
+    s.param_delete("e").unwrap();
+    assert!(s.params().is_empty());
+}
