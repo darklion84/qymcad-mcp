@@ -260,3 +260,27 @@ fn an_old_parameter_with_a_constant_name_can_be_deleted() {
     s.param_delete("e").unwrap();
     assert!(s.params().is_empty());
 }
+
+/// Review #5: QymCAD's `delete_entities` keeps only points that entities use, so removing any entity used to drop
+/// the control points of every spline in the sketch. Removing a circle must leave a spline intact.
+#[test]
+fn removing_an_entity_keeps_splines() {
+    use qymcad_core::geom::Point2;
+    let mut p = qymcad_core::model::Project::default();
+    p.new_document();
+    let sid = p.add_sketch("S", vec![], None);
+    p.add_sketch_node(sid, "S".to_string());
+    let si = p.sketch_index(sid).unwrap();
+    let pts = vec![Point2::new(0.0, 0.0), Point2::new(10.0, 5.0), Point2::new(20.0, 0.0)];
+    p.add_spline(si, pts, qymcad_core::feature::Ends::Open, qymcad_core::feature::Purpose::Real);
+    let path = scratch("spline_keep.qcad");
+    qymcad_io::save_project_guarded_with_brep(&p, path.to_str().unwrap(), &[]).unwrap();
+    let (mut s, _) = Session::open(&path).unwrap();
+    let circle = s.sketch_circle(sid, &v(40.0), &v(0.0), &v(6.0), false).unwrap();
+    s.sketch_remove_entity(sid, circle).unwrap();
+    let sk = &s.project().sketches[si];
+    assert_eq!(sk.splines.len(), 1);
+    for id in &sk.splines[0].points {
+        assert!(sk.points.iter().any(|q| q.id == *id), "spline control point {id} was dropped");
+    }
+}

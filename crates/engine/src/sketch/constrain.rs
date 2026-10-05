@@ -190,7 +190,14 @@ impl Session {
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }
+            // `delete_entities` keeps only points that entities use (and the frame and midpoints), so it would drop
+            // every spline's control points (FINDINGS F-3A-8). Spline points are marked as midpoints of themselves
+            // for the call, which it protects, and the markers removed afterwards.
+            let marker = |p: Id| Constraint::Midpoint { p, a: p, b: p };
+            let spline_pts: Vec<Id> = s.p.sketches[si].splines.iter().flat_map(|sp| sp.points.iter().copied()).collect();
+            s.p.sketches[si].constraints.extend(spline_pts.iter().map(|&p| marker(p)));
             s.p.delete_entities(si, &[entity]);
+            s.p.sketches[si].constraints.retain(|c| !matches!(*c, Constraint::Midpoint { p, a, b } if p == a && a == b));
             s.prune_debris(si);
             s.finish_sketch_edit(si)
         })
