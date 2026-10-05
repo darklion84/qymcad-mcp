@@ -822,7 +822,8 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
       "default": 384,
       "description": "Image height in pixels, 64..=2048. Default 384.",
       "format": "uint32",
-      "minimum": 0,
+      "maximum": 2048,
+      "minimum": 64,
       "type": "integer"
     },
     "view": {
@@ -834,7 +835,8 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
       "default": 512,
       "description": "Image width in pixels, 64..=2048. Default 512.",
       "format": "uint32",
-      "minimum": 0,
+      "maximum": 2048,
+      "minimum": 64,
       "type": "integer"
     }
   },

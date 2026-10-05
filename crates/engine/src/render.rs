@@ -334,6 +334,13 @@ mod tests {
         // the edge on the margin line (7 px) is dark
         let e = px(7, 50);
         assert!(e.iter().all(|c| *c < 140), "outline at x=7: {e:?}");
+        // it spans the frame minus the margins (7..=92) on both axes, and nothing outside
+        for (x, y) in [(9, 50), (90, 50), (50, 9), (50, 90)] {
+            assert_ne!(px(x, y), RENDER_BACKGROUND, "inside at ({x}, {y})");
+        }
+        for (x, y) in [(4, 50), (95, 50), (50, 4), (50, 95)] {
+            assert_eq!(px(x, y), RENDER_BACKGROUND, "margin at ({x}, {y})");
+        }
         // a back-facing square is culled
         let back = Item {
             verts: vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 10.0, 0.0], [0.0, 10.0, 0.0]],

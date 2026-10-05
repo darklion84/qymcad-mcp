@@ -132,7 +132,7 @@ fn stl_mesh_matches_the_brep() {
 /// Ø4.5 holes draft/standard/high give the same mesh: the kernel's fixed 0.3 rad angular deflection decides on small
 /// radii (FINDINGS F-3C-3); only max refines them.
 #[test]
-fn quality_presets_change_the_tessellation() {
+fn finer_quality_never_loses_accuracy() {
     let (s, _, _) = build(false);
     let mut first: Option<usize> = None;
     let mut last: Option<(usize, f64)> = None;
@@ -151,7 +151,10 @@ fn quality_presets_change_the_tessellation() {
     }
     let (max_tris, max_err) = last.unwrap();
     assert!(max_tris > first.unwrap(), "max quality refines the holes: {max_tris} vs draft {first:?}");
-    assert!(max_err / PLATE < 1e-4, "max quality volume error {max_err}");
+    // Derived bound: the only curved faces are the four Ø4.5 × 6 holes. A chord with sagitta ≤ d cuts off a segment of
+    // area ≤ (2/3)·chord·d, so an inscribed polygon misses at most (2/3)·perimeter·d of each hole's section.
+    let bound = 4.0 * (2.0 / 3.0) * (2.0 * PI * 2.25) * Quality::Max.deflection() * 6.0;
+    assert!(max_err <= bound, "max quality volume error {max_err} mm³ exceeds the chord bound {bound}");
 }
 
 #[test]
@@ -193,14 +196,32 @@ fn glb_is_in_metres_with_y_up() {
 }
 
 #[test]
-fn obj_has_the_reported_triangles() {
+fn obj_is_the_same_solid_in_millimetres() {
     let (s, _, _) = build(false);
     let path = scratch("export.obj");
     let r = s.export(ExportFormat::Obj, &path, Quality::Draft, None).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
-    let faces = text.lines().filter(|l| l.starts_with("f ")).count();
-    assert_eq!(Some(faces), r.triangles);
-    assert!(text.lines().any(|l| l.starts_with("v ")));
+    let num = |w: &str| w.parse::<f64>().unwrap();
+    let verts: Vec<[f64; 3]> = text
+        .lines()
+        .filter_map(|l| l.strip_prefix("v "))
+        .map(|l| {
+            let w: Vec<&str> = l.split_whitespace().collect();
+            [num(w[0]), num(w[1]), num(w[2])]
+        })
+        .collect();
+    let tris: Vec<[[f64; 3]; 3]> = text
+        .lines()
+        .filter_map(|l| l.strip_prefix("f "))
+        .map(|l| {
+            let i: Vec<usize> = l.split_whitespace().map(|w| w.parse::<usize>().unwrap() - 1).collect();
+            [verts[i[0]], verts[i[1]], verts[i[2]]]
+        })
+        .collect();
+    assert_eq!(Some(tris.len()), r.triangles);
+    // millimetres, Z up, world placement: the same solid as the STL
+    assert_bbox(tri_bbox(&tris), PLATE_BBOX, 1e-3, "OBJ");
+    assert!((tri_volume(&tris) - PLATE).abs() / PLATE < 0.001, "OBJ volume {}", tri_volume(&tris));
 }
 
 #[test]
@@ -285,9 +306,10 @@ fn render_top_view_shows_the_plate_and_its_holes() {
     save_for_inspection("render_top.png", &r.png);
     let img = Img::decode(&r.png);
     assert_eq!((img.w, img.h), (512, 384));
-    assert!(img.coverage() > 0.4, "coverage {}", img.coverage());
     let [x0, y0, x1, y1] = img.covered();
     let (cw, ch) = ((x1 - x0 + 1) as f64, (y1 - y0 + 1) as f64);
+    // 60 × 40 into 512 × 384 is limited by the width: the plate spans the frame minus the 7 % margins
+    assert_close(cw, 0.86 * 512.0, 2.0, "plate width in pixels");
     assert_close(cw / ch, 1.5, 0.02, "aspect of the 60 × 40 plate from the top");
     // world (x, y) -> pixel; +Y is up in the image
     let at = |x: f64, y: f64| (x0 as f64 + (x + 30.0) / 60.0 * cw, y0 as f64 + (20.0 - y) / 40.0 * ch);
@@ -313,14 +335,21 @@ fn render_side_and_iso_views() {
     save_for_inspection("render_front.png", &front.png);
     let img = Img::decode(&front.png);
     let [x0, y0, x1, y1] = img.covered();
-    // from the front: plate x −30..30 plus block to x 55, height 6 → 85 × 6
-    let aspect = (x1 - x0 + 1) as f64 / (y1 - y0 + 1) as f64;
-    assert!((aspect - 85.0 / 6.0).abs() < 1.0, "front aspect {aspect}");
+    // from the front: plate x −30..30 and block x 45..55, 85 mm wide in all, limited by the width
+    let cw = (x1 - x0 + 1) as f64;
+    assert_close(cw, 0.86 * 512.0, 2.0, "front width in pixels");
+    // the empty columns between them are x 30..45: they place the block to a fraction of a millimetre
+    let mm = |x: usize| -30.0 + (x - x0) as f64 / cw * 85.0;
+    let empty: Vec<usize> = (x0..=x1).filter(|&x| (y0..=y1).all(|y| img.is_bg(x, y))).collect();
+    assert!(!empty.is_empty(), "a gap between plate and block");
+    assert_close(mm(empty[0]), 30.0, 0.5, "plate ends at x=30");
+    assert_close(mm(*empty.last().unwrap() + 1), 45.0, 0.5, "block starts at x=45");
 
     let iso = s.render(View::Iso, 320, 240, None).unwrap();
     save_for_inspection("render_iso.png", &iso.png);
     let img = Img::decode(&iso.png);
     assert_eq!((img.w, img.h), (320, 240));
+    // smoke only (something shaded with edges); the geometry is checked by the top and front views
     assert!(img.coverage() > 0.15, "iso coverage {}", img.coverage());
     let dark = img.rgb.chunks(3).filter(|c| c.iter().all(|v| *v < 90)).count();
     assert!(dark > 200, "edges are drawn: {dark} dark pixels");

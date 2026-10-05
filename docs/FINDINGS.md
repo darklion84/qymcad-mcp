@@ -220,6 +220,16 @@ Conventions:
   golden plate (Ø4.5 holes) draft, standard and high give the identical mesh (716 triangles, volume error
   1.42 mm³ = 0.011 %); only max (0.005 mm) refines it (1116 triangles, 0.56 mm³). The linear deflection matters only
   for larger radii. For printing this is harmless; do not expect `quality` to change a small part's file.
-- **Evidence:** observed with `quality_presets_change_the_tessellation` instrumented (counts and errors above);
-  test: `crates/engine/tests/golden_export.rs` `quality_presets_change_the_tessellation`; source:
+- **Evidence:** observed with `finer_quality_never_loses_accuracy` instrumented (counts and errors above);
+  test: `crates/engine/tests/golden_export.rs` `finer_quality_never_loses_accuracy`; source:
   `crates/qymcad-kernel/src/occt_bridge.cpp` `doc_from_shape` (~143-152).
+
+## F-3C-4 The app's isometric view is `Cam3::default()`: yaw −0.7, pitch 0.6
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** the default 3D camera (and the component thumbnails) look from yaw −0.7 rad, pitch 0.6 rad; `Cam3::basis`
+  builds the forward vector `(−cos p·cos y, −cos p·sin y, −sin p)` with Z up. `render` copies this so that its iso view
+  matches what the user sees on opening the file. If the app changes its default view, update `View::Iso` in
+  `crates/engine/src/render.rs`.
+- **Evidence:** source: `crates/qymcad-ui-state/src/lib.rs` `Cam3::default` (~2384) and `Cam3::basis` (~2389); test:
+  `crates/engine/src/render.rs` `view_bases_are_orthonormal` (iso camera at +X −Y +Z).

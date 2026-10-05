@@ -31,9 +31,11 @@ pub struct RenderArgs {
     pub view: View,
     /// Image width in pixels, 64..=2048. Default 512.
     #[serde(default = "default_width")]
+    #[schemars(range(min = 64, max = 2048))]
     pub width: u32,
     /// Image height in pixels, 64..=2048. Default 384.
     #[serde(default = "default_height")]
+    #[schemars(range(min = 64, max = 2048))]
     pub height: u32,
     /// Bodies to draw (ids or names). Default: every current result body.
     #[serde(default)]

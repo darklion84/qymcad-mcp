@@ -96,7 +96,7 @@ pub struct ExportReport {
 pub struct ExportedBody {
     pub id: Id,
     pub name: String,
-    /// Mesh formats: volume of the written mesh (signed tetrahedra), mm³. Compare with the B-rep volume to see
+    /// Mesh formats: volume of the written mesh (sum of tetrahedra, absolute), mm³. Compare with the B-rep volume to see
     /// the tessellation error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mesh_volume: Option<f64>,
