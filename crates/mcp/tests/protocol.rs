@@ -227,7 +227,7 @@ fn sketch_entities_and_constraints_end_to_end() {
     let mut c = Client::start();
     c.init();
     c.ok("doc_new", json!({}));
-    for (k, v) in [("w", 40.0), ("hh", 30.0), ("t", 5.0), ("r", 6.0), ("l", 10.0)] {
+    for (k, v) in [("w", 40.0), ("hh", 30.0), ("t", 5.0), ("r", 6.0), ("l", 10.0), ("sw", 6.0), ("th", 20.0)] {
         c.ok("param_set", json!({ "name": k, "value": v }));
     }
     c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
@@ -237,7 +237,7 @@ fn sketch_entities_and_constraints_end_to_end() {
             { "type": "polyline", "points": [["-w/2", "hh"], ["-w/2", 0], ["w/2", 0], ["w/2", "hh"]] },
             { "type": "arc", "cy": "hh", "r": "w/2", "start_angle": 0, "end_angle": 180 },
             { "type": "polygon", "cy": 12, "sides": 6, "r": "r" },
-            { "type": "slot", "x1": "-l/2", "y1": 32, "x2": "l/2", "y2": 32, "width": 6 },
+            { "type": "slot", "x1": "-l/2", "y1": 32, "x2": "l/2", "y2": 32, "width": "sw" },
         ]}),
     );
     assert_eq!(r["sketch"]["dof"], json!([0, 0]), "fully defined: {}", r["sketch"]["constraints"]);
@@ -245,7 +245,10 @@ fn sketch_entities_and_constraints_end_to_end() {
     assert_eq!(r["created"][1]["type"], "arc");
     assert_eq!(r["sketch"]["contours"].as_array().unwrap().len(), 3, "outline + two holes");
     let e = c.ok("extrude", json!({ "sketch": "s", "height": "t" }));
-    let area = |w: f64, hh: f64, r: f64, l: f64| w * hh + PI * (w / 2.0).powi(2) / 2.0 - 1.5 * 3f64.sqrt() * r * r - (PI * 9.0 + 6.0 * l);
+    let sw: f64 = 6.0; // the `sw` parameter: slot width
+    let area = |w: f64, hh: f64, r: f64, l: f64| {
+        w * hh + PI * (w / 2.0).powi(2) / 2.0 - 1.5 * 3f64.sqrt() * r * r - (PI * (sw / 2.0).powi(2) + sw * l)
+    };
     let vol = |r: &Value| r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
     assert!((vol(&e) - area(40.0, 30.0, 6.0, 10.0) * 5.0).abs() < 1e-2, "volume {}", vol(&e));
     let p = c.ok("param_set", json!({ "name": "r", "value": 7 }));
@@ -253,11 +256,11 @@ fn sketch_entities_and_constraints_end_to_end() {
     let p = c.ok("param_set", json!({ "name": "l", "value": 14 }));
     assert!((vol(&p) - area(40.0, 30.0, 7.0, 14.0) * 5.0).abs() < 1e-2, "l=14: {}", vol(&p));
 
-    // A free triangle, dimensioned with sketch_constrain.
+    // A free triangle below the x axis, dimensioned with sketch_constrain: base `w`, height `th` from the axis.
     c.ok("sketch_create", json!({ "plane": "XY", "name": "tri" }));
     let r = c.ok(
         "sketch_add",
-        json!({ "sketch": "tri", "entities": [{ "type": "polyline", "points": [[0, 0], [30, 0], [0, 20]], "closed": true, "dimensioned": false }] }),
+        json!({ "sketch": "tri", "entities": [{ "type": "polyline", "points": [[0, 0], [30, 0], [0, -12]], "closed": true, "dimensioned": false }] }),
     );
     assert_eq!(r["sketch"]["dof"], json!([6, 0]));
     let lines = r["created"][0]["entities"].clone();
@@ -266,13 +269,29 @@ fn sketch_entities_and_constraints_end_to_end() {
     c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "horizontal", "refs": [lines[0]] }));
     c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "vertical", "refs": [lines[2]] }));
     c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [lines[0]], "value": "w" }));
-    let r = c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [pts[2], "x_axis"], "value": 20 }));
+    let r = c.ok("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [pts[2], "x_axis"], "value": "th" }));
     assert_eq!(r["dof"], json!([0, 0]), "{r}");
     let i = r["index"].as_u64().unwrap() as usize;
-    assert_eq!(r["sketch"]["constraints"][i]["kind"], "distance_point_line");
-    // The first contour of "tri" is a 40 × 20 right triangle.
-    let x = r["sketch"]["points"].as_array().unwrap().iter().find(|p| p["id"] == pts[1]).unwrap()["x"].as_f64().unwrap();
-    assert!((x - 40.0).abs() < 1e-6, "p1.x = w: {x}");
+    // Checks the triangle (0,0) (w,0) (0,−th): coordinates, the stored (signed: below the axis) distance, the area.
+    let check = |sk: &Value, w: f64, th: f64| {
+        let pt = |k: usize| {
+            let p = sk["points"].as_array().unwrap().iter().find(|p| p["id"] == pts[k]).unwrap().clone();
+            (p["x"].as_f64().unwrap(), p["y"].as_f64().unwrap())
+        };
+        for (k, want) in [(0, (0.0, 0.0)), (1, (w, 0.0)), (2, (0.0, -th))] {
+            let got = pt(k);
+            assert!((got.0 - want.0).abs() < 1e-6 && (got.1 - want.1).abs() < 1e-6, "point {k}: {got:?} vs {want:?}");
+        }
+        assert_eq!(sk["constraints"][i]["kind"], "distance_point_line");
+        assert_eq!(sk["constraints"][i]["expr"], "th");
+        assert!((sk["constraints"][i]["value"].as_f64().unwrap() + th).abs() < 1e-9, "stored signed −th: {}", sk["constraints"][i]);
+        let a = sk["contours"][0]["area"].as_f64().unwrap();
+        assert!((a - w * th / 2.0).abs() < 1e-6, "area {a}");
+    };
+    check(&r["sketch"], 40.0, 20.0);
+    c.ok("param_set", json!({ "name": "th", "value": 25 }));
+    let info = c.ok("sketch_info", json!({ "sketch": "tri" }));
+    check(&info, 40.0, 25.0);
 
     let (is_err, msg) = c.tool("sketch_constrain", json!({ "sketch": "tri", "kind": "distance", "refs": [pts[1], pts[2]], "value": 99 }));
     assert!(is_err && msg.as_str().unwrap().contains("over-constrains"), "{msg}");
@@ -288,4 +307,6 @@ fn sketch_entities_and_constraints_end_to_end() {
     assert_eq!(r["sketch"]["dof"], json!([1, 0]));
     let (is_err, _) = c.tool("sketch_remove", json!({ "sketch": "tri" }));
     assert!(is_err);
+    let (is_err, msg) = c.tool("sketch_add", json!({ "sketch": "tri", "entities": [] }));
+    assert!(is_err && msg.as_str().unwrap().contains("empty"), "{msg}");
 }

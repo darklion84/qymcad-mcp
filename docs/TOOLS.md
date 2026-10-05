@@ -244,21 +244,25 @@ Add entities to a sketch (all or nothing): rect, circle, line, polyline, arc, po
             },
             "cx": {
               "$ref": "#/$defs/Num",
-              "default": 0.0
+              "default": 0.0,
+              "description": "Centre x (default 0)."
             },
             "cy": {
               "$ref": "#/$defs/Num",
-              "default": 0.0
+              "default": 0.0,
+              "description": "Centre y (default 0)."
             },
             "h": {
-              "$ref": "#/$defs/Num"
+              "$ref": "#/$defs/Num",
+              "description": "Height, along y."
             },
             "type": {
               "const": "rect",
               "type": "string"
             },
             "w": {
-              "$ref": "#/$defs/Num"
+              "$ref": "#/$defs/Num",
+              "description": "Width, along x."
             }
           },
           "required": [
@@ -274,18 +278,22 @@ Add entities to a sketch (all or nothing): rect, circle, line, polyline, arc, po
           "properties": {
             "construction": {
               "default": false,
+              "description": "Construction geometry: not part of any profile.",
               "type": "boolean"
             },
             "cx": {
               "$ref": "#/$defs/Num",
-              "default": 0.0
+              "default": 0.0,
+              "description": "Centre x (default 0)."
             },
             "cy": {
               "$ref": "#/$defs/Num",
-              "default": 0.0
+              "default": 0.0,
+              "description": "Centre y (default 0)."
             },
             "d": {
-              "$ref": "#/$defs/Num"
+              "$ref": "#/$defs/Num",
+              "description": "Diameter."
             },
             "type": {
               "const": "circle",
@@ -745,7 +753,7 @@ Add a geometric constraint or a driving dimension between existing points/entiti
         },
         {
           "const": "distance",
-          "description": "[point, point], [line] (its length), [point, line] or [line, line] (perpendicular distance). Circles and\narcs stand for their centre. `axis` x/y measures only along that axis (point pairs and lines).",
+          "description": "[point, point], [line] (its length), [point, line] or [line, line] (perpendicular distance; the lines are\nmade parallel too unless they already are constrained so). Circles and arcs stand for their centre. `axis`\nx/y measures only along that axis (point pairs and lines).",
           "type": "string"
         },
         {
@@ -786,12 +794,23 @@ Add a geometric constraint or a driving dimension between existing points/entiti
       ]
     },
     "FrameRef": {
-      "enum": [
-        "origin",
-        "x_axis",
-        "y_axis"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "origin",
+          "description": "The sketch origin (0, 0), a point.",
+          "type": "string"
+        },
+        {
+          "const": "x_axis",
+          "description": "The x axis, a line through the origin.",
+          "type": "string"
+        },
+        {
+          "const": "y_axis",
+          "description": "The y axis, a line through the origin.",
+          "type": "string"
+        }
+      ]
     },
     "Num": {
       "anyOf": [
@@ -940,7 +959,7 @@ Delete one entity (with the points only it used and the constraints on them) or 
 
 ## sketch_info
 
-A sketch's plane; dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle, point ids, r, construction); points (id, x, y; frame points have a role: origin, frame, x_axis, y_axis); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take.
+A sketch's plane; dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take.
 
 ```json
 {

@@ -27,11 +27,15 @@ fn zero() -> Num {
 pub enum Entity {
     /// Rectangle centred at (cx, cy), width w (along x), height h (along y).
     Rect {
+        /// Centre x (default 0).
         #[serde(default = "zero")]
         cx: Num,
+        /// Centre y (default 0).
         #[serde(default = "zero")]
         cy: Num,
+        /// Width, along x.
         w: Num,
+        /// Height, along y.
         h: Num,
         /// Construction geometry: not part of any profile.
         #[serde(default)]
@@ -39,11 +43,15 @@ pub enum Entity {
     },
     /// Circle centred at (cx, cy) with diameter d.
     Circle {
+        /// Centre x (default 0).
         #[serde(default = "zero")]
         cx: Num,
+        /// Centre y (default 0).
         #[serde(default = "zero")]
         cy: Num,
+        /// Diameter.
         d: Num,
+        /// Construction geometry: not part of any profile.
         #[serde(default)]
         construction: bool,
     },
@@ -121,7 +129,11 @@ pub struct RemoveArgs {
 /// Round every non-integer number in a JSON value (coordinates, radii, values) for a compact result.
 fn rounded(v: Value) -> Value {
     match v {
-        Value::Number(n) if n.is_f64() => json!(round(n.as_f64().unwrap_or_default(), 6)),
+        // A non-finite number has no JSON form: null, never a panic or a bogus value.
+        Value::Number(n) if n.is_f64() => match n.as_f64() {
+            Some(x) if x.is_finite() => json!(round(x, 6)),
+            _ => Value::Null,
+        },
         Value::Array(a) => Value::Array(a.into_iter().map(rounded).collect()),
         Value::Object(o) => Value::Object(o.into_iter().map(|(k, v)| (k, rounded(v))).collect()),
         other => other,
@@ -163,6 +175,9 @@ pub fn tools() -> Vec<Tool> {
             |st, a: AddArgs| {
                 let s = st.doc()?;
                 let sketch = a.sketch.resolve(s)?;
+                if a.entities.is_empty() {
+                    return Err("`entities` is empty: give at least one entity to add".into());
+                }
                 let (created, r) = s
                     .sketch_edit(sketch, |s| {
                         let mut out = Vec::new();
@@ -233,9 +248,10 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "sketch_info",
             "A sketch's plane; dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
-             entities (id, type line/arc/circle, point ids, r, construction); points (id, x, y; frame points have a role: \
-             origin, frame, x_axis, y_axis); constraints (index, kind, point ids, value, expr, reference). Ids and indices \
-             are what sketch_constrain and sketch_remove take.",
+             entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); \
+             points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints \
+             (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
+             take.",
             |st, a: InfoArgs| {
                 let s = st.doc()?;
                 let id: Id = a.sketch.resolve(s)?;
