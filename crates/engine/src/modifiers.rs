@@ -61,7 +61,7 @@ pub struct Hole {
 /// Evaluate a dimension; positive values only.
 fn positive(s: &Session, n: &Num, what: &str) -> Result<f64> {
     let v = n.eval(&s.p.param_map())?;
-    if v <= 0.0 {
+    if v.is_nan() || v <= 0.0 {
         return Err(Error::Invalid(format!("{what} must be positive, got {v}")));
     }
     Ok(v)
@@ -159,7 +159,7 @@ impl Session {
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let d = dist.eval(&s.p.param_map())?;
-            if d == 0.0 {
+            if d.is_nan() || d == 0.0 {
                 return Err(Error::Invalid("push distance must not be zero".into()));
             }
             let key = s.planar_face(src, face)?;

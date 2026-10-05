@@ -580,3 +580,21 @@ fn stale_and_foreign_ids_are_clear_errors() {
     let e = s.push_face(None, &Sel::Largest, &1.0.into(), None).unwrap_err();
     assert!(e.to_string().contains("exactly one"), "{e}");
 }
+
+/// Review #14: "nan", "inf" and "1e400" parse as non-finite numbers; they must be refused before they reach
+/// QymCAD, and the document must stay as it was.
+#[test]
+fn non_finite_dimensions_are_refused() {
+    let (mut s, _) = block(40.0, 30.0, 10.0);
+    let before = (s.info().timeline.len(), volume(&s));
+    for bad in ["nan", "inf", "-infinity", "1e400"] {
+        let e = s.fillet(None, &along_z(), &n(bad), None).unwrap_err();
+        assert!(matches!(e, Error::Expr(_)) && e.to_string().contains("finite"), "radius {bad}: {e}");
+        let e = s.push_face(None, &top(), &n(bad), None).unwrap_err();
+        assert!(e.to_string().contains("finite"), "push {bad}: {e}");
+        let d = ArrayDir { dx: 20.0.into(), dy: 0.0.into(), dz: 0.0.into(), count: n(bad) };
+        let e = s.linear_array(None, &d, None, None).unwrap_err();
+        assert!(e.to_string().contains("finite"), "count {bad}: {e}");
+    }
+    assert_eq!((s.info().timeline.len(), volume(&s)), before, "nothing changed");
+}

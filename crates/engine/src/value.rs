@@ -27,16 +27,21 @@ impl Num {
     pub fn eval(&self, vars: &HashMap<String, f64>) -> Result<f64> {
         match self {
             Num::Value(v) if v.is_finite() => Ok(*v),
-            Num::Value(v) => Err(Error::Invalid(format!("number {v} is not finite"))),
+            Num::Value(v) => Err(Error::Expr(format!("number {v} is not finite"))),
             Num::Expr(s) => {
                 let e = normalize_expr(s);
-                // A plain number written as a string is still a number.
-                if let Ok(v) = e.parse::<f64>() {
-                    return Ok(v);
+                // A plain number written as a string is still a number. Rust's parser also accepts "nan",
+                // "inf" and overflowing literals such as "1e400"; those are refused below.
+                let v = match e.parse::<f64>() {
+                    Ok(v) => v,
+                    // QymCAD's own arithmetic parser (numbers, + - * / ^, a fixed set of math functions,
+                    // parameter names); it does not execute code.
+                    Err(_) => qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {err:?}")))?,
+                };
+                if !v.is_finite() {
+                    return Err(Error::Expr(format!("`{e}` is not a finite number ({v})")));
                 }
-                // QymCAD's own arithmetic parser (numbers, + - * / ^, a fixed set of math functions, parameter
-                // names); it does not execute code.
-                qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {err:?}")))
+                Ok(v)
             }
         }
     }

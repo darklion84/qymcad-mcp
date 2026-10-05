@@ -46,7 +46,7 @@ impl Session {
                 return Err(Error::NotFound(format!("contour {bad} in sketch {}", a.sketch)));
             }
             let angle = a.angle.eval(&s.p.param_map())?;
-            if angle <= 0.0 || angle > 360.0 {
+            if angle.is_nan() || angle <= 0.0 || angle > 360.0 {
                 return Err(Error::Invalid(format!("angle must be in (0, 360], got {angle}")));
             }
             let ax = match &a.axis {

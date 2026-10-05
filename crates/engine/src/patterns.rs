@@ -126,7 +126,7 @@ impl Session {
                 return Err(Error::Invalid("an array needs at least 2 copies".into()));
             }
             let ang = angle.eval(&s.p.param_map())?;
-            if ang <= 0.0 || ang > 360.0 {
+            if ang.is_nan() || ang <= 0.0 || ang > 360.0 {
                 return Err(Error::Invalid(format!("angle must be in (0, 360], got {ang}")));
             }
             let ax = match axis {
@@ -196,7 +196,7 @@ impl Session {
 
     fn count(&self, n: &Num) -> Result<u32> {
         let v = n.eval(&self.p.param_map())?;
-        if v < 1.0 || v > 10000.0 || (v - v.round()).abs() > 1e-9 {
+        if !(1.0..=10000.0).contains(&v) || (v - v.round()).abs() > 1e-9 {
             return Err(Error::Invalid(format!("count must be a whole number from 1, got {v}")));
         }
         Ok(v.round() as u32)

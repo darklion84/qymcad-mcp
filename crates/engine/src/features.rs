@@ -114,7 +114,7 @@ impl Session {
                 return Err(Error::NotFound(format!("contour {bad} in sketch {}", a.sketch)));
             }
             let h = a.height.eval(&s.p.param_map())?;
-            if !a.through && h <= 0.0 {
+            if !a.through && (h.is_nan() || h <= 0.0) {
                 return Err(Error::Invalid(format!("height must be positive, got {h}")));
             }
             let reach: Reach = a.direction.into();
