@@ -90,7 +90,28 @@ fn lists_tools_with_object_schemas() {
     c.init();
     let tools = c.request("tools/list", json!({}))["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    for want in ["doc_new", "doc_open", "doc_save", "doc_info", "param_set", "sketch_create", "sketch_add", "extrude", "plane_offset"] {
+    for want in [
+        "doc_new",
+        "doc_open",
+        "doc_save",
+        "doc_info",
+        "param_set",
+        "sketch_create",
+        "sketch_add",
+        "extrude",
+        "plane_offset",
+        "topology",
+        "select",
+        "revolve",
+        "fillet",
+        "chamfer",
+        "hole",
+        "shell",
+        "push_face",
+        "linear_array",
+        "circular_array",
+        "mirror",
+    ] {
         assert!(names.contains(&want), "missing {want} in {names:?}");
     }
     for t in &tools {
@@ -204,4 +225,96 @@ fn symlinks_are_not_followed() {
     assert!(is_err && msg.as_str().unwrap().contains("symbolic link"), "{msg}");
     assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn volume(r: &Value) -> f64 {
+    r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap()
+}
+
+/// The agent's loop: read the topology, pick faces/edges, apply features; descriptive selections and errors.
+#[test]
+fn topology_pick_then_hole_and_fillet() {
+    use std::f64::consts::PI;
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("param_set", json!({ "name": "d", "value": 6 }));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
+    c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "w": 40, "h": 30 }] }));
+    c.ok("extrude", json!({ "sketch": "s", "height": 10, "name": "block" }));
+
+    let t = c.ok("topology", json!({ "face_kind": ["plane"], "facing": "+z", "edges": false }));
+    assert_eq!(t["faces_total"], 6);
+    let faces = t["faces"].as_array().unwrap();
+    assert_eq!(faces.len(), 1, "{t}");
+    assert_eq!(faces[0]["normal"], json!([0.0, 0.0, 1.0]));
+    let top = faces[0]["id"].clone();
+
+    let r = c.ok("hole", json!({ "face": top, "diameter": "d", "through": true, "name": "bore" }));
+    let v1 = volume(&r);
+    assert!((v1 - (12000.0 - PI * 9.0 * 10.0)).abs() < 1e-3, "through hole: {v1}");
+
+    // Ids are re-read after the feature; vertical edges picked by filter, rounded by id.
+    let t = c.ok("topology", json!({ "faces": false, "edge_kind": ["line"], "along": "z" }));
+    // Five: the four corners plus the seam line of the hole's cylinder, flagged `seam`.
+    assert_eq!(t["edges"].as_array().unwrap().len(), 5, "{t}");
+    let ids: Vec<Value> = t["edges"].as_array().unwrap().iter().filter(|e| e["seam"] != json!(true)).map(|e| e["id"].clone()).collect();
+    assert_eq!(ids.len(), 4, "{t}");
+    let r = c.ok("fillet", json!({ "edges": ids, "radius": 3 }));
+    let v2 = volume(&r);
+    assert!((v1 - v2 - (4.0 - PI) * 9.0 * 10.0).abs() < 1e-3, "fillet: {v2}");
+
+    // A description: the top outline is 4 lines + 4 arcs + the hole's circle.
+    let sel = c.ok("select", json!({ "edges": { "edges_of": { "facing": "+z" } } }));
+    assert_eq!(sel["count"], 9, "{sel}");
+    let r = c.ok("chamfer", json!({ "edges": { "edges_of": { "of_feature": "block", "role": "cap_end" } }, "dist": 0.5 }));
+    let v3 = volume(&r);
+    assert!(v3 < v2);
+
+    // The hole follows its parameter: d6 → d8 removes π(4² − 3²)·10 more, and the 0.5 mm chamfer ring on its
+    // rim (2π(r + d/3)·d²/2) grows with the radius by 2π·1·0.125.
+    let r = c.ok("param_set", json!({ "name": "d", "value": 8 }));
+    let v4 = r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
+    let want = PI * 7.0 * 10.0 + 2.0 * PI * 0.125;
+    assert!((v3 - v4 - want).abs() < 0.05, "d=8: removed {}, expected {want}", v3 - v4);
+
+    // Clear errors for the model.
+    let (is_err, msg) = c.tool("fillet", json!({ "edges": { "facing": "+z" }, "radius": 1 }));
+    assert!(is_err && msg.as_str().unwrap().contains("along"), "{msg}");
+    let (is_err, msg) = c.tool("fillet", json!({ "edges": { "top": true }, "radius": 1 }));
+    assert!(is_err && msg.as_str().unwrap().contains("bad arguments"), "{msg}");
+    let (is_err, msg) = c.tool("fillet", json!({ "edges": [123456], "radius": 1 }));
+    assert!(is_err && msg.as_str().unwrap().contains("topology"), "{msg}");
+    let (is_err, msg) = c.tool("fillet", json!({ "edges": { "along": "z" }, "radius": 50 }));
+    assert!(is_err && msg.as_str().unwrap().contains("rolled back"), "{msg}");
+    let (is_err, msg) = c.tool("hole", json!({ "face": { "facing": "+z" }, "diameter": 3 }));
+    assert!(is_err && msg.as_str().unwrap().contains("through"), "{msg}");
+}
+
+/// Revolve, shell, arrays and mirror through MCP.
+#[test]
+fn revolve_shell_array_mirror() {
+    use std::f64::consts::PI;
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "ring" }));
+    c.ok("sketch_add", json!({ "sketch": "ring", "entities": [{ "type": "rect", "cx": 15, "cy": 15, "w": 10, "h": 30 }] }));
+    let r = c.ok("revolve", json!({ "sketch": "ring", "axis": "sketch_y" }));
+    assert!((volume(&r) - PI * 300.0 * 30.0).abs() < 0.5, "tube {}", volume(&r));
+
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
+    c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "cx": 15, "w": 10, "h": 10 }] }));
+    c.ok("extrude", json!({ "sketch": "s", "height": 10 }));
+    let r = c.ok("shell", json!({ "open_faces": { "facing": "+z" }, "thickness": 1 }));
+    assert!((volume(&r) - (1000.0 - 8.0 * 8.0 * 9.0)).abs() < 1e-3, "cup {}", volume(&r));
+    let r = c.ok("circular_array", json!({ "count": 3 }));
+    assert!((volume(&r) - 3.0 * 424.0).abs() < 1e-3, "3 cups {}", volume(&r));
+    let r = c.ok("mirror", json!({ "plane": "XY" }));
+    assert!((volume(&r) - 6.0 * 424.0).abs() < 1e-3, "mirrored {}", volume(&r));
+    let r = c.ok("linear_array", json!({ "dz": 30, "count": 2 }));
+    assert!((volume(&r) - 12.0 * 424.0).abs() < 1e-3, "stacked {}", volume(&r));
+    let (is_err, msg) = c.tool("revolve", json!({ "sketch": "s", "axis": "W" }));
+    assert!(is_err && msg.as_str().unwrap().contains("unknown axis"), "{msg}");
 }

@@ -86,6 +86,10 @@ pub struct EdgeInfo {
     /// The two faces meeting at the edge (with `adjacency`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub faces: Option<[u32; 2]>,
+    /// A seam: the closing line of a round face, with that face on both sides. Not a real corner; fillets and
+    /// chamfers ignore it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub seam: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -300,8 +304,7 @@ impl Session {
 
         let _gate = qymcad_kernel::kernel_gate();
         let polylines: HashMap<u32, Vec<[f32; 3]>> = shape.edges_info().into_iter().map(|e| (e.id, e.poly)).rev().collect();
-        let pairs: HashMap<u32, [u32; 2]> =
-            if adjacency { shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect() } else { HashMap::new() };
+        let pairs: HashMap<u32, [u32; 2]> = shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect();
 
         let mut out_faces = Vec::with_capacity(faces.len());
         for f in faces {
@@ -362,7 +365,8 @@ impl Session {
                 center: round.then_some(e.center),
                 axis: round.then_some(e.axis),
                 radius: round.then_some(e.radius),
-                faces: pairs.get(&e.id).copied(),
+                faces: if adjacency { pairs.get(&e.id).copied() } else { None },
+                seam: pairs.get(&e.id).is_some_and(|[a, b]| a == b),
             });
         }
         Ok(Topology { body, faces: out_faces, edges: out_edges })

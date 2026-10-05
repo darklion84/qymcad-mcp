@@ -348,6 +348,12 @@ fn holes_plain_blind_and_through() {
     let [o, _] = wall.axis.unwrap();
     assert_close(o[0], 12.0, 1e-6, "hole x");
     assert_close(o[1], 5.0, 1e-6, "hole y");
+    // Each hole wall closes with a seam line; descriptions such as "along z" include it, QymCAD's fillet
+    // ignores it (the rounded corners alone are removed).
+    assert_eq!(t.edges.iter().filter(|e| e.seam).count(), 2);
+    let v = volume(&s);
+    s.fillet(None, &along_z(), &3.0.into(), None).unwrap();
+    assert_close(v - volume(&s), (4.0 - PI) * 9.0 * h, 1e-3, "corner fillet next to seams");
 }
 
 /// Counterbore: d6 through + d10 × 3. Countersink: d6 through + cone d10 → d6 over 2.
