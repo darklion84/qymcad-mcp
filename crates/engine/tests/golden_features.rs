@@ -190,6 +190,13 @@ fn chamfer_vertical_edges() {
     let one = Sel::And(Box::new(one), Box::new(Sel::Extreme { axis: Axis::Y, max: true }));
     s.chamfer(None, &one, &2.0.into(), Some(&4.0.into()), None).unwrap();
     assert_close(volume(&s), a * b * h - 2.0 * 4.0 / 2.0 * h, 1e-3, "two-distance chamfer (descriptive)");
+    // The setbacks show on the two faces' areas: the +x face (b × h) and the +y face (a × h) each lose
+    // setback × h. Which face takes `dist` is QymCAD's choice per edge (F-3B-14); for this corner it is +x.
+    let t = s.topology(None, false).unwrap();
+    let area = |n: [f64; 3]| t.faces.iter().find(|f| f.normal.is_some_and(|m| m[0] * n[0] + m[1] * n[1] > 0.99)).unwrap().area;
+    let (sx, sy) = ((b * h - area([1.0, 0.0, 0.0])) / h, (a * h - area([0.0, 1.0, 0.0])) / h);
+    assert_close(sx, 2.0, 1e-6, "setback on +x (dist)");
+    assert_close(sy, 4.0, 1e-6, "setback on +y (d2)");
 
     let (mut s, _) = block(a, b, h);
     let id = s.select(None, Element::Edges, &one).unwrap().1;
@@ -419,9 +426,9 @@ fn holes_counterbore_and_countersink() {
 #[test]
 fn hole_diameter_follows_its_parameter() {
     let (a, b, h) = (40.0, 30.0, 10.0);
-    let (mut s, _) = block(a, b, h);
+    let (mut s, blk) = block(a, b, h);
     s.param_set("d", &Num::Value(6.0)).unwrap();
-    s.hole(&hole(Sel::OfFeature { feature: s.info().timeline[1].id, role: Some(Role::CapEnd) }, None, n("d"), Some(n("d")))).unwrap();
+    s.hole(&hole(Sel::OfFeature { feature: blk, role: Some(Role::CapEnd) }, None, n("d"), Some(n("d")))).unwrap();
     assert_close(volume(&s), a * b * h - PI * 9.0 * 6.0, 1e-3, "d6 × 6");
     s.param_set("d", &Num::Value(8.0)).unwrap();
     assert_close(volume(&s), a * b * h - PI * 16.0 * 8.0, 1e-3, "d8 × 8 after param edit");
@@ -444,14 +451,24 @@ fn hole_diameter_follows_its_parameter() {
 fn shell_open_top() {
     let (a, b, h, t) = (40.0, 30.0, 20.0, 2.0);
     let (mut s, _) = block(a, b, h);
-    s.shell(None, Some(&top()), &t.into(), Side::Inward, None).unwrap();
+    s.shell(None, &top(), &t.into(), Side::Inward, None).unwrap();
     assert_close(volume(&s), a * b * h - (a - 2.0 * t) * (b - 2.0 * t) * (h - t), 1e-3, "inward shell");
 
     let (mut s, _) = block(a, b, h);
     let id = s.select(None, Element::Faces, &top()).unwrap().1;
-    s.shell(None, Some(&Sel::Ids(id)), &t.into(), Side::Outward, None).unwrap();
-    // Outward: the block becomes the cavity; walls grow outside (rounded outer edges are not hand-computable
-    // exactly, so check the cavity through the bbox and a lower bound).
+    s.shell(None, &Sel::Ids(id), &t.into(), Side::Outward, None).unwrap();
+    // Outward: the block becomes the cavity and the wall is its offset by t with round joins (arc join:
+    // quarter cylinders of radius t on the sides' and bottom's edges, sphere octants at the bottom corners,
+    // checked through the topology). Below the top, the offset solid's cross-section at height z is the a × b
+    // rectangle offset by s (area ab + 2s(a + b) + πs²): s = t for 0 ≤ z ≤ h, s = √(t² − u²) at depth u below
+    // the bottom. Integrated: h(ab + 2t(a + b) + πt²) + abt + (a + b)πt²/2 + 2πt³/3; minus the cavity abh.
+    let outer = h * (a * b + 2.0 * t * (a + b) + PI * t * t) + a * b * t + (a + b) * PI * t * t / 2.0 + 2.0 * PI * t.powi(3) / 3.0;
+    assert_close(volume(&s), outer - a * b * h, 1e-2, "outward shell wall");
+    let topo = s.topology(None, false).unwrap();
+    let round: Vec<_> = topo.faces.iter().filter(|f| f.kind == FaceKind::Cylinder).collect();
+    assert_eq!(round.len(), 8, "4 vertical + 4 bottom edge rounds");
+    assert!(round.iter().all(|f| (f.radius.unwrap() - t).abs() < 1e-6));
+    assert_eq!(topo.faces.iter().filter(|f| f.kind == FaceKind::Sphere).count(), 4, "bottom corners");
     let bb = bbox(&s);
     assert_close(bb[3] - bb[0], a + 2.0 * t, 0.05, "outward shell width");
     assert_close(bb[5], h, 0.05, "outward shell top stays");
@@ -509,15 +526,30 @@ fn circular_arrays_of_a_boss() {
     // Copies at 0°, 30°, 60° (not 0/45/90): the top is the 60° copy, 30·sin60 + 5.
     assert_close(bbox(&s)[4], 30.0 * (PI / 3.0).sin() + 5.0, 0.05, "last copy at 60°");
 
-    // About the axis of a cylindrical face of another body (a hub at the origin): the array follows the hub.
+    // About the axis of a cylindrical face of another body: a hub at (hx, 0), off the world axes, with a boss 30
+    // beside it. Four copies stand at (hx ± 30, 0) and (hx, ±30); moving the hub (an upstream parameter) moves
+    // the axis and the copies with it. Ignoring the face axis (world Z) would put them around the origin.
     let mut s = Session::new_part();
-    let hub = cylinder(&mut s, 0.0, 0.0, 10.0.into(), 5.0.into(), Op::Add);
+    s.param_set("hx", &Num::Value(50.0)).unwrap();
+    let hub_sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_circle(hub_sk, &n("hx"), &0.0.into(), &10.0.into(), false).unwrap();
+    let hub = s.extrude(&extrude(hub_sk, 5.0.into(), Op::Add)).unwrap().0;
     let side = s.topology(Some(hub), false).unwrap().faces.iter().find(|f| f.kind == FaceKind::Cylinder).unwrap().id;
-    cylinder(&mut s, 30.0, 0.0, 10.0.into(), 5.0.into(), Op::NewBody);
+    let boss_sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_circle(boss_sk, &n("hx+30"), &0.0.into(), &10.0.into(), false).unwrap();
+    s.extrude(&extrude(boss_sk, 5.0.into(), Op::NewBody)).unwrap();
     let (arr, r) =
         s.circular_array(None, &4.0.into(), &360.0.into(), Some(&AxisRef::FaceAxis { body: Some(hub), face: side }), None).unwrap();
-    let v = r.bodies.iter().find(|b| b.id == arr).unwrap().volume;
-    assert_close(v, 4.0 * boss, 1e-3, "4 around the hub's axis");
+    let check = |r: &Rebuild, hx: f64| {
+        let b = r.bodies.iter().find(|b| b.id == arr).unwrap();
+        assert_close(b.volume, 4.0 * boss, 1e-3, "4 copies");
+        for (got, want) in b.bbox.iter().zip([hx - 35.0, -35.0, 0.0, hx + 35.0, 35.0, 5.0]) {
+            assert_close(*got, want, 0.05, &format!("bbox at hx = {hx}"));
+        }
+    };
+    check(&r, 50.0);
+    let r = s.param_set("hx", &Num::Value(80.0)).unwrap();
+    check(&r, 80.0);
 }
 
 #[test]
@@ -711,7 +743,7 @@ fn a_wide_union_saves_and_reopens() {
     let (mut s, _) = block(a, b, h);
     // 300 children: a left-deep ladder failed to save ("Exceeded recursion limit"); 150 still worked.
     let wide = Sel::Union((0..300).map(|_| Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 5.0 }).collect());
-    s.shell(None, Some(&wide), &t.into(), Side::Inward, None).unwrap();
+    s.shell(None, &wide, &t.into(), Side::Inward, None).unwrap();
     let expected = a * b * h - (a - 2.0 * t) * (b - 2.0 * t) * (h - t);
     assert_close(volume(&s), expected, 1e-3, "shell open at the top");
     let path = scratch("wide_union.qcad");
@@ -862,4 +894,15 @@ fn a_failing_topology_rebuild_is_reported_and_changes_nothing() {
     assert!(matches!(e, Error::Rebuild(_)), "{e}");
     let after: Vec<(Id, u64)> = o.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
     assert_eq!(after, before, "the session is as opened");
+}
+
+/// Review #22: revolve with op intersect. A 40 × 40 × 20 block ∩ a cylinder r 10, 0 ≤ z ≤ 30 (rectangle
+/// x ∈ [0, 10], z ∈ [0, 30] on XZ, about sketch y = world Z) = a cylinder r 10 × 20: π·10²·20.
+#[test]
+fn revolve_intersect() {
+    let (mut s, _) = block(40.0, 40.0, 20.0);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XZ), None).unwrap();
+    s.sketch_rect(sk, &5.0.into(), &15.0.into(), &10.0.into(), &30.0.into(), false).unwrap();
+    s.revolve(&revolve(sk, AxisRef::SketchY, 360.0.into(), Direction::Normal, Op::Intersect)).unwrap();
+    assert_close(volume(&s), PI * 100.0 * 20.0, 1e-3, "block ∩ cylinder");
 }

@@ -269,7 +269,12 @@ fn topology_pick_then_hole_and_fillet() {
     assert_eq!(sel["count"], 9, "{sel}");
     let r = c.ok("chamfer", json!({ "edges": { "edges_of": { "of_feature": "block", "role": "cap_end" } }, "dist": 0.5 }));
     let v3 = volume(&r);
-    assert!(v3 < v2);
+    // A 0.5 mm chamfer removes a triangle of 0.5²/2 = 0.125 mm² along each edge: straight edges 2·34 + 2·24 =
+    // 116 mm → 14.5; the four convex r 3 quarter arcs by Pappus at the triangle's centroid radius 3 − 0.5/3 →
+    // 4·(π/2)(17/6)·0.125 = 17π/24; the hole rim at 3 + 0.5/3 → 2π(19/6)·0.125 = 19π/24. Total 14.5 + 1.5π
+    // (tangent joins, no corner patches).
+    let want = 14.5 + 1.5 * PI;
+    assert!((v2 - v3 - want).abs() < 1e-3, "chamfer removed {}, expected {want}", v2 - v3);
 
     // The hole follows its parameter: d6 → d8 removes π(4² − 3²)·10 more, and the 0.5 mm chamfer ring on its
     // rim (2π(r + d/3)·d²/2) grows with the radius by 2π·1·0.125.
@@ -307,6 +312,9 @@ fn revolve_shell_array_mirror() {
     c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
     c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "cx": 15, "w": 10, "h": 10 }] }));
     c.ok("extrude", json!({ "sketch": "s", "height": 10 }));
+    // QymCAD has no closed hollow shell: omitting the openings is refused by name (F-3B-13).
+    let (is_err, msg) = c.tool("shell", json!({ "thickness": 1 }));
+    assert!(is_err && msg.as_str().unwrap().contains("open_faces"), "{msg}");
     let r = c.ok("shell", json!({ "open_faces": { "facing": "+z" }, "thickness": 1 }));
     assert!((volume(&r) - (1000.0 - 8.0 * 8.0 * 9.0)).abs() < 1e-3, "cup {}", volume(&r));
     let r = c.ok("circular_array", json!({ "count": 3 }));

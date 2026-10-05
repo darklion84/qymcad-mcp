@@ -144,9 +144,9 @@ pub struct ShellArgs {
     /// Body id or name. Default: the part's current body.
     #[serde(default)]
     pub body: Option<ObjRef>,
-    /// Faces to remove (the openings), e.g. {"facing": "+z"}. Omit for a closed hollow body.
-    #[serde(default)]
-    pub open_faces: Option<SelArg>,
+    /// Faces to remove (the openings), at least one, e.g. {"facing": "+z"} for an open box. QymCAD has no closed
+    /// hollow shell.
+    pub open_faces: SelArg,
     /// Wall thickness, mm (number or expression).
     pub thickness: Num,
     /// inward (default: the outside stays), outward (the body becomes the cavity), centred.
@@ -405,14 +405,14 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "shell",
             concat!(
-                "Hollow a body with walls of `thickness`, removing `open_faces` (e.g. {\"facing\": \"+z\"} for an open box).",
+                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box).",
                 stale!()
             ),
             |st, a: ShellArgs| {
                 let s = st.doc()?;
                 let body = opt_body(s, &a.body)?;
-                let faces = a.open_faces.as_ref().map(|f| f.resolve(s)).transpose()?;
-                feature_json(s.shell(body, faces.as_ref(), &a.thickness, a.side, a.name.as_deref()))
+                let faces = a.open_faces.resolve(s)?;
+                feature_json(s.shell(body, &faces, &a.thickness, a.side, a.name.as_deref()))
             },
         ),
         tool(

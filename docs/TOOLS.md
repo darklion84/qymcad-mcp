@@ -1173,7 +1173,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
 
 ## shell
 
-Hollow a body with walls of `thickness`, removing `open_faces` (e.g. {"facing": "+z"} for an open box). Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {"facing": "+z"} for an open box). Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -1247,35 +1247,27 @@ Hollow a body with walls of `thickness`, removing `open_faces` (e.g. {"facing": 
     "open_faces": {
       "anyOf": [
         {
-          "anyOf": [
-            {
-              "items": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "type": "array"
-            },
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "enum": [
-                "largest"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "object"
-            }
-          ],
-          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
         },
         {
-          "type": "null"
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "enum": [
+            "largest"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "object"
         }
       ],
-      "description": "Faces to remove (the openings), e.g. {\"facing\": \"+z\"}. Omit for a closed hollow body."
+      "description": "Faces to remove (the openings), at least one, e.g. {\"facing\": \"+z\"} for an open box. QymCAD has no closed\nhollow shell."
     },
     "side": {
       "$ref": "#/$defs/Side",
@@ -1288,6 +1280,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (e.g. {"facing": 
     }
   },
   "required": [
+    "open_faces",
     "thickness"
   ],
   "type": "object"

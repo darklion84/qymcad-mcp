@@ -112,37 +112,25 @@ impl Session {
         })
     }
 
-    /// Hollow a body leaving walls of `thickness`, removing `open_faces` (may be empty: a closed hollow body).
-    pub fn shell(
-        &mut self,
-        body: Option<Id>,
-        open_faces: Option<&Sel>,
-        thickness: &Num,
-        side: Side,
-        name: Option<&str>,
-    ) -> Result<(Id, Rebuild)> {
+    /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
+    /// hollow shell, F-3B-13).
+    pub fn shell(&mut self, body: Option<Id>, open_faces: &Sel, thickness: &Num, side: Side, name: Option<&str>) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let t = positive(s, thickness, "shell thickness")?;
-            let ids = match open_faces {
-                Some(sel) => {
-                    let ids = s.resolve_sel(src, Element::Faces, sel)?;
-                    if ids.is_empty() {
-                        return Err(Error::Invalid(format!("the open-face selection matched no face of body {src}")));
-                    }
-                    ids
-                }
-                None => Vec::new(),
-            };
+            let ids = s.resolve_sel(src, Element::Faces, open_faces)?;
+            if ids.is_empty() {
+                return Err(Error::Invalid(format!("the open-face selection matched no face of body {src}")));
+            }
             let qside = match side {
                 Side::Inward => ShellSide::Inward,
                 Side::Outward => ShellSide::Outward,
                 Side::Centred => ShellSide::Centred,
             };
-            let id = s.p.add_shell_mode(src, t, if open_faces.is_some_and(Sel::is_ids) { ids } else { Vec::new() }, qside);
-            if let Some(sel) = open_faces.filter(|s| !s.is_ids()) {
-                let q = sel.to_query(Element::Faces)?;
+            let id = s.p.add_shell_mode(src, t, if open_faces.is_ids() { ids } else { Vec::new() }, qside);
+            if !open_faces.is_ids() {
+                let q = open_faces.to_query(Element::Faces)?;
                 if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
                     *faces = Ref::many(q);
                 }

@@ -348,3 +348,22 @@ Conventions:
   old bodies are never rebuilt by a feature call, whether it succeeds or fails. `open`, `param_set` and
   `ensure_topology` keep the full retry. Note: no current test needs the retry pass at all (all engine tests pass
   with it disabled), so F-005 should be re-verified.
+
+## F-3B-13 There is no closed (hollow, unopened) shell
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a shell needs at least one face to remove: with none, the kernel refuses with `FacesNotFound` before
+  doing anything (inward/outward), and nothing offers a closed hollow body.
+- **Evidence:** observed: `shell` without open faces failed with `error-faces-not-found` (review round 1);
+  source: `crates/qymcad-kernel/src/kernel.rs` `shell_named` (~844-849).
+- **How we handle it:** `open_faces` is required (engine and tool); omitting it is a clear argument error.
+
+## F-3B-14 A two-distance chamfer puts `dist` on a face QymCAD chooses
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** with `ChamferMode::TwoDist` and `ref_face: 0`, which of the edge's two faces takes the first distance
+  is the kernel's choice per edge: on a 40 × 30 block, the vertical edge at (+x, +y) put `dist` on the +x face;
+  the other three vertical edges put it on the y face. The engine does not expose `flip` / `ref_face`, so an
+  agent cannot choose the side.
+- **Evidence:** observed with a probe (face areas after a 2/4 chamfer at each corner), 2026-10-05; test:
+  `golden_features.rs` `chamfer_vertical_edges` pins the (+x, +y) case.
