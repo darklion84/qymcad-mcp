@@ -7,7 +7,15 @@ use crate::session::{Rebuild, Session};
 use crate::sketch::{BaseName, PlaneRef};
 use crate::topology::{face_key, Axis};
 use crate::value::Num;
+use qymcad_core::feature::FeatureKind;
 use qymcad_core::model::{ArrayAxis, DatumAxis, Id};
+
+/// Most copies one array may make, all directions multiplied. An array copies the whole body and every later
+/// rebuild repeats it: 1000 copies of a trivial Ø2 cylinder took 1.2 s (debug and release alike, linear in the
+/// count) and real bodies cost more each. Upstream has no cap and allocates for the product of the counts, so
+/// 10000 × 10000 would try to build 10⁸ copies. 1000 is more than any sensible pattern on a 270 mm print bed
+/// (≈ 32 × 32 at an 8 mm pitch).
+pub(crate) const MAX_ARRAY_COPIES: u64 = 1000;
 
 /// One direction of a linear array: the step between copies and how many copies (the original included).
 #[derive(Clone, Debug, PartialEq)]
@@ -91,9 +99,11 @@ impl Session {
                 Some(d) => s.array_axis(d)?,
                 None => ArrayAxis::none(),
             };
-            if a.count * b.count < 2 {
+            let total = u64::from(a.count) * u64::from(b.count);
+            if total < 2 {
                 return Err(Error::Invalid("an array needs at least 2 copies".into()));
             }
+            check_total(total)?;
             let id = s.p.add_linear_array_grid(src, a, b);
             for (sfx, d) in [("", Some(d1)), ("2", d2)] {
                 if let Some(d) = d {
@@ -125,6 +135,7 @@ impl Session {
             if n < 2 {
                 return Err(Error::Invalid("an array needs at least 2 copies".into()));
             }
+            check_total(u64::from(n))?;
             let ang = angle.eval(&s.p.param_map())?;
             if ang.is_nan() || ang <= 0.0 || ang > 360.0 {
                 return Err(Error::Invalid(format!("angle must be in (0, 360], got {ang}")));
@@ -196,9 +207,42 @@ impl Session {
 
     fn count(&self, n: &Num) -> Result<u32> {
         let v = n.eval(&self.p.param_map())?;
-        if !(1.0..=10000.0).contains(&v) || (v - v.round()).abs() > 1e-9 {
-            return Err(Error::Invalid(format!("count must be a whole number from 1, got {v}")));
+        if !(1.0..=MAX_ARRAY_COPIES as f64).contains(&v) || (v - v.round()).abs() > 1e-9 {
+            return Err(Error::Invalid(format!("count must be a whole number from 1 to {MAX_ARRAY_COPIES}, got {v}")));
         }
         Ok(v.round() as u32)
     }
+
+    /// Every array's total copy count, with the current parameter values, within `MAX_ARRAY_COPIES`. Counts can
+    /// be expressions (`count`, `count2`, `count3` feature dimensions), so a parameter edit can grow them;
+    /// `param_set` calls this before rebuilding. Counts are rounded and floored at 1 as QymCAD does.
+    pub(crate) fn check_array_limits(&self) -> Result<()> {
+        let vars = self.p.param_map();
+        let dim = |node: Id, key: &str, stored: u32| -> Result<u64> {
+            let v = match self.p.feat_dims.get(&node).and_then(|d| d.get(key)) {
+                Some(e) if !e.trim().is_empty() => Num::Expr(e.clone()).eval(&vars)?,
+                _ => f64::from(stored),
+            };
+            Ok(v.round().max(1.0) as u64)
+        };
+        for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
+            let total = match n.kind {
+                FeatureKind::LinearArray { count, count2, count3, .. } => {
+                    let (a, b, c) = (dim(n.id, "count", count)?, dim(n.id, "count2", count2)?, dim(n.id, "count3", count3)?);
+                    a.checked_mul(b).and_then(|x| x.checked_mul(c)).unwrap_or(u64::MAX)
+                }
+                FeatureKind::CircularArray { count, .. } => dim(n.id, "count", count)?,
+                _ => continue,
+            };
+            check_total(total).map_err(|e| Error::Invalid(format!("array {} `{}`: {e}", n.id, n.name)))?;
+        }
+        Ok(())
+    }
+}
+
+fn check_total(total: u64) -> Result<()> {
+    if total > MAX_ARRAY_COPIES {
+        return Err(Error::Invalid(format!("{total} copies; an array makes at most {MAX_ARRAY_COPIES}")));
+    }
+    Ok(())
 }

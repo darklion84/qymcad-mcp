@@ -1398,7 +1398,7 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
       "properties": {
         "count": {
           "$ref": "#/$defs/Num",
-          "description": "Number of copies including the original (number or expression)."
+          "description": "Number of copies including the original (number or expression). At most 1000 copies per array in total\n(all directions multiplied), also when a parameter edit changes it."
         },
         "dx": {
           "$ref": "#/$defs/Num",
@@ -1460,7 +1460,7 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
     },
     "count": {
       "$ref": "#/$defs/Num",
-      "description": "Number of copies including the original (number or expression)."
+      "description": "Number of copies including the original (number or expression). At most 1000 copies per array in total\n(all directions multiplied), also when a parameter edit changes it."
     },
     "dx": {
       "$ref": "#/$defs/Num",
@@ -1580,7 +1580,7 @@ Copy the WHOLE body `count` times about an axis (default world Z). The result is
     },
     "count": {
       "$ref": "#/$defs/Num",
-      "description": "Number of copies including the original (number or expression)."
+      "description": "Number of copies including the original (number or expression). At most 1000 copies per array in total\n(all directions multiplied), also when a parameter edit changes it."
     },
     "name": {
       "default": null,

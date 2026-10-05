@@ -41,6 +41,11 @@ impl Session {
             self.p = before;
             return Err(Error::Expr(format!("`{what}`: {err:?}")));
         }
+        // Array counts may follow parameters; refuse an edit that would make an array too large (F-3B-11).
+        if let Err(e) = self.check_array_limits() {
+            self.p = before;
+            return Err(e);
+        }
         self.propagate_params();
         let r = self.rebuild();
         if !r.errors.is_empty() {

@@ -185,7 +185,8 @@ pub struct ArrayDirArg {
     pub dy: Num,
     #[serde(default = "zero")]
     pub dz: Num,
-    /// Number of copies including the original (number or expression).
+    /// Number of copies including the original (number or expression). At most 1000 copies per array in total
+    /// (all directions multiplied), also when a parameter edit changes it.
     pub count: Num,
 }
 
@@ -208,7 +209,8 @@ pub struct LinearArrayArgs {
     pub dy: Num,
     #[serde(default = "zero")]
     pub dz: Num,
-    /// Number of copies including the original (number or expression).
+    /// Number of copies including the original (number or expression). At most 1000 copies per array in total
+    /// (all directions multiplied), also when a parameter edit changes it.
     pub count: Num,
     /// A second direction, for a grid.
     #[serde(default)]
@@ -227,7 +229,8 @@ pub struct CircularArrayArgs {
     /// Body id or name. Default: the part's current body.
     #[serde(default)]
     pub body: Option<ObjRef>,
-    /// Number of copies including the original (number or expression).
+    /// Number of copies including the original (number or expression). At most 1000 copies per array in total
+    /// (all directions multiplied), also when a parameter edit changes it.
     pub count: Num,
     /// Degrees (default 360). A full turn spaces copies 360/count apart; a smaller angle spaces them angle/count
     /// apart, so the last copy is at angle·(count−1)/count (QymCAD's rule).

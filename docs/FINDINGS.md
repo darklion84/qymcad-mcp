@@ -320,3 +320,15 @@ Conventions:
 - **How we handle it:** unions of id lists become one flat `Ids`; other unions become balanced trees (depth
   log2 n); every stored or resolved selection is limited to 512 parts and a query depth of 48
   (`Sel::to_query`).
+
+## F-3B-11 Arrays have no size limit upstream
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `prep_lineararray` multiplies the three counts and allocates a transform per copy; nothing caps it, so
+  10000 × 10000 would try 10⁸ copies. Counts are feature dimensions, so a parameter edit can grow an array that
+  was small when created. Cost measured here: 1000 copies of a Ø2 × 2 cylinder took 1.2 s (debug and release),
+  linear in the count.
+- **Evidence:** source: `regen.rs` `prep_lineararray` (~2229-2260); observed with a probe 2026-10-05; test:
+  `golden_features.rs` `array_copies_are_bounded` (1089 and 1001 copies were built before the bound).
+- **How we handle it:** at most 1000 copies per array in total (`patterns::MAX_ARRAY_COPIES`), checked at creation
+  and in `param_set` before rebuilding (the edit is refused and rolled back). The QymCAD GUI is not limited.

@@ -738,3 +738,27 @@ fn selection_budget() {
     let ids = Sel::Union((0..600).map(|_| Sel::Ids(vec![id])).collect());
     assert_eq!(s.select(None, Element::Faces, &ids).unwrap().1, vec![id]);
 }
+
+/// Review #7: an array is bounded to 1000 copies in total, at creation and when a parameter edit changes a
+/// count expression (that edit is refused and rolled back).
+#[test]
+fn array_copies_are_bounded() {
+    let boss = PI * 1.0 * 2.0; // Ø2 × 2
+    let mut s = Session::new_part();
+    s.param_set("k", &Num::Value(2.0)).unwrap();
+    cylinder(&mut s, 0.0, 0.0, 2.0.into(), 2.0.into(), Op::Add);
+    let dir = |count: Num, dx: f64, dy: f64| ArrayDir { dx: dx.into(), dy: dy.into(), dz: 0.0.into(), count };
+    // 33 × 33 = 1089 > 1000.
+    let e = s.linear_array(None, &dir(33.0.into(), 3.0, 0.0), Some(&dir(33.0.into(), 0.0, 3.0)), None).unwrap_err();
+    assert!(e.to_string().contains("1000"), "creation: {e}");
+    let e = s.circular_array(None, &1001.0.into(), &360.0.into(), None, None).unwrap_err();
+    assert!(e.to_string().contains("1000"), "circular: {e}");
+    s.linear_array(None, &dir(n("k"), 3.0, 0.0), None, None).unwrap();
+    assert_close(volume(&s), 2.0 * boss, 1e-6, "k = 2");
+    let e = s.param_set("k", &Num::Value(1001.0)).unwrap_err();
+    assert!(e.to_string().contains("1000"), "param_set: {e}");
+    assert_eq!(s.params()[0].value, 2.0, "parameter rolled back");
+    assert_close(volume(&s), 2.0 * boss, 1e-6, "geometry unchanged");
+    s.param_set("k", &Num::Value(4.0)).unwrap();
+    assert_close(volume(&s), 4.0 * boss, 1e-6, "k = 4 still fine");
+}
