@@ -122,7 +122,8 @@ fn stl_mesh_matches_the_brep() {
     assert_eq!(Some(tris.len()), r.triangles);
     assert_eq!(r.deflection_mm, Some(0.05));
     let v = tri_volume(&tris);
-    assert!((v - PLATE).abs() / PLATE < 0.01, "STL volume {v} vs B-rep {PLATE}");
+    // 0.1 %: tight enough that a missing Ø4.5 hole (95 mm³ = 0.76 %) fails; standard quality is ~0.01 %.
+    assert!((v - PLATE).abs() / PLATE < 0.001, "STL volume {v} vs B-rep {PLATE}");
     assert_close(r.bodies[0].mesh_volume.unwrap(), v, 0.05, "reported mesh volume");
     assert_bbox(tri_bbox(&tris), PLATE_BBOX, 1e-3, "STL");
 }
@@ -164,7 +165,7 @@ fn threemf_is_in_millimetres() {
     assert_eq!(Some(total), r.triangles);
     let plate = meshes.iter().map(|m| mesh_tris(&m.mesh)).find(|t| tri_bbox(t)[3] - tri_bbox(t)[0] > 50.0).unwrap();
     let v = tri_volume(&plate);
-    assert!((v - PLATE).abs() / PLATE < 0.01, "3MF plate volume {v}");
+    assert!((v - PLATE).abs() / PLATE < 0.001, "3MF plate volume {v}");
     assert_bbox(tri_bbox(&plate), PLATE_BBOX, 1e-3, "3MF plate");
 }
 
@@ -336,4 +337,52 @@ fn render_side_and_iso_views() {
     assert!(s.render(View::Iso, 10, 384, None).is_err(), "too small");
     assert!(s.render(View::Iso, 512, 5000, None).is_err(), "too large");
     assert!(Session::new_part().render(View::Iso, 512, 384, None).is_err(), "nothing to draw");
+}
+
+/// Review finding (Codex, phase 3C): writing the target in place would truncate a hard-linked file elsewhere.
+/// The export goes to a fresh temporary file and is renamed over the target, so the other link keeps its data.
+#[test]
+fn export_does_not_write_through_a_hard_link() {
+    let (s, _, _) = build(false);
+    let dir = scratch("hardlink");
+    std::fs::create_dir_all(&dir).unwrap();
+    let victim = dir.join("victim.txt");
+    std::fs::write(&victim, "keep me").unwrap();
+    let target = dir.join("target.stl");
+    let _ = std::fs::remove_file(&target);
+    std::fs::hard_link(&victim, &target).unwrap();
+    s.export(ExportFormat::Stl, &target, Quality::Standard, None).unwrap();
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me", "the hard-linked file must be untouched");
+    assert!(!read_stl(&target).is_empty(), "the target now holds the export");
+    let leftovers: Vec<_> = std::fs::read_dir(target.parent().unwrap())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+        .collect();
+    assert!(leftovers.is_empty(), "no temporary files left behind");
+}
+
+/// Review finding (Codex, phase 3C): a document whose feature failed (e.g. opened from a file) shows the failed
+/// feature's source body unchanged (F-008); export and render must refuse instead of silently dropping it.
+#[test]
+fn export_and_render_refuse_a_document_with_failed_features() {
+    // Build such a document with QymCAD directly: the engine itself never keeps a failed feature.
+    let mut p = qymcad_core::model::Project::default();
+    p.new_document();
+    let b = p.add_box(10.0, 10.0, 10.0);
+    let _ = qymcad_testkit::regenerate(&mut p);
+    let edge = p.regen_edges[&b][0].id;
+    let f = p.add_fillet(b, 50.0, vec![edge]); // far too big for a 10 mm box
+    let (report, shapes) = qymcad_testkit::regenerate(&mut p);
+    assert!(report.errors.iter().any(|(id, _)| *id == f), "the fillet must fail: {:?}", report.errors);
+    let breps: Vec<_> = shapes.iter().filter_map(|(id, s)| s.to_brep_bytes().map(|b| (*id, b))).collect();
+    let path = scratch("failed_feature.qcad");
+    qymcad_io::save_project_with_brep(&p, path.to_str().unwrap(), &breps).unwrap();
+
+    let (s, r) = Session::open(&path).unwrap();
+    assert!(!r.errors.is_empty(), "the reopened document still has the failed fillet");
+    let e = s.export(ExportFormat::Stl, &scratch("failed_feature.stl"), Quality::Standard, None).unwrap_err();
+    assert!(e.to_string().contains("did not build"), "{e}");
+    let e = s.render(View::Iso, 128, 96, None).unwrap_err();
+    assert!(e.to_string().contains("did not build"), "{e}");
 }

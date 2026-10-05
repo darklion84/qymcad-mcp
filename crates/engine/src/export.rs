@@ -106,6 +106,17 @@ impl Session {
     /// The bodies an export or render works on: `bodies` (each must be a current result body), or all result
     /// bodies. Errors if there is nothing to write.
     pub(crate) fn output_bodies(&self, bodies: Option<&[Id]>) -> Result<Vec<Id>> {
+        // A failed feature passes its source body through unchanged (FINDINGS F-008): writing or showing the
+        // result would silently drop that feature, so refuse until the document rebuilds cleanly.
+        if !self.p.regen_errors.is_empty() {
+            let mut lines: Vec<String> = self.p.regen_errors.iter().map(|(id, e)| format!("{} ({id}): {e}", self.node_name(*id))).collect();
+            lines.sort();
+            return Err(Error::Invalid(format!(
+                "the document has features that did not build, so the bodies do not show the full recipe: {}. Fix or \
+                 remove them first (doc_info lists them)",
+                lines.join("; ")
+            )));
+        }
         let results: Vec<Id> = self.result_bodies().iter().map(|b| b.id).collect();
         let Some(asked) = bodies else {
             if results.is_empty() {
@@ -139,14 +150,48 @@ impl Session {
         if !format.extensions().contains(&ext.as_str()) {
             return Err(Error::Invalid(format!("a {format:?} file must end in .{}", format.extensions().join(" or ."))));
         }
-        let s = path.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", path.display())))?;
+        let final_path = path.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", path.display())))?;
         let ids = self.output_bodies(bodies)?;
-        let mut report = ExportReport { format, path: s.to_string(), bodies: Vec::new(), deflection_mm: None, triangles: None, bytes: 0 };
+        // Write to a fresh file next to the target, then rename over it. Writing the target directly would
+        // truncate whatever inode it is, so a hard link (or a symlink swapped in after the path check) would make
+        // us overwrite an unrelated file; a rename only replaces the directory entry (docs/SECURITY.md).
+        let tmp = path.with_file_name(format!(
+            ".{}.qymcad-mcp-{}.tmp.{ext}",
+            path.file_stem().and_then(|n| n.to_str()).unwrap_or("export"),
+            std::process::id()
+        ));
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| Error::Io(format!("cannot create a temporary file next to {final_path}: {e}")))?;
+        let result = self.export_to(format, &tmp, quality, &ids, final_path);
+        match result {
+            Ok(mut report) => {
+                std::fs::rename(&tmp, path).map_err(|e| {
+                    let _ = std::fs::remove_file(&tmp);
+                    Error::Io(format!("cannot move the export into place at {final_path}: {e}"))
+                })?;
+                report.bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                Ok(report)
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                Err(e)
+            }
+        }
+    }
+
+    /// The actual write, into `tmp` (a fresh file); the report names `final_path`.
+    fn export_to(&self, format: ExportFormat, tmp: &Path, quality: Quality, ids: &[Id], final_path: &str) -> Result<ExportReport> {
+        let s = tmp.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", tmp.display())))?;
+        let mut report =
+            ExportReport { format, path: final_path.to_string(), bodies: Vec::new(), deflection_mm: None, triangles: None, bytes: 0 };
         let _gate = qymcad_kernel::kernel_gate();
         if format.is_mesh() {
             let deflection = quality.deflection();
             let mut meshes: Vec<Mesh> = Vec::with_capacity(ids.len());
-            for &id in &ids {
+            for &id in ids {
                 let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
                 let (mut mesh, _faces) = shape
                     .tessellate_merged(deflection)
@@ -162,19 +207,18 @@ impl Session {
                 ExportFormat::Obj => qymcad_io::export_obj(&meshes, s),
                 ExportFormat::Step => unreachable!("STEP is not a mesh format"),
             };
-            written.map_err(|e| Error::Io(format!("cannot write {s}: {e}")))?;
+            written.map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
             report.deflection_mm = Some(deflection);
             report.triangles = Some(meshes.iter().map(|m| m.tris.len()).sum());
         } else {
             let mut pairs = Vec::with_capacity(ids.len());
-            for &id in &ids {
+            for &id in ids {
                 let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
                 pairs.push((shape, self.p.body_world_transform(id)));
                 report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume: None });
             }
-            qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {s}: {e}")))?;
+            qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
         }
-        report.bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         Ok(report)
     }
 }

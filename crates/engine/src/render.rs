@@ -140,10 +140,20 @@ impl Session {
         }
         let rgb = rasterize(&items, view, width as usize, height as usize);
         let mut bbox = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        // Shape bounds are in the body's own frame; the picture is in world space, so transform the corners.
         for b in self.result_bodies().iter().filter(|b| ids.contains(&b.id)) {
-            for k in 0..3 {
-                bbox[k] = bbox[k].min(b.bbox[k]);
-                bbox[k + 3] = bbox[k + 3].max(b.bbox[k + 3]);
+            let m = self.p.body_world_transform(b.id);
+            for i in 0..8 {
+                let c = [
+                    b.bbox[if i & 1 == 0 { 0 } else { 3 }],
+                    b.bbox[if i & 2 == 0 { 1 } else { 4 }],
+                    b.bbox[if i & 4 == 0 { 2 } else { 5 }],
+                ];
+                for k in 0..3 {
+                    let w = m[4 * k] * c[0] + m[4 * k + 1] * c[1] + m[4 * k + 2] * c[2] + m[4 * k + 3];
+                    bbox[k] = bbox[k].min(w);
+                    bbox[k + 3] = bbox[k + 3].max(w);
+                }
             }
         }
         Ok(Rendered { png: crate::pngfile::encode_rgb(width, height, &rgb), width, height, view, bodies: ids, bbox })

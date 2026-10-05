@@ -27,6 +27,8 @@ All notable changes to this project are documented here. The format follows
   duplicate of stdout and redirects fd 1 to stderr (ADR 0005).
 
 ### Security
+- Exports are written via a temporary file and an atomic rename (no write-through of hard links); export and
+  render refuse documents with features that did not build (review findings, phase 3C).
 - File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to
   `QYMCAD_MCP_ROOT` (docs/SECURITY.md). `export` accepts only its format's extensions (.step/.stp, .stl, .3mf,
   .glb, .obj) under the same rules.

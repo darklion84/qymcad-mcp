@@ -11,6 +11,9 @@ talks only to the MCP client that spawned it. It opens no network ports.
   working directory. `render` writes no file: the image is returned inline.
 - **Symlinks.** The target file and QymCAD's save companions (`.tmp~`, `.bak`) must not be symbolic links; a
   write through a planted link would land in an arbitrary file.
+- **Hard links and late swaps.** Exports are written to a fresh temporary file in the target directory and
+  renamed over the target, so a hard link (or a symlink swapped in after the check) never makes us truncate an
+  unrelated file; `.qcad` saves use QymCAD's own temp-and-rename.
 - **Optional confinement.** Set `QYMCAD_MCP_ROOT=/some/dir` in the server's environment to refuse any path
   outside that directory (symlinks are resolved before the check).
 - **Overwriting a full document with an empty one** is refused by QymCAD's guarded save.
