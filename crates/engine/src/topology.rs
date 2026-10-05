@@ -11,6 +11,7 @@ use qymcad_core::geom::{MeshEdge, MeshFace};
 use qymcad_core::model::Id;
 use qymcad_core::names::Role as QRole;
 use qymcad_core::refs::{Axis as QAxis, Query, Ref};
+use qymcad_kernel::Shape;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -372,7 +373,7 @@ impl Session {
     /// The faces and edges of `body` (default: the current body of the part). `adjacency` adds the edges of each
     /// face and the two faces of each edge.
     pub fn topology(&mut self, body: Option<Id>, adjacency: bool) -> Result<Topology> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         let body = self.topo_body(body)?;
         let shape = self.shapes.get(&body).ok_or_else(|| Error::NotFound(format!("body {body} has no built shape")))?;
         let faces = self.p.regen_faces.get(&body).map(Vec::as_slice).unwrap_or_default();
@@ -438,7 +439,7 @@ impl Session {
     /// Resolve a selection against `body` (default: the current body) now, as QymCAD will at the next rebuild.
     /// Returns the body and the matching ids.
     pub fn select(&mut self, body: Option<Id>, el: Element, sel: &Sel) -> Result<(Id, Vec<u32>)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         let body = self.topo_body(body)?;
         Ok((body, self.resolve_sel(body, el, sel)?))
     }
@@ -541,7 +542,7 @@ impl Session {
     /// A document opened from a file has live B-reps but no edges, and no faces when the file did not store them
     /// (F-3B-1). Edges come back from the B-reps (`restore_edges`, no rebuild, so stored edge queries keep their
     /// meaning, F-3B-2); missing faces need one full rebuild.
-    pub(crate) fn ensure_topology(&mut self) {
+    pub(crate) fn ensure_topology(&mut self) -> Result<()> {
         self.restore_edges();
         let consumed = self.p.consumed_bodies();
         let missing = self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).any(|b| {
@@ -549,10 +550,29 @@ impl Session {
                 && self.shapes.contains_key(&b)
                 && !(self.p.regen_faces.contains_key(&b) && self.p.regen_edges.contains_key(&b))
         });
-        if missing {
-            self.p.mark_all_dirty();
-            self.rebuild();
+        if !missing {
+            return Ok(());
         }
+        // A rebuild that fails would pass sources through (F-008) and change the bodies: keep the document and
+        // the shapes (as B-rep bytes; a Shape cannot be cloned) to put back. Only files saved without faces get here.
+        let before = self.p.clone();
+        let saved: Vec<(Id, Vec<u8>)> = {
+            let _gate = qymcad_kernel::kernel_gate();
+            self.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
+        };
+        self.p.mark_all_dirty();
+        let r = self.rebuild();
+        if r.errors.is_empty() {
+            return Ok(());
+        }
+        self.p = before;
+        self.shapes = {
+            let _gate = qymcad_kernel::kernel_gate();
+            saved.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
+        };
+        let mut lines = vec!["the document has no stored faces and needs a full rebuild to read its topology; it failed".to_string()];
+        lines.extend(r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)));
+        Err(Error::Rebuild(lines))
     }
 
     /// Whether face `id` of `body` is planar.

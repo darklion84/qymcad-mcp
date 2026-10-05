@@ -80,7 +80,7 @@ impl Session {
     /// some vanish. A stored edge *query* is not used: after the document is reopened in QymCAD.app it
     /// re-evaluates against an empty edge pool and rounds every edge (F-3B-2).
     pub fn fillet(&mut self, body: Option<Id>, edges: &Sel, radius: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let r = positive(s, radius, "fillet radius")?;
@@ -95,7 +95,7 @@ impl Session {
     /// Bevel edges of a body: symmetric (`dist`), or two distances (`dist` on one face, `d2` on the other).
     /// Edges are stored as a pick list, like `fillet`.
     pub fn chamfer(&mut self, body: Option<Id>, edges: &Sel, dist: &Num, d2: Option<&Num>, name: Option<&str>) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let d = positive(s, dist, "chamfer distance")?;
@@ -121,7 +121,7 @@ impl Session {
         side: Side,
         name: Option<&str>,
     ) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let t = positive(s, thickness, "shell thickness")?;
@@ -155,7 +155,7 @@ impl Session {
 
     /// Move one planar face along its outward normal by `dist` (negative pushes it in).
     pub fn push_face(&mut self, body: Option<Id>, face: &Sel, dist: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let d = dist.eval(&s.p.param_map())?;
@@ -178,7 +178,7 @@ impl Session {
 
     /// Drill a hole into a planar face (see `Hole`).
     pub fn hole(&mut self, a: &Hole) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(a.body)?;
             let key = s.planar_face(src, &a.face)?;

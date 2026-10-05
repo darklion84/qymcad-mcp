@@ -199,7 +199,9 @@ Conventions:
   It also restores `regen_edges` from the live B-reps through `Kernel::edges`, the call the regenerate post pass
   makes (`Session::restore_edges`), so nothing is rebuilt to get edges. `topology`, `select` and every 3B feature
   call `Session::ensure_topology`, which does the same and rebuilds everything once only when a current body has
-  no faces (a file saved without them).
+  no faces (a file saved without them). If that rebuild fails, the document and the shapes (kept as B-rep bytes)
+  are put back and the errors returned (test `a_failing_topology_rebuild_is_reported_and_changes_nothing`; before,
+  a failed fillet was silently passed through and the body changed).
 
 ## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
 

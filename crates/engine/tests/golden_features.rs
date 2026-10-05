@@ -833,3 +833,33 @@ fn a_rolled_back_feature_leaves_old_bodies_bit_identical() {
     let show = |v: &[(Id, u64)]| v.iter().map(|(i, b)| format!("{i}: {}", f64::from_bits(*b))).collect::<Vec<_>>();
     assert_eq!(after, before, "volumes after rollback {:?} vs before {:?}", show(&after), show(&before));
 }
+
+/// Review #10: a file saved without faces needs one full rebuild before its topology can be read. If that
+/// rebuild fails, the error is reported and the session stays exactly as opened (no fillet silently dropped).
+#[test]
+fn a_failing_topology_rebuild_is_reported_and_changes_nothing() {
+    use qymcad_core::feature::FeatureKind;
+    let (mut s, _) = block(20.0, 20.0, 20.0);
+    let (fillet, _) = s.fillet(None, &along_z(), &2.0.into(), None).unwrap();
+    let path = scratch("no_faces.qcad");
+    s.save(Some(&path)).unwrap();
+    {
+        // As written by a producer that stores no faces, with a fillet that no longer builds from scratch.
+        let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+        for b in &mut project.bodies {
+            b.faces.clear();
+        }
+        let node = project.timeline.iter_mut().find(|n| n.id == fillet).unwrap();
+        let FeatureKind::Fillet { radius, .. } = &mut node.kind else { panic!("not a fillet") };
+        *radius = 100.0;
+        qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    }
+    let (mut o, _) = Session::open(&path).unwrap();
+    let filleted = 8000.0 - (4.0 - PI) * 4.0 * 20.0;
+    let before: Vec<(Id, u64)> = o.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
+    assert_close(f64::from_bits(before[0].1), filleted, 1e-3, "opened as saved");
+    let e = o.topology(None, false).unwrap_err();
+    assert!(matches!(e, Error::Rebuild(_)), "{e}");
+    let after: Vec<(Id, u64)> = o.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
+    assert_eq!(after, before, "the session is as opened");
+}

@@ -96,7 +96,7 @@ impl Session {
 
     /// `count` copies along `d1` (and `d2`, if given) of the whole body, as one body.
     pub fn linear_array(&mut self, body: Option<Id>, d1: &ArrayDir, d2: Option<&ArrayDir>, name: Option<&str>) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let a = s.array_axis(d1)?;
@@ -133,7 +133,7 @@ impl Session {
         axis: Option<&AxisRef>,
         name: Option<&str>,
     ) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let n = s.count(count)?;
@@ -160,7 +160,7 @@ impl Session {
     /// Mirror the whole body about a base plane, a datum plane or a planar face. `keep` keeps the original too
     /// (one body holding both halves); otherwise only the image remains.
     pub fn mirror(&mut self, body: Option<Id>, plane: &PlaneRef, keep: bool, name: Option<&str>) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let id = match plane {

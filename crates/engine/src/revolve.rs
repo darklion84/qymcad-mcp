@@ -32,7 +32,7 @@ pub struct Revolve {
 
 impl Session {
     pub fn revolve(&mut self, a: &Revolve) -> Result<(Id, Rebuild)> {
-        self.ensure_topology();
+        self.ensure_topology()?;
         self.atomic(|s| {
             let profiles = match &a.profiles {
                 Some(ids) if !ids.is_empty() => ids.clone(),
