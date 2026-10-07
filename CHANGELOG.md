@@ -37,6 +37,17 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-3A-1..F-3A-6.
 
 ### Fixed
+- Line-line distances refuse contradictory rank-dependent parallelism and restore the whole sketch (A1).
+- Removing unrelated sketch geometry preserves free direction helpers and their parametric ArcLength dimensions;
+  helpers are pruned when their owner is removed (A2, F-3A-8).
+- Large finite numbers stay finite in rounded tool output, including nested topology JSON (A3).
+- Through-hole creation refuses stock whose bbox diagonal exceeds the fixed 10000 mm depth; tool descriptions
+  and findings document the limit and possible blindness after later stock growth (B1/B3, F-3B-6/F-3B-15).
+- Feature edits rebuild pending dirty nodes before snapshotting; failed sketch edits restore original live shapes
+  without rebuilding old bodies, preserving volume bits and project/shape consistency (B2, F-3B-12).
+- Tool argument fields are fully documented; fillet seam handling and asymmetric chamfer side selection now
+  match QymCAD's limitations (B4/B5, F-3B-7/F-3B-14).
+- Outward-shell golden coverage checks all four spherical corner radii against wall thickness (B6, F-3B-16).
 - OpenCASCADE's STEP-writer statistics no longer corrupt the stdio protocol: the server speaks JSON-RPC on a
   duplicate of stdout and redirects fd 1 to stderr (ADR 0005).
 - Phase 3B review round 1: non-finite dimensions ("nan", "1e400") refused; extrude/revolve `target` must be a

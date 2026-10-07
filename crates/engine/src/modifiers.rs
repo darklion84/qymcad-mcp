@@ -51,7 +51,8 @@ pub struct Hole {
     pub at: Option<[f64; 3]>,
     /// Diameter of the bore, mm (number or expression).
     pub diameter: Num,
-    /// Depth from the face (counterbore/countersink included). `None` = through all.
+    /// Depth from the face (counterbore/countersink included). `None` = 10000 mm; refused at creation when
+    /// the body's bbox diagonal exceeds that bound. Later stock growth beyond this depth can make it blind.
     pub depth: Option<Num>,
     /// Plain, counterbore or countersink.
     pub kind: HoleKind,
@@ -63,12 +64,12 @@ pub struct Hole {
     pub name: Option<String>,
 }
 
-/// Evaluate a dimension; positive values only.
 /// "Through all" for a hole. QymCAD's hole has no through-all extent, only a depth (F-3B-15); the app's own hole
-/// dialog goes up to 10000 mm, so that is what a through hole stores: it stays through however the stock grows
-/// (a depth taken from the stock's size at creation went blind after a parameter edit, review #6).
+/// dialog goes up to 10000 mm. Creation refuses stock whose bbox diagonal exceeds this fixed depth; subsequent
+/// stock growth beyond it can make the hole blind.
 pub(crate) const THROUGH_DEPTH: f64 = 10000.0;
 
+/// Evaluate a dimension; positive values only.
 fn positive(s: &Session, n: &Num, what: &str) -> Result<f64> {
     let v = n.eval(&s.p.param_map())?;
     if v.is_nan() || v <= 0.0 {
@@ -183,7 +184,18 @@ impl Session {
             let diameter = positive(s, &a.diameter, "hole diameter")?;
             let depth = match &a.depth {
                 Some(n) => positive(s, n, "hole depth")?,
-                None => THROUGH_DEPTH,
+                None => {
+                    let bb = s.shapes.get(&src).and_then(|shape| shape.bbox())
+                        .ok_or_else(|| Error::Invalid(format!("body {src} has no bounding box for a through hole")))?;
+                    // The bbox diagonal bounds the body's extent along any drill axis.
+                    let diagonal = (bb[3] - bb[0]).hypot(bb[4] - bb[1]).hypot(bb[5] - bb[2]);
+                    if diagonal > THROUGH_DEPTH {
+                        return Err(Error::Invalid(format!(
+                            "through hole depth is limited to {THROUGH_DEPTH} mm; body {src} bbox diagonal is {diagonal} mm; use an explicit depth"
+                        )));
+                    }
+                    THROUGH_DEPTH
+                }
             };
             let (kind, dia2, depth2) = match a.kind {
                 HoleKind::Plain => (0u8, 0.0, 0.0),

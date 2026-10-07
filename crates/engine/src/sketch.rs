@@ -17,7 +17,7 @@ use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane};
 use qymcad_core::model::{Constraint, EntityKind, Id, SketchPoint};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Where a sketch (or an offset plane) sits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -258,10 +258,41 @@ impl Session {
     /// rebuilt; if a feature that built before fails now, the edit is rolled back and the errors returned.
     pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
         let before = self.p.clone();
+        // regen_plan includes transitive sketch dependents and any already dirty nodes. Keep their original
+        // handles, rebuilding on independent B-rep copies: restoring a recipe by rebuilding drifts (F-3B-12).
+        let has_dependents = !before.dependents_of(sketch).is_empty();
+        let mut planned = before.clone();
+        planned.mark_sketch_dirty(sketch);
+        let nodes: HashSet<Id> = planned.regen_plan().nodes.into_iter().collect();
+        let mut saved: HashMap<Id, qymcad_kernel::Shape> = if has_dependents {
+            let _gate = qymcad_kernel::kernel_gate();
+            before
+                .timeline
+                .iter()
+                .filter(|n| nodes.contains(&n.id))
+                .flat_map(|n| n.kind.bodies())
+                .filter_map(|id| {
+                    self.shapes.get(&id).map(|sh| {
+                        sh.to_brep_bytes()
+                            .and_then(|b| qymcad_kernel::Shape::from_brep_bytes(&b))
+                            .map(|copy| (id, copy))
+                            .ok_or_else(|| Error::Io(format!("cannot snapshot body {id} before sketch edit")))
+                    })
+                })
+                .collect::<Result<_>>()?
+        } else {
+            HashMap::new()
+        };
+        for (id, copy) in &mut saved {
+            if let Some(original) = self.shapes.get_mut(id) {
+                std::mem::swap(original, copy);
+            }
+        }
         let value = match edit(self) {
             Ok(v) => v,
             Err(e) => {
                 self.p = before;
+                self.shapes.extend(saved);
                 return Err(e);
             }
         };
@@ -269,13 +300,14 @@ impl Session {
             return Ok((value, None));
         }
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
-        let r = self.rebuild();
+        let r = self.rebuild_retrying(Some(&nodes));
         let broken: Vec<String> =
             r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
         if !broken.is_empty() {
             self.p = before;
-            self.p.mark_all_dirty();
-            self.rebuild();
+            let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
+            self.shapes.retain(|id, _| live.contains(id));
+            self.shapes.extend(saved);
             return Err(Error::Rebuild(broken));
         }
         Ok((value, Some(r)))

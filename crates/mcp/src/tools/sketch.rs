@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateArgs {
+    /// Sketch plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or {"body": <body>, "face": <planar face id>}.
     pub plane: PlaneArg,
     /// Name to refer to the sketch later.
     #[serde(default)]

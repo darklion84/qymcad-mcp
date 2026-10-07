@@ -333,8 +333,10 @@ Conventions:
   numbers (no feature dimension); there is no "through" flag.
 - **Evidence:** test: `golden_features.rs` `holes_*`; source: `crates/qymcad-kernel/src/occt_io.cpp`
   `make_hole_tool` (~128-142), `regen.rs` `prep_hole` (~2064-2110).
-- **How we handle it:** the engine refuses a step that would be omitted; `through` is a depth longer than the
-  body's bbox diagonal at creation.
+- **How we handle it:** the engine refuses a step that would be omitted; `through` stores a fixed 10000 mm
+  depth (F-3B-15). Creation is refused when the source body's bbox diagonal exceeds 10000 mm, a safe bound on
+  its extent along any hole axis (`through_hole_refuses_stock_beyond_10000_mm`). An explicit depth remains
+  available; later stock growth beyond the stored depth can make a hole blind.
 
 ## F-3B-7 Seam edges and planar normals
 
@@ -406,11 +408,20 @@ Conventions:
   shape with a fresh one; `atomic` then restored the document but kept those shapes. A rolled-back feature moved
   the plate of F-017 from 22559.52 to 22560 mm³.
 - **Evidence:** test: `golden_features.rs` `a_rolled_back_feature_leaves_old_bodies_bit_identical` (failed with
-  exactly those volumes before the fix).
-- **How we handle it:** an edit's retry pass marks dirty only the nodes the edit created (`rebuild_retrying`);
-  old bodies are never rebuilt by a feature call, whether it succeeds or fails. `open`, `param_set` and
-  `ensure_topology` keep the full retry. Note: no current test needs the retry pass at all (all engine tests pass
-  with it disabled), so F-005 should be re-verified.
+  exactly those volumes before the fix); `rollback.rs` `a_failed_sketch_edit_restores_old_shapes_bit_identically`
+  reproduced 22559.519999999993 → 22560 during sketch rollback. Pending engine-level sketch edits can also make
+  an atomic feature rebuild old shapes before restoring an older project mesh: test
+  `a_failed_feature_uses_a_clean_baseline_for_pending_sketch_edits` (20³ block minus Ø4 through circle: 8000−80π).
+  `a_feature_refuses_a_failing_dirty_baseline_before_editing` checks refusal before adding a datum.
+  Source: `crates/qymcad-core/src/model/regen.rs:699-734`, `regen_plan` conservatively includes every node that
+  may rebuild, following dirty inputs through the timeline.
+- **How we handle it:** `atomic` first rebuilds pending dirty nodes and refuses the new edit if that baseline
+  has errors; only then is the project snapshotted. Its retry marks only newly created nodes dirty. `sketch_edit`
+  marks the sketch dirty in a project copy to plan affected bodies, including already dirty nodes, before the
+  edit. It retains those original live shape handles and rebuilds on independent B-rep copies; its retry is
+  limited to the planned nodes. Failure restores the project and the original shapes without another rebuild,
+  preserving exact volume bits. Untouched shapes remain live. `open`, `param_set`, and `ensure_topology` keep
+  the full retry.
 
 ## F-3B-13 There is no closed (hollow, unopened) shell
 
@@ -437,12 +448,24 @@ Conventions:
 - **What:** `HoleTool` is `{kind, diameter, depth, dia2, depth2}`; there is no extent or through flag, and `prep_hole`
   reuses the stored depth (or its `depth` expression) on every rebuild. The app's hole command asks for a depth in
   0.1–10000 mm. A "through" depth computed from the stock at creation becomes a blind hole after the stock grows.
-- **Evidence:** source: `crates/qymcad-core/src/model/regen.rs` `HoleTool` (~205-214), `prep_hole` (~2075);
-  `crates/qymcad-part/src/lib.rs` hole command params (~3448). observed before the fix: 40 × 30 block, h 10 → 100,
+- **Evidence:** source: `crates/qymcad-core/src/model/regen.rs:205-214` `HoleTool`, `regen.rs:2068-2081` `prep_hole`;
+  `crates/qymcad-part/src/lib.rs:3448` hole command depth cap. observed before the fix: 40 × 30 block, h 10 → 100,
   through Ø6 hole stopped at ≈ 52 mm (volume 118530.01 instead of 117172.57). test: `golden_features.rs`
-  `through_hole_stays_through_when_the_stock_grows` (server and GUI path).
-- **How we handle it:** `depth` omitted = 10000 mm (`modifiers::THROUGH_DEPTH`), the dialog's own maximum: through
-  for anything that fits a printer, and the GUI shows an ordinary hole with that depth.
+  `through_hole_stays_through_when_the_stock_grows` (server and GUI path);
+  `through_hole_refuses_stock_beyond_10000_mm` (40 × 30 × 20000 stock previously accepted a blind “through” hole).
+- **How we handle it:** `depth` omitted = 10000 mm (`modifiers::THROUGH_DEPTH`), the dialog's own maximum. Creation
+  refuses a source bbox diagonal > 10000 mm, which bounds the extent along any hole axis. The GUI shows an ordinary
+  fixed-depth hole. Later growth beyond that depth can make it blind; this is not an unbounded through-all feature.
+
+## F-3B-16 An outward shell rounds bottom corners with the offset thickness as radius
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** an outward shell of a rectangular block with its top open creates four spherical bottom corner
+  octants of radius equal to wall thickness t: every point of the offset sphere is distance t from its original
+  vertex. Its eight cylindrical edge rounds also have radius t.
+- **Evidence:** test: `golden_features.rs` `shell_open_top` checks all four sphere radii against t (1e-6 mm
+  tolerance); observed mutation: reporting sphere radii as 2r fails the new assertion.
+
 ## F-3A-1 The constants `pi`, `tau`, `e` shadow parameters of the same name
 
 - **Version:** v0.1.0-dev.20261001
@@ -536,7 +559,8 @@ Conventions:
 - **Evidence:** source: `crates/qymcad-core/src/model/timeline.rs` (~1384, 1514); test: `sketch_behaviour.rs`
   `editing_a_sketch_rebuilds_its_features`.
 - **How we handle it:** `Session::sketch_edit` rebuilds when the sketch has dependents and rolls the edit back if a
-  feature that built before now fails; the sketch tools use it.
+  feature that built before now fails; the sketch tools use it. Rollback restores original live shapes rather
+  than rebuilding the old recipe (F-3B-12; test: `a_failed_sketch_edit_restores_old_shapes_bit_identically`).
 
 ## F-3A-7 Dimensions keep their side: a coordinate expression cannot change sign; arc length is directed
 
@@ -565,15 +589,20 @@ Conventions:
   sign. Splitting sums into positive terms (works for some expressions only) and far anchors (zoom the GUI view
   out) were rejected.
 
-## F-3A-8 Deleting an entity drops every spline's control points
+## F-3A-8 Deleting an entity drops spline control points and free dimension helpers
 
 - **Version:** v0.1.0-dev.20261001
-- **What:** `delete_entities` keeps only points used by entities, the frame and midpoints; spline control points
-  are none of these, so removing any entity removes them (and the splines are left pointing at missing points).
-- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `delete_entities` (~665-708); observed: "spline
-  control point 4 was dropped"; test: `sketch_behaviour.rs` `removing_an_entity_keeps_splines`.
-- **How we handle it:** `sketch_remove_entity` marks spline points as midpoints of themselves for the call (a
-  protected kind) and removes the markers after.
+- **What:** `delete_entities` keeps only points used by entities, the frame and midpoints. Spline control points
+  and angle-reference points are none of these, so removing unrelated geometry drops them and their constraints,
+  including ArcLength driving a parametric arc end or polygon rotation (F-3A-7).
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs:685-705` `delete_entities`; engine helper creation:
+  `crates/engine/src/sketch/entities.rs:493-497`. Observed: "spline control point 4 was dropped"; test:
+  `sketch_behaviour.rs` `removing_an_entity_keeps_splines`, `golden_sketch.rs`
+  `unrelated_removal_keeps_parametric_polygon_direction` and `_gui` (rotation 30° → 120° stayed at 30° before
+  the fix; x extent √3 r instead of 2r).
+- **How we handle it:** `sketch_remove_entity` protects all existing points with temporary self-Midpoint markers
+  during `delete_entities`, removes the markers, then prunes helpers no longer tied to surviving entities or
+  splines. The polygon regression also verifies helpers disappear when their owner is removed.
 
 ## F-3A-9 Reference radius/diameter dimensions are refreshed from circles only
 
@@ -605,6 +634,10 @@ Conventions:
 - **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `add_constraint_if_independent` (~355-371),
   `crates/qymcad-core/src/solver.rs` `dof` (~1217-1257); test: `golden_sketch.rs` `three_lines_close_a_triangle`,
   `sketch_behaviour.rs` `circles_on_a_vertex_share_or_get_their_centre`, `an_implied_constraint_is_not_added`.
+  `a_line_distance_refuses_a_contradictory_rank_dependent_parallel` demonstrates a vertical length-10 line
+  against the x axis: adding Parallel is rank-dependent although unsatisfied.
 - **How we rely on it:** entity dimensions are filtered through it; `sketch_constrain` compares `sketch_dof` before
   and after (more redundancy = refused; a fully implied geometric constraint is checked for satisfaction by its own
-  residual before being skipped) and still requires the solve to reach residual ≤ 1e-6.
+  residual before being skipped) and still requires the solve to reach residual ≤ 1e-6. For a line-line distance,
+  omit the required Parallel only when it is both rank-dependent and satisfied; otherwise contradictory
+  parallelism refuses the whole constrain call and restores the sketch.

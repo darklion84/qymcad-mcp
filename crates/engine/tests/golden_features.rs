@@ -463,6 +463,22 @@ fn through_hole_stays_through_when_the_stock_grows() {
     assert_close(v, a * b * 150.0 - PI * 9.0 * 150.0, 1e-2, "GUI edit h=150");
 }
 
+#[test]
+fn through_hole_refuses_stock_beyond_10000_mm() {
+    let (a, b, h) = (40.0_f64, 30.0_f64, 20000.0_f64);
+    // Any directional body extent is bounded by its bbox diagonal √(a² + b² + h²), which exceeds
+    // QymCAD's fixed 10000 mm through-hole depth here (in particular, h itself is 20000 mm).
+    assert!((a * a + b * b + h * h).sqrt() > 10000.0);
+    let (mut s, _) = block(a, b, h);
+    let before = serde_json::to_value(s.project()).unwrap();
+    let old_bodies = s.result_bodies();
+    let err = s.hole(&hole(top(), None, 6.0.into(), None)).expect_err("through hole must refuse stock beyond 10000 mm");
+    assert!(matches!(&err, Error::Invalid(message) if message.contains("10000") && message.contains("bbox diagonal")), "{err}");
+    assert_eq!(serde_json::to_value(s.project()).unwrap(), before, "refusal leaves the project unchanged");
+    assert_eq!(s.result_bodies(), old_bodies, "refusal leaves live geometry unchanged");
+    assert_close(volume(&s), a * b * h, 1e-3, "stock volume after refusal");
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Shell, push face
 
@@ -488,7 +504,13 @@ fn shell_open_top() {
     let round: Vec<_> = topo.faces.iter().filter(|f| f.kind == FaceKind::Cylinder).collect();
     assert_eq!(round.len(), 8, "4 vertical + 4 bottom edge rounds");
     assert!(round.iter().all(|f| (f.radius.unwrap() - t).abs() < 1e-6));
-    assert_eq!(topo.faces.iter().filter(|f| f.kind == FaceKind::Sphere).count(), 4, "bottom corners");
+    let corners: Vec<_> = topo.faces.iter().filter(|f| f.kind == FaceKind::Sphere).collect();
+    assert_eq!(corners.len(), 4, "bottom corners");
+    for corner in corners {
+        // Offsetting a sharp corner outward by t creates a sphere octant at distance t from the
+        // original vertex; its radius therefore equals the wall thickness t.
+        assert_close(corner.radius.unwrap(), t, 1e-6, "outward shell corner radius");
+    }
     let bb = bbox(&s);
     assert_close(bb[3] - bb[0], a + 2.0 * t, 0.05, "outward shell width");
     assert_close(bb[5], h, 0.05, "outward shell top stays");

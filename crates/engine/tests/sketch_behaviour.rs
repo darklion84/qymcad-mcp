@@ -314,6 +314,24 @@ fn a_distance_between_lines_makes_them_parallel() {
     assert!(e.to_string().contains("parallel"), "{e}");
 }
 
+#[test]
+fn a_line_distance_refuses_a_contradictory_rank_dependent_parallel() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let l =
+        s.sketch_line(sk, &LineSpec { x1: v(0.0), y1: v(5.0), x2: v(0.0), y2: v(15.0), construction: false, dimensioned: false }).unwrap();
+    s.sketch_constrain(sk, &c(ConstraintKind::Vertical, &[id(l.entities[0])], None)).unwrap();
+    // The line length is 15 - 5 = 10; vertical + length leaves only its two translations free.
+    s.sketch_constrain(sk, &c(ConstraintKind::Distance, &[id(l.entities[0])], Some(v(15.0 - 5.0)))).unwrap();
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (2, 0));
+    let before = s.sketch_detail(sk).unwrap();
+    let e = s
+        .sketch_constrain(sk, &c(ConstraintKind::Distance, &[id(l.entities[0]), SketchRef::Frame(FrameRef::XAxis)], Some(v(5.0))))
+        .unwrap_err();
+    assert!(e.to_string().contains("parallel") && e.to_string().contains("contradicted"), "{e}");
+    assert_eq!(s.sketch_detail(sk).unwrap(), before, "the entire constrain call is rolled back");
+}
+
 fn param_arc() -> (Session, Id, Added) {
     let mut s = Session::new_part();
     s.param_set("r", &v(20.0)).unwrap();

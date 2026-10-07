@@ -88,7 +88,8 @@ pub struct FilletArgs {
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// The edges to round: ids from `topology` (current body only) or a description, e.g.
-    /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seam edges are ignored.
+    /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seams are not blendable:
+    /// the kernel may drop smooth edges, move a seam before blending a neighbouring edge, or refuse the blend.
     pub edges: SelArg,
     /// Radius, mm (number or expression).
     pub radius: Num,
@@ -107,7 +108,8 @@ pub struct ChamferArgs {
     pub edges: SelArg,
     /// Setback, mm (number or expression). Alone: a symmetric 45° chamfer.
     pub dist: Num,
-    /// Second setback on the other face, mm: an asymmetric chamfer.
+    /// Second setback on the other face, mm: an asymmetric chamfer. QymCAD chooses which adjacent face takes
+    /// `dist` for each edge; the side cannot be selected.
     #[serde(default)]
     pub d2: Option<Num>,
     /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
@@ -134,8 +136,8 @@ pub struct HoleArgs {
     /// Depth from the face, mm (number or expression). Give `depth` or `through`.
     #[serde(default)]
     pub depth: Option<Num>,
-    /// Through all: stored as a 10000 mm depth (the app's own maximum; QymCAD holes have no through-all), so it
-    /// stays through when the part grows.
+    /// Stored as a fixed 10000 mm depth (the app's own maximum; QymCAD holes have no through-all). Creation is
+    /// refused if the body's bbox diagonal exceeds 10000 mm. Growing the stock beyond this depth can make it blind.
     #[serde(default)]
     pub through: bool,
     /// plain (default), counterbore (dia2 × depth2 at the face), countersink (cone from dia2 at the face down to
@@ -406,7 +408,9 @@ pub fn tools() -> Vec<Tool> {
             concat!(
                 "Drill a hole into a planar face: plain, counterbore or countersink; blind (`depth`) or `through`. \
              The face may be described ({\"facing\": \"+z\"}, {\"of_feature\": \"plate\", \"role\": \"cap_end\"}): \
-             such a description is stored and keeps working after upstream edits. `at` is a world point.",
+             such a description is stored and keeps working after upstream edits. `at` is a world point. \
+             `through` stores a fixed 10000 mm depth; creation is refused when the body's bbox diagonal exceeds \
+             10000 mm. Later stock growth beyond that depth can make the hole blind.",
                 stale!()
             ),
             |st, a: HoleArgs| {

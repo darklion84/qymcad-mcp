@@ -116,7 +116,7 @@ impl Session {
     /// after a parameter edit is not bit-identical (F-017) — old geometry would move although the edit failed and
     /// was rolled back, or had nothing to do with it (F-3B-12). F-005 still holds: a datum created by the edit is
     /// one of its nodes.
-    fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
+    pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         let mut built = report.built;
@@ -144,8 +144,17 @@ impl Session {
     }
 
     /// Run `edit`, rebuild, and keep the result only if the nodes it created built cleanly. Otherwise restore
-    /// the document as it was and return the errors. Returns the edit's value and the rebuild report.
+    /// the document as it was and return the errors. Pending edits are rebuilt before the snapshot so the
+    /// project and its live shapes describe the same baseline (F-3B-12). Returns the edit's value and report.
     pub(crate) fn atomic<T>(&mut self, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Rebuild)> {
+        if self.p.timeline.iter().any(|n| n.dirty) {
+            let baseline = self.rebuild();
+            if !baseline.errors.is_empty() {
+                return Err(Error::Rebuild(
+                    baseline.errors.iter().map(|i| format!("baseline: {} ({}): {}", i.name, i.node, i.message)).collect(),
+                ));
+            }
+        }
         let before = self.p.clone();
         let old_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
         let value = match edit(self) {

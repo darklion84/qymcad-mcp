@@ -438,6 +438,51 @@ fn hexagon_rotation_crosses_90_degrees_gui() {
     assert_close((bb[0] + bb[3]) / 2.0, 5.0, 0.05, "GUI centre x");
 }
 
+fn hexagon_after_unrelated_removal() -> (Session, Id, Added) {
+    let (mut s, sk, added) = hexagon(Some(n("rot")));
+    let circle = s.sketch_circle(sk, &v(40.0), &v(0.0), &v(4.0), true).unwrap();
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, circle)).unwrap();
+    (s, sk, added)
+}
+
+#[test]
+fn unrelated_removal_keeps_parametric_polygon_direction() {
+    let (mut s, sk, added) = hexagon_after_unrelated_removal();
+    let d = s.sketch_detail(sk).unwrap();
+    assert!(d.constraints.iter().any(|c| c.kind == "arc_length"), "the polygon's ArcLength was dropped");
+    assert_eq!(d.summary.dof, (0, 0));
+    extrude(&mut s, sk, v(3.0));
+    let r = s.param_set("rot", &v(120.0)).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let p = d.points.iter().find(|p| p.id == added.points[1]).unwrap();
+    // A vertex is (cx + r cos θ, cy + r sin θ); at rot=120°, the six vertices also include 0° and 180°.
+    assert_close(p.x, 5.0 + 10.0 * 120f64.to_radians().cos(), 1e-6, "vertex x after unrelated removal");
+    assert_close(p.y, -3.0 + 10.0 * 120f64.to_radians().sin(), 1e-6, "vertex y after unrelated removal");
+    assert_close(r.bodies[0].bbox[3] - r.bodies[0].bbox[0], 2.0 * 10.0, 0.05, "x extent after unrelated removal");
+    for entity in added.entities {
+        s.sketch_remove_entity(sk, entity).unwrap();
+    }
+    let d = s.sketch_detail(sk).unwrap();
+    assert!(
+        d.points.iter().all(|p| p.role.is_some_and(|role| role != "angle_reference")),
+        "helpers outlived their polygon: {:?}",
+        d.points
+    );
+}
+
+#[test]
+fn unrelated_removal_keeps_parametric_polygon_direction_gui() {
+    let (mut s, sk, _) = hexagon_after_unrelated_removal();
+    extrude(&mut s, sk, v(3.0));
+    let path = scratch("hexagon_unrelated_removal_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    let (vol, bb) = gui_edit_param_body(&path, "rot", "120");
+    // At 120° the vertices are at multiples of 60°, so the x extent is the diameter 2r, not √3 r.
+    assert_close(bb[3] - bb[0], 2.0 * 10.0, 0.05, "GUI x extent after unrelated removal");
+    // Six equilateral triangles of side r give area 6(√3 r²/4), extruded 3 mm.
+    assert_close(vol, 6.0 * 3f64.sqrt() * 10f64.powi(2) / 4.0 * 3.0, 1e-3, "GUI volume after unrelated removal");
+}
+
 /// a1 120° → 240°: the sector grows from 90° to 210° (cos 120° = cos 240°, so an x dimension alone cannot tell).
 #[test]
 fn sector_end_angle_crosses_180_degrees() {

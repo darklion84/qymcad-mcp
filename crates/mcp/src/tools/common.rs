@@ -30,8 +30,16 @@ impl ObjRef {
 #[serde(untagged)]
 pub enum PlaneArg {
     Base(BaseName),
-    Datum { plane: ObjRef },
-    Face { body: ObjRef, face: u32 },
+    Datum {
+        /// Datum plane id or name.
+        plane: ObjRef,
+    },
+    Face {
+        /// Body id or name containing the face.
+        body: ObjRef,
+        /// Planar face id from the body's current topology.
+        face: u32,
+    },
 }
 
 impl PlaneArg {
@@ -46,7 +54,11 @@ impl PlaneArg {
 
 pub fn round(v: f64, dp: i32) -> f64 {
     let k = 10f64.powi(dp);
-    (v * k).round() / k
+    let scaled = v * k;
+    if !scaled.is_finite() {
+        return v;
+    }
+    scaled.round() / k
 }
 
 /// A rebuild report, compact: rounded numbers, empty lists omitted.
@@ -116,4 +128,23 @@ fn sibling(file: &std::path::Path, suffix: &str) -> PathBuf {
     let mut s = file.as_os_str().to_owned();
     s.push(suffix);
     PathBuf::from(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::round;
+    use serde_json::json;
+
+    #[test]
+    fn rounding_a_large_finite_value_preserves_it() {
+        // Rounding to six decimal places needs a factor 10^6. For 10^303 the product
+        // is 10^309, beyond f64::MAX (~1.8 × 10^308), although the input is finite.
+        // Its f64 spacing is much larger than 10^-6, so rounding must leave it unchanged.
+        for value in [1e303, -1e303] {
+            assert_eq!(round(value, 6), value, "rounding must preserve a finite value when scaling overflows");
+            assert_eq!(json!(round(value, 6)), json!(value));
+        }
+        // 1.23456 × 10^3 rounds to 1235, then dividing by 10^3 gives 1.235.
+        assert_eq!(round(1.23456, 3), 1.235);
+    }
 }

@@ -19,6 +19,7 @@ pub struct SetArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteArgs {
+    /// Name of the parameter to delete (case-insensitive). Refused while an expression still uses it.
     pub name: String,
 }
 

@@ -2,7 +2,7 @@
 //! and edges, directions and axes. These are parsed by hand from JSON so a malformed selection gets a precise
 //! error instead of serde's "did not match any variant".
 
-use super::common::{err, ObjRef};
+use super::common::{err, round, ObjRef};
 use super::{tool, Tool};
 use qymcad_engine::{Axis, AxisRef, EdgeKind, Element, FaceKind, Id, Role, Sel, Session, Topology};
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
@@ -25,13 +25,38 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
 #[derive(Clone, Debug)]
 pub enum SelArg {
     Ids(Vec<u32>),
-    OfFeature { feature: ObjRef, role: Option<Role> },
-    Facing { dir: [f64; 3], tol_deg: f64 },
-    Along { dir: [f64; 3], tol_deg: f64 },
-    Extreme { axis: Axis, max: bool },
+    OfFeature {
+        /// Feature id or name whose generated faces to select.
+        feature: ObjRef,
+        /// Restrict to this face role; omitted selects every face of the feature.
+        role: Option<Role>,
+    },
+    Facing {
+        /// World direction to compare with each planar face's outward normal.
+        dir: [f64; 3],
+        /// Angular tolerance in degrees, in [0, 90); default 5.
+        tol_deg: f64,
+    },
+    Along {
+        /// World direction of straight edges, in either sense.
+        dir: [f64; 3],
+        /// Angular tolerance in degrees, in [0, 90); default 5.
+        tol_deg: f64,
+    },
+    Extreme {
+        /// World axis along which to find the extreme faces or edges.
+        axis: Axis,
+        /// True selects the positive extreme; false selects the negative extreme.
+        max: bool,
+    },
     Largest,
     EdgesOf(Box<SelArg>),
-    TangentChain { seed: Box<SelArg>, tol_deg: f64 },
+    TangentChain {
+        /// Edges from which to follow a chain of smoothly continuing edges.
+        seed: Box<SelArg>,
+        /// Angular tolerance in degrees, in [0, 90); default 5.
+        tol_deg: f64,
+    },
     Between(Box<SelArg>, Box<SelArg>),
     Union(Vec<SelArg>),
     Minus(Box<SelArg>, Box<SelArg>),
@@ -237,8 +262,18 @@ pub enum AxisArg {
     World(Axis),
     Line(Id),
     Datum(Id),
-    Through { origin: [f64; 3], dir: [f64; 3] },
-    Face { face: u32, body: Option<ObjRef> },
+    Through {
+        /// Point on the fixed world axis [x, y, z], mm.
+        origin: [f64; 3],
+        /// Nonzero direction of the fixed world axis [x, y, z].
+        dir: [f64; 3],
+    },
+    Face {
+        /// Cylindrical or conical face id from the body's current topology.
+        face: u32,
+        /// Body id or name containing the face. Default: the part's current body.
+        body: Option<ObjRef>,
+    },
 }
 
 impl AxisArg {
@@ -348,8 +383,7 @@ impl JsonSchema for DirArg {
 pub fn round_json(v: &mut Value, dp: i32) {
     match v {
         Value::Number(n) if n.is_f64() => {
-            let k = 10f64.powi(dp);
-            let r = (n.as_f64().unwrap_or(0.0) * k).round() / k;
+            let r = round(n.as_f64().unwrap_or(0.0), dp);
             *v = json!(if r == 0.0 { 0.0 } else { r });
         }
         Value::Array(a) => a.iter_mut().for_each(|x| round_json(x, dp)),
@@ -509,4 +543,23 @@ pub fn tools() -> Vec<Tool> {
             },
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::round_json;
+    use serde_json::json;
+
+    #[test]
+    fn rounding_nested_topology_preserves_large_finite_values() {
+        // At four decimals the scaling factor is 10^4: 10^305 × 10^4 = 10^309,
+        // beyond f64::MAX. Input spacing exceeds 10^-4, so it must stay unchanged.
+        let mut value = json!({"faces": [{"area": 1e305, "centroid": [-1e305, -0.0, 1.23456]}]});
+        round_json(&mut value, 4);
+        assert_eq!(value["faces"][0]["area"], json!(1e305), "rounding must not turn a finite face area into null");
+        assert_eq!(value["faces"][0]["centroid"][0], json!(-1e305));
+        assert_eq!(value["faces"][0]["centroid"][1].as_f64().unwrap().to_bits(), 0.0f64.to_bits());
+        // 1.23456 × 10^4 = 12345.6; round to 12346 and divide to get 1.2346.
+        assert_eq!(value["faces"][0]["centroid"][2], json!(1.2346));
+    }
 }

@@ -162,6 +162,11 @@ impl Session {
             self.p.sketches[si].constraints.push(par);
             let implied = self.p.sketch_dof(si).0 == before.0;
             let holds = self.p.sketch_residuals(si).get(n).is_some_and(|r| *r < 1e-9);
+            if implied && !holds {
+                return Err(Error::Invalid(format!(
+                    "a distance between lines needs them parallel, but parallelism is contradicted by the constraints in sketch {sketch}"
+                )));
+            }
             if implied || spec.reference {
                 self.p.sketches[si].constraints.pop();
                 if spec.reference && !(implied && holds) {
@@ -212,11 +217,11 @@ impl Session {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }
             // `delete_entities` keeps only points that entities use (and the frame and midpoints), so it would drop
-            // every spline's control points (FINDINGS F-3A-8). Spline points are marked as midpoints of themselves
-            // for the call, which it protects, and the markers removed afterwards.
+            // spline controls and free dimension helpers such as angle references (FINDINGS F-3A-8). Protect all
+            // points for the call; `prune_debris` then removes the ones no longer tied to surviving geometry.
             let marker = |p: Id| Constraint::Midpoint { p, a: p, b: p };
-            let spline_pts: Vec<Id> = s.p.sketches[si].splines.iter().flat_map(|sp| sp.points.iter().copied()).collect();
-            s.p.sketches[si].constraints.extend(spline_pts.iter().map(|&p| marker(p)));
+            let points: Vec<Id> = s.p.sketches[si].points.iter().map(|p| p.id).collect();
+            s.p.sketches[si].constraints.extend(points.iter().map(|&p| marker(p)));
             s.p.delete_entities(si, &[entity]);
             s.p.sketches[si].constraints.retain(|c| !matches!(*c, Constraint::Midpoint { p, a, b } if p == a && a == b));
             s.prune_debris(si);

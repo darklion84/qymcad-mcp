@@ -43,9 +43,12 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 4. Report errors, warnings (`regen_warnings`) and the result bodies (unconsumed, with volume and bbox).
 
 ## Edits are atomic
-- `atomic(edit)` — features: snapshot the `Project`, apply, rebuild; if a node created by the edit has an
-  error, restore the snapshot, drop shapes of removed bodies and return `Error::Rebuild`. An agent never leaves
-  a half-built feature behind.
+- `atomic(edit)` — features: rebuild pending dirty nodes first, refusing the new edit if that baseline fails;
+  snapshot the clean `Project`, apply, rebuild (retrying only new nodes); if a node created by the edit has an
+  error, restore the snapshot, drop shapes of removed bodies and return `Error::Rebuild`.
+- `sketch_edit` — retain the original live shapes of bodies in the sketch's dirty rebuild plan; rebuild on
+  independent B-rep copies and retry only planned nodes. Failure restores the project and those original handles
+  without another rebuild, so old bodies remain bit-identical (F-3B-12).
 - `transact(edit)` — sketch geometry (no rebuild needed): restore on error.
 - `param_set` — the same, plus re-propagation after restoring.
 
@@ -74,7 +77,9 @@ are first-order perpendiculars. Every sketch edit is solved until it settles and
 
 `sketch_constrain` resolves ids to points/lines/circles (plus `origin`, `x_axis`, `y_axis`), builds the QymCAD
 constraint, and compares `sketch_dof` before/after: more redundancy → refused (a satisfied, fully implied geometric
-constraint is just not added); then it must solve. A distance between two lines adds `Parallel` with it. `sketch_edit` wraps sketch tools: on success, features that
+constraint is just not added); then it must solve. A distance between two lines requires `Parallel`: rank
+dependence permits omitting it only when its residual is satisfied; a contradiction refuses the call.
+`sketch_edit` wraps sketch tools: on success, features that
 read the sketch are rebuilt; a newly failing feature rolls the edit back.
 
 ## MCP layer (`crates/mcp/src`)

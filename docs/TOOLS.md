@@ -140,6 +140,7 @@ Delete a parameter. Refused while an expression still uses it.
   "additionalProperties": false,
   "properties": {
     "name": {
+      "description": "Name of the parameter to delete (case-insensitive). Refused while an expression still uses it.",
       "type": "string"
     }
   },
@@ -186,7 +187,8 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
         {
           "properties": {
             "plane": {
-              "$ref": "#/$defs/ObjRef"
+              "$ref": "#/$defs/ObjRef",
+              "description": "Datum plane id or name."
             }
           },
           "required": [
@@ -197,9 +199,11 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
         {
           "properties": {
             "body": {
-              "$ref": "#/$defs/ObjRef"
+              "$ref": "#/$defs/ObjRef",
+              "description": "Body id or name containing the face."
             },
             "face": {
+              "description": "Planar face id from the body's current topology.",
               "format": "uint32",
               "minimum": 0,
               "type": "integer"
@@ -226,7 +230,8 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
       ]
     },
     "plane": {
-      "$ref": "#/$defs/PlaneArg"
+      "$ref": "#/$defs/PlaneArg",
+      "description": "Sketch plane: \"XY\", \"XZ\", \"YZ\", {\"plane\": <datum plane>} or {\"body\": <body>, \"face\": <planar face id>}."
     }
   },
   "required": [
@@ -1053,7 +1058,8 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
         {
           "properties": {
             "plane": {
-              "$ref": "#/$defs/ObjRef"
+              "$ref": "#/$defs/ObjRef",
+              "description": "Datum plane id or name."
             }
           },
           "required": [
@@ -1064,9 +1070,11 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
         {
           "properties": {
             "body": {
-              "$ref": "#/$defs/ObjRef"
+              "$ref": "#/$defs/ObjRef",
+              "description": "Body id or name containing the face."
             },
             "face": {
+              "description": "Planar face id from the body's current topology.",
               "format": "uint32",
               "minimum": 0,
               "type": "integer"
@@ -1494,7 +1502,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "object"
         }
       ],
-      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seam edges are ignored."
+      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seams are not blendable:\nthe kernel may drop smooth edges, move a seam before blending a neighbouring edge, or refuse the blend."
     },
     "name": {
       "default": null,
@@ -1573,7 +1581,7 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
         }
       ],
       "default": null,
-      "description": "Second setback on the other face, mm: an asymmetric chamfer."
+      "description": "Second setback on the other face, mm: an asymmetric chamfer. QymCAD chooses which adjacent face takes\n`dist` for each edge; the side cannot be selected."
     },
     "dist": {
       "$ref": "#/$defs/Num",
@@ -1623,7 +1631,7 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
 
 ## hole
 
-Drill a hole into a planar face: plain, counterbore or countersink; blind (`depth`) or `through`. The face may be described ({"facing": "+z"}, {"of_feature": "plate", "role": "cap_end"}): such a description is stored and keeps working after upstream edits. `at` is a world point. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Drill a hole into a planar face: plain, counterbore or countersink; blind (`depth`) or `through`. The face may be described ({"facing": "+z"}, {"of_feature": "plate", "role": "cap_end"}): such a description is stored and keeps working after upstream edits. `at` is a world point. `through` stores a fixed 10000 mm depth; creation is refused when the body's bbox diagonal exceeds 10000 mm. Later stock growth beyond that depth can make the hole blind. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -1781,7 +1789,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
     },
     "through": {
       "default": false,
-      "description": "Through all: stored as a 10000 mm depth (the app's own maximum; QymCAD holes have no through-all), so it\nstays through when the part grows.",
+      "description": "Stored as a fixed 10000 mm depth (the app's own maximum; QymCAD holes have no through-all). Creation is\nrefused if the body's bbox diagonal exceeds 10000 mm. Growing the stock beyond this depth can make it blind.",
       "type": "boolean"
     }
   },
@@ -2256,7 +2264,8 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
         {
           "properties": {
             "plane": {
-              "$ref": "#/$defs/ObjRef"
+              "$ref": "#/$defs/ObjRef",
+              "description": "Datum plane id or name."
             }
           },
           "required": [
@@ -2267,9 +2276,11 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
         {
           "properties": {
             "body": {
-              "$ref": "#/$defs/ObjRef"
+              "$ref": "#/$defs/ObjRef",
+              "description": "Body id or name containing the face."
             },
             "face": {
+              "description": "Planar face id from the body's current topology.",
               "format": "uint32",
               "minimum": 0,
               "type": "integer"
