@@ -269,6 +269,18 @@ Conventions:
   reporting the problem later. Evidence: `open_edges.rs`
   `open_refuses_unnamed_edges_before_a_dirty_stored_query_rebuild` (box, stored Along(z) query; dirty fillet or
   missing fillet B-rep) and `open_keeps_a_clean_document_with_unnamed_edges_usable`; bypassing the open guard fails.
+  Restoration attempts all bodies even if one fails, so unrelated named queries still receive their edge pools.
+  Clean-open usability does not authorize later query rebuilds: the shared `rebuild_retrying` preflight refuses
+  planned fillet/chamfer queries depending directly or transitively on a live body with an empty edge pool and
+  no usable named edges. Errors identify its id and name; parameter/sketch/feature rollback preserves the Project
+  and original B-reps. Pick lists and unrelated features are not blocked by this preflight (F-3B-2).
+  The safety plan includes dirty sketch dependents: `regen_plan` omits sketch outputs from its dirty set
+  (`qymcad-core/src/model/regen.rs:699-734`), but regenerate inserts them (`regen.rs:1159`).
+  Evidence: `open_edges.rs` `clean_open_refuses_radius_edit_over_unnamed_edges_without_changing_state`,
+  `clean_open_refuses_sketch_edit_over_unnamed_edges_without_changing_state`, and
+  `clean_open_refuses_atomic_dirty_baseline_over_unnamed_edges_without_changing_state` compare exact serialized
+  Project and every live B-rep. `clean_open_refuses_query_with_transitive_unnamed_ancestor` uses an intervening
+  array with named edges. Disabling the shared preflight fails all four regressions.
 
 ## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
 
@@ -296,10 +308,22 @@ Conventions:
   `EdgesDropped` when some vanish. Face selections (hole, shell, push face) are stored as queries: the app restores
   faces on open, so they keep working (test `hole_diameter_follows_its_parameter`). Edge queries that *grow* with
   the topology are therefore not available until this is fixed upstream. Documents that already store edge queries
-  (made in the app) are safe in this server: the edges restored on open (F-3B-1) give the query its real pool, so
+  (made in the app) are safe to edit in this server when their edges restore successfully: the edges restored on
+  open (F-3B-1) give the query its real pool, so
   inspecting them changes nothing and a radius edit rounds the intended edges (test
   `stored_edge_query_is_safe_to_inspect_and_edit_after_open`; before the fix, `topology` alone removed 105.5 mm³).
-  The app itself still shows the bug.
+  When live edges cannot be restored, a clean document can still open, but every rebuild path refuses planned
+  stored edge queries (`!edges.query.is_pick_list()`, source `qymcad-core/src/refs.rs:202-208`) that depend on that
+  body. Transitive ancestry uses `Project::dependents` (`model/timeline.rs:20-51`). This also refuses a query when
+  its unnamed ancestor would rebuild earlier in the same pass; obtaining names by regeneration does not bypass
+  the safety check. An unrelated successful edit remains allowed. A full retry can introduce additional query
+  nodes, so it is checked before dirtying them. If that retry could be unsafe, the first pass runs on independent
+  B-rep copies and its original Project/handles are restored when the retry is refused.
+  Evidence: `open_edges.rs` `clean_open_radius_edit_with_named_edges_rounds_only_vertical_corners` derives
+  V = 20³ − 4(1 − π/4)r²·20 at r = 3; `clean_open_with_unnamed_edges_allows_an_unrelated_feature` preserves all
+  B-rep bytes while adding a datum; `unsafe_full_retry_restores_the_first_pass_project_and_shapes` compares exact
+  Project/B-rep bytes after a failed independent contour expands the retry. Disabling retry restoration fails
+  its Project byte assertion. The app itself still shows the upstream bug; this refusal is engine-only.
 
 ## F-3B-3 An empty edge list means "every edge"
 
@@ -439,8 +463,8 @@ Conventions:
   `a_failed_parameter_rebuild_restores_project_and_breps_exactly` compare exact project serialization and every
   live body B-rep on the pocket fixture after t 6 → 10. Restoring rollback propagation/regeneration fails both
   byte checks; the unsolved path also preserves a pending dirty sketch.
-  Source: `crates/qymcad-core/src/model/regen.rs:699-734`, `regen_plan` conservatively includes every node that
-  may rebuild, following dirty inputs through the timeline.
+  Source: `crates/qymcad-core/src/model/regen.rs:699-734`, `regen_plan` follows dirty body/datum inputs through
+  the timeline, but omits dirty sketch outputs; the edge-query safety preflight adds their dependents (F-3B-1).
 - **How we handle it:** `atomic` first rebuilds pending dirty nodes and refuses the new edit if that baseline
   has errors; only then is the project snapshotted. Feature calls remain refused while the dirty baseline cannot
   rebuild. Parameter and sketch edits bypass `atomic`, so they can repair that baseline. Its retry marks only

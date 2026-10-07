@@ -123,30 +123,128 @@ impl Session {
     /// was rolled back, or had nothing to do with it (F-3B-12). F-005 still holds: a datum created by the edit is
     /// one of its nodes.
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
+        let blocked = self.edge_query_rebuild_errors(&self.p);
+        if !blocked.is_empty() {
+            return Rebuild { errors: blocked, bodies: self.result_bodies(), ..Default::default() };
+        }
+        // A safe first pass may fail on an unrelated node, expanding the retry into a blocked query.
+        // Preserve original handles only in that case, so refusing the retry also undoes the first pass.
+        let saved = if only.is_none() && !self.p.regen_plan().nodes.is_empty() {
+            let mut retry = self.p.clone();
+            retry.mark_all_dirty();
+            if self.edge_query_rebuild_errors(&retry).is_empty() {
+                None
+            } else {
+                let copies: std::result::Result<HashMap<Id, Shape>, Id> = {
+                    let _gate = qymcad_kernel::kernel_gate();
+                    self.shapes
+                        .iter()
+                        .map(|(&id, sh)| sh.to_brep_bytes().and_then(|b| Shape::from_brep_bytes(&b)).map(|copy| (id, copy)).ok_or(id))
+                        .collect()
+                };
+                match copies {
+                    Ok(copies) => Some((self.p.clone(), std::mem::replace(&mut self.shapes, copies))),
+                    Err(body) => {
+                        return Rebuild {
+                            errors: vec![self.issue(body, format!("cannot snapshot body {body} before a guarded rebuild"))],
+                            bodies: self.result_bodies(),
+                            ..Default::default()
+                        }
+                    }
+                }
+            }
+        } else {
+            None
+        };
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
-        let mut built = report.built;
-        let (errors, shapes) = if report.errors.is_empty() {
-            (report.errors, shapes)
-        } else {
-            match only {
-                None => self.p.mark_all_dirty(),
-                Some(nodes) => self.p.timeline.iter_mut().filter(|n| nodes.contains(&n.id)).for_each(|n| n.dirty = true),
-            }
-            let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
-            built.extend(again.built);
-            (again.errors, shapes)
-        };
         self.shapes = shapes;
+        let mut built = report.built;
+        let mut errors: Vec<NodeIssue> = report.errors.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect();
+        if !errors.is_empty() {
+            // A full retry can reach queries absent from the first plan. Check that plan before changing
+            // dirty flags or handing shapes to the kernel; callers retain their existing rollback paths.
+            let mut retry = self.p.clone();
+            match only {
+                None => retry.mark_all_dirty(),
+                Some(nodes) => retry.timeline.iter_mut().filter(|n| nodes.contains(&n.id)).for_each(|n| n.dirty = true),
+            }
+            let blocked = self.edge_query_rebuild_errors(&retry);
+            if blocked.is_empty() {
+                self.p = retry;
+                let shapes = std::mem::take(&mut self.shapes);
+                let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
+                self.shapes = shapes;
+                built.extend(again.built);
+                errors = again.errors.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect();
+            } else {
+                errors.extend(blocked);
+                if let Some((project, shapes)) = saved {
+                    self.p = project;
+                    self.shapes = shapes;
+                    return Rebuild { errors, bodies: self.result_bodies(), ..Default::default() };
+                }
+            }
+        }
         // The GUI copies faces into bodies; a headless regenerate does not (FINDINGS F-007).
         for (id, faces) in built {
             self.p.set_body_faces(id, faces);
         }
         Rebuild {
-            errors: errors.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect(),
+            errors,
             warnings: self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect(),
             bodies: self.result_bodies(),
         }
+    }
+
+    /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.
+    /// Pick lists use live kernel edges; queries require the restored pool (F-3B-1/F-3B-2).
+    fn edge_query_rebuild_errors(&self, p: &Project) -> Vec<NodeIssue> {
+        use qymcad_core::feature::FeatureKind;
+        let mut planned: HashSet<Id> = p.regen_plan().nodes.into_iter().collect();
+        // regen_plan omits dirty sketch outputs, while regenerate inserts the sketch into its dirty set
+        // (regen.rs:1159). Include consumers that will become dirty during that pass.
+        for node in &p.timeline {
+            if planned.contains(&node.id) {
+                if let FeatureKind::Sketch { sketch } = node.kind {
+                    planned.extend(p.dependents(sketch));
+                }
+            }
+        }
+        let queries: Vec<Id> = p
+            .timeline
+            .iter()
+            .take(p.rollback.unwrap_or(usize::MAX))
+            .filter(|n| !n.suppressed && planned.contains(&n.id))
+            .filter(|n| matches!(&n.kind, FeatureKind::Fillet { edges, .. } | FeatureKind::Chamfer { edges, .. } if !edges.query.is_pick_list()))
+            .map(|n| n.id)
+            .collect();
+        if queries.is_empty() {
+            return Vec::new();
+        }
+        let _gate = qymcad_kernel::kernel_gate();
+        let mut errors = Vec::new();
+        for (&body, shape) in &self.shapes {
+            if p.regen_edges.get(&body).is_some_and(|edges| !edges.is_empty()) {
+                continue;
+            }
+            let edges = shape.edges_info();
+            // Match Kernel::edges' usable-name filter exactly (kernel.rs:386-399).
+            if edges.is_empty() || edges.iter().any(|e| e.id != 0 && e.poly.len() >= 2) {
+                continue;
+            }
+            let dependents = p.dependents(body);
+            for &node in queries.iter().filter(|node| dependents.contains(node)) {
+                errors.push(self.issue(
+                    node,
+                    format!(
+                        "body {body} `{}` has live edges but no usable named edges; refusing a stored edge query rebuild (F-3B-2)",
+                        self.node_name(body)
+                    ),
+                ));
+            }
+        }
+        errors
     }
 
     /// Run `edit`, rebuild, and keep the result only if the nodes it created built cleanly. Otherwise restore
@@ -277,7 +375,8 @@ impl Session {
                 error = Some(Error::Invalid(format!(
                     "body {b} has live edges but no usable named edges; refusing a full topology rebuild (F-3B-2)"
                 )));
-                break;
+                // Keep restoring other bodies: an unrelated named query must still receive its real pool.
+                continue;
             }
             if !edges.is_empty() {
                 self.p.regen_edges.insert(b, edges);

@@ -37,6 +37,9 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-3A-1..F-3A-6.
 
 ### Fixed
+- Every rebuild path refuses stored edge queries dependent on live bodies whose named edges could not be
+  restored after a clean open; errors identify the body and preserve exact Project/B-rep state, including
+  unsafe full retries. Named queries and unrelated features remain usable (E1, F-3B-1/F-3B-2).
 - Refuse opening unnamed live edges when dirty nodes or missing shapes require regeneration; clean documents
   remain usable and topology reports the issue later (D1, F-3B-1).
 - Parameter rollback restores exact project state and original B-reps without regeneration, including pending
