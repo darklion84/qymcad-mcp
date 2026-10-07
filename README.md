@@ -4,8 +4,12 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent build **n
 [QymCAD](https://github.com/QymIs-Tech/QymCAD) parts** — sketches, extrusions, cuts, fillets, holes, driven by
 named parameters — and save them as `.qcad` files you open and edit in the QymCAD app.
 
-> Status: **early development** — documents, parameters, rectangle/circle sketches, datum planes and extrusions
-> work ([roadmap](docs/ARCHITECTURE.md#roadmap), [tools](docs/TOOLS.md)).
+> Status: **pre-release (0.1.0 in progress).** 26 tools: documents and parameters; sketches (rectangle, circle,
+> line, polyline, arc, polygon, slot) fully dimensioned with expressions, plus constraints; datum planes;
+> extrude / cut / revolve; fillet, chamfer, hole, shell, push face; linear / circular arrays and mirror;
+> topology and descriptive selections; export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
+> See [docs/TOOLS.md](docs/TOOLS.md) and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
+> quirks are in [docs/FINDINGS.md](docs/FINDINGS.md).
 
 ## How it works
 The server links the QymCAD geometry crates (OpenCASCADE kernel) directly and runs headless: no QymCAD window
@@ -44,7 +48,9 @@ directory. See [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Development
 See [AGENTS.md](AGENTS.md) (rules, build, test), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[docs/FINDINGS.md](docs/FINDINGS.md) (QymCAD behaviour we rely on) and [docs/UPGRADING.md](docs/UPGRADING.md).
+[docs/FINDINGS.md](docs/FINDINGS.md) (QymCAD behaviour we rely on), [docs/adr/](docs/adr/) (decisions),
+[docs/UPGRADING.md](docs/UPGRADING.md) and [docs/BACKLOG.md](docs/BACKLOG.md). How changes are reviewed:
+[docs/reviews/](docs/reviews/).
 
 ## License
 AGPL-3.0-or-later, the same as QymCAD, whose code this server links.
