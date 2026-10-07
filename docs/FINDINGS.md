@@ -107,8 +107,10 @@ Conventions:
 - **What:** `MeshFace.id` / `MeshEdge.id` are recipe-based names (`project.names`) that survive regeneration and
   upstream edits; `add_fillet(src, r, ids)` matches them by name, and stale ids are repaired only on an
   unambiguous match (logged in `RegenReport.rebinds`). Descriptive selections (`refs::Ref` + `Query::{Adjacent,
-  TangentChain, Oriented, Extreme, OfFeature, ...}`) via `add_fillet_ref` / `add_chamfer_ref` are the robust
-  form. Topology must be re-read after every regenerate; ids live on the specific body.
+  TangentChain, Oriented, Extreme, OfFeature, ...}`) via `add_fillet_ref` / `add_chamfer_ref` are re-evaluated on
+  every rebuild, **but stored edge queries are not safe in QymCAD.app after reopening (F-3B-2)**: this server
+  stores edges as pick lists and keeps queries only for faces. Topology must be re-read after every regenerate;
+  ids live on the specific body.
 - **Evidence:** source: `crates/qymcad-core/src/names.rs`, `crates/qymcad-core/src/refs.rs` (~69-154),
   `crates/qymcad-testkit/tests/topo_naming_survives_edit.rs`.
 
@@ -233,3 +235,211 @@ Conventions:
   `crates/engine/src/render.rs`.
 - **Evidence:** source: `crates/qymcad-ui-state/src/lib.rs` `Cam3::default` (~2384) and `Cam3::basis` (~2389); test:
   `crates/engine/src/render.rs` `view_bases_are_orthonormal` (iso camera at +X −Y +Z).
+## F-3B-1 A reopened document has no edges (and, without the app's restore, no faces) until bodies rebuild
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `regen_faces` / `regen_edges` are derived and not saved. QymCAD.app's `finish_project_load` puts the
+  faces stored in `Body.faces` back into `regen_faces`, but nothing restores `regen_edges`: they are copied only
+  in the post pass of a regenerate, for the bodies rebuilt in that pass. A headless `load_project_with_brep` has
+  neither. Everything that reads topology (face/edge selections, sketches on faces) sees an empty body.
+- **Evidence:**
+  - observed: `topology` right after `Session::open` found no faces for the current body (probe, 2026-10-04).
+  - source: `crates/qymcad/src/gui/io_jobs.rs` `finish_project_load` (~131-137, faces restored, edges not);
+    `crates/qymcad-core/src/model/regen.rs` (~1265-1276, edges copied for `report.built` only).
+  - test: `crates/engine/tests/golden_features.rs` `topology_is_available_after_open`,
+    `hole_diameter_follows_its_parameter` (reopen, then edit).
+- **How we handle it:** `Session::open` restores `regen_faces` from `Body.faces` exactly like the app
+  (`session::restore_faces`; `tests/common::gui_edit_param` does the same so the GUI-path tests stay faithful).
+  It also restores `regen_edges` from the live B-reps through `Kernel::edges`, the call the regenerate post pass
+  makes (`Session::restore_edges`), so nothing is rebuilt to get edges. `topology`, `select` and every 3B feature
+  call `Session::ensure_topology`, which does the same and rebuilds everything once only when a current body has
+  no faces (a file saved without them). If that rebuild fails, the document and the shapes (kept as B-rep bytes)
+  are put back and the errors returned (test `a_failing_topology_rebuild_is_reported_and_changes_nothing`; before,
+  a failed fillet was silently passed through and the body changed).
+
+## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a fillet/chamfer whose edges are a descriptive `refs::Ref` (`add_fillet_ref`) resolves it against
+  `regen_edges` of its source. When the source was not rebuilt earlier (a reopened document, F-3B-1, then an edit
+  of the fillet's own parameter), the pool is empty, the query yields nothing, and for a query without explicit
+  descriptors (`Adjacent(OfFeature ..)`, `Oriented`, `Extreme` ...) the empty list reaches the kernel as "every
+  edge" (F-3B-3). The node stays green. A full rebuild right after opening does the same, because edges are only
+  copied in the post pass. Pick lists (`add_fillet(ids)`) are resolved against the kernel's live edges instead
+  (`live_edge_refs`) and are unaffected.
+- **Evidence:**
+  - test: `golden_features.rs` `stored_edge_query_rounds_everything_after_reopen_upstream_bug`: a cylinder with a
+    rim fillet stored as `Adjacent(OfFeature(cap end))`, reopened through the GUI path, radius 2 -> 4: both rims
+    rounded (removed 2 x 412.2 mm³). The test asserts the bug; when it fails, QymCAD fixed it.
+  - observed: a block with an `Oriented`-query fillet on the 4 vertical edges, reopened and fully rebuilt, had 26
+    faces (all 12 edges rounded) instead of 10.
+  - control: `golden_features.rs` `stored_edge_query_is_safe_to_inspect_and_edit_after_open` — the same stored
+    query reopened in this server (edges restored from the B-reps, `Session::restore_edges`) rounds one rim only,
+    on inspection and after editing the radius.
+  - source: `regen.rs` `prep_fillet` (~1317-1380), `live_fillet_edges` (~2614-2632).
+- **How we handle it:** `fillet` and `chamfer` resolve the agent's selection (ids or description) at creation
+  and store a pick list of persistent edge names. Those survive upstream edits that keep the faces' recipes
+  (test `descriptive_fillet_survives_an_upstream_edit`, through the server and the GUI path) and QymCAD warns
+  `EdgesDropped` when some vanish. Face selections (hole, shell, push face) are stored as queries: the app restores
+  faces on open, so they keep working (test `hole_diameter_follows_its_parameter`). Edge queries that *grow* with
+  the topology are therefore not available until this is fixed upstream. Documents that already store edge queries
+  (made in the app) are safe in this server: the edges restored on open (F-3B-1) give the query its real pool, so
+  inspecting them changes nothing and a radius edit rounds the intended edges (test
+  `stored_edge_query_is_safe_to_inspect_and_edit_after_open`; before the fix, `topology` alone removed 105.5 mm³).
+  The app itself still shows the bug.
+
+## F-3B-3 An empty edge list means "every edge"
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** fillet/chamfer with an empty edge list round/bevel every SHARP edge of the body (smooth, tangent edges
+  are skipped). A pick list that lost all its edges is refused (`EdgesNotFound`), but a descriptive query that
+  resolves to nothing is passed on as empty.
+- **Evidence:** source: `regen.rs` `prep_fillet` / `prep_chamfer` (`asked_edges` is computed from
+  `picked_descs()`, empty for descriptive queries); `crates/qymcad-kernel/src/kernel.rs` fillet (~657-660: an empty
+  list becomes `sharp_edge_ids()`, ~678 `fillet_all`) and chamfer (~800-806 `chamfer_all`); consequence observed
+  in F-3B-2.
+- **How we handle it:** a selection that resolves to no edge is refused at creation (test
+  `stale_and_foreign_ids_are_clear_errors`); edges are stored as pick lists (F-3B-2).
+
+## F-3B-4 Revolve: axis and direction
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `RevolveAxis { axis: 0 = sketch x, 1 = sketch y; datum; line }`; a sketch line wins over a datum axis,
+  which wins over x/y. `Reach::Forward` sweeps `[0, angle]` by the right-hand rule about the axis direction (a
+  profile at +X on XY revolved 180° about sketch y lands at z <= 0); `Backward` starts at `-angle`; `BothWays` at
+  `-angle/2`. With a body `src`, `add_revolve_multi_op` joins (1), cuts (0) or intersects (2) in one node.
+- **Evidence:** test: `golden_features.rs` `revolve_direction` (bbox z per direction), `revolve_tube_angles_and_axes`,
+  `revolve_cut_groove`; source: `regen.rs` `prep_revolve` (~2505-2560), `revolve_axis_local` (~2463).
+- **How we handle it:** world axes and `{origin, dir}` become manual datum axes; world Z needs one too for a
+  revolve (datum 0 means "none").
+
+## F-3B-5 Arrays copy the whole body; circular step is 360/count or angle/count
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** linear/circular arrays and mirror take a source *body* and produce one body holding all copies (a
+  mirror with `keep` fuses both halves). Circular step: `360/count` when `|angle| >= 359.9`, otherwise
+  `angle/count` (3 copies over 90° stand at 0/30/60°). Counts are feature dimensions (`count`, `count2`), so a
+  parameter can drive them; steps are `dx dy dz dx2 dy2 dz2`.
+- **Evidence:** test: `golden_features.rs` `circular_arrays_of_a_boss`, `linear_arrays_of_a_boss` (count from a
+  parameter), `mirror_keeps_or_replaces`; source: `regen.rs` `prep_circulararray` (~2266-2290),
+  `prep_lineararray` (~2229).
+
+## F-3B-6 Hole tool details
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a flat-bottomed cylinder along −normal from `at` projected onto the face; `depth` includes the
+  counterbore/countersink; a countersink is a cone from `dia2` at the face to `diameter` over `depth2`. If
+  `dia2 <= diameter` or `depth2 <= 0` the step is silently omitted (a plain hole). The position is stored as
+  numbers (no feature dimension); there is no "through" flag.
+- **Evidence:** test: `golden_features.rs` `holes_*`; source: `crates/qymcad-kernel/src/occt_io.cpp`
+  `make_hole_tool` (~128-142), `regen.rs` `prep_hole` (~2064-2110).
+- **How we handle it:** the engine refuses a step that would be omitted; `through` is a depth longer than the
+  body's bbox diagonal at creation.
+
+## F-3B-7 Seam edges and planar normals
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a cylindrical face's closing line is an edge whose `edge_face_pairs` entry names the same face twice;
+  descriptions such as "along z" include it. Seams are not blendable: the kernel drops smooth edges from a
+  fillet/chamfer and moves a seam off an edge that lies along one before blending, refusing the edge if it cannot
+  (`occt_io.cpp` `bladeable` / `along_a_seam` / `off_seams_first`, ~317-348). `MeshFace.normal` of a planar face
+  is outward. A fillet larger than the geometry fails with a node error ("fillet R15.00 only works edge by edge",
+  pinned in the test).
+- **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
+  them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.
+
+## F-3B-8 `Largest` ranks edges by chord, not length
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Project::edge_pool` scores an edge's "area" as |b − a|, so for `Query::Largest` a full circle scores
+  0 and an arc scores its chord: on a Ø20 × 10 cylinder the 10 mm seam is the "largest" edge, not the 62.8 mm
+  rims. `Largest` is evaluated against the whole pool wherever it is nested.
+- **Evidence:** test: `golden_features.rs` `largest_edge_is_the_longest_by_true_length` (returned only the seam
+  before the fix); source: `crates/qymcad-core/src/model.rs` `edge_pool` (~2896), `refs.rs` `Query::Largest`.
+- **How we handle it:** for edge selections the engine replaces every `largest` with the ids of the longest edges
+  by true length (as `topology` reports it) before resolving; edges are stored as pick lists anyway (F-3B-2).
+
+## F-3B-9 The expression evaluator has no recursion limit
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qymcad_core::expr::eval` is recursive descent (expr → term → power → unary → atom): each `(` costs
+  five frames, each unary sign and each `^` (right-recursive) one or two, with no depth or length cap. 100 000
+  `(` abort the process with a stack overflow. Parameters are evaluated by the same parser
+  (`eval_parameters`), so a file carrying such an expression would crash on open too.
+- **Evidence:** test: `crates/mcp/tests/protocol.rs` `a_pathological_expression_does_not_kill_the_server` (the
+  server died, EOF on stdout, before the gate); source: `crates/qymcad-core/src/expr.rs` (~131-234).
+- **How we handle it:** `value::check_expr` (≤ 1000 characters; ≤ 64 nested parentheses, `^`, consecutive signs)
+  runs in `Num::eval`, through which every feature and sketch dimension passes before it is stored, and in
+  `param_set`. Files are not checked on open (docs/SECURITY.md: open trusted files only).
+
+## F-3B-10 A deep query ladder makes the document unsaveable
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a stored `refs::Query` is written as nested RON; past the format's recursion limit `save` fails with
+  "Exceeded recursion limit, try increasing `ron::Options::recursion_limit`" (and such a file would not load).
+  A left-deep `Union(Union(..))` of 150 face descriptions still saved; 300 did not. Upstream `refs.rs` warns
+  about the same ladder for pick lists (`Ref::picks` uses a flat `Ids`).
+- **Evidence:** observed with a probe (shell open faces = union of n `facing` descriptions: n = 150 saved and
+  reopened; 300, 600, 1200 failed to save), 2026-10-05; test: `golden_features.rs`
+  `a_wide_union_saves_and_reopens` (failed at save before the fix), `selection_budget`.
+- **How we handle it:** unions of id lists become one flat `Ids`; other unions become balanced trees (depth
+  log2 n); every stored or resolved selection is limited to 512 parts and a query depth of 48
+  (`Sel::to_query`).
+
+## F-3B-11 Arrays have no size limit upstream
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `prep_lineararray` multiplies the three counts and allocates a transform per copy; nothing caps it, so
+  10000 × 10000 would try 10⁸ copies. Counts are feature dimensions, so a parameter edit can grow an array that
+  was small when created. Cost measured here: 1000 copies of a Ø2 × 2 cylinder took 1.2 s (debug and release),
+  linear in the count.
+- **Evidence:** source: `regen.rs` `prep_lineararray` (~2229-2260); observed with a probe 2026-10-05; test:
+  `golden_features.rs` `array_copies_are_bounded` (1089 and 1001 copies were built before the bound).
+- **How we handle it:** at most 1000 copies per array in total (`patterns::MAX_ARRAY_COPIES`), checked at creation
+  and in `param_set` before rebuilding (the edit is refused and rolled back). The QymCAD GUI is not limited.
+
+## F-3B-12 A full rebuild does not reproduce parameter-edited bodies bit for bit
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** after a parameter edit (F-017) the bodies differ slightly from a fresh build of the same recipe. The
+  engine's rebuild retried a failed pass with the whole timeline dirty (F-005), which replaced every old body's
+  shape with a fresh one; `atomic` then restored the document but kept those shapes. A rolled-back feature moved
+  the plate of F-017 from 22559.52 to 22560 mm³.
+- **Evidence:** test: `golden_features.rs` `a_rolled_back_feature_leaves_old_bodies_bit_identical` (failed with
+  exactly those volumes before the fix).
+- **How we handle it:** an edit's retry pass marks dirty only the nodes the edit created (`rebuild_retrying`);
+  old bodies are never rebuilt by a feature call, whether it succeeds or fails. `open`, `param_set` and
+  `ensure_topology` keep the full retry. Note: no current test needs the retry pass at all (all engine tests pass
+  with it disabled), so F-005 should be re-verified.
+
+## F-3B-13 There is no closed (hollow, unopened) shell
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** a shell needs at least one face to remove: with none, the kernel refuses with `FacesNotFound` before
+  doing anything (inward/outward), and nothing offers a closed hollow body.
+- **Evidence:** observed: `shell` without open faces failed with `error-faces-not-found` (review round 1);
+  source: `crates/qymcad-kernel/src/kernel.rs` `shell_named` (~844-849).
+- **How we handle it:** `open_faces` is required (engine and tool); omitting it is a clear argument error.
+
+## F-3B-14 A two-distance chamfer puts `dist` on a face QymCAD chooses
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** with `ChamferMode::TwoDist` and `ref_face: 0`, which of the edge's two faces takes the first distance
+  is the kernel's choice per edge: on a 40 × 30 block, the vertical edge at (+x, +y) put `dist` on the +x face;
+  the other three vertical edges put it on the y face. The engine does not expose `flip` / `ref_face`, so an
+  agent cannot choose the side.
+- **Evidence:** observed with a probe (face areas after a 2/4 chamfer at each corner), 2026-10-05; test:
+  `golden_features.rs` `chamfer_vertical_edges` pins the (+x, +y) case.
+
+## F-3B-15 A hole has no through-all; the app's dialog caps the depth at 10000 mm
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `HoleTool` is `{kind, diameter, depth, dia2, depth2}`; there is no extent or through flag, and `prep_hole`
+  reuses the stored depth (or its `depth` expression) on every rebuild. The app's hole command asks for a depth in
+  0.1–10000 mm. A "through" depth computed from the stock at creation becomes a blind hole after the stock grows.
+- **Evidence:** source: `crates/qymcad-core/src/model/regen.rs` `HoleTool` (~205-214), `prep_hole` (~2075);
+  `crates/qymcad-part/src/lib.rs` hole command params (~3448). observed before the fix: 40 × 30 block, h 10 → 100,
+  through Ø6 hole stopped at ≈ 52 mm (volume 118530.01 instead of 117172.57). test: `golden_features.rs`
+  `through_hole_stays_through_when_the_stock_grows` (server and GUI path).
+- **How we handle it:** `depth` omitted = 10000 mm (`modifiers::THROUGH_DEPTH`), the dialog's own maximum: through
+  for anything that fits a printer, and the GUI shows an ordinary hole with that depth.

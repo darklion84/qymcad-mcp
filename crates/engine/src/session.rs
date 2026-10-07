@@ -58,12 +58,14 @@ impl Session {
         let qymcad_io::LoadedProject { mut project, breps } =
             qymcad_io::load_project_with_brep(s).map_err(|e| Error::Io(format!("cannot open {s}: {e}")))?;
         project.ensure_document();
+        restore_faces(&mut project);
         let shapes: HashMap<Id, Shape> = {
             let _gate = qymcad_kernel::kernel_gate();
             breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
+        sess.restore_edges();
         sess.p.eval_parameters();
         if missing {
             sess.p.mark_all_dirty();
@@ -106,13 +108,25 @@ impl Session {
     /// the same edit is resolved only during regenerate (FINDINGS F-005), and `retryable()` errors need a pass
     /// after their source exists.
     pub fn rebuild(&mut self) -> Rebuild {
+        self.rebuild_retrying(None)
+    }
+
+    /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
+    /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
+    /// after a parameter edit is not bit-identical (F-017) — old geometry would move although the edit failed and
+    /// was rolled back, or had nothing to do with it (F-3B-12). F-005 still holds: a datum created by the edit is
+    /// one of its nodes.
+    fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         let mut built = report.built;
         let (errors, shapes) = if report.errors.is_empty() {
             (report.errors, shapes)
         } else {
-            self.p.mark_all_dirty();
+            match only {
+                None => self.p.mark_all_dirty(),
+                Some(nodes) => self.p.timeline.iter_mut().filter(|n| nodes.contains(&n.id)).for_each(|n| n.dirty = true),
+            }
             let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
             built.extend(again.built);
             (again.errors, shapes)
@@ -141,7 +155,8 @@ impl Session {
                 return Err(e);
             }
         };
-        let r = self.rebuild();
+        let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
+        let r = self.rebuild_retrying(Some(&new_nodes));
         let new_errors: Vec<String> =
             r.errors.iter().filter(|i| !old_nodes.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
         if !new_errors.is_empty() {
@@ -223,5 +238,38 @@ impl Session {
 
     fn issue(&self, node: Id, message: String) -> NodeIssue {
         NodeIssue { node, name: self.node_name(node), message }
+    }
+}
+
+/// Like QymCAD.app's `finish_project_load`: the B-rep faces stored in the bodies go back into `regen_faces`, so
+/// face references resolve by id without a rebuild. Edges are NOT restored by the app either (F-3B-1).
+impl Session {
+    /// Fill `regen_edges` for live bodies that lack them, from their B-reps, through the same `Kernel::edges` the
+    /// regenerate post pass uses (F-3B-1). Without it a stored edge query resolves against an empty pool and rounds
+    /// every edge (F-3B-2), on the first rebuild after opening.
+    pub(crate) fn restore_edges(&mut self) {
+        use qymcad_core::feature::Kernel;
+        let need: Vec<Id> = self.shapes.keys().copied().filter(|b| !self.p.regen_edges.contains_key(b)).collect();
+        if need.is_empty() {
+            return;
+        }
+        let _gate = qymcad_kernel::kernel_gate();
+        let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut self.shapes)), ..Default::default() };
+        for b in need {
+            let edges = kernel.edges(b);
+            if !edges.is_empty() {
+                self.p.regen_edges.insert(b, edges);
+            }
+        }
+        self.shapes = kernel.shapes.into_inner();
+    }
+}
+
+pub(crate) fn restore_faces(p: &mut Project) {
+    for i in 0..p.bodies.len() {
+        if let (Some(body), false) = (p.mesh_id(i), p.bodies[i].faces.is_empty()) {
+            let faces = p.bodies[i].faces.clone();
+            p.regen_faces.insert(body, faces);
+        }
     }
 }

@@ -59,14 +59,17 @@ pub struct Extrude {
     pub profiles: Option<Vec<Id>>,
     /// Distance, mm (number or expression). Ignored when `through` is set.
     pub height: Num,
+    /// What the extrude does to the part: add (creates the first body), cut, intersect, or a new body.
     #[serde(default)]
     pub op: Op,
+    /// Which way from the sketch plane, relative to its normal.
     #[serde(default)]
     pub direction: Direction,
     /// Cut/add through the whole body (only for `cut`, `add` onto an existing body, `intersect`).
     #[serde(default)]
     pub through: bool,
-    /// Body to modify. Default: the current body of the part.
+    /// Body to modify; must be a current (unconsumed) body. Default: the current body of the part. Not allowed
+    /// with `Op::NewBody`.
     #[serde(default)]
     pub target: Option<Id>,
     /// Name for the feature, usable instead of its id later.
@@ -114,13 +117,16 @@ impl Session {
                 return Err(Error::NotFound(format!("contour {bad} in sketch {}", a.sketch)));
             }
             let h = a.height.eval(&s.p.param_map())?;
-            if !a.through && h <= 0.0 {
+            if !a.through && (h.is_nan() || h <= 0.0) {
                 return Err(Error::Invalid(format!("height must be positive, got {h}")));
             }
             let reach: Reach = a.direction.into();
-            let src = match a.target {
-                Some(t) => Some(t),
-                None => s.tip_body(),
+            // A target must be a current body: an extrude into a consumed one branches a ghost chain (F-009). A new
+            // body has no target; asking for both is a contradiction, not something to guess about.
+            let src = match (a.target, a.op) {
+                (Some(_), Op::NewBody) => return Err(Error::Invalid("op new_body makes a separate body; omit `target`".into())),
+                (Some(t), _) => Some(s.source_body(Some(t))?),
+                (None, _) => s.tip_body(),
             };
             let id = match (a.op, src) {
                 (Op::NewBody, _) | (Op::Add, None) => {

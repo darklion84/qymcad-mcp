@@ -7,6 +7,7 @@ mod features;
 mod output;
 mod params;
 mod sketch;
+mod topology;
 
 use qymcad_engine::Session;
 use schemars::JsonSchema;
@@ -89,6 +90,7 @@ impl Registry {
         tools.extend(sketch::tools());
         tools.extend(features::tools());
         tools.extend(output::tools());
+        tools.extend(topology::tools());
         Registry { tools, state: State::default() }
     }
 

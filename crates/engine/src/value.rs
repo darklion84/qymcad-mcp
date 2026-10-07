@@ -27,16 +27,22 @@ impl Num {
     pub fn eval(&self, vars: &HashMap<String, f64>) -> Result<f64> {
         match self {
             Num::Value(v) if v.is_finite() => Ok(*v),
-            Num::Value(v) => Err(Error::Invalid(format!("number {v} is not finite"))),
+            Num::Value(v) => Err(Error::Expr(format!("number {v} is not finite"))),
             Num::Expr(s) => {
                 let e = normalize_expr(s);
-                // A plain number written as a string is still a number.
-                if let Ok(v) = e.parse::<f64>() {
-                    return Ok(v);
+                check_expr(&e)?;
+                // A plain number written as a string is still a number. Rust's parser also accepts "nan",
+                // "inf" and overflowing literals such as "1e400"; those are refused below.
+                let v = match e.parse::<f64>() {
+                    Ok(v) => v,
+                    // QymCAD's own arithmetic parser (numbers, + - * / ^, a fixed set of math functions,
+                    // parameter names); it does not execute code.
+                    Err(_) => qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {err:?}")))?,
+                };
+                if !v.is_finite() {
+                    return Err(Error::Expr(format!("`{e}` is not a finite number ({v})")));
                 }
-                // QymCAD's own arithmetic parser (numbers, + - * / ^, a fixed set of math functions, parameter
-                // names); it does not execute code.
-                qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {err:?}")))
+                Ok(v)
             }
         }
     }
@@ -62,6 +68,43 @@ impl From<&str> for Num {
     fn from(s: &str) -> Self {
         Num::Expr(s.to_string())
     }
+}
+
+/// Longest expression accepted, in characters. Real dimension formulas are tens of characters.
+const MAX_EXPR_LEN: usize = 1000;
+/// Deepest nesting accepted, per kind (parentheses, consecutive unary signs, `^`). QymCAD's parser
+/// (`qymcad_core::expr`) is recursive descent without a depth cap: each `(` costs five frames, each unary sign
+/// and each `^` one or two, so 100 000 of them overflow the stack and abort the process. 64 of each is far
+/// beyond any real formula and a few hundred frames deep.
+const MAX_EXPR_NESTING: usize = 64;
+
+/// Refuse expressions that could overflow QymCAD's recursive parser. Every string the engine hands to QymCAD's
+/// evaluator goes through here: `Num::eval` (all feature and sketch dimensions are evaluated before they are
+/// stored) and `Session::param_set` (parameters).
+pub(crate) fn check_expr(e: &str) -> Result<()> {
+    if e.chars().count() > MAX_EXPR_LEN {
+        return Err(Error::Expr(format!("expression longer than {MAX_EXPR_LEN} characters")));
+    }
+    let (mut depth, mut max_depth, mut carets, mut run, mut max_run) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    for c in e.chars().filter(|c| !c.is_whitespace()) {
+        match c {
+            '(' => {
+                depth += 1;
+                max_depth = max_depth.max(depth);
+            }
+            ')' => depth = depth.saturating_sub(1),
+            '^' => carets += 1,
+            _ => {}
+        }
+        run = if c == '-' || c == '+' { run + 1 } else { 0 };
+        max_run = max_run.max(run);
+    }
+    if max_depth > MAX_EXPR_NESTING || carets > MAX_EXPR_NESTING || max_run > MAX_EXPR_NESTING {
+        return Err(Error::Expr(format!(
+            "expression nested too deeply (at most {MAX_EXPR_NESTING} levels of parentheses, `^` or consecutive signs)"
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) fn normalize_expr(s: &str) -> String {

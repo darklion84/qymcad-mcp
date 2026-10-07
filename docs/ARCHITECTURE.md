@@ -24,8 +24,12 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-3C-2) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
 | `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
+| `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-3B-8, balanced unions and a size/depth budget F-3B-10); `select`; `ensure_topology` after open (F-3B-1; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
+| `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-3B-2), shell, push face, hole |
+| `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
+| `patterns.rs` | linear/circular arrays and mirror of the whole body (F-3B-5), at most 1000 copies also on parameter edits (F-3B-11); `AxisRef` → datum axes (identical fixed axes reused) |
 | `info.rs` | `DocInfo` snapshot for the agent |
-| `value.rs` | `Num` (number or expression) |
+| `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-3B-9) |
 | `error.rs` | `Error` with agent-oriented messages |
 
 ## The regenerate pipeline (`Session::rebuild`)
@@ -48,6 +52,14 @@ x/y between corners) + a centre point (`Midpoint` of the diagonal) pinned from t
 + centre pinned. Pinning uses `Distance{axis}` from the origin (a magnitude `|Δ|`: the side comes from the
 initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an axis for a plain zero.
 
+## Topology and selections
+Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
+new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
+mapped onto `refs::Query`). Edge selections are resolved when the feature is created and stored as pick lists:
+stored edge queries break after the document is reopened in the app (F-3B-2). Face selections (hole, shell, push
+face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
+empty edge list would mean "every edge", F-3B-3).
+
 ## MCP layer (`crates/mcp/src`)
 | File | Owns |
 |---|---|
@@ -55,6 +67,7 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 | `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema from the argument type), `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
 | `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
 | `tools/{doc,params,sketch,features,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
+| `tools/topology.rs` | `topology`, `select`; JSON forms of selections, axes and directions (hand-parsed for precise errors), shared with `tools/features.rs` |
 | `lib.rs` | agent instructions; installed-app release check (F-018) |
 | `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-3C-1) |
 
@@ -64,7 +77,7 @@ normal result with `isError: true` and the message (the model must see it). Argu
 
 ## Testing
 - `tests/smoke.rs` — the kernel links and builds.
-- `tests/golden_*.rs` — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
+- `tests/golden_*.rs` (`golden_plate`, `golden_features`: every 3B operation) — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
   rebuild path** (`common::gui_edit_param` reproduces QymCAD.app's open → edit parameter → rebuild sequence).
 - `tests/golden_export.rs` — every export format read back (STEP volume via `read_exact`, STL/3MF mesh volume and
   bbox, GLB metres/+Y up, OBJ triangle count), quality presets, body selection; renders decoded with the `png`
@@ -80,6 +93,6 @@ normal result with `isError: true` and the message (the model must see it). Argu
 | 0 | Repository skeleton, pinned build, docs, ADRs, smoke test | done |
 | 1 | Engine core: session, regenerate pipeline, params, rect/circle sketches, extrude/cut, offset plane | done |
 | 2 | MCP transport + phase-1 tools, protocol tests, registration | done |
-| 3 | Sketch entities & constraints; topology + fillet/chamfer/hole/shell/arrays/mirror/revolve; export + render | — |
+| 3 | Sketch entities & constraints (3A); topology + fillet/chamfer/hole/shell/arrays/mirror/revolve (3B); export + render (3C) | in progress: 3B implemented and in review on `phase3/3b-features`; 3A, 3C on their branches |
 | 4 | Acceptance on real parts (collet test plate, hanging shelf) vs build123d references | — |
 | 5 | Release 0.1.0 | — |

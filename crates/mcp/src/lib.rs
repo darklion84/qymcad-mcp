@@ -17,6 +17,10 @@ pub fn instructions(app_note: &str) -> String {
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\
          render (view iso/top/front/...) returns a picture to check the shape; export writes STEP/STL/3MF/GLB/OBJ.\n\
+         Finishing: topology lists the current body's faces and edges with persistent ids (re-read it after every \
+         feature: each feature makes a new body). fillet/chamfer/hole/shell/push_face take selections: ids, or \
+         descriptions such as {{\"edges_of\": {{\"facing\": \"+z\"}}}} or {{\"along\": \"z\"}}; preview them with \
+         select. revolve turns sketch contours about an axis; linear_array/circular_array/mirror copy the whole body.\n\
          Every feature is atomic: on error nothing changes and the message says why. Objects can be referred to \
          by id or by the name given at creation.\n\
          The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}",
