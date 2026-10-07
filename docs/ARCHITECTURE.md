@@ -31,6 +31,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-024), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
 | `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
+| `history.rs` | guarded native deletion with extended dependency closure; Project/original-shape snapshots, 16-entry modelling undo (ADR 0008) |
 | `info.rs` | `DocInfo` snapshot for the agent |
 | `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-031) |
 | `error.rs` | `Error` with agent-oriented messages |
@@ -40,7 +41,8 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 2. If there were errors: mark everything dirty and run once more (F-005: datum planes resolve during
    regenerate; `retryable()` errors).
 3. Copy `report.built` faces into the bodies (F-007), so saved files have faces like GUI-saved ones.
-4. Report errors, warnings (`regen_warnings`) and the result bodies (unconsumed, with volume and bbox).
+4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
+5. Report errors, warnings (`regen_warnings` plus session advisories) and the result bodies (unconsumed, with volume and bbox).
 
 ## Edits are atomic
 - `atomic(edit)` — features: rebuild pending dirty nodes first, refusing the new edit if that baseline fails;
@@ -56,6 +58,12 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
   have changed). Before rebuilding, retain original live shapes of planned bodies and regenerate on B-rep
   copies, retrying only planned nodes; failure restores the project and original handles without regeneration.
 
+MCP modelling tool calls establish a session history boundary before invoking the typed handler. Independent
+B-rep copies isolate live shapes; failed calls restore the original Project/handles/diagnostics, successful
+calls retain up to 16 snapshots. Undo restores a snapshot without regeneration. Read/save/export calls do
+not enter modelling history; doc_new/doc_open replace the Session and its history. Opening compares stored
+and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds (ADR 0009).
+
 ## Sketch dimensions
 Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along
 x/y between corners) + a centre point (`Midpoint` of the diagonal) pinned from the origin; circle = `Diameter`
@@ -65,7 +73,7 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 ## Topology and selections
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
-mapped onto `refs::Query`). Edge selections are resolved when the feature is created and stored as pick lists:
+mapped onto `refs::Query`, with engine-only concave/convex planar-corner filters lowered to ids). Edge selections are resolved when the feature is created and stored as pick lists:
 stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
 face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-025).
@@ -92,7 +100,7 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 | `transport.rs` | newline-delimited JSON-RPC: `initialize` (version negotiation, `instructions`), `ping`, `tools/list`, `tools/call`; notifications ignored |
 | `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema from the argument type), `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
 | `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
-| `tools/{doc,params,sketch,features,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
+| `tools/{doc,params,sketch,features,history,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
 | `tools/topology.rs` | `topology`, `select`; JSON forms of selections, axes and directions (hand-parsed for precise errors), shared with `tools/features.rs` |
 | `lib.rs` | agent instructions; installed-app release check (F-018) |
 | `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-019) |

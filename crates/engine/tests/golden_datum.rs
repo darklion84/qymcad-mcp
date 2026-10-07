@@ -22,6 +22,10 @@ fn build(mode: &str) -> Session {
             let (p, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &2.0.into(), None).unwrap();
             (PlaneRef::Plane(p), expr("t-2"))
         }
+        "both" => {
+            let (p, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &expr("t/2"), None).unwrap();
+            (PlaneRef::Plane(p), expr("t/2"))
+        }
         _ => unreachable!(),
     };
     let (p, _) = s.plane_offset(&base, &dist, None).unwrap();
@@ -115,8 +119,15 @@ fn open_refreshes_guards_after_gui_datum_definition_changes() {
         let (mut s, r) = Session::open(&path).unwrap();
         assert!(r.errors.is_empty(), "obsolete guard must not reference deleted t: {r:?}");
         let sketch = s.project().sketches[0].id;
-        let guards: Vec<_> = s.project().feat_dims.get(&sketch).into_iter().flat_map(|dims| dims.iter())
-            .filter(|(key, _)| key.starts_with("datum_dist_")).map(|(key, expr)| (key.clone(), expr.clone())).collect();
+        let guards: Vec<_> = s
+            .project()
+            .feat_dims
+            .get(&sketch)
+            .into_iter()
+            .flat_map(|dims| dims.iter())
+            .filter(|(key, _)| key.starts_with("datum_dist_"))
+            .map(|(key, expr)| (key.clone(), expr.clone()))
+            .collect();
         let expected = if mode == "replaced" { vec![(format!("datum_dist_{plane}"), "u".into())] } else { vec![] };
         assert_eq!(guards, expected, "reserved guards must match the sketch's current datum ancestry");
         check(&mut s, t);

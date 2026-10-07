@@ -4,6 +4,7 @@
 mod common;
 mod doc;
 mod features;
+mod history;
 mod output;
 mod params;
 mod sketch;
@@ -90,6 +91,7 @@ impl Registry {
         tools.extend(sketch::tools());
         tools.extend(features::tools());
         tools.extend(output::tools());
+        tools.extend(history::tools());
         tools.extend(topology::tools());
         Registry { tools, state: State::default() }
     }
@@ -101,7 +103,43 @@ impl Registry {
     /// `Err` = no such tool (a protocol error). `Ok(Err)` = the tool ran and failed (a tool error for the model).
     pub fn call(&mut self, name: &str, args: Value) -> Result<Result<Content, String>, String> {
         let t = self.tools.iter().find(|t| t.name == name).ok_or_else(|| format!("unknown tool: {name}"))?;
-        Ok((t.handler)(&mut self.state, args))
+        // All modelling mutations share one undo/rollback boundary, including multi-entity sketch_add.
+        let mutating = matches!(
+            name,
+            "param_set"
+                | "param_delete"
+                | "sketch_create"
+                | "sketch_add"
+                | "sketch_constrain"
+                | "sketch_remove"
+                | "plane_offset"
+                | "extrude"
+                | "revolve"
+                | "fillet"
+                | "chamfer"
+                | "hole"
+                | "shell"
+                | "push_face"
+                | "linear_array"
+                | "circular_array"
+                | "mirror"
+                | "feature_delete"
+        );
+        let snapshot = if mutating {
+            match self.state.doc().and_then(|s| s.begin_tool_edit().map_err(|e| e.to_string())) {
+                Ok(snapshot) => Some(snapshot),
+                Err(e) => return Ok(Err(e)),
+            }
+        } else {
+            None
+        };
+        let result = (t.handler)(&mut self.state, args);
+        if let Some(snapshot) = snapshot {
+            if let Some(s) = self.state.session.as_mut() {
+                s.finish_tool_edit(snapshot, result.is_ok());
+            }
+        }
+        Ok(result)
     }
 
     /// docs/TOOLS.md, generated from the registry so it cannot drift.

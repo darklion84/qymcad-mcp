@@ -39,6 +39,8 @@ pub struct Session {
     pub(crate) p: Project,
     pub(crate) shapes: HashMap<Id, Shape>,
     path: Option<PathBuf>,
+    pub(crate) advisory_warnings: Vec<NodeIssue>,
+    pub(crate) undo: std::collections::VecDeque<crate::history::Snapshot>,
 }
 
 impl Session {
@@ -47,7 +49,7 @@ impl Session {
         qymcad_core::model::set_producer(&format!("qymcad-mcp {}", env!("CARGO_PKG_VERSION")));
         let mut p = Project::default();
         p.new_document();
-        Session { p, shapes: HashMap::new(), path: None }
+        Session { p, shapes: HashMap::new(), path: None, advisory_warnings: Vec::new(), undo: Default::default() }
     }
 
     /// Open a `.qcad`, restoring live bodies from the file as the app does (FINDINGS F-007), and rebuilding
@@ -64,7 +66,8 @@ impl Session {
             breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
-        let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
+        let mut sess =
+            Session { p: project, shapes, path: Some(path.to_path_buf()), advisory_warnings: Vec::new(), undo: Default::default() };
         // Clean documents remain usable even without named edges, but rebuilding with an empty edge pool
         // can silently round every edge of a stored query (F-024).
         if let Err(e) = sess.restore_edges() {
@@ -80,7 +83,24 @@ impl Session {
         if missing {
             sess.p.mark_all_dirty();
         }
-        let r = sess.rebuild();
+        let stored: HashMap<Id, (f64, Option<[f64; 6]>)> = sess.shapes.iter().map(|(&id, sh)| (id, (sh.volume(), sh.bbox()))).collect();
+        let mut r = sess.rebuild();
+        for (&id, &(volume, bbox)) in &stored {
+            let Some(sh) = sess.shapes.get(&id) else { continue };
+            let rebuilt = sh.volume();
+            // F-016's 0.05 mm allowance applies to padded bounds, not volume. Boolean volume
+            // comparisons use numerical roundoff only, so interior changes with identical bboxes warn.
+            let volume_tol = (volume.abs().max(rebuilt.abs()) * 1e-9).max(1e-6);
+            let bbox_changed = bbox.zip(sh.bbox()).is_some_and(|(old, new)| old.iter().zip(new).any(|(a, b)| (a - b).abs() > 0.05));
+            if (volume - rebuilt).abs() > volume_tol || bbox_changed {
+                let warning = sess.issue(
+                    id,
+                    format!("stored geometry differs from the rebuild: volume {volume} → {rebuilt} mm³; bbox {bbox:?} → {:?}", sh.bbox()),
+                );
+                sess.advisory_warnings.push(warning.clone());
+                r.warnings.push(warning);
+            }
+        }
         Ok((sess, r))
     }
 
@@ -159,6 +179,7 @@ impl Session {
         } else {
             None
         };
+        let before_shells: HashMap<Id, u32> = self.shapes.iter().map(|(&id, sh)| (id, sh.shell_count())).collect();
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         self.shapes = shapes;
@@ -190,14 +211,31 @@ impl Session {
             }
         }
         // The GUI copies faces into bodies; a headless regenerate does not (FINDINGS F-007).
+        let rebuilt: HashSet<Id> = built.iter().map(|(id, _)| *id).collect();
         for (id, faces) in built {
             self.p.set_body_faces(id, faces);
         }
-        Rebuild {
-            errors,
-            warnings: self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect(),
-            bodies: self.result_bodies(),
+        // Keep diagnostics until their node rebuilds or disappears. Rebuilding unchanged cavity geometry
+        // retains its warning; inherited inner shells do not warn again on every later operation.
+        let live: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.advisory_warnings.retain(|w| live.contains(&w.node) && !rebuilt.contains(&w.node));
+        for node in self.p.timeline.iter().filter(|n| rebuilt.contains(&n.id)) {
+            if errors.iter().any(|e| e.node == node.id) {
+                continue;
+            }
+            for body in node.kind.bodies() {
+                let Some(shape) = self.shapes.get(&body) else { continue };
+                let shells = shape.shell_count();
+                let source_shells = node.kind.consumed_body().and_then(|id| self.shapes.get(&id)).map_or(1, Shape::shell_count);
+                let old = before_shells.get(&body).copied().unwrap_or(source_shells);
+                if shells > 1 && (shells > old || shells > source_shells) {
+                    self.advisory_warnings.push(self.issue(node.id, format!("result body has {shells} shells (previous/source {old}/{source_shells}); may contain a sealed internal void or disconnected solids")));
+                }
+            }
         }
+        let mut warnings: Vec<NodeIssue> = self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect();
+        warnings.extend(self.advisory_warnings.clone());
+        Rebuild { errors, warnings, bodies: self.result_bodies() }
     }
 
     /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.
@@ -263,6 +301,7 @@ impl Session {
             }
         }
         let before = self.p.clone();
+        let before_warnings = self.advisory_warnings.clone();
         let old_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
         let value = match edit(self) {
             Ok(v) => v,
@@ -277,6 +316,7 @@ impl Session {
             r.errors.iter().filter(|i| !old_nodes.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
         if !new_errors.is_empty() {
             self.p = before;
+            self.advisory_warnings = before_warnings;
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
             self.shapes.retain(|id, _| live.contains(id));
             return Err(Error::Rebuild(new_errors));

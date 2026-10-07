@@ -80,8 +80,11 @@ fn concave_and_convex_select_l_profile_corners_along_y() {
     c.ok("sketch_create", json!({ "plane": "XZ", "name": "L" }));
     // A 20 × 15 rectangle minus the upper-right 16 × 11 rectangle: area 124 mm².
     // Six profile vertices extruded along −y produce six y-directed corners: one reflex, five convex.
-    c.ok("sketch_add", json!({ "sketch": "L", "entities": [{ "type": "polyline", "points":
-        [[0,0], [20,0], [20,4], [4,4], [4,15], [0,15]], "closed": true }] }));
+    c.ok(
+        "sketch_add",
+        json!({ "sketch": "L", "entities": [{ "type": "polyline", "points":
+        [[0,0], [20,0], [20,4], [4,4], [4,15], [0,15]], "closed": true }] }),
+    );
     let r = c.ok("extrude", json!({ "sketch": "L", "height": 8 }));
     assert!((r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - (20.0 * 15.0 - 16.0 * 11.0) * 8.0).abs() < 1e-6);
     let concave = c.ok("select", json!({ "edges": { "and": [{ "concave": true }, { "along": "y" }] } }));
@@ -89,6 +92,10 @@ fn concave_and_convex_select_l_profile_corners_along_y() {
     assert_eq!(concave["edges"][0]["mid"], json!([4.0, -4.0, 4.0]));
     let convex = c.ok("select", json!({ "edges": { "and": [{ "convex": true }, { "along": "y" }] } }));
     assert_eq!(convex["count"], 5, "six profile corners minus the one reflex corner: {convex}");
+    let inner = c.ok("select", json!({ "edges": { "concave": true } }));
+    assert_eq!(inner["count"], 1, "all twelve cap junctions are convex, including the nonconvex cap's inner outline: {inner}");
+    let outer = c.ok("select", json!({ "edges": { "convex": true } }));
+    assert_eq!(outer["count"], 5 + 2 * 6, "five convex extrusion corners plus both six-edge outlines: {outer}");
     let all = c.ok("select", json!({ "edges": { "union": [{ "concave": true }, { "convex": true }] } }));
     assert_eq!(all["count"], 18, "six extrusion edges plus two six-edge cap outlines: {all}");
     let (bad, msg) = c.tool("select", json!({ "faces": { "concave": true } }));

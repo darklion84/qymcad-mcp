@@ -35,7 +35,11 @@ fn face_sketch_reports_projected_origin_and_positive_axes() {
     ] {
         let f = topo.faces.iter().find(|f| f.normal == Some(normal)).unwrap();
         let sk = s.sketch_create(&PlaneRef::Face { body, face: f.id }, None).unwrap();
-        assert_eq!(frame(&s, sk), json!({ "origin": origin, "x_axis": x_axis, "y_axis": y_axis, "normal": normal }), "reported face world frame");
+        assert_eq!(
+            frame(&s, sk),
+            json!({ "origin": origin, "x_axis": x_axis, "y_axis": y_axis, "normal": normal }),
+            "reported face world frame"
+        );
     }
 }
 
@@ -85,4 +89,25 @@ fn cylinder_axis_point_is_at_the_faces_axial_centroid() {
         assert_close(actual, expected, 1e-6, "cylinder axis point at axial centroid");
     }
     assert_close(dir[2].abs(), 1.0, 1e-9, "vertical cylinder axis");
+}
+
+#[test]
+fn sketch_frame_includes_component_world_placement() {
+    let (mut s, _) = stock();
+    let sketch = s.info().sketches[0].id;
+    let path = scratch("usability_placed_frame.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { project: mut p, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let owner = p.sketch_owner(sketch).unwrap();
+    p.components.iter_mut().find(|c| c.id == owner).unwrap().transform = [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 20.0, 0.0, 0.0, 1.0, 30.0];
+    qymcad_io::save_project_guarded_with_brep(&p, path.to_str().unwrap(), &breps).unwrap();
+    let (s, _) = Session::open(&path).unwrap();
+    assert_eq!(
+        frame(&s, sketch),
+        json!({
+            "origin": [100.0, 20.0, 30.0], "x_axis": [0.0, 1.0, 0.0],
+            "y_axis": [-1.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0]
+        }),
+        "frame carries component placement"
+    );
 }

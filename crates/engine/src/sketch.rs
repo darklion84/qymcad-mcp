@@ -58,10 +58,24 @@ pub struct ContourInfo {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct SketchWorldFrame {
+    /// World origin in mm (including component placement and any GUI origin shift).
+    pub origin: [f64; 3],
+    /// World unit direction of positive sketch x.
+    pub x_axis: [f64; 3],
+    /// World unit direction of positive sketch y.
+    pub y_axis: [f64; 3],
+    /// World unit normal, x cross y.
+    pub normal: [f64; 3],
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct SketchInfo {
     pub id: Id,
     pub name: String,
     pub plane: String,
+    /// Resolved world frame, or null when the sketch's host cannot be resolved.
+    pub world_frame: Option<SketchWorldFrame>,
     /// Remaining degrees of freedom (0 = fully defined) and redundant constraints.
     pub dof: (i32, i32),
     pub contours: Vec<ContourInfo>,
@@ -189,7 +203,11 @@ impl Session {
                 area: self.p.contours.index_of(cid).map(|i| self.p.contours[i].signed_area().abs()).unwrap_or(0.0),
             })
             .collect();
-        Ok(SketchInfo { id: s.id, name: s.name.clone(), plane: plane_desc(&s.plane), dof: self.p.sketch_dof(si), contours })
+        let world_frame = self.p.sketch_frame(si).map(|f| {
+            let f = self.p.sketch_owner(sketch).map(|owner| f.transformed(&self.p.world_transform(owner))).unwrap_or(f);
+            SketchWorldFrame { origin: f.origin, x_axis: f.x, y_axis: f.y, normal: f.normal() }
+        });
+        Ok(SketchInfo { id: s.id, name: s.name.clone(), plane: plane_desc(&s.plane), world_frame, dof: self.p.sketch_dof(si), contours })
     }
 
     pub fn sketches(&self) -> Vec<SketchInfo> {
@@ -298,12 +316,15 @@ impl Session {
     /// rebuilt; if a feature that built before fails now, the edit is rolled back and the errors returned.
     pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
         let before = self.p.clone();
+        let before_warnings = self.advisory_warnings.clone();
         // regen_plan includes transitive sketch dependents and any already dirty nodes. Keep their original
         // handles, rebuilding on independent B-rep copies: rollback retains the original representation (F-034).
         let has_dependents = !before.dependents_of(sketch).is_empty();
         let mut planned = before.clone();
         planned.mark_sketch_dirty(sketch);
-        let nodes: HashSet<Id> = planned.regen_plan().nodes.into_iter().collect();
+        let mut nodes: HashSet<Id> = planned.regen_plan().nodes.into_iter().collect();
+        // regen_plan omits dirty sketch outputs; regenerate still rebuilds their consumers (F-023).
+        nodes.extend(before.dependents(sketch));
         let mut saved: HashMap<Id, qymcad_kernel::Shape> = if has_dependents {
             let _gate = qymcad_kernel::kernel_gate();
             before
@@ -345,6 +366,7 @@ impl Session {
             r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
         if !broken.is_empty() {
             self.p = before;
+            self.advisory_warnings = before_warnings;
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
             self.shapes.retain(|id, _| live.contains(id));
             self.shapes.extend(saved);

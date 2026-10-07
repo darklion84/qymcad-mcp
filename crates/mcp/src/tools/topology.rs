@@ -14,6 +14,8 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by \
     QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; \
     optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); \
+    {\"concave\": true} / {\"convex\": true} inward/outward corners at straight edges between two planar faces \
+    (curved junctions, seams and tangent junctions are excluded); \
     {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest \
     edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, \
     cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} \
@@ -43,6 +45,8 @@ pub enum SelArg {
         /// Angular tolerance in degrees, in [0, 90); default 5.
         tol_deg: f64,
     },
+    Concave,
+    Convex,
     Extreme {
         /// World axis along which to find the extreme faces or edges.
         axis: Axis,
@@ -71,6 +75,8 @@ impl SelArg {
             SelArg::OfFeature { feature, role } => Sel::OfFeature { feature: feature.resolve(s)?, role: *role },
             SelArg::Facing { dir, tol_deg } => Sel::Facing { dir: *dir, tol_deg: *tol_deg },
             SelArg::Along { dir, tol_deg } => Sel::Along { dir: *dir, tol_deg: *tol_deg },
+            SelArg::Concave => Sel::Concave,
+            SelArg::Convex => Sel::Convex,
             SelArg::Extreme { axis, max } => Sel::Extreme { axis: *axis, max: *max },
             SelArg::Largest => Sel::Largest,
             SelArg::EdgesOf(x) => Sel::EdgesOf(b(x)?),
@@ -93,8 +99,21 @@ impl SelArg {
     }
 
     fn parse_object(o: &Map<String, Value>) -> Result<SelArg, String> {
-        const KEYS: [&str; 11] =
-            ["ids", "of_feature", "facing", "along", "extreme", "edges_of", "tangent_chain", "between", "union", "minus", "and"];
+        const KEYS: [&str; 13] = [
+            "ids",
+            "of_feature",
+            "facing",
+            "along",
+            "concave",
+            "convex",
+            "extreme",
+            "edges_of",
+            "tangent_chain",
+            "between",
+            "union",
+            "minus",
+            "and",
+        ];
         let found: Vec<&str> = KEYS.iter().copied().filter(|k| o.contains_key(*k)).collect();
         let key = match found.as_slice() {
             [k] => *k,
@@ -141,6 +160,16 @@ impl SelArg {
             }
             "facing" => SelArg::Facing { dir: dir(val)?, tol_deg: tol(5.0)? },
             "along" => SelArg::Along { dir: dir(val)?, tol_deg: tol(5.0)? },
+            "concave" | "convex" => {
+                if val != &Value::Bool(true) {
+                    return Err(format!("`{key}` takes true"));
+                }
+                if key == "concave" {
+                    SelArg::Concave
+                } else {
+                    SelArg::Convex
+                }
+            }
             "extreme" => {
                 let (axis, max) = signed_axis(val)?;
                 SelArg::Extreme { axis, max }

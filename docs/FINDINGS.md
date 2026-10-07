@@ -166,6 +166,11 @@ Conventions:
   cuts reports 60.0126 × 40.0126 × 6.0126 (+0.0063 mm per side). Compare sizes with a tolerance of ~0.05 mm;
   use volume for exact size checks and face positions/topology for placement (F-017).
 - **Evidence:** test: `crates/engine/tests/golden_plate.rs` `plate_volume_and_bbox`.
+- **Reopened bounds:** B-rep deserialization can give tighter bounds than live in-session boolean shapes.
+  `doc_info` documents this difference (U6f); exact volume and topology positions remain the size/placement
+  checks. Evidence: `usability_warnings::opening_unchanged_dirty_boolean_geometry_does_not_warn` and native
+  `Shape::to_brep_bytes` / `from_brep_bytes` round trips used by the open and undo paths.
+
 
 ## F-017 Parallel preparation can capture a datum sketch's old placement
 
@@ -388,6 +393,14 @@ Conventions:
 - **Evidence:** test: `golden_features.rs` `circular_arrays_of_a_boss`, `linear_arrays_of_a_boss` (count from a
   parameter), `mirror_keeps_or_replaces`; source: `regen.rs` `prep_circulararray` (~2266-2290),
   `prep_lineararray` (~2229).
+- **Feature-pattern capability:** there is no native seed-feature or cut-tool array. `FeatureKind` stores a
+  body source (`feature.rs:1187-1230`); timeline adders (`model/timeline.rs:1271-1291`) and preparers
+  (`model/regen.rs:2230-2290`) pattern that whole body. `qymcad-kernel/src/kernel.rs:1006-1041` clones/unites
+  complete Shapes. Native `add_hole_from_sketch` (`timeline.rs:1345-1359`, `regen.rs:2081-2093`, kernel
+  `kernel.rs:997-1005`) drills isolated points but has no seed/count/spacing expressions.
+  Supported workaround: expression-positioned sketch circles plus one through cut; circle cardinality is
+  not parameter-driven. General feature-pattern implementation stopped; options in `tasks/review-u7.md`.
+
 
 ## F-028 Hole tool details
 
@@ -748,3 +761,80 @@ Conventions:
   `implied_parallelism_uses_angle_tolerance_at_any_line_length` accepts a 5e-10-radian deviation for both
   1 mm and 1e6 mm lines; restoring the raw residual refuses the long line. The contradictory A1 regression
   still passes.
+
+## F-050 Native deletion relinks consumers; its dependency graph omits some structural references
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** the app deletes body-producing nodes with `delete_feature_op` / `delete_feature_with_dependents`
+  and removes returned live-shape ids. A noncascade operation relinks consumers to its consumed source and
+  translates persistent names; a source-less operation can leave consumers red. Sketch deletion has separate
+  pool cleanup. Native `dependents` includes body/sketch inputs and face placement, but not datum ancestry,
+  sketch datum hosts, revolve axes, sketch-driven holes, associative datum points/two-point axes, thicken
+  join targets, or some component-copy inputs. `copy_source` identifies a component whose active body is read.
+- **Evidence:** source: `qymcad-part/src/lib.rs:4099-4120`; `qymcad-core/src/model/timeline.rs:20-155,275-413`,
+  `feature.rs:2547-2553,2567-2632`, `model/timeline.rs:1210-1233`, `model.rs` `PointDef`, `AxisDef`, `PlaneDef`. Tests: `usability_undo` source/cascade/axis
+  cases and `history_tests` native point, sketch-hole, and rollback-bar cases; omitted references failed first.
+- **How we handle it:** extend the closure, refuse dependent deletion by default, delete explicit cascades in
+  reverse order with native operation/sketch cleanup and datum pool removal, preserve the surviving rollback
+  prefix, and rollback failed regeneration. Original live handles plus independent B-rep copies give exact
+  modelling undo with 16 snapshots (ADR [0008](adr/0008-session-delete-and-undo.md), F-034).
+
+## F-051 Native shell counts expose sealed cavities and disconnected solids
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Shape::shell_count` counts OCCT shells with `TopExp_Explorer(TopAbs_SHELL)`. A normal solid has
+  one shell; an interior cut yields outer and inner shells, while an open pocket still has one. Disconnected
+  copied solids can also produce multiple shells, so shell count alone is not a definitive cavity classifier.
+- **Evidence:** source: `qymcad-kernel/src/lib.rs:862-870`, `occt_helical.cpp:1336-1350`. Tests:
+  `usability_warnings::{a_pocket_inside_stock_warns_and_names_the_feature,a_normal_open_pocket_does_not_warn}`
+  derive interior V=20³−4*6*3.001 and open V=20³−4*6*3 (entry clearance F-017).
+- **How we handle it:** advisory feature-named warning after multiple shells appear; report possible internal
+  voids or disconnected solids. Session diagnostics survive failed edits/undo, and are not stored in `.qcad`
+  (ADR [0009](adr/0009-advisory-geometry-diagnostics.md)).
+
+## F-052 Stored B-reps can disagree with the recipe without a rebuild error
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** the IO loader restores stored shapes independently of dirty feature expressions. Regeneration can
+  replace them with different geometry while reporting no error. Bbox padding tolerance (F-016) must not be
+  converted into a large volume allowance: a deeper pocket changes volume without changing the stock bounds.
+- **Evidence:** `usability_warnings::opening_stale_stored_geometry_warns_about_the_rebuilt_body` stores a
+  20*30*6 B-rep alongside dirty height 10, then opens with V=20*30*10; `opening_stale_pocket_warns_even_when_the_bbox_is_unchanged`
+  changes depth 3→4 with delta V=4*6*1=24; unchanged dirty boolean rebuild stays silent.
+- **How we handle it:** compare stored and rebuilt volume/bbox on open: 0.05 mm per bound from F-016 and
+  `max(1e-6,1e-9*max(|Vold|,|Vnew|))` mm³ numerical volume tolerance. Warn with body/name and before/after
+  metrics; equal metrics cannot prove identical topology (ADR 0009).
+
+## F-053 Signed planar corners require local face geometry
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Shape::edge_face_pairs` returns the two adjacent faces; seams can repeat a face. `refs::Query`
+  has no concave/convex filter. Tessellated triangle winding follows outward OCCT face orientation, swapping
+  vertices for reversed faces. An incident triangle supplies the local inward face tangent.
+- **Evidence:** source: `qymcad-kernel/src/lib.rs:1314-1332`, `occt_bridge.cpp:60-68,3091-3115`,
+  `qymcad-core/src/refs.rs` `Query`; MCP `edge_corners::concave_and_convex_select_l_profile_corners_along_y`.
+- **How we handle it:** on straight edges of two planar faces, dot face A's local inward tangent with face B's
+  outward normal: positive = concave, negative = convex. Local triangles handle concave caps unlike a global
+  face centroid. Exclude curves, seams and tangent junctions; lower composable filters to persistent ids
+  (ADR [0010](adr/0010-planar-edge-corners.md), F-024).
+
+## F-054 Native face sketch origins are projected coordinate origins
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `PlaneFrame::world_aligned` sets origin=n*dot(point,n). Positive coordinate axes satisfy x×y=n:
+  +Z X/Y, −Z Y/X, +X Y/Z, −X Z/Y, +Y Z/X, −Y X/Z. Tilted faces use normalized Z×n as x and n×x as y.
+  `Project::sketch_frame` resolves native hosts and GUI origin shifts in the sketch owner's local space.
+- **Evidence:** source: `qymcad-core/src/feature.rs:144-193`, `model/sketch.rs:3356-3400`,
+  `model/assembly.rs:1566`; `usability_info` face-frame, server/GUI height-following and component-placement tests.
+- **How we handle it:** multiply the native frame by its owner's world transform for `sketch_info`/`doc_info`;
+  unresolved frames report null. Describe the origin/axes in tool docs (ADR [0011](adr/0011-report-native-sketch-frames.md)).
+
+## F-055 A cylinder's underlying axis origin is not centred on its trimmed face
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Shape::face_cylinder` returns an underlying surface's axis origin, unit direction and radius. A
+  cylinder starting at z=25, height 10, returns origin z=25; the trimmed face's axial centroid is z=30.
+- **Evidence:** source: `qymcad-kernel/src/lib.rs:1243` `face_cylinder`; test:
+  `usability_info::cylinder_axis_point_is_at_the_faces_axial_centroid` failed first: got 25, expected 30 ± 1e-6.
+- **How we handle it:** report axis point o+dot(c−o,d)*d at the face's axial centroid; this lies on the axis,
+  not on the curved surface. Radius/direction stay native (ADR 0011).

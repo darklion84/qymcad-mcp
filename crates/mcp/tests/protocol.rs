@@ -117,6 +117,8 @@ fn lists_tools_with_object_schemas() {
         "linear_array",
         "circular_array",
         "mirror",
+        "feature_delete",
+        "undo",
     ];
     for want in expected {
         assert!(names.contains(&want), "missing {want} in {names:?}");

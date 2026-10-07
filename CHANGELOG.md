@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `feature_delete` refuses dependent nodes unless `cascade=true`; deletion is atomic and restores consumed
+  source bodies. Session `undo` retains 16 successful modelling calls and restores exact Project/B-rep state;
+  document replacement resets history, and saving/exporting files is outside modelling undo (ADR 0008).
+- Advisory rebuild warnings identify features whose results acquire multiple shells (possible internal voids
+  or disconnected solids). Opening stale stored geometry warns when rebuilt volume/bounds differ (ADR 0009).
+- Edge selections accept `{"concave": true}` and `{"convex": true}` in compositions: straight junctions between
+  planar faces are classified; curved, seam and tangent junctions are excluded (ADR 0010).
+- Sketch inspection reports the native world frame. Extrude booleans show cut/add/intersect operations in
+  the timeline, and cylinder axes report the point at the face's axial centroid (ADR 0011).
 - Repository skeleton: Cargo workspace (`qymcad-engine`, `qymcad-mcp`), QymCAD pinned at `v0.1.0-dev.20261001`,
   kernel smoke test, `scripts/check.sh`, AGENTS.md, ADR 0001-0003, FINDINGS F-001..F-015, UPGRADING draft.
 - Engine core: `Session` (new/open/save/info, rebuild pipeline, atomic edits, name resolution), parameters
@@ -37,6 +46,16 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-039..F-044.
 
 ### Fixed
+- Array descriptions explicitly state whole-body copying, including holes/cuts, and suggest sketch circles
+  plus a through cut for repeated holes. Pinned QymCAD has no native seed-feature/cut-tool pattern (F-027).
+- `param_users` labels persisted datum guards as "datum dependency of sketch …" while retaining deletion checks.
+- After GUI structural edits (new/re-hosted datum sketches or replacement datum-distance expressions), reopen
+  and save through the server before further GUI parameter edits to refresh the persisted guards (ADR 0007).
+  This limitation is also stated in `param_set` tool documentation.
+- Face-sketch docs explain projected origins and axes; save docs require an existing directory; doc_info docs
+  explain in-session OCCT bbox padding and potentially tighter reopened bounds (F-016).
+- Datum regressions cover both parameterized ancestors; guard-refresh assertions check obsolete entries;
+  top-face area checks allow tessellation inflation only, with corrected mm³-to-mm² explanation.
 - Expression-driven offset datums now carry persisted sketch dependencies for server and native GUI parameter
   rebuilds, including chained offsets and legacy files opened in the server. Pocket regressions verify floor
   placement and a top opening; F-017's supposed depth drift was a sealed internal void. Volume tolerances are

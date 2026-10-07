@@ -9,7 +9,17 @@ fn rect(s: &mut Session, plane: PlaneRef, w: f64, l: f64) -> Id {
     sk
 }
 fn extrude(s: &mut Session, sketch: Id, height: f64, op: Op, direction: Direction, name: &str) -> (Id, Rebuild) {
-    s.extrude(&Extrude { sketch, profiles: None, height: height.into(), op, direction, through: false, target: None, name: Some(name.into()) }).unwrap()
+    s.extrude(&Extrude {
+        sketch,
+        profiles: None,
+        height: height.into(),
+        op,
+        direction,
+        through: false,
+        target: None,
+        name: Some(name.into()),
+    })
+    .unwrap()
 }
 fn pocket(z: f64) -> (Session, Id, Rebuild) {
     let mut s = Session::new_part();
@@ -25,16 +35,19 @@ fn a_pocket_inside_stock_warns_and_names_the_feature() {
     let (s, id, report) = pocket(10.0);
     assert!(report.errors.is_empty());
     // Interior cuts include a 0.001 mm entry clearance (F-003/F-017): V=20³−4*6*(3+0.001).
-    assert_close(report.bodies[0].volume, 20.0_f64.powi(3) - 4.0*6.0*3.001, 1e-3, "sealed pocket volume");
-    assert!(report.warnings.iter().any(|w| w.node == id && w.name == "pocket" && w.message.contains("shell")),
-        "sealed pocket must warn with the feature name: {:?}", report.warnings);
+    assert_close(report.bodies[0].volume, 20.0_f64.powi(3) - 4.0 * 6.0 * 3.001, 1e-3, "sealed pocket volume");
+    assert!(
+        report.warnings.iter().any(|w| w.node == id && w.name == "pocket" && w.message.contains("shell")),
+        "sealed pocket must warn with the feature name: {:?}",
+        report.warnings
+    );
     assert!(s.info().warnings.iter().any(|w| w.contains("pocket") && w.contains("shell")), "doc_info retains cavity warning");
 }
 #[test]
 fn a_normal_open_pocket_does_not_warn() {
     let (_, _, report) = pocket(20.0);
     // Entry clearance lies outside stock, so V=20³−4*6*3.
-    assert_close(report.bodies[0].volume, 20.0_f64.powi(3) - 4.0*6.0*3.0, 1e-3, "open pocket volume");
+    assert_close(report.bodies[0].volume, 20.0_f64.powi(3) - 4.0 * 6.0 * 3.0, 1e-3, "open pocket volume");
     assert!(report.warnings.is_empty(), "open pocket warnings: {:?}", report.warnings);
 }
 #[test]
@@ -49,9 +62,15 @@ fn opening_stale_stored_geometry_warns_about_the_rebuilt_body() {
     project.set_feat_dim(body, "height", "10".into());
     qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
     let (opened, report) = Session::open(&path).unwrap();
-    assert_close(report.bodies[0].volume, 20.0*30.0*10.0, 1e-6, "rebuilt volume");
-    assert!(report.warnings.iter().any(|w| w.node == body && w.message.contains("stored geometry") && w.message.contains("3600") && w.message.contains("6000")),
-        "stale stored geometry must warn about 3600 -> 6000: {:?}", report.warnings);
+    assert_close(report.bodies[0].volume, 20.0 * 30.0 * 10.0, 1e-6, "rebuilt volume");
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.node == body && w.message.contains("stored geometry") && w.message.contains("3600") && w.message.contains("6000")),
+        "stale stored geometry must warn about 3600 -> 6000: {:?}",
+        report.warnings
+    );
     assert!(opened.info().warnings.iter().any(|w| w.contains("stored geometry")));
 }
 #[test]
@@ -61,4 +80,44 @@ fn opening_unchanged_geometry_does_not_warn() {
     s.save(Some(&path)).unwrap();
     let (_, report) = Session::open(&path).unwrap();
     assert!(report.warnings.is_empty(), "unchanged open: {:?}", report.warnings);
+}
+
+#[test]
+fn failed_sketch_rebuild_keeps_existing_advisory_warnings() {
+    let (mut s, _, _) = pocket(10.0);
+    let before = s.info();
+    let sk = s.project().sketches.last().unwrap().id;
+    let edge = s.sketch_detail(sk).unwrap().entities[0].id;
+    assert!(s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, edge)).is_err());
+    assert_eq!(s.info(), before, "failed edits retain cavity diagnostics and document state");
+}
+
+#[test]
+fn opening_stale_pocket_warns_even_when_the_bbox_is_unchanged() {
+    let (mut s, body, _) = pocket(20.0);
+    let path = scratch("stale_pocket_volume_warning.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    // Same stock bbox, one extra millimetre of pocket depth: delta V=4*6*1=24 mm³.
+    project.set_feat_dim(body, "height", "4".into());
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (_, report) = Session::open(&path).unwrap();
+    assert_close(report.bodies[0].volume, 20.0_f64.powi(3) - 4.0 * 6.0 * 4.0, 1e-6, "deeper rebuilt pocket");
+    assert!(
+        report.warnings.iter().any(|w| w.node == body && w.message.contains("stored geometry")),
+        "same-bbox stale pocket: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn opening_unchanged_dirty_boolean_geometry_does_not_warn() {
+    let (mut s, body, _) = pocket(20.0);
+    let path = scratch("unchanged_dirty_boolean.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    project.timeline.iter_mut().find(|n| n.id == body).unwrap().dirty = true;
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (_, report) = Session::open(&path).unwrap();
+    assert!(report.warnings.is_empty(), "unchanged dirty geometry: {:?}", report.warnings);
 }

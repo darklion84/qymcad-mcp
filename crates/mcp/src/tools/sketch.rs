@@ -156,7 +156,10 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "sketch_create",
             "Create an empty sketch on a plane: \"XY\", \"XZ\", \"YZ\", {\"plane\": <datum plane>} or {\"body\": <body>, \"face\": <face id>}. \
-             Returns its id.",
+             A face sketch's origin is the world origin projected onto the face plane (in the owning component's local coordinates, \
+             then carried by its placement). Its x/y directions are positive coordinate axes of that component in right-handed order: \
+             +Z: +X/+Y, -Z: +Y/+X, +X: +Y/+Z, -X: +Z/+Y, +Y: +Z/+X, -Y: +X/+Z. \
+             For tilted faces x = normalize(+Z cross normal), y = normal cross x. Read sketch_info.world_frame for the resolved world axes. Returns its id.",
             |st, a: CreateArgs| {
                 let s = st.doc()?;
                 let plane = a.plane.resolve(s)?;
@@ -248,7 +251,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_info",
-            "A sketch's plane; dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
+            "A sketch's plane and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
              entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); \
              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints \
              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
