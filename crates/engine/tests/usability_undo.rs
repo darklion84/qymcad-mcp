@@ -24,7 +24,12 @@ fn capture(s: &Session) -> (serde_json::Value, Vec<(Id, Vec<u8>)>, DocInfo) {
     (serde_json::to_value(s.project()).unwrap(), bytes(s), s.info())
 }
 fn assert_restored(s: &Session, before: &(serde_json::Value, Vec<(Id, Vec<u8>)>, DocInfo)) {
-    assert_eq!(serde_json::to_value(s.project()).unwrap(), before.0, "exact Project restoration");
+    let mut actual = serde_json::to_value(s.project()).unwrap();
+    let mut expected = before.0.clone();
+    assert!(actual["next_id"].as_u64().unwrap() >= expected["next_id"].as_u64().unwrap(), "id allocator never moves backward");
+    actual.as_object_mut().unwrap().remove("next_id");
+    expected.as_object_mut().unwrap().remove("next_id");
+    assert_eq!(actual, expected, "exact recipe restoration (ids remain monotonic)");
     assert_eq!(bytes(s), before.1, "exact B-rep byte restoration");
     assert_eq!(s.info(), before.2, "exact document info restoration");
 }
@@ -80,6 +85,27 @@ fn undo_is_bounded_and_empty_history_is_an_error() {
     }
     assert!(s.undo().is_err());
     assert_eq!(s.params()[0].value, 2.0);
+}
+
+#[test]
+fn undo_never_reuses_a_removed_body_id_or_held_pick() {
+    let (mut s, _) = stock();
+    let snapshot = s.begin_tool_edit().unwrap();
+    let edges = Sel::Along { dir: [0.0, 0.0, 1.0], tol_deg: 1.0 };
+    let (removed, _) = s.fillet(None, &edges, &2.0.into(), None).unwrap();
+    let held_edge = s.topology(Some(removed), false).unwrap().edges[0].id;
+    s.finish_tool_edit(snapshot, true);
+    s.undo().unwrap();
+    let (replacement, _) = s.fillet(None, &edges, &1.0.into(), None).unwrap();
+    assert_ne!(replacement, removed, "undo must not reuse the removed body's id");
+    assert!(s.resolve(&removed.to_string()).is_err(), "held reference must remain invalid");
+    assert!(
+        s.fillet(Some(removed), &Sel::Ids(vec![held_edge]), &0.5.into(), None).is_err(),
+        "held body/edge pick must not target replacement"
+    );
+    // Four radius-1 vertical corners remove 4*(1-pi/4)*r²*h from the 20³ cube.
+    let volume = 20.0_f64.powi(3) - 4.0 * (1.0 - std::f64::consts::PI / 4.0) * 20.0;
+    assert!((s.result_bodies()[0].volume - volume).abs() < 1e-6);
 }
 #[test]
 fn deleting_a_modifier_restores_consumed_source_without_rebuilding_it() {

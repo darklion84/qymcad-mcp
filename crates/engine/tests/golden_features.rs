@@ -961,7 +961,7 @@ fn revolve_intersect() {
 /// Review #26: a fixed axis that already exists as a datum is reused instead of minting a new datum per call.
 #[test]
 fn identical_fixed_axes_share_one_datum() {
-    let datums = |s: &Session| s.info().timeline.iter().filter(|n| n.kind == "DatumAxis").count();
+    let datums = |s: &Session| s.info().timeline.iter().filter(|n| n.kind == "datumaxis").count();
     let mut s = Session::new_part();
     cylinder(&mut s, 0.0, 30.0, 10.0.into(), 5.0.into(), Op::Add);
     s.circular_array(None, &2.0.into(), &360.0.into(), Some(&AxisRef::World(Axis::X)), None).unwrap();

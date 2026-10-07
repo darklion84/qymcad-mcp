@@ -75,6 +75,19 @@ fn timeline_reports_extrude_operation() {
 }
 
 #[test]
+fn timeline_operation_labels_are_lowercase() {
+    let (mut s, body) = stock();
+    let sketch = s.info().sketches[0].id;
+    let (fillet, _) = s.fillet(Some(body), &Sel::Along { dir: [0.0, 0.0, 1.0], tol_deg: 1.0 }, &2.0.into(), None).unwrap();
+    for (id, expected) in [(sketch, "sketch"), (body, "extrude"), (fillet, "fillet")] {
+        assert_eq!(s.info().timeline.iter().find(|n| n.id == id).unwrap().kind, expected, "lowercase operation label");
+    }
+    // Four radius-2 quarter cylinders replace square corners along the height.
+    let volume = 20.0 * 16.0 * 10.0 - 4.0 * (1.0 - std::f64::consts::PI / 4.0) * 2.0_f64.powi(2) * 10.0;
+    assert_close(s.result_bodies()[0].volume, volume, 1e-6, "filleted stock volume");
+}
+
+#[test]
 fn cylinder_axis_point_is_at_the_faces_axial_centroid() {
     let mut s = Session::new_part();
     let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &25.0.into(), None).unwrap();

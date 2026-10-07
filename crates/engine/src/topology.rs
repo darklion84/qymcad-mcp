@@ -212,15 +212,11 @@ impl Sel {
     pub(crate) fn query(&self, el: Element) -> Result<Query> {
         let bad = |what: &str, hint: &str| Err(Error::Invalid(format!("`{what}` cannot select {}: {hint}", el.name())));
         Ok(match self {
-            Sel::Ids(ids) => {
-                if ids.is_empty() {
-                    return Err(Error::Invalid(format!("an empty id list selects no {}", el.name())));
-                }
-                match ids.as_slice() {
-                    [one] => Query::Id(*one),
-                    _ => Query::Ids(ids.clone()),
-                }
-            }
+            // An empty set must remain composable; modifiers refuse an empty final result (F-025).
+            Sel::Ids(ids) => match ids.as_slice() {
+                [one] => Query::Id(*one),
+                _ => Query::Ids(ids.clone()),
+            },
             Sel::OfFeature { feature, role } => {
                 if el == Element::Edges {
                     return bad("of_feature", "it names faces; use {\"edges_of\": {\"of_feature\": ...}}");

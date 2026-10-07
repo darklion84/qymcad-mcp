@@ -60,9 +60,14 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 
 MCP modelling tool calls establish a session history boundary before invoking the typed handler. Independent
 B-rep copies isolate live shapes; failed calls restore the original Project/handles/diagnostics, successful
-calls retain up to 16 snapshots. Undo restores a snapshot without regeneration. Read/save/export calls do
+calls retain up to 16 source-free recipe snapshots plus call metadata. Restoration moves embedded source bytes
+by id and preserves the monotonic id allocator (F-056). Native sketch deletion's removed sources are retained
+once in a session archive while undo references them. Deletion reuses an enclosing tool boundary; direct
+engine deletion creates its own. Undo restores a snapshot without regeneration and reports its call and
+restored bodies/diagnostics; eviction is remembered for limit-exhaustion messages. Read/save/export calls do
 not enter modelling history; doc_new/doc_open replace the Session and its history. Opening compares stored
 and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds (ADR 0009).
+Empty-document saves inspect existing targets and require `allow_empty` to replace stored bodies (ADR 0012).
 
 ## Sketch dimensions
 Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along

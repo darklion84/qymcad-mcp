@@ -368,8 +368,11 @@ Conventions:
   `picked_descs()`, empty for descriptive queries); `crates/qymcad-kernel/src/kernel.rs` fillet (~657-660: an empty
   list becomes `sharp_edge_ids()`, ~678 `fillet_all`) and chamfer (~800-806 `chamfer_all`); consequence observed
   in F-024.
-- **How we handle it:** a selection that resolves to no edge is refused at creation (test
+- **How we handle it:** a feature's final selection that resolves to no edge is refused at creation (test
   `stale_and_foreign_ids_are_clear_errors`); edges are stored as pick lists (F-024).
+  Preview selections and intermediate empty sets remain valid: `Query::Ids([])` yields no candidates and
+  `Ref::many` permits zero matches. Evidence: `qymcad-core/src/refs.rs:135,453-499`; MCP `edge_corners` cube,
+  composition, cylinder, and empty-final-modifier tests. Restoring the early empty-ids guard fails these tests.
 
 ## F-026 Revolve: axis and direction
 
@@ -784,12 +787,15 @@ Conventions:
 - **Version:** v0.1.0-dev.20261001
 - **What:** `Shape::shell_count` counts OCCT shells with `TopExp_Explorer(TopAbs_SHELL)`. A normal solid has
   one shell; an interior cut yields outer and inner shells, while an open pocket still has one. Disconnected
-  copied solids can also produce multiple shells, so shell count alone is not a definitive cavity classifier.
+  copied solids can also produce multiple shells. `Shape::solid_count` counts OCCT solids, allowing an excess
+  shell count to distinguish internal shells from disconnected solids with one shell each.
 - **Evidence:** source: `qymcad-kernel/src/lib.rs:862-870`, `occt_helical.cpp:1336-1350`. Tests:
   `usability_warnings::{a_pocket_inside_stock_warns_and_names_the_feature,a_normal_open_pocket_does_not_warn}`
   derive interior V=20³−4*6*3.001 and open V=20³−4*6*3 (entry clearance F-017).
-- **How we handle it:** advisory feature-named warning after multiple shells appear; report possible internal
-  voids or disconnected solids. Session diagnostics survive failed edits/undo, and are not stored in `.qcad`
+  `disjoint_array_copies_do_not_warn_about_a_void` derives V=3*2*3*4=72 with three shells/three solids;
+  restoring shell-count-only detection makes it fail.
+- **How we handle it:** feature-named warning when excess shells increase relative to the old/source body;
+  disconnected solids stay silent. Session diagnostics survive failed edits/undo, and are not stored in `.qcad`
   (ADR [0009](adr/0009-advisory-geometry-diagnostics.md)).
 
 ## F-052 Stored B-reps can disagree with the recipe without a rebuild error
@@ -803,7 +809,9 @@ Conventions:
   changes depth 3→4 with delta V=4*6*1=24; unchanged dirty boolean rebuild stays silent.
 - **How we handle it:** compare stored and rebuilt volume/bbox on open: 0.05 mm per bound from F-016 and
   `max(1e-6,1e-9*max(|Vold|,|Vnew|))` mm³ numerical volume tolerance. Warn with body/name and before/after
-  metrics; equal metrics cannot prove identical topology (ADR 0009).
+  metrics with four decimals, bbox only beyond its tolerance, and guidance that rebuilt geometry is now used
+  and save updates the file. Unconditional bbox formatting fails the same-bbox pocket regression; equal metrics
+  cannot prove identical topology (ADR 0009).
 
 ## F-053 Signed planar corners require local face geometry
 
@@ -838,3 +846,34 @@ Conventions:
   `usability_info::cylinder_axis_point_is_at_the_faces_axial_centroid` failed first: got 25, expected 30 ± 1e-6.
 - **How we handle it:** report axis point o+dot(c−o,d)*d at the face's axial centroid; this lies on the axis,
   not on the curved surface. Radius/direction stay native (ADR 0011).
+
+## F-056 Native undo restoration preserves handed-out ids and immutable source bytes
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Project::keep_ids_past` preserves max(snapshot.next_id, live.next_id). Native documentation describes
+  held body picks aliasing a new node if undo restores the earlier allocator counter. `clone_without_source_data`
+  retains source records with empty payloads; `take_source_data_from` moves bytes from live sources matched by id.
+  Native `remove_sketch` removes the embedded source too, so restoring a deleted sketch also requires retaining
+  its removed original outside the snapshots.
+- **Evidence:** source: `qymcad-core/src/model.rs:4253-4285`; tests: `usability_undo::undo_never_reuses_a_removed_body_id_or_held_pick`
+  and `history::snapshot_tests::snapshots_omit_source_bytes_and_restore_them_on_undo_and_failure`. Removing
+  id preservation reproduces id 19 reuse; full clone retains payloads; omitting byte transfer loses the source.
+  Source: `qymcad-core/src/model.rs:2520-2533`; test:
+  `history::snapshot_tests::undo_restores_source_bytes_removed_by_native_sketch_deletion` first restored an
+  empty source instead of 2048 bytes; it also verifies failed-call rollback, original allocation reuse,
+  preservation of the enclosing boundary, and release after 1 deletion + 16 edits evicts its snapshot.
+- **How we handle it:** use all three APIs in session history; preserve exact recipe/B-reps while intentionally
+  keeping the id allocator monotonic (ADR 0008). Share deletion's enclosing MCP snapshot. Move removed originals
+  into a session archive while history needs them, then recover/prune them without copying their byte buffers.
+
+## F-057 Stored Project body pools can be inspected without rebuilding geometry
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qymcad_io::load_project` returns the stored Project, including its body pool, without regenerating
+  features. Native save can replace this file even if the new Project is empty.
+- **Evidence:** source: `qymcad-io/src/project_file.rs:162-199`; MCP
+  `usability_polish::empty_save_requires_override_to_replace_a_body_containing_file` first allowed overwriting
+  after undo. It now verifies unchanged file bytes on refusal, delete/undo, explicit/default paths, override,
+  new empty files, and replacement of already empty files. Disabling the guard fails the regression.
+- **How we handle it:** empty result documents inspect existing targets and refuse to replace stored bodies
+  unless `allow_empty=true` (ADR 0012).

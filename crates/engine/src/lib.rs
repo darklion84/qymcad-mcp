@@ -24,7 +24,7 @@ mod value;
 pub use error::{Error, Result};
 pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};
 pub use features::{Direction, Extrude, Op};
-pub use history::{Snapshot, UNDO_LIMIT};
+pub use history::{Snapshot, ToolCall, Undone, UNDO_LIMIT};
 pub use info::{DocInfo, NodeInfo};
 pub use modifiers::{Hole, HoleKind, Side};
 pub use params::ParamInfo;

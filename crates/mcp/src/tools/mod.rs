@@ -127,7 +127,10 @@ impl Registry {
         );
         let snapshot = if mutating {
             match self.state.doc().and_then(|s| s.begin_tool_edit().map_err(|e| e.to_string())) {
-                Ok(snapshot) => Some(snapshot),
+                Ok(mut snapshot) => {
+                    snapshot.record_call(name, args.clone());
+                    Some(snapshot)
+                }
                 Err(e) => return Ok(Err(e)),
             }
         } else {

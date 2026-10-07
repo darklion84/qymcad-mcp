@@ -73,5 +73,5 @@ fn kind_name(k: &qymcad_core::feature::FeatureKind) -> String {
         return format!("extrude ({op})");
     }
     let s = format!("{k:?}");
-    s.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string()
+    s.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_lowercase()
 }

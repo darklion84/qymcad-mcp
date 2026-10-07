@@ -9,8 +9,8 @@ All notable changes to this project are documented here. The format follows
 - `feature_delete` refuses dependent nodes unless `cascade=true`; deletion is atomic and restores consumed
   source bodies. Session `undo` retains 16 successful modelling calls and restores exact Project/B-rep state;
   document replacement resets history, and saving/exporting files is outside modelling undo (ADR 0008).
-- Advisory rebuild warnings identify features whose results acquire multiple shells (possible internal voids
-  or disconnected solids). Opening stale stored geometry warns when rebuilt volume/bounds differ (ADR 0009).
+- Advisory rebuild warnings identify features whose results acquire excess shells over solids (possible internal
+  voids). Opening stale stored geometry warns when rebuilt volume/bounds differ (ADR 0009).
 - Edge selections accept `{"concave": true}` and `{"convex": true}` in compositions: straight junctions between
   planar faces are classified; curved, seam and tangent junctions are excluded (ADR 0010).
 - Sketch inspection reports the native world frame. Extrude booleans show cut/add/intersect operations in
@@ -46,6 +46,18 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-039..F-044.
 
 ### Fixed
+- Undo preserves monotonic ids so removed-body references/picks cannot alias new nodes; snapshots omit embedded
+  source payloads and restore them by id. Feature deletion shares the MCP history snapshot instead of copying twice.
+- Undo returns the tool name/arguments and restored bodies/diagnostics; exhausting evicted history reports
+  `history limit reached (16): older calls cannot be undone`.
+- Empty concave/convex previews return zero matches and compose as empty sets; fillet/chamfer still refuse
+  empty final selections. The top-level `select` description includes concave examples.
+- Disconnected arrays and other multi-solid results no longer trigger void warnings. Stale-open warnings use
+  four-decimal metrics, show bbox changes only beyond F-016 tolerance, and identify rebuilt geometry as current.
+- `feature_delete` returns every deleted node's id/name/kind, including cascades; its description explains
+  dependent refusal versus app relinking. All `doc_info` operation labels use lowercase.
+- Saving an empty document over a file containing bodies requires `allow_empty=true`, with both explicit
+  and default save paths protected (ADR 0012).
 - Array descriptions explicitly state whole-body copying, including holes/cuts, and suggest sketch circles
   plus a through cut for repeated holes. Pinned QymCAD has no native seed-feature/cut-tool pattern (F-027).
 - `param_users` labels persisted datum guards as "datum dependency of sketch …" while retaining deletion checks.

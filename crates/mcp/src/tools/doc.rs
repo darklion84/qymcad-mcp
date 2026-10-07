@@ -24,6 +24,9 @@ pub struct SaveArgs {
     /// Where to write the `.qcad`. Default: the file the document came from or was last saved to.
     #[serde(default)]
     pub path: Option<String>,
+    /// Permit an empty document to overwrite an existing .qcad containing bodies. Default false.
+    #[serde(default)]
+    pub allow_empty: bool,
 }
 
 pub fn tools() -> Vec<Tool> {
@@ -49,14 +52,14 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "doc_save",
-            "Save the document as .qcad; the directory must exist. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
+            "Save the document as .qcad; the directory must exist. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
             |st, a: SaveArgs| {
                 let s = st.doc()?;
                 let target = match &a.path {
                     Some(p) => Some(checked_path(p, &["qcad"])?),
                     None => None,
                 };
-                let path = s.save(target.as_deref()).map_err(err)?;
+                let path = s.save_with_options(target.as_deref(), a.allow_empty).map_err(err)?;
                 Ok(json!({ "saved": path.display().to_string() }))
             },
         ),
