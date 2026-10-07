@@ -35,6 +35,26 @@ pub struct Rebuild {
     pub bodies: Vec<BodyInfo>,
 }
 
+struct BodyMetrics {
+    volume: f64,
+    bbox: Option<[f64; 6]>,
+    shells: u32,
+    solids: u32,
+    faces: Option<u32>,
+}
+
+impl BodyMetrics {
+    fn of(shape: &Shape) -> Self {
+        Self {
+            volume: shape.volume(),
+            bbox: shape.bbox(),
+            shells: shape.shell_count(),
+            solids: shape.solid_count(),
+            faces: shape.face_kinds().map(|kinds| kinds.into_iter().sum()),
+        }
+    }
+}
+
 pub struct Session {
     pub(crate) p: Project,
     pub(crate) shapes: HashMap<Id, Shape>,
@@ -104,24 +124,50 @@ impl Session {
         if missing {
             sess.p.mark_all_dirty();
         }
-        let stored: HashMap<Id, (f64, Option<[f64; 6]>)> = sess.shapes.iter().map(|(&id, sh)| (id, (sh.volume(), sh.bbox()))).collect();
+        let stored: HashMap<Id, BodyMetrics> = sess.shapes.iter().map(|(&id, sh)| (id, BodyMetrics::of(sh))).collect();
         let mut r = sess.rebuild();
-        for (&id, &(volume, bbox)) in &stored {
+        for (&id, old) in &stored {
             let Some(sh) = sess.shapes.get(&id) else { continue };
-            let rebuilt = sh.volume();
+            let new = BodyMetrics::of(sh);
+            let (volume, rebuilt) = (old.volume, new.volume);
             // F-016's 0.05 mm allowance applies to padded bounds, not volume. Boolean volume
             // comparisons use numerical roundoff only, so interior changes with identical bboxes warn.
             let volume_tol = (volume.abs().max(rebuilt.abs()) * 1e-9).max(1e-6);
-            let bounds = bbox.zip(sh.bbox());
+            let bounds = old.bbox.zip(new.bbox);
             let bbox_changed = bounds.is_some_and(|(old, new)| old.iter().zip(new).any(|(a, b)| (a - b).abs() > 0.05));
-            if (volume - rebuilt).abs() > volume_tol || bbox_changed {
+            let faces = old.faces.zip(new.faces);
+            let faces_changed = faces.is_some_and(|(old, new)| old != new);
+            let sealed = old.shells > old.solids;
+            let changed = (volume - rebuilt).abs() > volume_tol
+                || bbox_changed
+                || old.shells != new.shells
+                || old.solids != new.solids
+                || faces_changed;
+            let message = if changed {
                 let mut message = format!("stored geometry differs from the rebuild: volume {volume:.4} → {rebuilt:.4} mm³");
+                if old.shells != new.shells || sealed {
+                    let void = if sealed { " (sealed void)" } else { "" };
+                    message.push_str(&format!("; stored body had {} shells{void}, the rebuild has {}", old.shells, new.shells));
+                }
+                if old.solids != new.solids {
+                    message.push_str(&format!("; solids {} → {}", old.solids, new.solids));
+                }
+                if let Some((old, new)) = faces.filter(|_| faces_changed) {
+                    message.push_str(&format!("; faces {old} → {new}"));
+                }
                 if let Some((old, new)) = bounds.filter(|_| bbox_changed) {
                     let format_bounds =
                         |values: [f64; 6]| format!("[{}]", values.iter().map(|v| format!("{v:.4}")).collect::<Vec<_>>().join(", "));
                     message.push_str(&format!("; bbox {} → {} mm", format_bounds(old), format_bounds(new)));
                 }
                 message.push_str("; the rebuilt geometry is now used; save to update the file");
+                Some(message)
+            } else if sealed {
+                Some(format!("stored body has {} shells and {} solids; may contain a sealed internal void", old.shells, old.solids))
+            } else {
+                None
+            };
+            if let Some(message) = message {
                 let warning = sess.issue(id, message);
                 sess.advisory_warnings.push(warning.clone());
                 r.warnings.push(warning);

@@ -379,7 +379,10 @@ pub fn tools() -> Vec<Tool> {
             "fillet",
             concat!(
                 "Round edges of a body. `edges` is a selection: ids from topology, or a description such as \
-             {\"edges_of\": {\"facing\": \"+z\"}} (top outline) or {\"along\": \"z\"} (vertical edges). The edges \
+             {\"edges_of\": {\"facing\": \"+z\"}} (top outline), {\"along\": \"z\"} (vertical edges), or \
+             {\"concave\": true} (inward corners, including boss/plate circles). For a named boss/plate junction \
+             use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}. \
+             Concave/convex exclude seams and G1 tangent junctions. The edges \
              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
              for the geometry is an error and nothing changes.",
                 stale!()

@@ -60,7 +60,7 @@ pub fn tools() -> Vec<Tool> {
             "export",
             "Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body \
              is placed where it stands in the document; one object per body, no colours. Returns the bodies written, \
-             triangle count and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if \
+             triangle count, current document warnings and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if \
              any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: ExportArgs| {
                 let path = checked_path(&a.path, a.format.extensions())?;
@@ -68,6 +68,7 @@ pub fn tools() -> Vec<Tool> {
                 let ids = resolve_bodies(s, &a.bodies)?;
                 let r = s.export(a.format, &path, a.quality, ids.as_deref()).map_err(err)?;
                 let mut v = serde_json::to_value(&r).unwrap_or(Value::Null);
+                v["warnings"] = json!(s.info().warnings);
                 if let Some(bodies) = v["bodies"].as_array_mut() {
                     for b in bodies {
                         if let Some(mv) = b["mesh_volume"].as_f64() {
@@ -81,14 +82,14 @@ pub fn tools() -> Vec<Tool> {
         tool_content(
             "render",
             "Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted \
-             to the frame (not to scale between calls). Use it to check shape and feature placement after building. Refuses rendering if \
+             to the frame (not to scale between calls). Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if \
              any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: RenderArgs| {
                 let s = st.doc()?;
                 let ids = resolve_bodies(s, &a.bodies)?;
                 let r = s.render(a.view, a.width, a.height, ids.as_deref()).map_err(err)?;
                 let b = r.bbox.map(|v| round(v, 2));
-                let text = format!(
+                let mut text = format!(
                     "{} view, {}: bodies {:?}, bbox x {}..{} y {}..{} z {}..{} mm",
                     format!("{:?}", a.view).to_lowercase(),
                     a.view.describe(),
@@ -100,6 +101,9 @@ pub fn tools() -> Vec<Tool> {
                     b[2],
                     b[5]
                 );
+                for warning in s.info().warnings {
+                    text.push_str(&format!("\nWarning: {warning}"));
+                }
                 Ok(vec![
                     json!({ "type": "image", "data": base64(&r.png), "mimeType": "image/png" }),
                     json!({ "type": "text", "text": text }),

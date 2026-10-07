@@ -14,8 +14,8 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by \
     QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; \
     optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); \
-    {\"concave\": true} / {\"convex\": true} inward/outward corners at straight edges between two planar faces \
-    (curved junctions, seams and tangent junctions are excluded); \
+    {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved \
+    junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; \
     {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest \
     edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, \
     cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} \
@@ -68,6 +68,16 @@ pub enum SelArg {
 }
 
 impl SelArg {
+    fn has_corner_filter(&self) -> bool {
+        match self {
+            Self::Concave | Self::Convex => true,
+            Self::Union(v) => v.iter().any(Self::has_corner_filter),
+            Self::And(a, b) | Self::Minus(a, b) | Self::Between(a, b) => a.has_corner_filter() || b.has_corner_filter(),
+            Self::EdgesOf(s) | Self::TangentChain { seed: s, .. } => s.has_corner_filter(),
+            _ => false,
+        }
+    }
+
     pub fn resolve(&self, s: &Session) -> Result<Sel, String> {
         let b = |x: &SelArg| x.resolve(s).map(Box::new);
         Ok(match self {
@@ -531,7 +541,8 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "topology",
             "List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, \
-             centroid, outward normal for planes, area, axis+radius for cylinders/cones) and edges (kind \
+             centroid, outward normal for planes, tessellation-based area (typically about 0.1–0.2% below analytic \
+             for curved faces; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
              line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE \
              body and are only valid after the latest feature: every feature makes a new body, so call topology \
              again after each one. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; \
@@ -546,7 +557,8 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "select",
             "Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). \
-             Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward planar corners, \
+             Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
+             a boss/plate curved junction, \
              pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}.",
             |st, a: SelectArgs| {
                 let s = st.doc()?;
@@ -568,6 +580,9 @@ pub fn tools() -> Vec<Tool> {
                         json!({ "body": body, "count": ids.len(), "edges": rows })
                     }
                 };
+                if ids.is_empty() && a.edges.as_ref().is_some_and(SelArg::has_corner_filter) {
+                    out["hint"] = json!("0 corner edges; for a junction between named features use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}");
+                }
                 round_json(&mut out, 4);
                 Ok(out)
             },

@@ -255,7 +255,8 @@ pub fn tools() -> Vec<Tool> {
              entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); \
              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints \
              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
-             take.",
+             take. Contour areas are tessellation-based, typically about 0.1–0.2% below analytic areas for curved \
+             contours; use analytic dimensions for exact areas.",
             |st, a: InfoArgs| {
                 let s = st.doc()?;
                 let id: Id = a.sketch.resolve(s)?;

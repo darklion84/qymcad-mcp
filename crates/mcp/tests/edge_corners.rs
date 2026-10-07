@@ -124,6 +124,7 @@ fn concave_on_a_cube_selects_zero_edges() {
     let r = c.ok("select", json!({ "edges": { "concave": true } }));
     assert_eq!(r["count"], 0);
     assert_eq!(r["edges"], json!([]));
+    assert_eq!(r["hint"], "0 corner edges; for a junction between named features use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}");
 }
 
 #[test]
@@ -142,7 +143,11 @@ fn empty_corner_filters_compose_as_empty_sets() {
     ] {
         let r = c.ok("select", json!({ "edges": selection }));
         assert_eq!(r["count"], count, "selection {selection}: {r}");
+        assert_eq!(r.get("hint").is_some(), count == 0, "only empty corner compositions carry the hint: {r}");
     }
+    let plain_empty = c.ok("select", json!({ "edges": [] }));
+    assert_eq!(plain_empty["count"], 0);
+    assert!(plain_empty.get("hint").is_none(), "ordinary empty selections do not need a corner hint");
 }
 
 #[test]
@@ -160,7 +165,7 @@ fn empty_final_corner_selection_refuses_fillet_and_chamfer() {
 }
 
 #[test]
-fn convex_on_a_cylinder_selects_zero_planar_corners() {
+fn convex_on_a_cylinder_selects_both_rims_without_the_seam() {
     let mut c = Client::start();
     c.init();
     c.ok("doc_new", json!({}));
@@ -169,10 +174,10 @@ fn convex_on_a_cylinder_selects_zero_planar_corners() {
     let r = c.ok("extrude", json!({ "sketch": "circle", "height": 20 }));
     // Tool volumes are rounded to four decimal places: at most 0.00005 mm³ rounding error.
     assert!((r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - std::f64::consts::PI * 5.0_f64.powi(2) * 20.0).abs() < 0.00005);
-    // Two circular rims and the cylinder seam are excluded from planar straight-edge corners.
+    // Two circular cap/wall rims are convex; the closing seam is excluded.
     let r = c.ok("select", json!({ "edges": { "convex": true } }));
-    assert_eq!(r["count"], 0);
-    assert_eq!(r["edges"], json!([]));
+    assert_eq!(r["count"], 2, "a cylinder has two convex rims");
+    assert!(r["edges"].as_array().unwrap().iter().all(|e| e["kind"] == "circle"));
 }
 
 #[test]

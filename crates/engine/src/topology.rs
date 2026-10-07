@@ -180,9 +180,9 @@ pub enum Sel {
     Facing { dir: [f64; 3], tol_deg: f64 },
     /// Edges running along `dir` (either sense) within `tol_deg`.
     Along { dir: [f64; 3], tol_deg: f64 },
-    /// Inward corners between two planar faces along a straight edge; excludes seams and tangent junctions.
+    /// Inward corners between two distinct faces, including curved junctions; excludes seams and G1 junctions.
     Concave,
-    /// Outward corners between two planar faces along a straight edge; excludes seams and tangent junctions.
+    /// Outward corners between two distinct faces, including curved junctions; excludes seams and G1 junctions.
     Convex,
     /// The elements whose centre (faces) or midpoint (edges) is extreme along a world axis (all ties).
     Extreme { axis: Axis, max: bool },
@@ -243,7 +243,7 @@ impl Sel {
             Sel::Concave | Sel::Convex => {
                 let what = if matches!(self, Sel::Concave) { "concave" } else { "convex" };
                 if el == Element::Faces {
-                    return bad(what, "it tests edge corners between two planar faces");
+                    return bad(what, "it tests edge corners between two distinct faces");
                 }
                 return Err(Error::Invalid(format!("`{what}` needs a body to resolve its edge corners")));
             }
@@ -473,38 +473,39 @@ impl Session {
         medges.iter().map(|e| (e.id, edge_kind_length(e, &polylines).1)).collect()
     }
 
-    /// A planar corner is concave when face A's local interior points outside face B's supporting plane.
-    /// Use an incident triangle, not the face centroid: a concave face's centroid can lie outside the face.
+    /// Signed local dihedral: face A's inward tangent dotted with face B's outward normal.
+    /// Shared triangle sides supply oriented tangents; analytic cylinder/circle data refine curved samples.
     fn corner_edges(&self, body: Id, concave: bool) -> Vec<u32> {
         let Some(shape) = self.shapes.get(&body) else { return Vec::new() };
         let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Vec::new() };
         let faces: HashMap<_, _> = self.p.regen_faces.get(&body).into_iter().flatten().map(|f| (f.id, f)).collect();
-        let normals: HashMap<_, _> = faces.iter().filter_map(|(id, f)| planar_normal(f, mesh).map(|n| (*id, n))).collect();
-        let (polylines, pairs) = {
-            let _gate = qymcad_kernel::kernel_gate();
-            (
-                shape.edges_info().into_iter().map(|e| (e.id, e.poly)).rev().collect::<HashMap<_, _>>(),
-                shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect::<HashMap<_, _>>(),
-            )
-        };
+        let _gate = qymcad_kernel::kernel_gate();
+        let smooth: HashMap<_, _> = shape.edges_info().into_iter().map(|e| (e.id, e.smooth)).collect();
+        let pairs: HashMap<_, _> = shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect();
         self.p
             .regen_edges
             .get(&body)
             .into_iter()
             .flatten()
             .filter_map(|e| {
-                if edge_kind_length(e, &polylines).0 != EdgeKind::Line {
+                if smooth.get(&e.id).copied().unwrap_or(true) {
                     return None;
                 }
                 let [a, b] = *pairs.get(&e.id)?;
-                if a == b {
+                if a == b || a == 0 || b == 0 {
                     return None;
                 }
-                let (na, nb) = (*normals.get(&a)?, *normals.get(&b)?);
+                let (point, mut tangent, na, nb) = edge_face_sample(e, faces.get(&a)?, faces.get(&b)?, mesh)?;
+                let na = local_normal(shape, a, point, na);
+                let nb = local_normal(shape, b, point, nb);
+                if e.radius > 1e-9 {
+                    let analytic = unit(cross(e.axis, sub(point, e.center))).ok()?;
+                    tangent = analytic.map(|x| x * dot(analytic, tangent).signum());
+                }
                 if dot(na, nb).abs() > 0.99999 {
                     return None;
                 }
-                let inward = edge_face_inward(e, faces.get(&a)?, mesh)?;
+                let inward = cross(na, tangent);
                 let sign = dot(inward, nb);
                 ((sign > 1e-6 && concave) || (sign < -1e-6 && !concave)).then_some(e.id)
             })
@@ -678,30 +679,63 @@ impl Session {
     }
 }
 
-/// In-plane direction into the triangle sharing the edge midpoint, perpendicular to the edge.
-fn edge_face_inward(e: &MeshEdge, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3]> {
-    let dir = unit(sub(e.b, e.a)).ok()?;
-    // Kernel tessellation carries float coordinates; allow their relative rounding error.
-    let scale = e.a.into_iter().chain(e.b).map(f64::abs).fold(1.0, f64::max);
-    let eps = 1e-6 * scale;
-    for &ti in &face.triangles {
-        let t = mesh.tris.get(ti as usize)?;
-        let p: Vec<_> = t.iter().map(|&i| mesh.verts.get(i as usize).map(|v| [v.x, v.y, v.z])).collect::<Option<_>>()?;
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+/// Outward normal at a cylinder sample (inward radial on a bore), or local mesh normal otherwise.
+fn local_normal(shape: &Shape, face: u32, point: [f64; 3], mesh_normal: [f64; 3]) -> [f64; 3] {
+    if let Some((origin, axis, _)) = shape.face_cylinder(face) {
+        let offset = sub(point, origin);
+        if let Ok(radial) = unit(sub(offset, axis.map(|x| x * dot(offset, axis)))) {
+            return radial.map(|x| x * dot(radial, mesh_normal).signum());
+        }
+    }
+    mesh_normal
+}
+
+type EdgeSample = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
+
+/// Find the shared tessellated side nearest the edge midpoint. The winding of A determines its boundary
+/// tangent, so nA × tangent points into A even on nonconvex caps. Faces may duplicate vertex indices.
+fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<EdgeSample> {
+    let triangles = |face: &MeshFace| -> Option<Vec<[[f64; 3]; 3]>> {
+        face.triangles
+            .iter()
+            .map(|&ti| {
+                let t = mesh.tris.get(ti as usize)?;
+                let point = |i: usize| mesh.verts.get(i).map(|v| [v.x, v.y, v.z]);
+                Some([point(t[0] as usize)?, point(t[1] as usize)?, point(t[2] as usize)?])
+            })
+            .collect()
+    };
+    let (ta, tb) = (triangles(a)?, triangles(b)?);
+    let eps = 1e-6 * e.mid.into_iter().map(f64::abs).fold(1.0, f64::max);
+    let mut sides = Vec::new();
+    for p in &ta {
+        let Some(normal) = unit(cross(sub(p[1], p[0]), sub(p[2], p[0]))).ok() else { continue };
         for i in 0..3 {
-            let (a, b) = (p[i], p[(i + 1) % 3]);
-            let ab = sub(b, a);
-            let length = norm(ab);
-            if length <= eps || dot(unit(ab).ok()?, dir).abs() < 0.99999 {
+            let (start, end) = (p[i], p[(i + 1) % 3]);
+            let delta = sub(end, start);
+            let length2 = dot(delta, delta);
+            if length2 <= eps * eps {
                 continue;
             }
-            let am = sub(e.mid, a);
-            let fraction = dot(am, ab) / (length * length);
-            let offset = sub(am, ab.map(|x| x * fraction));
-            if fraction < -eps / length || fraction > 1.0 + eps / length || norm(offset) > eps {
-                continue;
+            let t = (dot(sub(e.mid, start), delta) / length2).clamp(0.0, 1.0);
+            let point = std::array::from_fn(|j| start[j] + t * delta[j]);
+            sides.push((norm(sub(point, e.mid)), start, end, point, normal));
+        }
+    }
+    sides.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for (_, start, end, point, na) in sides {
+        for p in &tb {
+            for i in 0..3 {
+                let (u, v) = (p[i], p[(i + 1) % 3]);
+                if (norm(sub(start, u)) <= eps && norm(sub(end, v)) <= eps) || (norm(sub(start, v)) <= eps && norm(sub(end, u)) <= eps) {
+                    let nb = unit(cross(sub(p[1], p[0]), sub(p[2], p[0]))).ok()?;
+                    return Some((point, unit(sub(end, start)).ok()?, na, nb));
+                }
             }
-            let interior = sub(p[(i + 2) % 3], e.mid);
-            return unit(sub(interior, dir.map(|x| x * dot(interior, dir)))).ok();
         }
     }
     None
