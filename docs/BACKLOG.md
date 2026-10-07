@@ -11,5 +11,10 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   expressions mention the changed name (directly or through other parameters) is a performance optimisation for
   large documents; it must keep F-001 (case-insensitive matching) and F-002 in mind. Raised in the phase 3A review.
 - **One helper for "snapshot live shapes, rebuild on copies, restore on failure".** `Session::sketch_edit` and
-  `Session::param_set` carry the same B-rep-copy snapshot logic (F-3B-12); extract it so both change together.
+  `Session::param_set` carry the same B-rep-copy snapshot logic (F-034); extract it so both change together.
   Raised by Claude in the round-3 verification.
+- **`Patch` edge queries are not gated by the unrestorable-edge guard** (MiMo, final review): the guard in
+  `Session::rebuild_retrying` covers fillet/chamfer stored queries; extend it if the engine ever creates Patch
+  features with edge queries.
+- **The rebuild guard clones the `Project` on every public rebuild** (MiMo, final review): fine for small parts;
+  make the retry-plan check incremental if large documents get slow.

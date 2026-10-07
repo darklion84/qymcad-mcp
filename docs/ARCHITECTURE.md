@@ -24,15 +24,15 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `sketch/constrain.rs` | `sketch_constrain` (constraints, dimensions, over-constraint refusal), entity/constraint removal |
 | `sketch/detail.rs` | `SketchDetail`: entities, points (frame roles), constraints for the agent |
 | `features.rs` | datum planes; extrude/cut/add/intersect |
-| `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-3C-2) |
+| `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-020) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
 | `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
-| `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-3B-8, balanced unions and a size/depth budget F-3B-10); `select`; `ensure_topology` after open (F-3B-1; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
-| `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-3B-2), shell, push face, hole |
+| `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-030, balanced unions and a size/depth budget F-032); `select`; `ensure_topology` after open (F-023; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
+| `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-024), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
-| `patterns.rs` | linear/circular arrays and mirror of the whole body (F-3B-5), at most 1000 copies also on parameter edits (F-3B-11); `AxisRef` → datum axes (identical fixed axes reused) |
+| `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
 | `info.rs` | `DocInfo` snapshot for the agent |
-| `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-3B-9) |
+| `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-031) |
 | `error.rs` | `Error` with agent-oriented messages |
 
 ## The regenerate pipeline (`Session::rebuild`)
@@ -50,7 +50,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
   the document. Those repair paths bypass `atomic` and can edit a failing baseline.
 - `sketch_edit` — retain the original live shapes of bodies in the sketch's dirty rebuild plan; rebuild on
   independent B-rep copies and retry only planned nodes. Failure restores the project and those original handles
-  without another rebuild, so old bodies remain bit-identical (F-3B-12).
+  without another rebuild, so old bodies remain bit-identical (F-034).
 - `transact(edit)` — sketch geometry (no rebuild needed): restore on error.
 - `param_set` — restore the original project directly when propagation leaves a sketch unsolved (no shapes
   have changed). Before rebuilding, retain original live shapes of planned bodies and regenerate on B-rep
@@ -66,13 +66,13 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
 mapped onto `refs::Query`). Edge selections are resolved when the feature is created and stored as pick lists:
-stored edge queries break after the document is reopened in the app (F-3B-2). Face selections (hole, shell, push
+stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
 face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
-empty edge list would mean "every edge", F-3B-3).
+empty edge list would mean "every edge", F-025).
 New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
 radius, angles — and add each only if it removes a degree of freedom (`add_constraint_if_independent`): a point
 shared with earlier geometry is not dimensioned twice, so the result is (0, 0) without redundancy (rect and circle
-too). Exceptions, because QymCAD's solver/rank analysis needs them (FINDINGS F-3A-2, F-3A-3, F-3A-7): a parametric
+too). Exceptions, because QymCAD's solver/rank analysis needs them (FINDINGS F-040, F-041, F-045): a parametric
 direction (arc end, polygon rotation) is an `ArcLength` from an `angle_reference` construction point on the +x side
 of the centre — QymCAD's only directed dimension, and one without the slow angle arms — and the slot's tangencies
 are first-order perpendiculars. Every sketch edit is solved until it settles and must reach residual ≤ 1e-6;
@@ -95,7 +95,7 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 | `tools/{doc,params,sketch,features,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
 | `tools/topology.rs` | `topology`, `select`; JSON forms of selections, axes and directions (hand-parsed for precise errors), shared with `tools/features.rs` |
 | `lib.rs` | agent instructions; installed-app release check (F-018) |
-| `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-3C-1) |
+| `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-019) |
 
 Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a
 normal result with `isError: true` and the message (the model must see it). Argument structs use

@@ -221,7 +221,7 @@ impl Session {
     /// on the axis instead (a zero distance has no side). Distances are magnitudes `|Δ|`: the side comes from
     /// the initial geometry and the expression is negated when its value is negative (see `Num::magnitude_expr`).
     /// Only the independent dimensions are added: the point may be shared with earlier, already dimensioned
-    /// geometry (a circle centred on a polyline vertex takes that vertex as its centre, FINDINGS F-3A-4).
+    /// geometry (a circle centred on a polyline vertex takes that vertex as its centre, FINDINGS F-042).
     fn pin_point(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) -> Result<()> {
         let dims = self.pin_dims(si, p, x, vx, y, vy)?;
         self.add_independent(si, dims);
@@ -260,7 +260,7 @@ impl Session {
     pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
         let before = self.p.clone();
         // regen_plan includes transitive sketch dependents and any already dirty nodes. Keep their original
-        // handles, rebuilding on independent B-rep copies: restoring a recipe by rebuilding drifts (F-3B-12).
+        // handles, rebuilding on independent B-rep copies: restoring a recipe by rebuilding drifts (F-034).
         let has_dependents = !before.dependents_of(sketch).is_empty();
         let mut planned = before.clone();
         planned.mark_sketch_dirty(sketch);
@@ -316,7 +316,7 @@ impl Session {
 
     /// Solve sketch `si` until it settles. One `solve_sketch` call can stop at a compromise: QymCAD holds the arms
     /// of angle dimensions softly at their pre-solve lengths, so an edit that must change an arm's length gains
-    /// only a fraction per call (FINDINGS F-3A-2). Repeats while the residual keeps dropping (at most 200
+    /// only a fraction per call (FINDINGS F-040). Repeats while the residual keeps dropping (at most 200
     /// calls); returns the final residual.
     pub(crate) fn solve_settled(&mut self, si: usize) -> f64 {
         let mut residual = self.p.solve_sketch(si);

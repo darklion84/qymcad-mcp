@@ -112,7 +112,7 @@ Conventions:
   upstream edits; `add_fillet(src, r, ids)` matches them by name, and stale ids are repaired only on an
   unambiguous match (logged in `RegenReport.rebinds`). Descriptive selections (`refs::Ref` + `Query::{Adjacent,
   TangentChain, Oriented, Extreme, OfFeature, ...}`) via `add_fillet_ref` / `add_chamfer_ref` are re-evaluated on
-  every rebuild, **but stored edge queries are not safe in QymCAD.app after reopening (F-3B-2)**: this server
+  every rebuild, **but stored edge queries are not safe in QymCAD.app after reopening (F-024)**: this server
   stores edges as pick lists and keeps queries only for faces. Topology must be re-read after every regenerate;
   ids live on the specific body.
 - **Evidence:** source: `crates/qymcad-core/src/names.rs`, `crates/qymcad-core/src/refs.rs` (~69-154),
@@ -187,7 +187,7 @@ Conventions:
 - **Evidence:** observed: `plutil -p ~/Applications/QymCAD.app/Contents/Info.plist`; `strings` on
   `Contents/MacOS/qymcad`.
 
-## F-3C-1 OpenCASCADE prints to stdout on every STEP write
+## F-019 OpenCASCADE prints to stdout on every STEP write
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `qymcad_kernel::write_step` (`qym_step_write`, `STEPControl_Writer`) prints a coloured block to fd 1:
@@ -201,7 +201,7 @@ Conventions:
 - **How we handle it:** the server moves fd 1 to stderr at startup and speaks the protocol on a duplicate of the
   original stdout (ADR 0005).
 
-## F-3C-2 The app exports STEP/GLB/3MF as a component tree; `write_step` and the flat mesh writers do not
+## F-020 The app exports STEP/GLB/3MF as a component tree; `write_step` and the flat mesh writers do not
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** File > Export in QymCAD.app writes STEP via `write_step_tree` and GLB/3MF via `export_glb_tree` /
@@ -219,7 +219,7 @@ Conventions:
   (~24). test: `crates/engine/tests/golden_export.rs` (`step_reads_back_with_the_same_volume`,
   `glb_is_in_metres_with_y_up`, `threemf_is_in_millimetres`).
 
-## F-3C-3 Mesh quality presets do not change small holes: the kernel's angular deflection (0.3 rad) decides
+## F-021 Mesh quality presets do not change small holes: the kernel's angular deflection (0.3 rad) decides
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `qym_shape_tessellate` meshes with `BRepMesh_IncrementalMesh(shape, defl, false, 0.3, true)`. On the
@@ -230,7 +230,7 @@ Conventions:
   test: `crates/engine/tests/golden_export.rs` `finer_quality_never_loses_accuracy`; source:
   `crates/qymcad-kernel/src/occt_bridge.cpp` `doc_from_shape` (~143-152).
 
-## F-3C-4 The app's isometric view is `Cam3::default()`: yaw −0.7, pitch 0.6
+## F-022 The app's isometric view is `Cam3::default()`: yaw −0.7, pitch 0.6
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** the default 3D camera (and the component thumbnails) look from yaw −0.7 rad, pitch 0.6 rad; `Cam3::basis`
@@ -239,7 +239,7 @@ Conventions:
   `crates/engine/src/render.rs`.
 - **Evidence:** source: `crates/qymcad-ui-state/src/lib.rs` `Cam3::default` (~2384) and `Cam3::basis` (~2389); test:
   `crates/engine/src/render.rs` `view_bases_are_orthonormal` (iso camera at +X −Y +Z).
-## F-3B-1 A reopened document has no edges (and, without the app's restore, no faces) until bodies rebuild
+## F-023 A reopened document has no edges (and, without the app's restore, no faces) until bodies rebuild
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `regen_faces` / `regen_edges` are derived and not saved. QymCAD.app's `finish_project_load` puts the
@@ -261,7 +261,7 @@ Conventions:
   are put back and the errors returned (test `a_failing_topology_rebuild_is_reported_and_changes_nothing`; before,
   a failed fillet was silently passed through and the body changed). That test also compares timeline ids/kinds.
   If `Shape::edges_info()` is nonempty but `Kernel::edges` yields no usable named edges, restoration refuses
-  before falling back to a full rebuild (F-3B-2). Evidence: source `qymcad-kernel/src/kernel.rs:386-399` filters
+  before falling back to a full rebuild (F-024). Evidence: source `qymcad-kernel/src/kernel.rs:386-399` filters
   zero ids or polylines with fewer than two points; test `session::tests::live_unnamed_edges_refuse_topology_restoration`
   renames a cylinder's edges to zero, proves refusal and retained shape/volume; bypassing the guard fails it.
   Opening with failed edge restoration is refused only if missing shapes or dirty nodes require a rebuild;
@@ -273,7 +273,7 @@ Conventions:
   Clean-open usability does not authorize later query rebuilds: the shared `rebuild_retrying` preflight refuses
   planned fillet/chamfer queries depending directly or transitively on a live body with an empty edge pool and
   no usable named edges. Errors identify its id and name; parameter/sketch/feature rollback preserves the Project
-  and original B-reps. Pick lists and unrelated features are not blocked by this preflight (F-3B-2).
+  and original B-reps. Pick lists and unrelated features are not blocked by this preflight (F-024).
   The safety plan includes dirty sketch dependents: `regen_plan` omits sketch outputs from its dirty set
   (`qymcad-core/src/model/regen.rs:699-734`), but regenerate inserts them (`regen.rs:1159`).
   Evidence: `open_edges.rs` `clean_open_refuses_radius_edit_over_unnamed_edges_without_changing_state`,
@@ -282,14 +282,14 @@ Conventions:
   Project and every live B-rep. `clean_open_refuses_query_with_transitive_unnamed_ancestor` uses an intervening
   array with named edges. Disabling the shared preflight fails all four regressions.
 
-## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
+## F-024 A stored edge *query* rounds every edge after the document is reopened
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** a fillet/chamfer whose edges are a descriptive `refs::Ref` (`add_fillet_ref`) resolves it against
-  `regen_edges` of its source. When the source was not rebuilt earlier (a reopened document, F-3B-1, then an edit
+  `regen_edges` of its source. When the source was not rebuilt earlier (a reopened document, F-023, then an edit
   of the fillet's own parameter), the pool is empty, the query yields nothing, and for a query without explicit
   descriptors (`Adjacent(OfFeature ..)`, `Oriented`, `Extreme` ...) the empty list reaches the kernel as "every
-  edge" (F-3B-3). The node stays green. A full rebuild right after opening does the same, because edges are only
+  edge" (F-025). The node stays green. A full rebuild right after opening does the same, because edges are only
   copied in the post pass. Pick lists (`add_fillet(ids)`) are resolved against the kernel's live edges instead
   (`live_edge_refs`) and are unaffected.
 - **Evidence:**
@@ -309,7 +309,7 @@ Conventions:
   faces on open, so they keep working (test `hole_diameter_follows_its_parameter`). Edge queries that *grow* with
   the topology are therefore not available until this is fixed upstream. Documents that already store edge queries
   (made in the app) are safe to edit in this server when their edges restore successfully: the edges restored on
-  open (F-3B-1) give the query its real pool, so
+  open (F-023) give the query its real pool, so
   inspecting them changes nothing and a radius edit rounds the intended edges (test
   `stored_edge_query_is_safe_to_inspect_and_edit_after_open`; before the fix, `topology` alone removed 105.5 mm³).
   When live edges cannot be restored, a clean document can still open, but every rebuild path refuses planned
@@ -325,7 +325,7 @@ Conventions:
   Project/B-rep bytes after a failed independent contour expands the retry. Disabling retry restoration fails
   its Project byte assertion. The app itself still shows the upstream bug; this refusal is engine-only.
 
-## F-3B-3 An empty edge list means "every edge"
+## F-025 An empty edge list means "every edge"
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** fillet/chamfer with an empty edge list round/bevel every SHARP edge of the body (smooth, tangent edges
@@ -334,11 +334,11 @@ Conventions:
 - **Evidence:** source: `regen.rs` `prep_fillet` / `prep_chamfer` (`asked_edges` is computed from
   `picked_descs()`, empty for descriptive queries); `crates/qymcad-kernel/src/kernel.rs` fillet (~657-660: an empty
   list becomes `sharp_edge_ids()`, ~678 `fillet_all`) and chamfer (~800-806 `chamfer_all`); consequence observed
-  in F-3B-2.
+  in F-024.
 - **How we handle it:** a selection that resolves to no edge is refused at creation (test
-  `stale_and_foreign_ids_are_clear_errors`); edges are stored as pick lists (F-3B-2).
+  `stale_and_foreign_ids_are_clear_errors`); edges are stored as pick lists (F-024).
 
-## F-3B-4 Revolve: axis and direction
+## F-026 Revolve: axis and direction
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `RevolveAxis { axis: 0 = sketch x, 1 = sketch y; datum; line }`; a sketch line wins over a datum axis,
@@ -350,7 +350,7 @@ Conventions:
 - **How we handle it:** world axes and `{origin, dir}` become manual datum axes; world Z needs one too for a
   revolve (datum 0 means "none").
 
-## F-3B-5 Arrays copy the whole body; circular step is 360/count or angle/count
+## F-027 Arrays copy the whole body; circular step is 360/count or angle/count
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** linear/circular arrays and mirror take a source *body* and produce one body holding all copies (a
@@ -361,7 +361,7 @@ Conventions:
   parameter), `mirror_keeps_or_replaces`; source: `regen.rs` `prep_circulararray` (~2266-2290),
   `prep_lineararray` (~2229).
 
-## F-3B-6 Hole tool details
+## F-028 Hole tool details
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** a flat-bottomed cylinder along −normal from `at` projected onto the face; `depth` includes the
@@ -371,11 +371,11 @@ Conventions:
 - **Evidence:** test: `golden_features.rs` `holes_*`; source: `crates/qymcad-kernel/src/occt_io.cpp`
   `make_hole_tool` (~128-142), `regen.rs` `prep_hole` (~2064-2110).
 - **How we handle it:** the engine refuses a step that would be omitted; `through` stores a fixed 10000 mm
-  depth (F-3B-15). Creation is refused when the source body's bbox diagonal exceeds 10000 mm, a safe bound on
+  depth (F-037). Creation is refused when the source body's bbox diagonal exceeds 10000 mm, a safe bound on
   its extent along any hole axis (`through_hole_refuses_stock_beyond_10000_mm`). An explicit depth remains
   available; later stock growth beyond the stored depth can make a hole blind.
 
-## F-3B-7 Seam edges and planar normals
+## F-029 Seam edges and planar normals
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** a cylindrical face's closing line is an edge whose `edge_face_pairs` entry names the same face twice;
@@ -387,7 +387,7 @@ Conventions:
 - **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
   them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.
 
-## F-3B-8 `Largest` ranks edges by chord, not length
+## F-030 `Largest` ranks edges by chord, not length
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `Project::edge_pool` scores an edge's "area" as |b − a|, so for `Query::Largest` a full circle scores
@@ -396,9 +396,9 @@ Conventions:
 - **Evidence:** test: `golden_features.rs` `largest_edge_is_the_longest_by_true_length` (returned only the seam
   before the fix); source: `crates/qymcad-core/src/model.rs` `edge_pool` (~2896), `refs.rs` `Query::Largest`.
 - **How we handle it:** for edge selections the engine replaces every `largest` with the ids of the longest edges
-  by true length (as `topology` reports it) before resolving; edges are stored as pick lists anyway (F-3B-2).
+  by true length (as `topology` reports it) before resolving; edges are stored as pick lists anyway (F-024).
 
-## F-3B-9 The expression evaluator has no recursion limit
+## F-031 The expression evaluator has no recursion limit
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `qymcad_core::expr::eval` is recursive descent (expr → term → power → unary → atom): each `(` costs
@@ -415,7 +415,7 @@ Conventions:
   Removing the generated checks fails all six regressions. Files are not checked on open
   (docs/SECURITY.md: open trusted files only).
 
-## F-3B-10 A deep query ladder makes the document unsaveable
+## F-032 A deep query ladder makes the document unsaveable
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** a stored `refs::Query` is written as nested RON; past the format's recursion limit `save` fails with
@@ -429,7 +429,7 @@ Conventions:
   log2 n); every stored or resolved selection is limited to 512 parts and a query depth of 48
   (`Sel::to_query`).
 
-## F-3B-11 Arrays have no size limit upstream
+## F-033 Arrays have no size limit upstream
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `prep_lineararray` multiplies the three counts and allocates a transform per copy; nothing caps it, so
@@ -445,7 +445,7 @@ Conventions:
   cover linear/circular edits to -5 and 2.5, exact document rollback and V=2*pi*1²*2. Restoring the old coercion
   fails both tests. The QymCAD GUI is not limited and retains its upstream rounding behavior.
 
-## F-3B-12 A full rebuild does not reproduce parameter-edited bodies bit for bit
+## F-034 A full rebuild does not reproduce parameter-edited bodies bit for bit
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** after a parameter edit (F-017) the bodies differ slightly from a fresh build of the same recipe. The
@@ -464,7 +464,7 @@ Conventions:
   live body B-rep on the pocket fixture after t 6 → 10. Restoring rollback propagation/regeneration fails both
   byte checks; the unsolved path also preserves a pending dirty sketch.
   Source: `crates/qymcad-core/src/model/regen.rs:699-734`, `regen_plan` follows dirty body/datum inputs through
-  the timeline, but omits dirty sketch outputs; the edge-query safety preflight adds their dependents (F-3B-1).
+  the timeline, but omits dirty sketch outputs; the edge-query safety preflight adds their dependents (F-023).
 - **How we handle it:** `atomic` first rebuilds pending dirty nodes and refuses the new edit if that baseline
   has errors; only then is the project snapshotted. Feature calls remain refused while the dirty baseline cannot
   rebuild. Parameter and sketch edits bypass `atomic`, so they can repair that baseline. Its retry marks only
@@ -477,7 +477,7 @@ Conventions:
   rebuilds on independent B-rep copies, retries only planned nodes, and restores the project and original handles
   on failure. Untouched shapes remain live. `open` and `ensure_topology` keep the full retry.
 
-## F-3B-13 There is no closed (hollow, unopened) shell
+## F-035 There is no closed (hollow, unopened) shell
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** a shell needs at least one face to remove: with none, the kernel refuses with `FacesNotFound` before
@@ -486,7 +486,7 @@ Conventions:
   source: `crates/qymcad-kernel/src/kernel.rs` `shell_named` (~844-849).
 - **How we handle it:** `open_faces` is required (engine and tool); omitting it is a clear argument error.
 
-## F-3B-14 A two-distance chamfer puts `dist` on a face QymCAD chooses
+## F-036 A two-distance chamfer puts `dist` on a face QymCAD chooses
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** with `ChamferMode::TwoDist` and `ref_face: 0`, which of the edge's two faces takes the first distance
@@ -496,7 +496,7 @@ Conventions:
 - **Evidence:** observed with a probe (face areas after a 2/4 chamfer at each corner), 2026-10-05; test:
   `golden_features.rs` `chamfer_vertical_edges` pins the (+x, +y) case.
 
-## F-3B-15 A hole has no through-all; the app's dialog caps the depth at 10000 mm
+## F-037 A hole has no through-all; the app's dialog caps the depth at 10000 mm
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `HoleTool` is `{kind, diameter, depth, dia2, depth2}`; there is no extent or through flag, and `prep_hole`
@@ -511,7 +511,7 @@ Conventions:
   refuses a source bbox diagonal > 10000 mm, which bounds the extent along any hole axis. The GUI shows an ordinary
   fixed-depth hole. Later growth beyond that depth can make it blind; this is not an unbounded through-all feature.
 
-## F-3B-16 An outward shell rounds bottom corners with the offset thickness as radius
+## F-038 An outward shell rounds bottom corners with the offset thickness as radius
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** an outward shell of a rectangular block with its top open creates four spherical bottom corner
@@ -520,7 +520,7 @@ Conventions:
 - **Evidence:** test: `golden_features.rs` `shell_open_top` checks all four sphere radii against t (1e-6 mm
   tolerance); observed mutation: reporting sphere radii as 2r fails the new assertion.
 
-## F-3A-1 The constants `pi`, `tau`, `e` shadow parameters of the same name
+## F-039 The constants `pi`, `tau`, `e` shadow parameters of the same name
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** the expression evaluator resolves a bare name as a constant first and only then as a variable, so a
@@ -532,7 +532,7 @@ Conventions:
   - test: `crates/engine/tests/sketch_behaviour.rs` `constant_names_are_not_parameters`.
 - **How we handle it:** `param_set` refuses these names (case-insensitive).
 
-## F-3A-2 One sketch solve stops short when an angle dimension's arm must change length
+## F-040 One sketch solve stops short when an angle dimension's arm must change length
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** the solver holds the arms of every `Angle`/`AngleLines` softly at their pre-solve lengths
@@ -550,12 +550,12 @@ Conventions:
     `a_dimension_moves_free_geometry`.
 - **How we handle it:** the engine re-solves until the residual stops dropping (`solve_settled`, ≤ 200 calls).
   When the radius or the angle of an arc end or a polygon rotation is parametric, the direction is an `ArcLength`
-  from a reference point instead of an angle dimension (F-3A-7): no arms, so a GUI edit settles in one solve.
+  from a reference point instead of an angle dimension (F-045): no arms, so a GUI edit settles in one solve.
   Plain-number arcs/rotations keep radius + angle dimensions (friendlier to edit by hand; only a hand edit in the
   app can change them). Angle dimensions added with `sketch_constrain` and driven by a parameter may still land
   slightly off after a GUI edit — not measured in the app.
 
-## F-3A-3 A tangency at its own contact point is invisible to the rank analysis (QymCAD's slot reports 4 + 4)
+## F-041 A tangency at its own contact point is invisible to the rank analysis (QymCAD's slot reports 4 + 4)
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `Tangent{a, b, c}` where `a` or `b` already lies on the circle (an arc endpoint) is a second-order
@@ -573,7 +573,7 @@ Conventions:
   its contact point (same geometry, first order); `sketch_constrain` tangent on a line that ends on the arc does the
   same. The GUI then shows perpendicular glyphs instead of tangent ones.
 
-## F-3A-4 Entity adders and the points they share
+## F-042 Entity adders and the points they share
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `add_line_entity` (and rect/arc/slot/polygon vertices) reuse any existing non-system point within
@@ -592,9 +592,9 @@ Conventions:
   corners, verify DOF (0,0), and check V=w*h*t and the bbox after server/GUI width edits. Bypassing independent
   rectangle size dimensions fails with DOF (0,2).
 - **How we handle it:** every entity, rect and circle included, adds its dimensions only when independent
-  (`add_constraint_if_independent`, F-3A-11), so a shared point is not dimensioned twice.
+  (`add_constraint_if_independent`, F-049), so a shared point is not dimensioned twice.
 
-## F-3A-5 Signs and units of dimension values
+## F-043 Signs and units of dimension values
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `Angle`/`AngleLines` are unsigned, 0..180 (`atan2(|cross|, dot)`): the side comes from the geometry.
@@ -604,11 +604,11 @@ Conventions:
   `eval_parameters` (~2412-2431). test: `golden_sketch.rs` `hexagon_rotation_follows_an_expression`,
   `sketch_entities_and_constraints_end_to_end` (protocol, point-to-axis distance).
 - **How we handle it:** angle dimensions are used only for plain numbers (folded into 0..180, the side from the
-  geometry; 0/180 become horizontal and ±90 vertical constraints); parametric directions use `ArcLength` (F-3A-7).
+  geometry; 0/180 become horizontal and ±90 vertical constraints); parametric directions use `ArcLength` (F-045).
   Point-line distances take their sign from the current geometry. (An earlier `angle_expr` that rewrote angle
   expressions was never reached and has been removed.)
 
-## F-3A-6 A sketch edit does not rebuild the features built from it
+## F-044 A sketch edit does not rebuild the features built from it
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `mark_sketch_dirty` marks only the sketch node; the bodies change at the next regenerate.
@@ -617,9 +617,9 @@ Conventions:
   `editing_a_sketch_rebuilds_its_features`.
 - **How we handle it:** `Session::sketch_edit` rebuilds when the sketch has dependents and rolls the edit back if a
   feature that built before now fails; the sketch tools use it. Rollback restores original live shapes rather
-  than rebuilding the old recipe (F-3B-12; test: `a_failed_sketch_edit_restores_old_shapes_bit_identically`).
+  than rebuilding the old recipe (F-034; test: `a_failed_sketch_edit_restores_old_shapes_bit_identically`).
 
-## F-3A-7 Dimensions keep their side: a coordinate expression cannot change sign; arc length is directed
+## F-045 Dimensions keep their side: a coordinate expression cannot change sign; arc length is directed
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** an axis `Distance` measures `|Δ|` (residual `|Δ| − d`), and `eval_parameters` writes `d = expr` as is, so
@@ -650,17 +650,17 @@ Conventions:
   rollback. The engine checks free ArcLength references after each settled solve and refuses a -x reference
   through the residual/rollback path. This guard is engine-only; the pinned GUI does not gain it.
   Linear coordinates still cannot cross zero: `param_set` refuses such an edit and rolls back
-  (F-3A-2 settled solve + residual check); in the app the sketch would not solve. Decision (2026-10-05): keep the
+  (F-040 settled solve + residual check); in the app the sketch would not solve. Decision (2026-10-05): keep the
   refusal, and the server instructions tell the agent to place the origin so parametric coordinates keep their
   sign. Splitting sums into positive terms (works for some expressions only) and far anchors (zoom the GUI view
   out) were rejected. See ADR [0006](adr/0006-sign-crossing-coordinates.md).
 
-## F-3A-8 Deleting an entity drops spline control points and free dimension helpers
+## F-046 Deleting an entity drops spline control points and free dimension helpers
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `delete_entities` keeps only points used by entities, the frame and midpoints. Spline control points
   and angle-reference points are none of these, so removing unrelated geometry drops them and their constraints,
-  including ArcLength driving a parametric arc end or polygon rotation (F-3A-7).
+  including ArcLength driving a parametric arc end or polygon rotation (F-045).
 - **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs:685-705` `delete_entities`; engine helper creation:
   `crates/engine/src/sketch/entities.rs:493-497`. Observed: "spline control point 4 was dropped"; test:
   `sketch_behaviour.rs` `removing_an_entity_keeps_splines`, `golden_sketch.rs`
@@ -678,7 +678,7 @@ Conventions:
   `removing_the_last_direction_dimension_prunes_its_angle_reference` checks all three deletion orders and the
   regular hexagon's one newly free rotation (DOF (1,0)); disabling cleanup fails the regression.
 
-## F-3A-9 Reference radius/diameter dimensions are refreshed from circles only
+## F-047 Reference radius/diameter dimensions are refreshed from circles only
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `update_driven_dims` takes radii from `Circle` entities; a reference radius on an arc keeps its creation
@@ -687,7 +687,7 @@ Conventions:
   test: `sketch_behaviour.rs` `a_reference_radius_on_an_arc_does_not_go_stale`.
 - **How we handle it:** `sketch_constrain` refuses reference radius/diameter dimensions on arcs.
 
-## F-3A-10 Reference (driven) dimensions take no part in solving or counting
+## F-048 Reference (driven) dimensions take no part in solving or counting
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `is_driven()` constraints are filtered out before `solver::dof` (`sketch_dof`), before the solve
@@ -698,13 +698,13 @@ Conventions:
   `sketch_behaviour.rs` `a_conflicting_dimension_is_refused_and_rolled_back` (reference part: dof stays (0, 0)).
 - **How we rely on it:** `sketch_constrain` skips the over-constraint check for reference dimensions.
 
-## F-3A-11 Independence is the rank of a numeric Jacobian at the current geometry
+## F-049 Independence is the rank of a numeric Jacobian at the current geometry
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `add_constraint_if_independent` (and `sketch_dof`) compute the rank of a forward-difference Jacobian
   (`h = 1e-6`) of all non-driven constraints plus the entity intrinsics, at the current coordinates. A constraint is
   added only if the dof drops. It is local: a constraint that holds only after a large move, or a second-order one
-  (F-3A-3), is judged by the current configuration; satisfaction is not checked.
+  (F-041), is judged by the current configuration; satisfaction is not checked.
 - **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `add_constraint_if_independent` (~355-371),
   `crates/qymcad-core/src/solver.rs` `dof` (~1217-1257); test: `golden_sketch.rs` `three_lines_close_a_triangle`,
   `sketch_behaviour.rs` `circles_on_a_vertex_share_or_get_their_centre`, `an_implied_constraint_is_not_added`.

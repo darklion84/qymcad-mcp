@@ -191,7 +191,7 @@ fn chamfer_vertical_edges() {
     s.chamfer(None, &one, &2.0.into(), Some(&4.0.into()), None).unwrap();
     assert_close(volume(&s), a * b * h - 2.0 * 4.0 / 2.0 * h, 1e-3, "two-distance chamfer (descriptive)");
     // The setbacks show on the two faces' areas: the +x face (b × h) and the +y face (a × h) each lose
-    // setback × h. Which face takes `dist` is QymCAD's choice per edge (F-3B-14); for this corner it is +x.
+    // setback × h. Which face takes `dist` is QymCAD's choice per edge (F-036); for this corner it is +x.
     let t = s.topology(None, false).unwrap();
     let area = |n: [f64; 3]| t.faces.iter().find(|f| f.normal.is_some_and(|m| m[0] * n[0] + m[1] * n[1] > 0.99)).unwrap().area;
     let (sx, sy) = ((b * h - area([1.0, 0.0, 0.0])) / h, (a * h - area([0.0, 1.0, 0.0])) / h);
@@ -214,7 +214,7 @@ fn cylinder_rim_fillet(rr: f64, h: f64, r: f64) -> f64 {
 
 /// A fillet chosen by description ("the edges of the top face of the cylinder") still rounds the rim after the
 /// height (an upstream parameter) changes, and its radius follows its own parameter — in this server and through
-/// QymCAD.app's rebuild path. (The edges are stored as persistent names, F-3B-2.)
+/// QymCAD.app's rebuild path. (The edges are stored as persistent names, F-024.)
 #[test]
 fn descriptive_fillet_survives_an_upstream_edit() {
     let mut s = Session::new_part();
@@ -238,7 +238,7 @@ fn descriptive_fillet_survives_an_upstream_edit() {
     assert_close(v, cylinder_rim_fillet(20.0, 12.0, 3.0), 0.05, "GUI edit h=12");
 }
 
-/// FINDINGS F-3B-2, the reason fillets store pick lists: the same document with the fillet's edges stored as a
+/// FINDINGS F-024, the reason fillets store pick lists: the same document with the fillet's edges stored as a
 /// QymCAD *query* (`Adjacent(OfFeature(cap end))`), reopened in the app and the radius edited, rounds EVERY edge
 /// (both rims): the query is re-evaluated against an edge pool that a reopened document does not have. When this
 /// test fails, QymCAD fixed it and stored edge queries can be reconsidered.
@@ -265,7 +265,7 @@ fn stored_edge_query_rounds_everything_after_reopen_upstream_bug() {
     assert_close(v, PI * 400.0 * 10.0 - 2.0 * one_rim, 0.05, "both rims rounded (upstream bug)");
 }
 
-/// The server is immune to F-3B-2 on files it opens: `Session::open` restores the edge pool from the live B-reps, so
+/// The server is immune to F-024 on files it opens: `Session::open` restores the edge pool from the live B-reps, so
 /// inspecting a document with a stored edge query changes nothing, and editing the fillet's radius rounds one rim.
 #[test]
 fn stored_edge_query_is_safe_to_inspect_and_edit_after_open() {
@@ -343,7 +343,7 @@ fn revolve_tube_angles_and_axes() {
     assert_close(volume(&s), tube * 0.75, 0.5, "270° after param edit");
 }
 
-/// Direction semantics (F-3B-4): about +Y by the right-hand rule, +X turns towards −Z.
+/// Direction semantics (F-026): about +Y by the right-hand rule, +X turns towards −Z.
 #[test]
 fn revolve_direction() {
     for (dir, zmin, zmax) in [(Direction::Normal, -20.0, 0.0), (Direction::Reverse, 0.0, 20.0), (Direction::Symmetric, -20.0, 20.0)] {
@@ -550,7 +550,7 @@ fn linear_arrays_of_a_boss() {
     assert_close(volume(&s), 9.0 * boss, 1e-3, "3 × 3 after the count parameter changed");
 }
 
-/// Step = 360/count for a full turn, angle/count otherwise (F-3B-5).
+/// Step = 360/count for a full turn, angle/count otherwise (F-027).
 #[test]
 fn circular_arrays_of_a_boss() {
     let boss = PI * 25.0 * 5.0;
@@ -648,7 +648,7 @@ fn stale_and_foreign_ids_are_clear_errors() {
     assert!(matches!(e, Error::NotFound(_)) && e.to_string().contains("topology"), "{e}");
     let e = s.fillet(None, &Sel::Ids(vec![edge, 99]), &1.0.into(), None).unwrap_err();
     assert!(e.to_string().contains("99]"), "{e}");
-    // A selection that matches nothing is refused (QymCAD would round every edge, F-3B-3).
+    // A selection that matches nothing is refused (QymCAD would round every edge, F-025).
     let e = s.fillet(None, &Sel::EdgesOf(Box::new(Sel::OfFeature { feature: 999_999, role: None })), &1.0.into(), None).unwrap_err();
     assert!(e.to_string().contains("matched no edge"), "{e}");
     // A face selection that is ambiguous is refused for one-face features.

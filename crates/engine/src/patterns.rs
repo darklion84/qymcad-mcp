@@ -146,7 +146,7 @@ impl Session {
     }
 
     /// `count` copies of the whole body turned about `axis` (default world Z). QymCAD's step is `360/count` when
-    /// `angle` ≥ 359.9°, otherwise `angle/count` (so the last copy stands at `angle·(count−1)/count`, F-3B-5).
+    /// `angle` ≥ 359.9°, otherwise `angle/count` (so the last copy stands at `angle·(count−1)/count`, F-027).
     pub fn circular_array(
         &mut self,
         body: Option<Id>,

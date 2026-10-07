@@ -5,7 +5,7 @@
 ## Context
 QymCAD's axis Distance measures a magnitude and retains the point's original side. DistancePL also preserves
 its stored sign when evaluating an expression. A coordinate expression crossing zero therefore cannot reliably
-move the point across the axis in either the server or the pinned GUI (FINDINGS F-3A-7). Accepting an unsettled
+move the point across the axis in either the server or the pinned GUI (FINDINGS F-045). Accepting an unsettled
 solve would commit incorrect geometry.
 
 ## Decision

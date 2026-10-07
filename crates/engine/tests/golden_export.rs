@@ -130,7 +130,7 @@ fn stl_mesh_matches_the_brep() {
 
 /// Finer quality never means fewer triangles or a larger volume error (inscribed polygons in the holes). On these
 /// Ø4.5 holes draft/standard/high give the same mesh: the kernel's fixed 0.3 rad angular deflection decides on small
-/// radii (FINDINGS F-3C-3); only max refines them.
+/// radii (FINDINGS F-021); only max refines them.
 #[test]
 fn finer_quality_never_loses_accuracy() {
     let (s, _, _) = build(false);

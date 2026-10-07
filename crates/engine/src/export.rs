@@ -3,7 +3,7 @@
 //! Mirrors QymCAD.app's File > Export (`crates/qymcad/src/gui/io_jobs.rs` `write_exact_to` / `write_mesh_to`):
 //! every body goes out with its world transform (`body_world_transform`); meshes are re-tessellated from the live
 //! B-rep at the chosen deflection. Unlike the app we always write flat (one object per body, no component tree,
-//! no colours): see FINDINGS F-3C-2.
+//! no colours): see FINDINGS F-020.
 
 use crate::error::{Error, Result};
 use crate::session::Session;

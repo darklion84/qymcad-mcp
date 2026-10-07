@@ -271,7 +271,7 @@ impl Sel {
                 }
                 // Nested unions merge; a union of id lists is one flat list (as upstream `Ref::picks` does);
                 // anything else becomes a balanced tree rather than a `Union(Union(..))` ladder, whose depth
-                // grows with the count and breaks saving (F-3B-10).
+                // grows with the count and breaks saving (F-032).
                 let mut flat = Vec::new();
                 flatten_union(v, &mut flat);
                 if flat.iter().all(|s| matches!(s, Sel::Ids(_))) {
@@ -294,7 +294,7 @@ impl Sel {
 /// Largest selection accepted, in parts (a union of id lists counts as one).
 const MAX_SEL_PARTS: usize = 512;
 /// Deepest query stored. A `Union` ladder 150 deep still saved, 300 did not (RON's recursion limit counts the
-/// document's own nesting too, F-3B-10); 48 leaves a wide margin and is far beyond any real description.
+/// document's own nesting too, F-032); 48 leaves a wide margin and is far beyond any real description.
 const MAX_QUERY_DEPTH: usize = 48;
 
 impl Sel {
@@ -466,7 +466,7 @@ impl Session {
     /// QymCAD ranks `Largest` edges by chord |b − a| (`Project::edge_pool`): a full circle scores 0. Replace every
     /// `Largest` evaluated against edges with the ids of the longest edges by true length. Upstream evaluates
     /// `Largest` against the whole pool wherever it is nested, so the substitution keeps the meaning; edge
-    /// selections are stored as pick lists anyway (F-3B-2).
+    /// selections are stored as pick lists anyway (F-024).
     fn lower_largest_edges(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Sel {
         let sub = |x: &Sel, el: Element, lengths: &mut Option<HashMap<u32, f64>>| Box::new(self.lower_largest_edges(body, el, x, lengths));
         match sel {
@@ -548,8 +548,8 @@ impl Session {
     }
 
     /// A document opened from a file has live B-reps but no edges, and no faces when the file did not store them
-    /// (F-3B-1). Edges come back from the B-reps (`restore_edges`, no rebuild, so stored edge queries keep their
-    /// meaning, F-3B-2); missing faces need one full rebuild.
+    /// (F-023). Edges come back from the B-reps (`restore_edges`, no rebuild, so stored edge queries keep their
+    /// meaning, F-024); missing faces need one full rebuild.
     pub(crate) fn ensure_topology(&mut self) -> Result<()> {
         self.restore_edges()?;
         let consumed = self.p.consumed_bodies();

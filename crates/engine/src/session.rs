@@ -66,7 +66,7 @@ impl Session {
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
         // Clean documents remain usable even without named edges, but rebuilding with an empty edge pool
-        // can silently round every edge of a stored query (F-3B-2).
+        // can silently round every edge of a stored query (F-024).
         if let Err(e) = sess.restore_edges() {
             if missing || sess.p.timeline.iter().any(|n| n.dirty) {
                 return Err(Error::Invalid(format!("cannot open safely: {e}; the document requires a rebuild")));
@@ -120,7 +120,7 @@ impl Session {
     /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
     /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
     /// after a parameter edit is not bit-identical (F-017) — old geometry would move although the edit failed and
-    /// was rolled back, or had nothing to do with it (F-3B-12). F-005 still holds: a datum created by the edit is
+    /// was rolled back, or had nothing to do with it (F-034). F-005 still holds: a datum created by the edit is
     /// one of its nodes.
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         let blocked = self.edge_query_rebuild_errors(&self.p);
@@ -198,7 +198,7 @@ impl Session {
     }
 
     /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.
-    /// Pick lists use live kernel edges; queries require the restored pool (F-3B-1/F-3B-2).
+    /// Pick lists use live kernel edges; queries require the restored pool (F-023/F-024).
     fn edge_query_rebuild_errors(&self, p: &Project) -> Vec<NodeIssue> {
         use qymcad_core::feature::FeatureKind;
         let mut planned: HashSet<Id> = p.regen_plan().nodes.into_iter().collect();
@@ -238,7 +238,7 @@ impl Session {
                 errors.push(self.issue(
                     node,
                     format!(
-                        "body {body} `{}` has live edges but no usable named edges; refusing a stored edge query rebuild (F-3B-2)",
+                        "body {body} `{}` has live edges but no usable named edges; refusing a stored edge query rebuild (F-024)",
                         self.node_name(body)
                     ),
                 ));
@@ -249,7 +249,7 @@ impl Session {
 
     /// Run `edit`, rebuild, and keep the result only if the nodes it created built cleanly. Otherwise restore
     /// the document as it was and return the errors. Pending edits are rebuilt before the snapshot so the
-    /// project and its live shapes describe the same baseline (F-3B-12). Returns the edit's value and report.
+    /// project and its live shapes describe the same baseline (F-034). Returns the edit's value and report.
     pub(crate) fn atomic<T>(&mut self, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Rebuild)> {
         if self.p.timeline.iter().any(|n| n.dirty) {
             let baseline = self.rebuild();
@@ -355,11 +355,11 @@ impl Session {
 }
 
 /// Like QymCAD.app's `finish_project_load`: the B-rep faces stored in the bodies go back into `regen_faces`, so
-/// face references resolve by id without a rebuild. Edges are NOT restored by the app either (F-3B-1).
+/// face references resolve by id without a rebuild. Edges are NOT restored by the app either (F-023).
 impl Session {
     /// Fill `regen_edges` for live bodies that lack them, from their B-reps, through the same `Kernel::edges` the
-    /// regenerate post pass uses (F-3B-1). Without it a stored edge query resolves against an empty pool and rounds
-    /// every edge (F-3B-2), on the first rebuild after opening.
+    /// regenerate post pass uses (F-023). Without it a stored edge query resolves against an empty pool and rounds
+    /// every edge (F-024), on the first rebuild after opening.
     pub(crate) fn restore_edges(&mut self) -> Result<()> {
         use qymcad_core::feature::Kernel;
         let need: Vec<Id> = self.shapes.keys().copied().filter(|b| !self.p.regen_edges.contains_key(b)).collect();
@@ -373,7 +373,7 @@ impl Session {
             let edges = kernel.edges(b);
             if edges.is_empty() && kernel.shapes.borrow().get(&b).is_some_and(|sh| !sh.edges_info().is_empty()) {
                 error = Some(Error::Invalid(format!(
-                    "body {b} has live edges but no usable named edges; refusing a full topology rebuild (F-3B-2)"
+                    "body {b} has live edges but no usable named edges; refusing a full topology rebuild (F-024)"
                 )));
                 // Keep restoring other bodies: an unrelated named query must still receive its real pool.
                 continue;

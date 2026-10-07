@@ -334,7 +334,7 @@ fn revolve_shell_array_mirror() {
     c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
     c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "cx": 15, "w": 10, "h": 10 }] }));
     c.ok("extrude", json!({ "sketch": "s", "height": 10 }));
-    // QymCAD has no closed hollow shell: omitting the openings is refused by name (F-3B-13).
+    // QymCAD has no closed hollow shell: omitting the openings is refused by name (F-035).
     let (is_err, msg) = c.tool("shell", json!({ "thickness": 1 }));
     assert!(is_err && msg.as_str().unwrap().contains("open_faces"), "{msg}");
     let r = c.ok("shell", json!({ "open_faces": { "facing": "+z" }, "thickness": 1 }));
@@ -418,7 +418,7 @@ fn exports_through_mcp() {
     let r = c.ok("export", json!({ "format": "step", "path": step.to_str().unwrap(), "bodies": ["box"] }));
     assert!(r["bytes"].as_u64().unwrap() > 1000, "{r}");
     assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
-    // OCCT prints transfer statistics to fd 1 on every STEP write; the protocol stream must stay clean (F-3C-1)
+    // OCCT prints transfer statistics to fd 1 on every STEP write; the protocol stream must stay clean (F-019)
     c.ok("export", json!({ "format": "step", "path": step.to_str().unwrap() }));
     assert_eq!(c.request("ping", json!({}))["result"], json!({}));
     // the extension must be the format's

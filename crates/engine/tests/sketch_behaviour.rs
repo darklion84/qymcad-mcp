@@ -373,7 +373,7 @@ fn a_reference_radius_on_an_arc_does_not_go_stale() {
     }
 }
 
-/// Review #3 (F-3A-4): a circle drawn on an ordinary point (a polyline vertex) takes that point as its centre; a
+/// Review #3 (F-042): a circle drawn on an ordinary point (a polyline vertex) takes that point as its centre; a
 /// second circle there gets a node of its own (one radius variable per centre). Either way the sketch stays fully
 /// defined without redundancy.
 #[test]

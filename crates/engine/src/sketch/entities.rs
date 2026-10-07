@@ -433,8 +433,8 @@ impl Session {
     ///   QymCAD angles are unsigned (0..180), so the value is folded and the side comes from the geometry.
     /// - Parametric (the angle or the radius is an expression): an arc-length dimension from a construction point
     ///   on the +x side of the centre, `len = r·a·π/180`. QymCAD's arc length is directed (counter-clockwise,
-    ///   0..360°), so the parameter may sweep the whole turn (FINDINGS F-3A-7), and it has no soft arm-length
-    ///   term, so a radius change settles in one solve (F-3A-2).
+    ///   0..360°), so the parameter may sweep the whole turn (FINDINGS F-045), and it has no soft arm-length
+    ///   term, so a radius change settles in one solve (F-040).
     #[allow(clippy::too_many_arguments)]
     fn direction_dim(&mut self, si: usize, center: Id, p: Id, r: &Num, vr: f64, a: &Num, deg: f64, parametric: bool) -> Result<Constraint> {
         let m = fold(deg).abs();
@@ -524,7 +524,7 @@ fn half(e: &str) -> Result<String> {
 ///
 /// The geometry is the same — the contact point already lies on the circle (arc intrinsic) — but a tangency at
 /// its own contact point is a second-order condition: its Jacobian row is parallel to the intrinsic's, so
-/// `sketch_dof` counts a fully dimensioned QymCAD slot as 4 free + 4 redundant (FINDINGS F-3A-3). The
+/// `sketch_dof` counts a fully dimensioned QymCAD slot as 4 free + 4 redundant (FINDINGS F-041). The
 /// perpendicular is first-order, so the slot reports (0, 0) and the rank-based over-constraint check of
 /// `sketch_constrain` stays meaningful.
 fn tangency_as_perpendicular(sk: &mut qymcad_core::model::Sketch, from: usize) {

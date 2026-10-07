@@ -20,13 +20,13 @@ All notable changes to this project are documented here. The format follows
   the app's mesh quality presets; per-body mesh volume in the result. Golden read-back tests for every format.
 - `render` tool / `Session::render`: shaded orthographic PNG (iso/top/bottom/front/back/left/right) with feature
   edges, returned as an MCP image item. CPU rasterizer adapted from QymCAD's thumbnail renderer; PNG via `flate2`
-  (ADR 0004). FINDINGS F-3C-1..F-3C-3.
+  (ADR 0004). FINDINGS F-019..F-021.
 - Topology and finishing features (phase 3B). Engine: `topology` (face/edge kinds, geometry, adjacency, seams),
   selections (ids or descriptions mapped onto QymCAD's `refs::Query`) with `select`, `revolve` (sketch/world/datum/
   face axes, add/cut/intersect/new body), `fillet`, `chamfer` (symmetric or two distances), `hole` (plain/
   counterbore/countersink, blind or through), `shell`, `push_face`, `linear_array`, `circular_array`, `mirror`; all
   atomic, every dimension may be an expression. `Session::open` restores faces like the app. MCP tools of the same
-  names. Golden tests with hand-computed volumes, GUI-path tests, protocol tests. FINDINGS F-3B-1..F-3B-7
+  names. Golden tests with hand-computed volumes, GUI-path tests, protocol tests. FINDINGS F-023..F-029
   (notably: stored edge queries break after reopening, so edges are stored as pick lists).
 - Sketch entities `line`, `polyline`, `arc` (radius + angles or start/end points), `polygon` (regular; radius +
   angle or a vertex), `slot`, each fully dimensioned from numbers/expressions (`dimensioned: false` leaves them
@@ -34,47 +34,47 @@ All notable changes to this project are documented here. The format follows
   tangent, concentric, midpoint, point_on_line, symmetric, fix; distance aligned/x/y, angle, diameter, radius;
   reference dimensions; refuses over-constraining) and `sketch_remove`; `sketch_info` lists entities, points and
   constraints. Sketch edits rebuild the features built from the sketch. Golden sketch tests incl. the GUI path,
-  sketch contract tests, protocol test. FINDINGS F-3A-1..F-3A-6.
+  sketch contract tests, protocol test. FINDINGS F-039..F-044.
 
 ### Fixed
 - Every rebuild path refuses stored edge queries dependent on live bodies whose named edges could not be
   restored after a clean open; errors identify the body and preserve exact Project/B-rep state, including
-  unsafe full retries. Named queries and unrelated features remain usable (E1, F-3B-1/F-3B-2).
+  unsafe full retries. Named queries and unrelated features remain usable (E1, F-023/F-024).
 - Refuse opening unnamed live edges when dirty nodes or missing shapes require regeneration; clean documents
-  remain usable and topology reports the issue later (D1, F-3B-1).
+  remain usable and topology reports the issue later (D1, F-023).
 - Parameter rollback restores exact project state and original B-reps without regeneration, including pending
-  dirty flags on unsolved-sketch rejection (D2, F-3B-12).
+  dirty flags on unsolved-sketch rejection (D2, F-034).
 - Render tool text states document-wide regeneration-error refusal; architecture documents feature baseline
   repair through parameter/sketch edits and the integrated phase-3 status; protocol coverage includes every
   registered tool (D3/D4/D7).
 - The planted-staging-entry regression uses an isolated counter and interleaves unrelated staging allocations
   to remain reliable under concurrent exports (D6).
 - Array count expressions use the creation-time whole-number range on parameter edits; negative and fractional
-  counts are refused before regeneration and rolled back (C6, F-3B-11).
-- Live edges without usable persistent names refuse topology restoration instead of a full rebuild (C4, F-3B-1).
-- Rollback goldens compare old body B-rep bytes and topology timeline entries (C2/C3, F-3B-12/F-3B-1).
+  counts are refused before regeneration and rolled back (C6, F-033).
+- Live edges without usable persistent names refuse topology restoration instead of a full rebuild (C4, F-023).
+- Rollback goldens compare old body B-rep bytes and topology timeline entries (C2/C3, F-034/F-023).
 - Singleton selection unions no longer use a panicking extraction; positive modifier dimensions explicitly
   require finite values (C5/C7).
 - Formula-derived goldens cover intersect/through/symmetric extrusions and rectangles on previously pinned
-  corners, including server and GUI parameter edits (C8/C11, F-003/F-3A-4).
+  corners, including server and GUI parameter edits (C8/C11, F-003/F-042).
 - Settled server solves refuse a negative-x direction reference; negative-turn operands are parenthesized
-  explicitly (C9/C10, F-3A-7).
+  explicitly (C9/C10, F-045).
 - Sketch removal protects surviving helpers selectively, retains original self-Midpoints, drops deleted endpoint
-  dimensions, and prunes unused angle references after direction removal (C12/C14/C19, F-3A-8).
-- Implied Parallel satisfaction uses an angle tolerance independent of line length (C13, F-3A-11).
+  dimensions, and prunes unused angle references after direction removal (C12/C14/C19, F-046).
+- Implied Parallel satisfaction uses an angle tolerance independent of line length (C13, F-049).
 - Document the coordinate sign-crossing refusal decision, world-space render bbox, current export verification,
   and document-wide output refusal on any regeneration error (C15–C18).
 - Line-line distances refuse contradictory rank-dependent parallelism and restore the whole sketch (A1).
 - Removing unrelated sketch geometry preserves free direction helpers and their parametric ArcLength dimensions;
-  helpers are pruned when their owner is removed (A2, F-3A-8).
+  helpers are pruned when their owner is removed (A2, F-046).
 - Large finite numbers stay finite in rounded tool output, including nested topology JSON (A3).
 - Through-hole creation refuses stock whose bbox diagonal exceeds the fixed 10000 mm depth; tool descriptions
-  and findings document the limit and possible blindness after later stock growth (B1/B3, F-3B-6/F-3B-15).
+  and findings document the limit and possible blindness after later stock growth (B1/B3, F-028/F-037).
 - Feature edits rebuild pending dirty nodes before snapshotting; failed sketch edits restore original live shapes
-  without rebuilding old bodies, preserving volume bits and project/shape consistency (B2, F-3B-12).
+  without rebuilding old bodies, preserving volume bits and project/shape consistency (B2, F-034).
 - Tool argument fields are fully documented; fillet seam handling and asymmetric chamfer side selection now
-  match QymCAD's limitations (B4/B5, F-3B-7/F-3B-14).
-- Outward-shell golden coverage checks all four spherical corner radii against wall thickness (B6, F-3B-16).
+  match QymCAD's limitations (B4/B5, F-029/F-036).
+- Outward-shell golden coverage checks all four spherical corner radii against wall thickness (B6, F-038).
 - OpenCASCADE's STEP-writer statistics no longer corrupt the stdio protocol: the server speaks JSON-RPC on a
   duplicate of stdout and redirects fd 1 to stderr (ADR 0005).
 - Phase 3B review round 1: non-finite dimensions ("nan", "1e400") refused; extrude/revolve `target` must be a
@@ -84,25 +84,25 @@ All notable changes to this project are documented here. The format follows
   `ensure_topology` reports a failed rebuild and undoes it; a failed or retried feature no longer rebuilds old
   bodies; fixed datum axes reused; `shell` requires open faces (QymCAD has no closed shell); through holes store
   10000 mm depth and refuse stock whose bbox diagonal exceeds it (later growth can make them blind).
-  FINDINGS F-3B-8..15.
-- `param_set` refuses the names `pi`, `tau`, `e`: QymCAD reads them as constants (F-3A-1).
-- Sketches are solved until they settle (one QymCAD solve can stop short, F-3A-2).
+  FINDINGS F-030..F-037.
+- `param_set` refuses the names `pi`, `tau`, `e`: QymCAD reads them as constants (F-039).
+- Sketches are solved until they settle (one QymCAD solve can stop short, F-040).
 - A parameter edit that leaves a sketch unsolved is refused and rolled back (was committed silently).
 - Parametric arc ends and polygon rotations are arc-length dimensions from a reference point, so they follow a
-  parameter across 90°/180° (QymCAD dimensions keep their side, F-3A-7) and settle in one GUI solve; this also
+  parameter across 90°/180° (QymCAD dimensions keep their side, F-045) and settle in one GUI solve; this also
   covers a parametric radius with a literal angle.
-- Removing a sketch entity keeps spline control points (F-3A-8).
-- A distance between two lines adds parallelism; reference radius/diameter on arcs is refused (F-3A-9).
+- Removing a sketch entity keeps spline control points (F-046).
+- A distance between two lines adds parallelism; reference radius/diameter on arcs is refused (F-047).
 - Rect and circle add only independent dimensions (a circle centred on a dimensioned vertex was over-constrained).
 - `param_delete` works for an old parameter named `pi`/`tau`/`e`; `sketch_add` refuses an empty list.
 
 ### Security
 - Check generated dimension formulas against input expression length/nesting limits before storage; refuse
-  overflowing negative coordinates, slot half-widths and directed-angle arc lengths atomically (D5, F-3B-9).
+  overflowing negative coordinates, slot half-widths and directed-angle arc lengths atomically (D5, F-031).
 - Exports are written via a temporary file and an atomic rename (no write-through of hard links); export and
   render refuse documents with features that did not build (review findings, phase 3C).
 - Expressions are bounded (1000 characters, 64 levels of nesting) before QymCAD's recursive evaluator: a deep
-  expression from an agent crashed the server (F-3B-9).
+  expression from an agent crashed the server (F-031).
 - File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to
   `QYMCAD_MCP_ROOT` (docs/SECURITY.md). `export` accepts only its format's extensions (.step/.stp, .stl, .3mf,
   .glb, .obj) under the same rules.

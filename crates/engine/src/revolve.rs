@@ -23,7 +23,7 @@ pub struct Revolve {
     /// Degrees, (0, 360].
     pub angle: Num,
     /// `Normal` turns by the right-hand rule about the axis direction (sketch x → +X, sketch y → +Y of the
-    /// sketch); `Reverse` the other way; `Symmetric` half each way (F-3B-4).
+    /// sketch); `Reverse` the other way; `Symmetric` half each way (F-026).
     pub direction: Direction,
     /// Add (creates the first body), cut, intersect, or a new body.
     pub op: Op,

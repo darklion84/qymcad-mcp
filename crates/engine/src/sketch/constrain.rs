@@ -219,7 +219,7 @@ impl Session {
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }
-            // Upstream drops free helpers and spline controls (FINDINGS F-3A-8). Protect only those tied to
+            // Upstream drops free helpers and spline controls (FINDINGS F-046). Protect only those tied to
             // surviving geometry: endpoints owned exclusively by the removed entity must lose their dimensions.
             let sk = &s.p.sketches[si];
             let owned: HashSet<Id> = sk.entities.iter().flat_map(|e| entity_points(&e.kind)).collect();
@@ -425,7 +425,7 @@ impl Session {
             (K::Tangent, [G::Line(a, b), G::Curve { center, r }] | [G::Curve { center, r }, G::Line(a, b)]) => {
                 // A line that ends on the arc touches it at that end: a perpendicular to the radius there is the
                 // same condition, but first-order (a Tangent at its own contact point is rank-deficient and would
-                // be refused as redundant; FINDINGS F-3A-3).
+                // be refused as redundant; FINDINGS F-041).
                 let ends_on_arc = |p: Id| {
                     self.p.sketches[si]
                         .entities
@@ -482,7 +482,7 @@ impl Session {
                     self.p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Circle { center: c, .. } if c == *center));
                 if driven && !is_circle {
                     // QymCAD refreshes reference radii from circles only: on an arc the value would go stale, in
-                    // the app as well (FINDINGS F-3A-9).
+                    // the app as well (FINDINGS F-047).
                     return Err(Error::Invalid(
                         "a reference radius/diameter on an arc is not kept up to date by QymCAD; use a driving one, or a reference distance from the centre to an end".into(),
                     ));

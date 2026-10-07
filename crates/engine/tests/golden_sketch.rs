@@ -391,7 +391,7 @@ fn new_entities_survive_save_and_open() {
 
 #[test]
 fn sector_gui_radius_edit_rebuilds() {
-    // A radius change moves both arc ends; QymCAD's single GUI solve must settle it (FINDINGS F-3A-2).
+    // A radius change moves both arc ends; QymCAD's single GUI solve must settle it (FINDINGS F-040).
     let (mut s, sk) = sector();
     extrude(&mut s, sk, v(3.0));
     let path = scratch("sector_gui_r.qcad");
@@ -509,7 +509,7 @@ fn shifted_square() -> (Session, Id) {
     (s, sk)
 }
 
-/// A coordinate expression cannot cross zero in QymCAD (F-3A-7); the edit fails loudly and leaves the document as it
+/// A coordinate expression cannot cross zero in QymCAD (F-045); the edit fails loudly and leaves the document as it
 /// was (review #1/#2, decision L1: refuse, and tell the agent to place the origin so coordinates keep their sign).
 #[test]
 fn a_coordinate_that_would_cross_zero_is_refused() {
@@ -522,7 +522,7 @@ fn a_coordinate_that_would_cross_zero_is_refused() {
 }
 
 /// Review #7: a parametric radius with a literal, non-cardinal rotation. The GUI path solves once, so the rotation
-/// must not be an angle dimension (F-3A-2). After r 10 → 20 at 30° the x extent is across flats: √3·r.
+/// must not be an angle dimension (F-040). After r 10 → 20 at 30° the x extent is across flats: √3·r.
 #[test]
 fn hexagon_parametric_radius_literal_angle_gui() {
     let (mut s, sk, _) = hexagon(Some(v(30.0)));

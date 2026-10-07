@@ -29,7 +29,7 @@ fn main() {
     }
 }
 
-/// The protocol channel, moved off file descriptor 1 (ADR 0005, FINDINGS F-3C-1).
+/// The protocol channel, moved off file descriptor 1 (ADR 0005, FINDINGS F-019).
 ///
 /// OpenCASCADE prints to the process's stdout (for example "Statistics on Transfer (Write)" on every STEP write);
 /// on stdio that text lands in the JSON-RPC stream and breaks the client. So the protocol gets its own duplicate of

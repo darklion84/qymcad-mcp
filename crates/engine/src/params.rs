@@ -24,7 +24,7 @@ impl Session {
     pub fn param_set(&mut self, name: &str, value: &Num) -> Result<Rebuild> {
         let name = normalize_name(name)?;
         // QymCAD resolves these constants before parameters, so a parameter with such a name is never read
-        // (FINDINGS F-3A-1). Only creation/assignment is refused: an old document may hold one, and it must stay
+        // (FINDINGS F-039). Only creation/assignment is refused: an old document may hold one, and it must stay
         // deletable.
         if ["pi", "tau", "e"].contains(&name.as_str()) {
             return Err(Error::Invalid(format!("`{name}` is a built-in constant in expressions; choose another parameter name")));
@@ -49,7 +49,7 @@ impl Session {
             self.p = before;
             return Err(Error::Expr(format!("`{what}`: {err:?}")));
         }
-        // Array counts may follow parameters; refuse an edit that would make an array too large (F-3B-11).
+        // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
         if let Err(e) = self.check_array_limits() {
             self.p = before;
             return Err(e);
@@ -65,12 +65,12 @@ impl Session {
             return Err(Error::Invalid(format!(
                 "with `{name}` = {expr} {} does not solve, so the change was rolled back. A dimension cannot take this value \
                  (e.g. an angle outside 0..180, or a coordinate/offset expression that would change sign: QymCAD dimensions \
-                 keep the side they were created on, FINDINGS F-3A-7).",
+                 keep the side they were created on, FINDINGS F-045).",
                 unsolved.join(", ")
             )));
         }
         // Propagation has dirtied every affected node. Preserve their original handles and rebuild on
-        // independent B-rep copies, like sketch_edit: regenerating a restored recipe drifts (F-3B-12).
+        // independent B-rep copies, like sketch_edit: regenerating a restored recipe drifts (F-034).
         let nodes: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
         let saved: crate::error::Result<HashMap<Id, qymcad_kernel::Shape>> = {
             let _gate = qymcad_kernel::kernel_gate();

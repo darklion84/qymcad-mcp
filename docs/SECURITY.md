@@ -26,9 +26,9 @@ talks only to the MCP client that spawned it. It opens no network ports.
 - **Overwriting a full document with an empty one** is refused by QymCAD's guarded save.
 - **Expressions that crash the evaluator.** QymCAD's expression parser recurses without a depth cap; an agent
   string of 100 000 `(` overflowed the stack and killed the server. Every expression is checked first: at most
-  1000 characters and 64 levels of parentheses, `^` or consecutive signs (`value::check_expr`, FINDINGS F-3B-9).
+  1000 characters and 64 levels of parentheses, `^` or consecutive signs (`value::check_expr`, FINDINGS F-031).
 
-- **Kernel output on the protocol channel.** OpenCASCADE prints to stdout (F-3C-1); the server moves fd 1 to
+- **Kernel output on the protocol channel.** OpenCASCADE prints to stdout (F-019); the server moves fd 1 to
   stderr so nothing but JSON-RPC reaches the client (ADR 0005).
 
 ## Not in scope

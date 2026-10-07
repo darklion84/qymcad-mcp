@@ -64,7 +64,7 @@ pub struct Hole {
     pub name: Option<String>,
 }
 
-/// "Through all" for a hole. QymCAD's hole has no through-all extent, only a depth (F-3B-15); the app's own hole
+/// "Through all" for a hole. QymCAD's hole has no through-all extent, only a depth (F-037); the app's own hole
 /// dialog goes up to 10000 mm. Creation refuses stock whose bbox diagonal exceeds this fixed depth; subsequent
 /// stock growth beyond it can make the hole blind.
 pub(crate) const THROUGH_DEPTH: f64 = 10000.0;
@@ -89,7 +89,7 @@ impl Session {
     /// Round edges of a body. The selection (ids or a description) is resolved now and stored as a pick list of
     /// persistent edge names: QymCAD re-binds them across upstream edits (F-010) and warns `EdgesDropped` when
     /// some vanish. A stored edge *query* is not used: after the document is reopened in QymCAD.app it
-    /// re-evaluates against an empty edge pool and rounds every edge (F-3B-2).
+    /// re-evaluates against an empty edge pool and rounds every edge (F-024).
     pub fn fillet(&mut self, body: Option<Id>, edges: &Sel, radius: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
         self.atomic(|s| {
@@ -124,7 +124,7 @@ impl Session {
     }
 
     /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
-    /// hollow shell, F-3B-13).
+    /// hollow shell, F-035).
     pub fn shell(&mut self, body: Option<Id>, open_faces: &Sel, thickness: &Num, side: Side, name: Option<&str>) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
         self.atomic(|s| {
@@ -237,7 +237,7 @@ impl Session {
     }
 
     /// The edges `sel` resolves to on `src` now; an empty result is refused (QymCAD treats an empty edge list
-    /// as "every edge", FINDINGS F-3B-3).
+    /// as "every edge", FINDINGS F-025).
     fn edges_now(&self, src: Id, sel: &Sel) -> Result<Vec<u32>> {
         let ids = self.resolve_sel(src, Element::Edges, sel)?;
         if ids.is_empty() {

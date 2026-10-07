@@ -4,7 +4,7 @@
 
 ## Context
 MCP over stdio uses the process's stdout for JSON-RPC. OpenCASCADE prints to the same descriptor: every STEP
-write emits a coloured "Statistics on Transfer (Write)" block through its default messenger (FINDINGS F-3C-1).
+write emits a coloured "Statistics on Transfer (Write)" block through its default messenger (FINDINGS F-019).
 On stdio that text lands between JSON-RPC lines and breaks the client. The output comes from C++ (`std::cout`),
 so nothing on the Rust side can intercept it, and the QymCAD kernel exposes no call to silence the messenger.
 
