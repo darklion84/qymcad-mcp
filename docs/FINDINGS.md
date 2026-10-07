@@ -193,7 +193,9 @@ Conventions:
     `common::gui_edit_param_faces`; before fix: “pocket floor z = thickness - depth: got 3, expected 7 ± 0.000001”.
     Tests check floor position, upward normal, opening area, 15 faces (no ceiling), and formula volume at 1e-3 mm³.
   - test: `golden_datum.rs` checks both caps of a standalone literal extrusion when only its datum parameter
-    changes (volume stays W×L×H). Disabling datum tracking fails server, GUI, and reopened placement tests.
+    changes (volume stays W×L×H). Disabling datum tracking fails the literal-pocket placement regressions and
+    datum-only cap-position regressions on server, GUI, and reopened paths; expression-driven pocket dimensions
+    in `golden_plate::build()` mask this defect by dirtying the sketch.
 - **How we handle it:** retain the GUI's native datum definitions and persist each parameterized ancestor's
   distance expression in the dependent sketch node's `feat_dims`, under reserved `datum_dist_<plane id>` keys.
   These expressions act only as scheduling dependencies, without altering sketch dimensions or geometry.

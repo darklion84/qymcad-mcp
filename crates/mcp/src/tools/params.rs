@@ -29,7 +29,9 @@ pub fn tools() -> Vec<Tool> {
             "param_set",
             "Create or change a named parameter and rebuild everything that depends on it. Use parameters for every \
              dimension the user may want to change, then refer to them in expressions. If the model no longer \
-             builds, the change is rolled back and the error returned.",
+             builds, the change is rolled back and the error returned. After GUI structural edits (re-hosting a datum sketch, \
+             creating a new datum sketch, or replacing a datum distance expression), reopen and save through the server \
+             before further GUI parameter edits so its persisted datum dependencies are refreshed (ADR 0007).",
             |st, a: SetArgs| {
                 let r = st.doc()?.param_set(&a.name, &a.value).map_err(err)?;
                 Ok(json!({ "rebuild": rebuild_json(&r) }))

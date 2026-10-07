@@ -41,4 +41,6 @@ automatically. An upstream scheduler correction should replace this workaround o
 
 Evidence: `golden_plate.rs` checks open-pocket floor/opening/topology and formula volume; `golden_datum.rs`
 checks caps of an otherwise unchanged literal extrusion. Both cover server, GUI, and reopened parameter edits;
-legacy/open-refresh tests cover persisted dependency repair. Disabling datum tracking turns these tests red.
+legacy/open-refresh tests cover persisted dependency repair. Disabling datum tracking turns the literal-pocket
+placement regressions and the datum-only cap-position regressions red; expression-driven pocket dimensions
+in `golden_plate::build()` already dirty the sketch and mask this scheduler defect.

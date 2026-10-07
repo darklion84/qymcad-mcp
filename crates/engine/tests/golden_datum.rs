@@ -58,7 +58,7 @@ fn check(s: &mut Session, t: f64) {
 
 #[test]
 fn datum_only_param_moves_a_literal_extrusion() {
-    for mode in ["direct", "parent", "child"] {
+    for mode in ["direct", "parent", "child", "both"] {
         let mut s = build(mode);
         check(&mut s, 6.0);
         s.param_set("t", &10.0.into()).unwrap();
@@ -68,7 +68,7 @@ fn datum_only_param_moves_a_literal_extrusion() {
 
 #[test]
 fn datum_only_gui_param_moves_a_literal_extrusion() {
-    for mode in ["direct", "parent", "child"] {
+    for mode in ["direct", "parent", "child", "both"] {
         let mut s = build(mode);
         let path = scratch(&format!("datum_only_gui_{mode}.qcad"));
         s.save(Some(&path)).unwrap();
@@ -80,7 +80,7 @@ fn datum_only_gui_param_moves_a_literal_extrusion() {
 
 #[test]
 fn datum_only_reopened_param_moves_a_literal_extrusion() {
-    for mode in ["direct", "parent", "child"] {
+    for mode in ["direct", "parent", "child", "both"] {
         let mut s = build(mode);
         let path = scratch(&format!("datum_only_open_{mode}.qcad"));
         s.save(Some(&path)).unwrap();
@@ -114,6 +114,27 @@ fn open_refreshes_guards_after_gui_datum_definition_changes() {
         qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
         let (mut s, r) = Session::open(&path).unwrap();
         assert!(r.errors.is_empty(), "obsolete guard must not reference deleted t: {r:?}");
+        let sketch = s.project().sketches[0].id;
+        let guards: Vec<_> = s.project().feat_dims.get(&sketch).into_iter().flat_map(|dims| dims.iter())
+            .filter(|(key, _)| key.starts_with("datum_dist_")).map(|(key, expr)| (key.clone(), expr.clone())).collect();
+        let expected = if mode == "replaced" { vec![(format!("datum_dist_{plane}"), "u".into())] } else { vec![] };
+        assert_eq!(guards, expected, "reserved guards must match the sketch's current datum ancestry");
         check(&mut s, t);
+        if mode == "replaced" {
+            s.param_set("u", &10.0.into()).unwrap();
+            check(&mut s, 10.0);
+            s.save(Some(&path)).unwrap();
+            let (volume, _, faces) = gui_edit_param_faces(&path, "u", "14");
+            check_caps(&faces.iter().map(|f| (f.centroid.z, f.normal)).collect::<Vec<_>>(), 14.0);
+            assert_close(volume, W * L * H, 1e-6, "GUI refreshed datum extrusion volume");
+        }
     }
+}
+
+#[test]
+fn top_pocket_area_cannot_be_smaller_than_the_analytic_area() {
+    // Synthetic planar faces isolate the assertion: expected top = 30*10 - 10*5 = 250 mm².
+    let faces = [(3.0, [0.0, 0.0, 1.0], 50.0), (6.0, [0.0, 0.0, 1.0], 249.0)];
+    let rejected = std::panic::catch_unwind(|| assert_pocket_faces(&faces, 30.0, 10.0, 6.0, 10.0, 5.0, 3.0, 0.0, 2));
+    assert!(rejected.is_err(), "a meshed top face smaller than its analytic area must be rejected");
 }

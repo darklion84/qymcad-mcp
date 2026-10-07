@@ -460,7 +460,9 @@ pub fn tools() -> Vec<Tool> {
             "linear_array",
             concat!(
                 "Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `second` direction (a \
-             grid). The result is one body holding every copy. QymCAD patterns bodies, not single features.",
+             grid). The result is one body holding every copy, including all existing holes and cuts. QymCAD has no single-feature \
+             pattern. For repeated holes, add circles at expression-driven centres in one sketch, then extrude with op=cut and \
+             through=true; this repeats the cut without copying the stock.",
                 stale!()
             ),
             |st, a: LinearArrayArgs| {
@@ -473,7 +475,13 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "circular_array",
-            concat!("Copy the WHOLE body `count` times about an axis (default world Z). The result is one body.", stale!()),
+            concat!(
+                "Copy the WHOLE body `count` times about an axis (default world Z), including all existing holes and cuts. \
+                 The result is one body. QymCAD has no single-feature pattern. For repeated holes, add circles at \
+                 expression-driven centres in one sketch, then extrude with op=cut and through=true; this repeats the cut \
+                 without copying the stock.",
+                stale!()
+            ),
             |st, a: CircularArrayArgs| {
                 let s = st.doc()?;
                 let body = opt_body(s, &a.body)?;
