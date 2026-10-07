@@ -49,12 +49,17 @@ pub struct Hole {
     /// Centre, world mm. Projected onto the face plane along its normal, so only the in-plane position matters.
     /// Default: the face centroid. Not parametric (QymCAD stores the point as numbers).
     pub at: Option<[f64; 3]>,
+    /// Diameter of the bore, mm (number or expression).
     pub diameter: Num,
     /// Depth from the face (counterbore/countersink included). `None` = through all.
     pub depth: Option<Num>,
+    /// Plain, counterbore or countersink.
     pub kind: HoleKind,
+    /// Counterbore/countersink only: diameter at the face, mm; must exceed `diameter`.
     pub dia2: Option<Num>,
+    /// Counterbore/countersink only: depth of the recess (cylinder or cone), mm; less than the depth.
     pub depth2: Option<Num>,
+    /// Name for the new feature, usable instead of its id later.
     pub name: Option<String>,
 }
 

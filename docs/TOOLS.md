@@ -480,6 +480,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
     },
     "name": {
       "default": null,
+      "description": "Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -496,7 +497,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
 
 ## extrude
 
-Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Returns the new body id and the result bodies (volume, bbox).
+Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -593,6 +594,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -752,7 +754,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
           "type": "object"
         }
       ],
-      "description": "An axis. For revolve: \"sketch_x\" or \"sketch_y\" (the sketch's own axes), or {\"line\": <line id>} (a line of that sketch, e.g. from a construction rectangle). Anywhere: \"X\", \"Y\", \"Z\" (world axes through the origin), {\"origin\": [x,y,z], \"dir\": [x,y,z]} (a fixed axis), {\"face\": <face id>, \"body\": <body>} (the axis of a cylindrical or conical face; follows the face; body defaults to the current body), {\"datum\": <datum axis id>}. A revolve axis must lie in the sketch plane and must not cross the profile."
+      "description": "The axis to revolve about; must lie in the sketch plane and must not cross the profile: \"sketch_x\" /\n\"sketch_y\", {\"line\": <line id of this sketch>}, \"X\"/\"Y\"/\"Z\", {\"origin\", \"dir\"}, {\"face\", \"body\"?}\n(axis of a round face) or {\"datum\": <id>}."
     },
     "direction": {
       "$ref": "#/$defs/Direction",
@@ -761,6 +763,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -877,10 +880,11 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "object"
         }
       ],
-      "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seam edges are ignored."
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -984,10 +988,11 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
           "type": "object"
         }
       ],
-      "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+      "description": "The edges to bevel: ids from `topology` (current body only) or a description, as for fillet."
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -1103,7 +1108,8 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
           "type": "null"
         }
       ],
-      "default": null
+      "default": null,
+      "description": "Counterbore/countersink only: depth of the recess, mm (number or expression); counterbore = depth of\nthe wide cylinder, countersink = depth of the cone. Must be less than the hole depth."
     },
     "dia2": {
       "anyOf": [
@@ -1114,7 +1120,8 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
           "type": "null"
         }
       ],
-      "default": null
+      "default": null,
+      "description": "Counterbore/countersink only: diameter at the face, mm (number or expression); must exceed `diameter`."
     },
     "diameter": {
       "$ref": "#/$defs/Num",
@@ -1152,6 +1159,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -1239,6 +1247,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -1364,6 +1373,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -1400,11 +1410,13 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
         },
         "dy": {
           "$ref": "#/$defs/Num",
-          "default": 0.0
+          "default": 0.0,
+          "description": "Step along Y between copies, mm (number or expression; default 0)."
         },
         "dz": {
           "$ref": "#/$defs/Num",
-          "default": 0.0
+          "default": 0.0,
+          "description": "Step along Z between copies, mm (number or expression; default 0)."
         }
       },
       "required": [
@@ -1462,14 +1474,17 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
     },
     "dy": {
       "$ref": "#/$defs/Num",
-      "default": 0.0
+      "default": 0.0,
+      "description": "Step along Y between copies, mm (number or expression; default 0)."
     },
     "dz": {
       "$ref": "#/$defs/Num",
-      "default": 0.0
+      "default": 0.0,
+      "description": "Step along Z between copies, mm (number or expression; default 0)."
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -1532,7 +1547,7 @@ Copy the WHOLE body `count` times about an axis (default world Z). The result is
     "angle": {
       "$ref": "#/$defs/Num",
       "default": 360.0,
-      "description": "Degrees (default 360). A full turn spaces copies 360/count apart; a smaller angle spaces them angle/count\napart, so the last copy is at angle·(count−1)/count (QymCAD's rule)."
+      "description": "Degrees, (0, 360] (default 360). An angle of 359.9° or more counts as a full turn: copies 360/count apart.\nA smaller angle spaces them angle/count apart, so the last copy is at angle·(count−1)/count (QymCAD's rule)."
     },
     "axis": {
       "anyOf": [
@@ -1577,6 +1592,7 @@ Copy the WHOLE body `count` times about an axis (default world Z). The result is
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"
@@ -1675,6 +1691,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
     },
     "name": {
       "default": null,
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
       "type": [
         "string",
         "null"

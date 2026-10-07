@@ -43,6 +43,7 @@ pub enum EdgeKind {
 pub struct FaceInfo {
     /// Persistent face id (valid for this body, after the latest rebuild).
     pub id: u32,
+    /// Plane, cylinder, cone, sphere or other.
     pub kind: FaceKind,
     /// Area-weighted centre of the face, mm.
     pub centroid: [f64; 3],
@@ -69,9 +70,11 @@ pub struct FaceInfo {
 pub struct EdgeInfo {
     /// Persistent edge id (valid for this body, after the latest rebuild).
     pub id: u32,
+    /// Line, full circle, arc or other (spline).
     pub kind: EdgeKind,
     /// Start and end points (equal for a full circle).
     pub a: [f64; 3],
+    /// End point (equals `a` for a full circle).
     pub b: [f64; 3],
     /// Midpoint along the edge.
     pub mid: [f64; 3],
@@ -80,8 +83,10 @@ pub struct EdgeInfo {
     /// Circle/arc centre, axis (unit normal of its plane) and radius.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub center: Option<[f64; 3]>,
+    /// Circle/arc axis: the unit normal of its plane.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub axis: Option<[f64; 3]>,
+    /// Circle/arc radius, mm.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub radius: Option<f64>,
     /// The two faces meeting at the edge (with `adjacency`).
@@ -95,8 +100,11 @@ pub struct EdgeInfo {
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct Topology {
+    /// The body the ids belong to.
     pub body: Id,
+    /// Its faces.
     pub faces: Vec<FaceInfo>,
+    /// Its edges.
     pub edges: Vec<EdgeInfo>,
 }
 

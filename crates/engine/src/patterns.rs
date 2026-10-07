@@ -20,9 +20,13 @@ pub(crate) const MAX_ARRAY_COPIES: u64 = 1000;
 /// One direction of a linear array: the step between copies and how many copies (the original included).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrayDir {
+    /// Step along X between copies, mm (number or expression).
     pub dx: Num,
+    /// Step along Y between copies, mm (number or expression).
     pub dy: Num,
+    /// Step along Z between copies, mm (number or expression).
     pub dz: Num,
+    /// Copies along this direction, the original included (number or expression); at most 1000 per array.
     pub count: Num,
 }
 

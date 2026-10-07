@@ -16,6 +16,7 @@ pub struct PlaneOffsetArgs {
     pub base: PlaneArg,
     /// Distance along the base plane's normal, mm (number or expression).
     pub dist: Num,
+    /// Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -44,6 +45,7 @@ pub struct ExtrudeArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -56,6 +58,9 @@ pub struct RevolveArgs {
     /// Contour ids from sketch_info. Default: every top-level contour, each minus the contours inside it.
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
+    /// The axis to revolve about; must lie in the sketch plane and must not cross the profile: "sketch_x" /
+    /// "sketch_y", {"line": <line id of this sketch>}, "X"/"Y"/"Z", {"origin", "dir"}, {"face", "body"?}
+    /// (axis of a round face) or {"datum": <id>}.
     pub axis: AxisArg,
     /// Degrees, (0, 360] (number or expression). Default 360.
     #[serde(default)]
@@ -71,6 +76,7 @@ pub struct RevolveArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -81,9 +87,12 @@ pub struct FilletArgs {
     /// Body id or name. Default: the part's current body.
     #[serde(default)]
     pub body: Option<ObjRef>,
+    /// The edges to round: ids from `topology` (current body only) or a description, e.g.
+    /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seam edges are ignored.
     pub edges: SelArg,
     /// Radius, mm (number or expression).
     pub radius: Num,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -94,12 +103,14 @@ pub struct ChamferArgs {
     /// Body id or name. Default: the part's current body.
     #[serde(default)]
     pub body: Option<ObjRef>,
+    /// The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.
     pub edges: SelArg,
     /// Setback, mm (number or expression). Alone: a symmetric 45° chamfer.
     pub dist: Num,
     /// Second setback on the other face, mm: an asymmetric chamfer.
     #[serde(default)]
     pub d2: Option<Num>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -130,10 +141,14 @@ pub struct HoleArgs {
     /// the diameter over depth2).
     #[serde(default)]
     pub kind: HoleKind,
+    /// Counterbore/countersink only: diameter at the face, mm (number or expression); must exceed `diameter`.
     #[serde(default)]
     pub dia2: Option<Num>,
+    /// Counterbore/countersink only: depth of the recess, mm (number or expression); counterbore = depth of
+    /// the wide cylinder, countersink = depth of the cone. Must be less than the hole depth.
     #[serde(default)]
     pub depth2: Option<Num>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -152,6 +167,7 @@ pub struct ShellArgs {
     /// inward (default: the outside stays), outward (the body becomes the cavity), centred.
     #[serde(default)]
     pub side: Side,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -166,6 +182,7 @@ pub struct PushFaceArgs {
     pub face: SelArg,
     /// Distance along the outward normal, mm (number or expression); negative pulls the face in.
     pub dist: Num,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -181,8 +198,10 @@ pub struct ArrayDirArg {
     /// Step between copies, mm (numbers or expressions; default 0).
     #[serde(default = "zero")]
     pub dx: Num,
+    /// Step along Y between copies, mm (number or expression; default 0).
     #[serde(default = "zero")]
     pub dy: Num,
+    /// Step along Z between copies, mm (number or expression; default 0).
     #[serde(default = "zero")]
     pub dz: Num,
     /// Number of copies including the original (number or expression). At most 1000 copies per array in total
@@ -205,8 +224,10 @@ pub struct LinearArrayArgs {
     /// Step between copies, mm (numbers or expressions; default 0).
     #[serde(default = "zero")]
     pub dx: Num,
+    /// Step along Y between copies, mm (number or expression; default 0).
     #[serde(default = "zero")]
     pub dy: Num,
+    /// Step along Z between copies, mm (number or expression; default 0).
     #[serde(default = "zero")]
     pub dz: Num,
     /// Number of copies including the original (number or expression). At most 1000 copies per array in total
@@ -215,6 +236,7 @@ pub struct LinearArrayArgs {
     /// A second direction, for a grid.
     #[serde(default)]
     pub second: Option<ArrayDirArg>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -232,13 +254,14 @@ pub struct CircularArrayArgs {
     /// Number of copies including the original (number or expression). At most 1000 copies per array in total
     /// (all directions multiplied), also when a parameter edit changes it.
     pub count: Num,
-    /// Degrees (default 360). A full turn spaces copies 360/count apart; a smaller angle spaces them angle/count
-    /// apart, so the last copy is at angle·(count−1)/count (QymCAD's rule).
+    /// Degrees, (0, 360] (default 360). An angle of 359.9° or more counts as a full turn: copies 360/count apart.
+    /// A smaller angle spaces them angle/count apart, so the last copy is at angle·(count−1)/count (QymCAD's rule).
     #[serde(default = "full_turn")]
     pub angle: Num,
     /// Default: world Z through the origin.
     #[serde(default)]
     pub axis: Option<AxisArg>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -258,6 +281,7 @@ pub struct MirrorArgs {
     /// Keep the original as well (default true): one body with both halves. false: only the image.
     #[serde(default = "yes")]
     pub keep: bool,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -294,9 +318,12 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "extrude",
-            "Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new \
-             body. Atomic: if the feature does not build, nothing changes and the error is returned. Returns the new \
-             body id and the result bodies (volume, bbox).",
+            concat!(
+                "Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a \
+                 new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also \
+                 returns the result bodies (volume, bbox).",
+                stale!()
+            ),
             |st, a: ExtrudeArgs| {
                 let s = st.doc()?;
                 let sketch = a.sketch.resolve(s)?;

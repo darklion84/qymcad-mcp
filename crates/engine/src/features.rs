@@ -59,8 +59,10 @@ pub struct Extrude {
     pub profiles: Option<Vec<Id>>,
     /// Distance, mm (number or expression). Ignored when `through` is set.
     pub height: Num,
+    /// What the extrude does to the part: add (creates the first body), cut, intersect, or a new body.
     #[serde(default)]
     pub op: Op,
+    /// Which way from the sketch plane, relative to its normal.
     #[serde(default)]
     pub direction: Direction,
     /// Cut/add through the whole body (only for `cut`, `add` onto an existing body, `intersect`).

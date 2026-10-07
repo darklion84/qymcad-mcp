@@ -14,6 +14,7 @@ use qymcad_core::model::{EntityKind, Id, RevolveAxis, RevolveTurn};
 /// Arguments of `Session::revolve`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Revolve {
+    /// The sketch whose contours are revolved.
     pub sketch: Id,
     /// Contour ids; default: every top-level contour (each minus the contours inside it).
     pub profiles: Option<Vec<Id>>,
@@ -24,9 +25,11 @@ pub struct Revolve {
     /// `Normal` turns by the right-hand rule about the axis direction (sketch x → +X, sketch y → +Y of the
     /// sketch); `Reverse` the other way; `Symmetric` half each way (F-3B-4).
     pub direction: Direction,
+    /// Add (creates the first body), cut, intersect, or a new body.
     pub op: Op,
     /// Body to modify (default: the current body).
     pub target: Option<Id>,
+    /// Name for the new feature, usable instead of its id later.
     pub name: Option<String>,
 }
 
