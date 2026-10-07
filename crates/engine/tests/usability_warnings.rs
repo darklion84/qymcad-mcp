@@ -51,6 +51,20 @@ fn a_normal_open_pocket_does_not_warn() {
     assert!(report.warnings.is_empty(), "open pocket warnings: {:?}", report.warnings);
 }
 #[test]
+fn disjoint_array_copies_do_not_warn_about_a_void() {
+    let mut s = Session::new_part();
+    let sk = rect(&mut s, PlaneRef::Base(BaseName::XY), 2.0, 3.0);
+    extrude(&mut s, sk, 4.0, Op::Add, Direction::Normal, "stock");
+    let (body, report) = s
+        .linear_array(None, &ArrayDir { dx: 10.0.into(), dy: 0.0.into(), dz: 0.0.into(), count: 3.0.into() }, None, Some("copies"))
+        .unwrap();
+    // Three disjoint 2×3×4 prisms: V=3*2*3*4, with one shell per solid.
+    assert_close(report.bodies[0].volume, 3.0 * 2.0 * 3.0 * 4.0, 1e-6, "array volume");
+    assert_eq!(s.shape(body).unwrap().solid_count(), 3);
+    assert_eq!(s.shape(body).unwrap().shell_count(), 3);
+    assert!(report.warnings.is_empty(), "disconnected solids are not sealed voids: {:?}", report.warnings);
+}
+#[test]
 fn opening_stale_stored_geometry_warns_about_the_rebuilt_body() {
     let mut s = Session::new_part();
     let sk = rect(&mut s, PlaneRef::Base(BaseName::XY), 20.0, 30.0);
@@ -72,6 +86,11 @@ fn opening_stale_stored_geometry_warns_about_the_rebuilt_body() {
         report.warnings
     );
     assert!(opened.info().warnings.iter().any(|w| w.contains("stored geometry")));
+    let warning = report.warnings.iter().find(|w| w.node == body && w.message.contains("stored geometry")).unwrap();
+    assert!(warning.message.contains("3600.0000 → 6000.0000 mm³"), "readable volume: {}", warning.message);
+    assert!(!warning.message.contains("Some("), "human-readable bbox: {}", warning.message);
+    assert!(warning.message.contains("bbox"), "a 4 mm height change exceeds F-016 tolerance: {}", warning.message);
+    assert!(warning.message.contains("the rebuilt geometry is now used; save to update the file"), "current geometry: {}", warning.message);
 }
 #[test]
 fn opening_unchanged_geometry_does_not_warn() {
@@ -108,6 +127,8 @@ fn opening_stale_pocket_warns_even_when_the_bbox_is_unchanged() {
         "same-bbox stale pocket: {:?}",
         report.warnings
     );
+    let warning = report.warnings.iter().find(|w| w.node == body && w.message.contains("stored geometry")).unwrap();
+    assert!(!warning.message.contains("bbox"), "bounds within F-016 tolerance must not be described as changed: {}", warning.message);
 }
 
 #[test]

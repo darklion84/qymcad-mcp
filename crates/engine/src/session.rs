@@ -41,6 +41,10 @@ pub struct Session {
     path: Option<PathBuf>,
     pub(crate) advisory_warnings: Vec<NodeIssue>,
     pub(crate) undo: std::collections::VecDeque<crate::history::Snapshot>,
+    pub(crate) undo_limit_reached: bool,
+    pub(crate) tool_edit_active: bool,
+    // Originals removed by native sketch deletion, retained once while undo still references them.
+    pub(crate) retired_sources: HashMap<Id, qymcad_core::model::SourceFile>,
 }
 
 impl Session {
@@ -49,7 +53,16 @@ impl Session {
         qymcad_core::model::set_producer(&format!("qymcad-mcp {}", env!("CARGO_PKG_VERSION")));
         let mut p = Project::default();
         p.new_document();
-        Session { p, shapes: HashMap::new(), path: None, advisory_warnings: Vec::new(), undo: Default::default() }
+        Session {
+            p,
+            shapes: HashMap::new(),
+            path: None,
+            advisory_warnings: Vec::new(),
+            undo: Default::default(),
+            undo_limit_reached: false,
+            tool_edit_active: false,
+            retired_sources: HashMap::new(),
+        }
     }
 
     /// Open a `.qcad`, restoring live bodies from the file as the app does (FINDINGS F-007), and rebuilding
@@ -66,8 +79,16 @@ impl Session {
             breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
-        let mut sess =
-            Session { p: project, shapes, path: Some(path.to_path_buf()), advisory_warnings: Vec::new(), undo: Default::default() };
+        let mut sess = Session {
+            p: project,
+            shapes,
+            path: Some(path.to_path_buf()),
+            advisory_warnings: Vec::new(),
+            undo: Default::default(),
+            undo_limit_reached: false,
+            tool_edit_active: false,
+            retired_sources: HashMap::new(),
+        };
         // Clean documents remain usable even without named edges, but rebuilding with an empty edge pool
         // can silently round every edge of a stored query (F-024).
         if let Err(e) = sess.restore_edges() {
@@ -91,12 +112,17 @@ impl Session {
             // F-016's 0.05 mm allowance applies to padded bounds, not volume. Boolean volume
             // comparisons use numerical roundoff only, so interior changes with identical bboxes warn.
             let volume_tol = (volume.abs().max(rebuilt.abs()) * 1e-9).max(1e-6);
-            let bbox_changed = bbox.zip(sh.bbox()).is_some_and(|(old, new)| old.iter().zip(new).any(|(a, b)| (a - b).abs() > 0.05));
+            let bounds = bbox.zip(sh.bbox());
+            let bbox_changed = bounds.is_some_and(|(old, new)| old.iter().zip(new).any(|(a, b)| (a - b).abs() > 0.05));
             if (volume - rebuilt).abs() > volume_tol || bbox_changed {
-                let warning = sess.issue(
-                    id,
-                    format!("stored geometry differs from the rebuild: volume {volume} → {rebuilt} mm³; bbox {bbox:?} → {:?}", sh.bbox()),
-                );
+                let mut message = format!("stored geometry differs from the rebuild: volume {volume:.4} → {rebuilt:.4} mm³");
+                if let Some((old, new)) = bounds.filter(|_| bbox_changed) {
+                    let format_bounds =
+                        |values: [f64; 6]| format!("[{}]", values.iter().map(|v| format!("{v:.4}")).collect::<Vec<_>>().join(", "));
+                    message.push_str(&format!("; bbox {} → {} mm", format_bounds(old), format_bounds(new)));
+                }
+                message.push_str("; the rebuilt geometry is now used; save to update the file");
+                let warning = sess.issue(id, message);
                 sess.advisory_warnings.push(warning.clone());
                 r.warnings.push(warning);
             }
@@ -106,11 +132,27 @@ impl Session {
 
     /// Save to `path`, or to the path the document was opened from / last saved to.
     pub fn save(&mut self, path: Option<&Path>) -> Result<PathBuf> {
+        self.save_with_options(path, false)
+    }
+
+    /// Save, explicitly allowing replacement of a body-containing file by an empty document when requested.
+    pub fn save_with_options(&mut self, path: Option<&Path>, allow_empty: bool) -> Result<PathBuf> {
         let target = match path {
             Some(p) => p.to_path_buf(),
             None => self.path.clone().ok_or_else(|| Error::Invalid("the document has no file yet; give a path".into()))?,
         };
         let s = target.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", target.display())))?;
+        if !allow_empty
+            && self.result_bodies().is_empty()
+            && target.try_exists().map_err(|e| Error::Io(format!("cannot inspect {s}: {e}")))?
+        {
+            let stored = qymcad_io::load_project(s).map_err(|e| Error::Io(format!("cannot inspect existing document {s}: {e}")))?;
+            if !stored.bodies.is_empty() {
+                return Err(Error::Invalid(format!(
+                    "document has no bodies; refusing to overwrite {s}, which has bodies; set allow_empty=true to replace it"
+                )));
+            }
+        }
         let breps: Vec<(Id, Vec<u8>)> = {
             let _gate = qymcad_kernel::kernel_gate();
             self.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
@@ -179,7 +221,8 @@ impl Session {
         } else {
             None
         };
-        let before_shells: HashMap<Id, u32> = self.shapes.iter().map(|(&id, sh)| (id, sh.shell_count())).collect();
+        let before_counts: HashMap<Id, (u32, u32)> =
+            self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         self.shapes = shapes;
@@ -226,10 +269,17 @@ impl Session {
             for body in node.kind.bodies() {
                 let Some(shape) = self.shapes.get(&body) else { continue };
                 let shells = shape.shell_count();
-                let source_shells = node.kind.consumed_body().and_then(|id| self.shapes.get(&id)).map_or(1, Shape::shell_count);
-                let old = before_shells.get(&body).copied().unwrap_or(source_shells);
-                if shells > 1 && (shells > old || shells > source_shells) {
-                    self.advisory_warnings.push(self.issue(node.id, format!("result body has {shells} shells (previous/source {old}/{source_shells}); may contain a sealed internal void or disconnected solids")));
+                let solids = shape.solid_count();
+                let source =
+                    node.kind.consumed_body().and_then(|id| self.shapes.get(&id)).map_or((1, 1), |sh| (sh.shell_count(), sh.solid_count()));
+                let old = before_counts.get(&body).copied().unwrap_or(source);
+                // Each disconnected solid contributes one outer shell; only excess shells indicate cavities.
+                let excess = shells.saturating_sub(solids);
+                if excess > old.0.saturating_sub(old.1) || excess > source.0.saturating_sub(source.1) {
+                    self.advisory_warnings.push(self.issue(
+                        node.id,
+                        format!("result body has {shells} shells and {solids} solids; may contain a sealed internal void"),
+                    ));
                 }
             }
         }

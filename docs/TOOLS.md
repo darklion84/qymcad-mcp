@@ -64,12 +64,17 @@ Open a .qcad file written by QymCAD of the same release (or by this server). Reb
 
 ## doc_save
 
-Save the document as .qcad; the directory must exist. Open it in the QymCAD app with File > Open; double-click does not work on macOS.
+Save the document as .qcad; the directory must exist. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true. Open it in the QymCAD app with File > Open; double-click does not work on macOS.
 
 ```json
 {
   "additionalProperties": false,
   "properties": {
+    "allow_empty": {
+      "default": false,
+      "description": "Permit an empty document to overwrite an existing .qcad containing bodies. Default false.",
+      "type": "boolean"
+    },
     "path": {
       "default": null,
       "description": "Where to write the `.qcad`. Default: the file the document came from or was last saved to.",
@@ -2547,7 +2552,7 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
 
 ## feature_delete
 
-Delete a timeline feature, sketch or datum atomically. Refuses when other nodes depend on it unless cascade=true; cascade removes all transitive dependents. Deleting the final modifier restores its consumed source as the result. Undo can restore the deletion.
+Delete a timeline feature, sketch or datum atomically and return deleted node ids, names and kinds. A node with dependents is refused (unlike the app, it is not relinked); use cascade=true to remove all transitive dependents, or delete the leaf. Deleting the final modifier restores its consumed source as the result. Undo can restore the deletion.
 
 ```json
 {
@@ -2587,7 +2592,7 @@ Delete a timeline feature, sketch or datum atomically. Refuses when other nodes 
 
 ## undo
 
-Undo the last successful modelling tool call in this document, restoring its recipe and exact live B-reps. Retains at most 16 calls; failed calls and read/save/export tools do not consume history. doc_new/doc_open start fresh history. This session undo does not revert files written to disk; no redo.
+Undo the last successful modelling tool call in this document, returning its name/arguments and the restored bodies and rebuild diagnostics. Restores the recipe and exact live B-reps. Retains at most 16 calls; reports when older calls were dropped at this limit. Failed calls and read/save/export tools do not consume history. doc_new/doc_open start fresh history. This session undo does not revert files written to disk; no redo.
 
 ```json
 {
@@ -2774,7 +2779,7 @@ List the faces and edges of a body with persistent ids: faces (kind plane/cylind
 
 ## select
 
-Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face.
+Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward planar corners, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}.
 
 ```json
 {

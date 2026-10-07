@@ -105,3 +105,81 @@ fn concave_and_convex_select_l_profile_corners_along_y() {
         assert!(bad && msg.as_str().unwrap().contains("takes true"), "{msg}");
     }
 }
+
+fn cube() -> Client {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "square" }));
+    c.ok("sketch_add", json!({ "sketch": "square", "entities": [{ "type": "rect", "w": 20, "h": 20 }] }));
+    let r = c.ok("extrude", json!({ "sketch": "square", "height": 20 }));
+    assert!((r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - 20.0_f64.powi(3)).abs() < 1e-6);
+    c
+}
+
+#[test]
+fn concave_on_a_cube_selects_zero_edges() {
+    let mut c = cube();
+    // A cube's 12 edge dihedrals are all outward right angles: no inward corners.
+    let r = c.ok("select", json!({ "edges": { "concave": true } }));
+    assert_eq!(r["count"], 0);
+    assert_eq!(r["edges"], json!([]));
+}
+
+#[test]
+fn empty_corner_filters_compose_as_empty_sets() {
+    let mut c = cube();
+    let empty = json!({ "concave": true });
+    let y = json!({ "along": "y" });
+    // A cube has four y-directed edges (one for each x/z corner).
+    for (selection, count) in [
+        (json!({ "and": [empty, y] }), 0),
+        (json!({ "and": [y, empty] }), 0),
+        (json!({ "minus": [empty, y] }), 0),
+        (json!({ "minus": [y, empty] }), 4),
+        (json!({ "union": [empty, y] }), 4),
+        (json!({ "union": [empty, empty] }), 0),
+    ] {
+        let r = c.ok("select", json!({ "edges": selection }));
+        assert_eq!(r["count"], count, "selection {selection}: {r}");
+    }
+}
+
+#[test]
+fn empty_final_corner_selection_refuses_fillet_and_chamfer() {
+    let mut c = cube();
+    let before = c.ok("doc_info", json!({}));
+    for (tool, args) in
+        [("fillet", json!({ "edges": { "concave": true }, "radius": 1 })), ("chamfer", json!({ "edges": { "concave": true }, "dist": 1 }))]
+    {
+        let (bad, msg) = c.tool(tool, args);
+        assert!(bad, "{tool} must refuse empty final edges: {msg}");
+        assert!(msg.as_str().unwrap().contains("edge selection matched no edge"), "{tool}: {msg}");
+        assert_eq!(c.ok("doc_info", json!({})), before, "{tool} refusal leaves the cube unchanged");
+    }
+}
+
+#[test]
+fn convex_on_a_cylinder_selects_zero_planar_corners() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "circle" }));
+    c.ok("sketch_add", json!({ "sketch": "circle", "entities": [{ "type": "circle", "d": 10 }] }));
+    let r = c.ok("extrude", json!({ "sketch": "circle", "height": 20 }));
+    // Tool volumes are rounded to four decimal places: at most 0.00005 mm³ rounding error.
+    assert!((r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - std::f64::consts::PI * 5.0_f64.powi(2) * 20.0).abs() < 0.00005);
+    // Two circular rims and the cylinder seam are excluded from planar straight-edge corners.
+    let r = c.ok("select", json!({ "edges": { "convex": true } }));
+    assert_eq!(r["count"], 0);
+    assert_eq!(r["edges"], json!([]));
+}
+
+#[test]
+fn select_description_shows_a_concave_example() {
+    let mut c = Client::start();
+    c.init();
+    let r = c.request("tools/list", json!({}));
+    let select = r["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "select").unwrap();
+    assert!(select["description"].as_str().unwrap().contains("{\"concave\": true}"), "{select}");
+}

@@ -546,7 +546,8 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "select",
             "Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). \
-             Use it to check a selection before fillet/chamfer/hole/shell/push_face.",
+             Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward planar corners, \
+             pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}.",
             |st, a: SelectArgs| {
                 let s = st.doc()?;
                 let body = body_of(s, &a.body)?;
