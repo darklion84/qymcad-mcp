@@ -52,7 +52,8 @@ pub struct FaceInfo {
     pub normal: Option<[f64; 3]>,
     /// mm²
     pub area: f64,
-    /// Cylinder/cone axis: a point on it and the unit direction.
+    /// Cylinder/cone axis: a point on it and the unit direction. For cylinders the point is the
+    /// face centroid projected onto the axis, at the face's axial position (not on its curved surface).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub axis: Option<[[f64; 3]; 2]>,
     /// Cylinder or sphere radius, mm.
@@ -167,7 +168,8 @@ impl Element {
 }
 
 /// A selection of faces or edges of a body: explicit persistent ids, or a description that QymCAD re-evaluates
-/// on every rebuild (so it survives upstream edits — prefer it). Maps one-to-one onto `qymcad_core::refs::Query`.
+/// on every rebuild (so it survives upstream edits — prefer it). Engine-only edge filters are lowered to ids
+/// before mapping onto `qymcad_core::refs::Query`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sel {
     /// These ids (from `topology`).
@@ -178,6 +180,10 @@ pub enum Sel {
     Facing { dir: [f64; 3], tol_deg: f64 },
     /// Edges running along `dir` (either sense) within `tol_deg`.
     Along { dir: [f64; 3], tol_deg: f64 },
+    /// Inward corners between two planar faces along a straight edge; excludes seams and tangent junctions.
+    Concave,
+    /// Outward corners between two planar faces along a straight edge; excludes seams and tangent junctions.
+    Convex,
     /// The elements whose centre (faces) or midpoint (edges) is extreme along a world axis (all ties).
     Extreme { axis: Axis, max: bool },
     /// The largest face by area / the longest edge (all ties).
@@ -237,6 +243,13 @@ impl Sel {
                     Box::new(Query::Oriented { dir: d, tol_deg: *tol_deg }),
                     Box::new(Query::Oriented { dir: neg, tol_deg: *tol_deg }),
                 )
+            }
+            Sel::Concave | Sel::Convex => {
+                let what = if matches!(self, Sel::Concave) { "concave" } else { "convex" };
+                if el == Element::Faces {
+                    return bad(what, "it tests edge corners between two planar faces");
+                }
+                return Err(Error::Invalid(format!("`{what}` needs a body to resolve its edge corners")));
             }
             Sel::Extreme { axis, max } => Query::Extreme {
                 axis: match axis {
@@ -407,7 +420,8 @@ impl Session {
             };
             if let Some((o, d, r)) = shape.face_cylinder(f.id) {
                 fi.kind = FaceKind::Cylinder;
-                fi.axis = Some([o, d]);
+                let t: f64 = (0..3).map(|i| (fi.centroid[i] - o[i]) * d[i]).sum();
+                fi.axis = Some([std::array::from_fn(|i| o[i] + t * d[i]), d]);
                 fi.radius = Some(r);
             } else if let Some((o, d)) = shape.face_axis(f.id) {
                 fi.kind = FaceKind::Cone;
@@ -463,13 +477,50 @@ impl Session {
         medges.iter().map(|e| (e.id, edge_kind_length(e, &polylines).1)).collect()
     }
 
-    /// QymCAD ranks `Largest` edges by chord |b − a| (`Project::edge_pool`): a full circle scores 0. Replace every
-    /// `Largest` evaluated against edges with the ids of the longest edges by true length. Upstream evaluates
-    /// `Largest` against the whole pool wherever it is nested, so the substitution keeps the meaning; edge
-    /// selections are stored as pick lists anyway (F-024).
-    fn lower_largest_edges(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Sel {
-        let sub = |x: &Sel, el: Element, lengths: &mut Option<HashMap<u32, f64>>| Box::new(self.lower_largest_edges(body, el, x, lengths));
+    /// A planar corner is concave when face A's local interior points outside face B's supporting plane.
+    /// Use an incident triangle, not the face centroid: a concave face's centroid can lie outside the face.
+    fn corner_edges(&self, body: Id, concave: bool) -> Vec<u32> {
+        let Some(shape) = self.shapes.get(&body) else { return Vec::new() };
+        let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Vec::new() };
+        let faces: HashMap<_, _> = self.p.regen_faces.get(&body).into_iter().flatten().map(|f| (f.id, f)).collect();
+        let normals: HashMap<_, _> = faces.iter().filter_map(|(id, f)| planar_normal(f, mesh).map(|n| (*id, n))).collect();
+        let (polylines, pairs) = {
+            let _gate = qymcad_kernel::kernel_gate();
+            (
+                shape.edges_info().into_iter().map(|e| (e.id, e.poly)).rev().collect::<HashMap<_, _>>(),
+                shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect::<HashMap<_, _>>(),
+            )
+        };
+        self.p
+            .regen_edges
+            .get(&body)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| {
+                if edge_kind_length(e, &polylines).0 != EdgeKind::Line {
+                    return None;
+                }
+                let [a, b] = *pairs.get(&e.id)?;
+                if a == b {
+                    return None;
+                }
+                let (na, nb) = (*normals.get(&a)?, *normals.get(&b)?);
+                if dot(na, nb).abs() > 0.99999 {
+                    return None;
+                }
+                let inward = edge_face_inward(e, faces.get(&a)?, mesh)?;
+                let sign = dot(inward, nb);
+                ((sign > 1e-6 && concave) || (sign < -1e-6 && !concave)).then_some(e.id)
+            })
+            .collect()
+    }
+
+    /// Lower engine-only edge filters to ids. QymCAD ranks `Largest` by chord rather than true length (F-030)
+    /// and has no corner-sign query. All edge selections are stored as pick lists anyway (F-024).
+    fn lower_edge_filters(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Sel {
+        let sub = |x: &Sel, el: Element, lengths: &mut Option<HashMap<u32, f64>>| Box::new(self.lower_edge_filters(body, el, x, lengths));
         match sel {
+            Sel::Concave | Sel::Convex if el == Element::Edges => Sel::Ids(self.corner_edges(body, matches!(sel, Sel::Concave))),
             Sel::Largest if el == Element::Edges => {
                 let l = lengths.get_or_insert_with(|| self.edge_lengths(body));
                 let best = l.values().copied().fold(f64::MIN, f64::max);
@@ -513,13 +564,19 @@ impl Session {
             Sel::Between(x, y) => b(x, Element::Faces).and(b(y, Element::Faces)),
             Sel::Union(v) => v.iter().try_for_each(|x| b(x, el)),
             Sel::Minus(x, y) | Sel::And(x, y) => b(x, el).and(b(y, el)),
-            Sel::OfFeature { .. } | Sel::Facing { .. } | Sel::Along { .. } | Sel::Extreme { .. } | Sel::Largest => Ok(()),
+            Sel::OfFeature { .. }
+            | Sel::Facing { .. }
+            | Sel::Along { .. }
+            | Sel::Concave
+            | Sel::Convex
+            | Sel::Extreme { .. }
+            | Sel::Largest => Ok(()),
         }
     }
 
     /// Resolve `sel` on `body`. Explicit ids that are not on the body are an error (stale or foreign ids).
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
-        let lowered = self.lower_largest_edges(body, el, sel, &mut None);
+        let lowered = self.lower_edge_filters(body, el, sel, &mut None);
         let sel = &lowered;
         let q = sel.to_query(el)?;
         self.check_ids(body, el, sel)?;
@@ -564,6 +621,7 @@ impl Session {
         // A rebuild that fails would pass sources through (F-008) and change the bodies: keep the document and
         // the shapes (as B-rep bytes; a Shape cannot be cloned) to put back. Only files saved without faces get here.
         let before = self.p.clone();
+        let before_warnings = self.advisory_warnings.clone();
         let saved: Vec<(Id, Vec<u8>)> = {
             let _gate = qymcad_kernel::kernel_gate();
             self.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
@@ -574,6 +632,7 @@ impl Session {
             return Ok(());
         }
         self.p = before;
+        self.advisory_warnings = before_warnings;
         self.shapes = {
             let _gate = qymcad_kernel::kernel_gate();
             saved.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
@@ -621,6 +680,35 @@ impl Session {
         }
         Ok(b)
     }
+}
+
+/// In-plane direction into the triangle sharing the edge midpoint, perpendicular to the edge.
+fn edge_face_inward(e: &MeshEdge, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3]> {
+    let dir = unit(sub(e.b, e.a)).ok()?;
+    // Kernel tessellation carries float coordinates; allow their relative rounding error.
+    let scale = e.a.into_iter().chain(e.b).map(f64::abs).fold(1.0, f64::max);
+    let eps = 1e-6 * scale;
+    for &ti in &face.triangles {
+        let t = mesh.tris.get(ti as usize)?;
+        let p: Vec<_> = t.iter().map(|&i| mesh.verts.get(i as usize).map(|v| [v.x, v.y, v.z])).collect::<Option<_>>()?;
+        for i in 0..3 {
+            let (a, b) = (p[i], p[(i + 1) % 3]);
+            let ab = sub(b, a);
+            let length = norm(ab);
+            if length <= eps || dot(unit(ab).ok()?, dir).abs() < 0.99999 {
+                continue;
+            }
+            let am = sub(e.mid, a);
+            let fraction = dot(am, ab) / (length * length);
+            let offset = sub(am, ab.map(|x| x * fraction));
+            if fraction < -eps / length || fraction > 1.0 + eps / length || norm(offset) > eps {
+                continue;
+            }
+            let interior = sub(p[(i + 2) % 3], e.mid);
+            return unit(sub(interior, dir.map(|x| x * dot(interior, dir)))).ok();
+        }
+    }
+    None
 }
 
 /// The unit normal of a face if all its triangles are coplanar (within ~0.25°), else `None`.

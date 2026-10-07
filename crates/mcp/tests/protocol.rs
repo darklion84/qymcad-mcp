@@ -117,6 +117,8 @@ fn lists_tools_with_object_schemas() {
         "linear_array",
         "circular_array",
         "mirror",
+        "feature_delete",
+        "undo",
     ];
     for want in expected {
         assert!(names.contains(&want), "missing {want} in {names:?}");
@@ -184,6 +186,7 @@ fn builds_saves_and_reopens_the_plate() {
     let p = c.ok("plane_offset", json!({ "base": "XY", "dist": "t", "name": "top" }));
     assert!(p["plane"].is_u64());
     c.ok("sketch_create", json!({ "plane": { "plane": "top" }, "name": "pocket sketch" }));
+    // Literal pocket dimensions expose F-017; expression-driven pockets are covered by golden_plate::build().
     c.ok("sketch_add", json!({ "sketch": "pocket sketch", "entities": [{ "type": "rect", "w": 30, "h": 16 }] }));
     let r = c.ok("extrude", json!({ "sketch": "pocket sketch", "height": "pd", "op": "cut", "direction": "reverse", "name": "pocket" }));
     let v = r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();

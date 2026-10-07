@@ -49,7 +49,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "doc_save",
-            "Save the document as .qcad (open it in the QymCAD app with File > Open; double-click does not work on macOS).",
+            "Save the document as .qcad; the directory must exist. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
             |st, a: SaveArgs| {
                 let s = st.doc()?;
                 let target = match &a.path {
@@ -62,7 +62,9 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "doc_info",
-            "The whole document: parameters, sketches (contours, degrees of freedom), the timeline, result bodies (volume mm³, bbox), errors and warnings.",
+            "The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume mm³, bbox), errors and warnings. \
+             Bboxes include OCCT tolerance padding in-session (allow about 0.05 mm); after doc_open stored B-reps may report tighter bounds. \
+             Use volume for size checks and topology face positions for placement.",
             |st, _: NoArgs| Ok(serde_json::to_value(st.doc()?.info()).unwrap_or(Value::Null)),
         ),
     ]

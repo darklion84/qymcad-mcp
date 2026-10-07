@@ -106,7 +106,13 @@ pub fn assert_pocket_faces(
     assert_close(floor.0, t - depth, 1e-6, "pocket floor z = thickness - depth");
     assert_eq!(faces.len(), face_count, "an open pocket has four walls and a floor, no ceiling");
     let top = up.iter().find(|(z, _, _)| (*z - t).abs() < 1e-6).expect("top face at stock thickness");
-    // MeshFace areas use tessellation: small circles have ≈ 1.42 mm³ mesh-volume error at t=6 (F-021).
-    // A 2 mm² allowance covers that approximation but cannot hide the missing 480 mm² pocket opening.
-    assert_close(top.2, w * l - holes_area - pw * pl, 2.0, "top face area excludes the pocket opening");
+    // The plate's 1.42 mm³ mesh-volume error at t=6 implies ≈ 1.42/6 = 0.237 mm² hole-area error (F-021).
+    // Inscribed hole polygons only inflate the top area; allow 2 mm² above analytic area and roundoff below.
+    let expected = w * l - holes_area - pw * pl;
+    let roundoff = 1e-6;
+    assert!(
+        top.2 >= expected - roundoff && top.2 <= expected + 2.0,
+        "top face area excludes the pocket opening: got {}, expected {expected} - {roundoff} .. + 2 mm²",
+        top.2
+    );
 }

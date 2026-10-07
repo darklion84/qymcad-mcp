@@ -10,7 +10,7 @@ use serde::Serialize;
 pub struct NodeInfo {
     pub id: Id,
     pub name: String,
-    /// Feature kind as QymCAD names it (`Extrude`, `Combine`, `Plane`, `Sketch`, ...).
+    /// Feature kind; sketch extrusion booleans expose their operation (`extrude (cut/add/intersect)`).
     pub kind: String,
     pub suppressed: bool,
 }
@@ -32,6 +32,7 @@ impl Session {
     pub fn info(&self) -> DocInfo {
         let p = self.project();
         let mut warnings: Vec<String> = p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {e}", self.node_name(*id))).collect();
+        warnings.extend(self.advisory_warnings.iter().map(|w| format!("{} ({}): {}", w.name, w.node, w.message)));
         let upper = self.uppercase_params();
         if !upper.is_empty() {
             warnings.push(format!(
@@ -61,6 +62,16 @@ impl Session {
 }
 
 fn kind_name(k: &qymcad_core::feature::FeatureKind) -> String {
+    use qymcad_core::feature::FeatureKind;
+    if let FeatureKind::Combine { op, .. } = k {
+        let op = match op {
+            0 => "cut",
+            1 => "add",
+            2 => "intersect",
+            _ => "unknown",
+        };
+        return format!("extrude ({op})");
+    }
     let s = format!("{k:?}");
     s.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_string()
 }

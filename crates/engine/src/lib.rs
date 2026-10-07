@@ -6,6 +6,9 @@
 mod error;
 mod export;
 mod features;
+mod history;
+#[cfg(test)]
+mod history_tests;
 mod info;
 mod modifiers;
 mod params;
@@ -21,6 +24,7 @@ mod value;
 pub use error::{Error, Result};
 pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};
 pub use features::{Direction, Extrude, Op};
+pub use history::{Snapshot, UNDO_LIMIT};
 pub use info::{DocInfo, NodeInfo};
 pub use modifiers::{Hole, HoleKind, Side};
 pub use params::ParamInfo;
@@ -31,7 +35,7 @@ pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{
     Added, ArcSpec, BaseName, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, DistAxis, EntityInfo, FrameRef,
-    LineSpec, PlaneRef, PointInfo, PolygonSpec, PolylineSpec, SketchDetail, SketchInfo, SketchRef, SlotSpec, Xy,
+    LineSpec, PlaneRef, PointInfo, PolygonSpec, PolylineSpec, SketchDetail, SketchInfo, SketchRef, SketchWorldFrame, SlotSpec, Xy,
 };
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, Topology};
 pub use value::Num;

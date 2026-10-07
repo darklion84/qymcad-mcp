@@ -71,7 +71,13 @@ impl Session {
         }
         // Propagation has dirtied every affected node. Preserve their original handles and rebuild on
         // independent B-rep copies, like sketch_edit: rollback must retain the original representation (F-034).
-        let nodes: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
+        let mut nodes: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
+        for sketch in &self.p.sketches {
+            if nodes.contains(&sketch.id) {
+                nodes.extend(self.p.dependents(sketch.id));
+            }
+        }
+        let before_warnings = self.advisory_warnings.clone();
         let saved: crate::error::Result<HashMap<Id, qymcad_kernel::Shape>> = {
             let _gate = qymcad_kernel::kernel_gate();
             self.p
@@ -105,6 +111,7 @@ impl Session {
         if !r.errors.is_empty() {
             let lines = r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
             self.p = before;
+            self.advisory_warnings = before_warnings;
             self.shapes.extend(saved);
             return Err(Error::Rebuild(lines));
         }
@@ -138,7 +145,11 @@ impl Session {
             }
         }
         for (node, dims) in &self.p.feat_dims {
-            if dims.values().any(|e| mentions(&e.to_lowercase(), name)) {
+            let is_sketch = self.p.sketch_index(*node).is_some();
+            if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_dist_") && mentions(&e.to_lowercase(), name)) {
+                out.push(format!("datum dependency of sketch {} `{}`", node, self.node_name(*node)));
+            }
+            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_dist_")) && mentions(&e.to_lowercase(), name)) {
                 out.push(format!("feature {} `{}`", node, self.node_name(*node)));
             }
         }
