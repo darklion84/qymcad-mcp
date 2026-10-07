@@ -2,13 +2,22 @@
 //! origin), with the given expressions as the driving values, so the sketch stays fully defined and editable
 //! in the QymCAD GUI.
 
+mod constrain;
+mod detail;
+mod entities;
+
+pub use constrain::{ConstrainSpec, Constrained, ConstraintKind, DistAxis, FrameRef, SketchRef};
+pub use detail::{ConstraintInfo, EntityInfo, PointInfo, SketchDetail};
+pub use entities::{Added, ArcSpec, LineSpec, PolygonSpec, PolylineSpec, SlotSpec, Xy};
+
 use crate::error::{Error, Result};
-use crate::session::Session;
+use crate::session::{Rebuild, Session};
 use crate::value::Num;
 use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane};
 use qymcad_core::model::{Constraint, EntityKind, Id, SketchPoint};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Where a sketch (or an offset plane) sits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -86,9 +95,9 @@ impl Session {
         }
         let lines = self.p.add_rect_entity(si, vx - vw / 2.0, vy - vh / 2.0, vx + vw / 2.0, vy + vh / 2.0, purpose(construction));
         let [bl, br, tr, tl] = self.rect_corners(si, &lines)?;
-        let s = &mut self.p.sketches[si];
-        s.constraints.push(dist(br, bl, 1, vw, w.magnitude_expr(vw)));
-        s.constraints.push(dist(tl, bl, 2, vh, h.magnitude_expr(vh)));
+        // Corners may be shared with earlier geometry (QymCAD merges points within 1e-6): only independent
+        // dimensions are added, as for every other entity.
+        self.add_independent(si, [dist(br, bl, 1, vw, w.magnitude_expr(vw)), dist(tl, bl, 2, vh, h.magnitude_expr(vh))]);
         let c = self.p.alloc_id();
         let s = &mut self.p.sketches[si];
         s.points.push(SketchPoint { id: c, x: vx, y: vy });
@@ -211,40 +220,108 @@ impl Session {
     /// Fix point `p` at (`x`, `y`) from the sketch origin with driving dimensions. A plain zero puts the point
     /// on the axis instead (a zero distance has no side). Distances are magnitudes `|Δ|`: the side comes from
     /// the initial geometry and the expression is negated when its value is negative (see `Num::magnitude_expr`).
+    /// Only the independent dimensions are added: the point may be shared with earlier, already dimensioned
+    /// geometry (a circle centred on a polyline vertex takes that vertex as its centre, FINDINGS F-3A-4).
     fn pin_point(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) {
+        let dims = self.pin_dims(si, p, x, vx, y, vy);
+        self.add_independent(si, dims);
+    }
+
+    /// The two dimensions of `pin_point` ([x, y]), not yet added.
+    pub(crate) fn pin_dims(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) -> [Constraint; 2] {
         let origin = self.p.ensure_origin(si);
         let x_on_axis = x.expr().is_none() && vx == 0.0;
         let y_on_axis = y.expr().is_none() && vy == 0.0;
         let yaxis = if x_on_axis { Some(self.p.ensure_axis(si, 1)) } else { None };
         let xaxis = if y_on_axis { Some(self.p.ensure_axis(si, 0)) } else { None };
-        let s = &mut self.p.sketches[si];
-        match yaxis {
-            Some((a, b)) => s.constraints.push(Constraint::PointOnLine { p, a, b }),
-            None => s.constraints.push(dist(p, origin, 1, vx.abs(), x.magnitude_expr(vx))),
-        }
-        match xaxis {
-            Some((a, b)) => s.constraints.push(Constraint::PointOnLine { p, a, b }),
-            None => s.constraints.push(dist(p, origin, 2, vy.abs(), y.magnitude_expr(vy))),
+        let cx = match yaxis {
+            Some((a, b)) => Constraint::PointOnLine { p, a, b },
+            None => dist(p, origin, 1, vx.abs(), x.magnitude_expr(vx)),
+        };
+        let cy = match xaxis {
+            Some((a, b)) => Constraint::PointOnLine { p, a, b },
+            None => dist(p, origin, 2, vy.abs(), y.magnitude_expr(vy)),
+        };
+        [cx, cy]
+    }
+
+    /// Add each candidate dimension only if it removes a degree of freedom (`add_constraint_if_independent`).
+    /// A point that is already determined (shared with earlier geometry, or fixed by the entity's own
+    /// constraints) is not dimensioned twice, so the sketch never becomes over-constrained.
+    pub(crate) fn add_independent(&mut self, si: usize, dims: impl IntoIterator<Item = Constraint>) {
+        for c in dims {
+            self.p.add_constraint_if_independent(si, c);
         }
     }
 
-    fn finish_sketch_edit(&mut self, si: usize) -> Result<()> {
+    /// Apply a sketch edit as one unit (restored on error). When features are built from the sketch they are
+    /// rebuilt; if a feature that built before fails now, the edit is rolled back and the errors returned.
+    pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
+        let before = self.p.clone();
+        let value = match edit(self) {
+            Ok(v) => v,
+            Err(e) => {
+                self.p = before;
+                return Err(e);
+            }
+        };
+        if self.p.dependents_of(sketch).is_empty() {
+            return Ok((value, None));
+        }
+        let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
+        let r = self.rebuild();
+        let broken: Vec<String> =
+            r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+        if !broken.is_empty() {
+            self.p = before;
+            self.p.mark_all_dirty();
+            self.rebuild();
+            return Err(Error::Rebuild(broken));
+        }
+        Ok((value, Some(r)))
+    }
+
+    /// Solve sketch `si` until it settles. One `solve_sketch` call can stop at a compromise: QymCAD holds the arms
+    /// of angle dimensions softly at their pre-solve lengths, so an edit that must change an arm's length gains
+    /// only a fraction per call (FINDINGS F-3A-2). Repeats while the residual keeps dropping (at most 200
+    /// calls); returns the final residual.
+    pub(crate) fn solve_settled(&mut self, si: usize) -> f64 {
+        let mut residual = self.p.solve_sketch(si);
+        for _ in 0..199 {
+            if residual < 1e-10 {
+                break;
+            }
+            let next = self.p.solve_sketch(si);
+            let stalled = next > residual * 0.99;
+            residual = next;
+            if stalled {
+                break;
+            }
+        }
+        residual
+    }
+
+    pub(crate) fn finish_sketch_edit(&mut self, si: usize) -> Result<()> {
         self.p.eval_parameters();
-        let residual = self.p.solve_sketch(si);
+        let residual = self.solve_settled(si);
         let sid = self.p.sketches[si].id;
         self.p.mark_sketch_dirty(sid);
         if residual > 1e-6 {
-            return Err(Error::Invalid(format!("sketch {sid} does not solve (residual {residual:.3e}): conflicting dimensions")));
+            let conflicts = self.p.sketch_conflicts(si);
+            return Err(Error::Invalid(format!(
+                "sketch {sid} does not solve (residual {residual:.3e}): conflicting dimensions{}",
+                if conflicts.is_empty() { String::new() } else { format!(" (constraints {conflicts:?} disagree)") }
+            )));
         }
         Ok(())
     }
 }
 
-fn dist(a: Id, b: Id, axis: u8, d: f64, expr: String) -> Constraint {
+pub(crate) fn dist(a: Id, b: Id, axis: u8, d: f64, expr: String) -> Constraint {
     Constraint::Distance { a, b, d, off: 0.0, expr, driven: false, axis, at: None }
 }
 
-fn purpose(construction: bool) -> Purpose {
+pub(crate) fn purpose(construction: bool) -> Purpose {
     if construction {
         Purpose::Construction
     } else {

@@ -29,7 +29,10 @@ pub use qymcad_core::model::Id;
 pub use render::{Rendered, View, RENDER_BACKGROUND, RENDER_MAX_SIDE, RENDER_MIN_SIDE};
 pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
-pub use sketch::{BaseName, ContourInfo, PlaneRef, SketchInfo};
+pub use sketch::{
+    Added, ArcSpec, BaseName, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, DistAxis, EntityInfo, FrameRef,
+    LineSpec, PlaneRef, PointInfo, PolygonSpec, PolylineSpec, SketchDetail, SketchInfo, SketchRef, SlotSpec, Xy,
+};
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, Topology};
 pub use value::Num;
 

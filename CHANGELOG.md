@@ -28,6 +28,13 @@ All notable changes to this project are documented here. The format follows
   atomic, every dimension may be an expression. `Session::open` restores faces like the app. MCP tools of the same
   names. Golden tests with hand-computed volumes, GUI-path tests, protocol tests. FINDINGS F-3B-1..F-3B-7
   (notably: stored edge queries break after reopening, so edges are stored as pick lists).
+- Sketch entities `line`, `polyline`, `arc` (radius + angles or start/end points), `polygon` (regular; radius +
+  angle or a vertex), `slot`, each fully dimensioned from numbers/expressions (`dimensioned: false` leaves them
+  free); tools `sketch_constrain` (coincident, horizontal, vertical, parallel, perpendicular, collinear, equal,
+  tangent, concentric, midpoint, point_on_line, symmetric, fix; distance aligned/x/y, angle, diameter, radius;
+  reference dimensions; refuses over-constraining) and `sketch_remove`; `sketch_info` lists entities, points and
+  constraints. Sketch edits rebuild the features built from the sketch. Golden sketch tests incl. the GUI path,
+  sketch contract tests, protocol test. FINDINGS F-3A-1..F-3A-6.
 
 ### Fixed
 - OpenCASCADE's STEP-writer statistics no longer corrupt the stdio protocol: the server speaks JSON-RPC on a
@@ -38,6 +45,16 @@ All notable changes to this project are documented here. The format follows
   a face axis without a body uses the active part's current body; strict `[x, y, z]` and tolerance parsing;
   `ensure_topology` reports a failed rebuild and undoes it; a failed or retried feature no longer rebuilds old
   bodies; fixed datum axes reused; `shell` requires open faces (QymCAD has no closed shell). FINDINGS F-3B-8..14.
+- `param_set` refuses the names `pi`, `tau`, `e`: QymCAD reads them as constants (F-3A-1).
+- Sketches are solved until they settle (one QymCAD solve can stop short, F-3A-2).
+- A parameter edit that leaves a sketch unsolved is refused and rolled back (was committed silently).
+- Parametric arc ends and polygon rotations are arc-length dimensions from a reference point, so they follow a
+  parameter across 90°/180° (QymCAD dimensions keep their side, F-3A-7) and settle in one GUI solve; this also
+  covers a parametric radius with a literal angle.
+- Removing a sketch entity keeps spline control points (F-3A-8).
+- A distance between two lines adds parallelism; reference radius/diameter on arcs is refused (F-3A-9).
+- Rect and circle add only independent dimensions (a circle centred on a dimensioned vertex was over-constrained).
+- `param_delete` works for an old parameter named `pi`/`tau`/`e`; `sketch_add` refuses an empty list.
 
 ### Security
 - Exports are written via a temporary file and an atomic rename (no write-through of hard links); export and

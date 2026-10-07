@@ -21,6 +21,12 @@ pub fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
 /// `spawn_project_load` -> `finish_project_load` (`settle_params_seen`, faces back into `regen_faces`) -> `apply_param_edit` -> `spawn_regen`
 /// (`mark_changed_params_dirty`). Returns the volume of the final body. See FINDINGS F-001.
 pub fn gui_edit_param(path: &std::path::Path, name: &str, expr: &str) -> f64 {
+    gui_edit_param_body(path, name, expr).0
+}
+
+/// `gui_edit_param`, returning the final body's volume and bounding box (for edits that move or rotate geometry
+/// without changing the volume).
+pub fn gui_edit_param_body(path: &std::path::Path, name: &str, expr: &str) -> (f64, [f64; 6]) {
     let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     project.ensure_document();
     // finish_project_load: faces stored in the bodies go back into `regen_faces` (edges are not restored).
@@ -56,5 +62,5 @@ pub fn gui_edit_param(path: &std::path::Path, name: &str, expr: &str) -> f64 {
     assert!(report.errors.is_empty(), "GUI-path rebuild errors: {:?}", report.errors);
     let consumed = project.consumed_bodies();
     let last = project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).expect("a body");
-    shapes[&last].volume()
+    (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]))
 }

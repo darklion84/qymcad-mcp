@@ -19,7 +19,10 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 |---|---|
 | `session.rs` | `Session` (one `Project` + live `Shape`s + path); `rebuild()`; `atomic()` / `transact()`; result bodies; name/id resolution |
 | `params.rs` | parameters: lowercase names (F-001), evaluation, propagation to sketches and features (F-002), usage lookup |
-| `sketch.rs` | sketches on base/datum planes or faces; fully dimensioned entities; contour/nesting/DOF report |
+| `sketch.rs` | sketches on base/datum planes or faces; rect/circle; pinning; `sketch_edit` (rebuild dependents); settled solve |
+| `sketch/entities.rs` | line, polyline, arc, polygon, slot: QymCAD adders + independent driving dimensions |
+| `sketch/constrain.rs` | `sketch_constrain` (constraints, dimensions, over-constraint refusal), entity/constraint removal |
+| `sketch/detail.rs` | `SketchDetail`: entities, points (frame roles), constraints for the agent |
 | `features.rs` | datum planes; extrude/cut/add/intersect |
 | `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-3C-2) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
@@ -59,6 +62,20 @@ mapped onto `refs::Query`). Edge selections are resolved when the feature is cre
 stored edge queries break after the document is reopened in the app (F-3B-2). Face selections (hole, shell, push
 face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-3B-3).
+New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
+radius, angles — and add each only if it removes a degree of freedom (`add_constraint_if_independent`): a point
+shared with earlier geometry is not dimensioned twice, so the result is (0, 0) without redundancy (rect and circle
+too). Exceptions, because QymCAD's solver/rank analysis needs them (FINDINGS F-3A-2, F-3A-3, F-3A-7): a parametric
+direction (arc end, polygon rotation) is an `ArcLength` from an `angle_reference` construction point on the +x side
+of the centre — QymCAD's only directed dimension, and one without the slow angle arms — and the slot's tangencies
+are first-order perpendiculars. Every sketch edit is solved until it settles and must reach residual ≤ 1e-6;
+`param_set` rolls back an edit that leaves any sketch unsolved. Linear coordinate expressions cannot change sign
+(QymCAD dimensions keep their side); such an edit is refused.
+
+`sketch_constrain` resolves ids to points/lines/circles (plus `origin`, `x_axis`, `y_axis`), builds the QymCAD
+constraint, and compares `sketch_dof` before/after: more redundancy → refused (a satisfied, fully implied geometric
+constraint is just not added); then it must solve. A distance between two lines adds `Parallel` with it. `sketch_edit` wraps sketch tools: on success, features that
+read the sketch are rebuilt; a newly failing feature rolls the edit back.
 
 ## MCP layer (`crates/mcp/src`)
 | File | Owns |

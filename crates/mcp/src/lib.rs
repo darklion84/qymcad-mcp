@@ -10,8 +10,9 @@ pub fn instructions(app_note: &str) -> String {
     format!(
         "qymcad-mcp builds native, parametric QymCAD parts (.qcad) headlessly. Units: mm, degrees.\n\
          Workflow: doc_new -> param_set for every dimension the user may change (lowercase names) -> \
-         sketch_create on \"XY\"/\"XZ\"/\"YZ\", a datum plane or a face -> sketch_add rect/circle using expressions \
-         like \"w\" or \"-hx\" -> extrude (op add/cut/intersect; direction relative to the sketch normal: XY +Z, \
+         sketch_create on \"XY\"/\"XZ\"/\"YZ\", a datum plane or a face -> sketch_add rect/circle/line/polyline/arc/\
+         polygon/slot using expressions like \"w\" or \"-hx\" (fully dimensioned; sketch_constrain adds constraints \
+         and dimensions between ids from sketch_info) -> extrude (op add/cut/intersect; direction relative to the sketch normal: XY +Z, \
          XZ -Y, YZ +X) -> doc_info to check bodies (volume, bbox), errors, warnings -> doc_save to a .qcad path.\n\
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
@@ -21,6 +22,9 @@ pub fn instructions(app_note: &str) -> String {
          feature: each feature makes a new body). fillet/chamfer/hole/shell/push_face take selections: ids, or \
          descriptions such as {{\"edges_of\": {{\"facing\": \"+z\"}}}} or {{\"along\": \"z\"}}; preview them with \
          select. revolve turns sketch contours about an axis; linear_array/circular_array/mirror copy the whole body.\n\
+         A sketch coordinate keeps the sign it was created with: choose the origin so that a parametric coordinate \
+         (e.g. \"t-20\") stays on one side of the axis for every value the user may set; an edit that would cross \
+         zero is refused.\n\
          Every feature is atomic: on error nothing changes and the message says why. Objects can be referred to \
          by id or by the name given at creation.\n\
          The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}",
