@@ -4,6 +4,7 @@
 mod common;
 mod doc;
 mod features;
+mod output;
 mod params;
 mod sketch;
 
@@ -87,6 +88,7 @@ impl Registry {
         tools.extend(params::tools());
         tools.extend(sketch::tools());
         tools.extend(features::tools());
+        tools.extend(output::tools());
         Registry { tools, state: State::default() }
     }
 

@@ -180,3 +180,56 @@ Conventions:
   startup check searches the executable for `v<x.y.z>-dev.<8 digits>`.
 - **Evidence:** observed: `plutil -p ~/Applications/QymCAD.app/Contents/Info.plist`; `strings` on
   `Contents/MacOS/qymcad`.
+
+## F-3C-1 OpenCASCADE prints to stdout on every STEP write
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qymcad_kernel::write_step` (`qym_step_write`, `STEPControl_Writer`) prints a coloured block to fd 1:
+  `Statistics on Transfer (Write)`, `Transfer Mode = 0 I.E. As Is`, `Step File Name : <path>(350 ents) Write Done`
+  (ANSI escapes included), on every call, not only the first. On an MCP stdio server this corrupts the JSON-RPC
+  stream (the client reads `\u001b[32;1m` as a response).
+- **Evidence:** observed: piping requests into `qymcad-mcp` before the fix, stdout contained the block before
+  each `export` reply; test: `crates/mcp/tests/protocol.rs` `exports_through_mcp` failed with
+  `bad response "\u{1b}[32;1m\n"`. source: `crates/qymcad-kernel/src/occt_io.cpp` `qym_step_write` (~2510), no
+  messenger configuration anywhere in the kernel (`grep Messenger` finds nothing).
+- **How we handle it:** the server moves fd 1 to stderr at startup and speaks the protocol on a duplicate of the
+  original stdout (ADR 0005).
+
+## F-3C-2 The app exports STEP/GLB/3MF as a component tree; `write_step` and the flat mesh writers do not
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** File > Export in QymCAD.app writes STEP via `write_step_tree` and GLB/3MF via `export_glb_tree` /
+  `export_3mf_tree` with `project.export_tree(root, ..)`: component names, colours, placements, and **one body per
+  part** (`active_body`). STL/OBJ and IGES go out flat. We write every format flat: `write_step(&[(shape,
+  body_world_transform)])`, `export_{stl,3mf,glb,obj}(meshes)` with `mesh.transform(body_world_transform)` — one
+  solid/object per result body (named `body_<n>` in 3MF/GLB), no colours, no tree. Flat keeps every result body
+  of a multi-body part, which the tree would drop. STEP written this way reads back (`read_exact`) as one shape per
+  body with the same volume (within 1e-3 mm³) and `write.step.unit = MM`. Mesh deflection presets are the app's:
+  draft 0.2, standard 0.05, high 0.02, max 0.005 mm; meshes are re-tessellated from the live B-rep with
+  `Shape::tessellate_merged(deflection)`. GLB positions are metres with +Y up: (x, y, z) mm → (x, z, −y)/1000.
+- **Evidence:** source: `crates/qymcad/src/gui/io_jobs.rs` `write_exact_to` (~888-934), `write_mesh_to` (~727-800),
+  `mesh_job` / `tree_to_write` (~681, ~876); `crates/qymcad-core/src/model/assembly.rs` `export_node` (~344);
+  `crates/qymcad/src/gui/panels_windows.rs` `mesh_quality_dialog` (~1721-1727); `crates/qymcad-io/src/gltf.rs`
+  (~24). test: `crates/engine/tests/golden_export.rs` (`step_reads_back_with_the_same_volume`,
+  `glb_is_in_metres_with_y_up`, `threemf_is_in_millimetres`).
+
+## F-3C-3 Mesh quality presets do not change small holes: the kernel's angular deflection (0.3 rad) decides
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `qym_shape_tessellate` meshes with `BRepMesh_IncrementalMesh(shape, defl, false, 0.3, true)`. On the
+  golden plate (Ø4.5 holes) draft, standard and high give the identical mesh (716 triangles, volume error
+  1.42 mm³ = 0.011 %); only max (0.005 mm) refines it (1116 triangles, 0.56 mm³). The linear deflection matters only
+  for larger radii. For printing this is harmless; do not expect `quality` to change a small part's file.
+- **Evidence:** observed with `finer_quality_never_loses_accuracy` instrumented (counts and errors above);
+  test: `crates/engine/tests/golden_export.rs` `finer_quality_never_loses_accuracy`; source:
+  `crates/qymcad-kernel/src/occt_bridge.cpp` `doc_from_shape` (~143-152).
+
+## F-3C-4 The app's isometric view is `Cam3::default()`: yaw −0.7, pitch 0.6
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** the default 3D camera (and the component thumbnails) look from yaw −0.7 rad, pitch 0.6 rad; `Cam3::basis`
+  builds the forward vector `(−cos p·cos y, −cos p·sin y, −sin p)` with Z up. `render` copies this so that its iso view
+  matches what the user sees on opening the file. If the app changes its default view, update `View::Iso` in
+  `crates/engine/src/render.rs`.
+- **Evidence:** source: `crates/qymcad-ui-state/src/lib.rs` `Cam3::default` (~2384) and `Cam3::basis` (~2389); test:
+  `crates/engine/src/render.rs` `view_bases_are_orthonormal` (iso camera at +X −Y +Z).

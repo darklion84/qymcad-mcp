@@ -21,7 +21,8 @@ serde_json = "1"
 schemars = "1"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# deny, not forbid: exactly one audited `#[allow(unsafe_code)]` exists (crates/mcp/src/main.rs, ADR 0005).
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

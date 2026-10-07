@@ -13,6 +13,13 @@ qymcad-kernel.workspace = true
 qymcad-testkit.workspace = true
 serde.workspace = true
 schemars.workspace = true
+# PNG compression for `render` (ADR 0004). Already in the build through qymcad-io (zip, usvg): no new crate.
+flate2 = "1.1"
+
+[dev-dependencies]
+# An independent PNG decoder to check the encoder and rendered images (tests only, ADR 0004).
+png = "0.18"
+serde_json.workspace = true
 
 [lints]
 workspace = true
