@@ -11,9 +11,11 @@ talks only to the MCP client that spawned it. It opens no network ports.
   working directory. `render` writes no file: the image is returned inline.
 - **Symlinks.** The target file and QymCAD's save companions (`.tmp~`, `.bak`) must not be symbolic links; a
   write through a planted link would land in an arbitrary file.
-- **Hard links and late swaps.** Exports are written to a fresh temporary file in the target directory and
-  renamed over the target, so a hard link (or a symlink swapped in after the check) never makes us truncate an
-  unrelated file; `.qcad` saves use QymCAD's own temp-and-rename.
+- **Hard links and late swaps.** Exports are written inside a private staging directory created fresh next to
+  the target (mode 0700, `mkdtemp`-style: an existing entry of that name, a planted symlink included, is skipped,
+  never followed), then the file is renamed over the target. A hard link, or a symlink swapped in after the
+  check, never makes us truncate an unrelated file, and no other user can swap the temporary file while
+  QymCAD's writers reopen it by name. `.qcad` saves use QymCAD's own temp-and-rename.
 - **Optional confinement.** Set `QYMCAD_MCP_ROOT=/some/dir` in the server's environment to refuse any path
   outside that directory (symlinks are resolved before the check).
 - **Overwriting a full document with an empty one** is refused by QymCAD's guarded save.
@@ -25,5 +27,9 @@ talks only to the MCP client that spawned it. It opens no network ports.
 - Malicious `.qcad` files: they are parsed by QymCAD's own loader (serde/RON, OCCT B-rep). Open only files
   you trust, as with the QymCAD app itself.
 - Resource exhaustion by huge models: the server is single-user and local.
+- Another process running as the same user, or anyone who can rename directories inside the target's parent
+  while an export runs: such a process already has the user's write access to those files, and paths are
+  resolved by name (the standard library has no `openat`/`renameat`). `QYMCAD_MCP_ROOT` confines what the
+  agent asks for; it is not a sandbox against concurrent local processes.
 
 Report security issues privately via GitHub security advisories of this repository.

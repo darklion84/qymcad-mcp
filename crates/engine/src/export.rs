@@ -152,34 +152,22 @@ impl Session {
         }
         let final_path = path.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", path.display())))?;
         let ids = self.output_bodies(bodies)?;
-        // Write to a fresh file next to the target, then rename over it. Writing the target directly would
-        // truncate whatever inode it is, so a hard link (or a symlink swapped in after the path check) would make
-        // us overwrite an unrelated file; a rename only replaces the directory entry (docs/SECURITY.md).
-        let tmp = path.with_file_name(format!(
-            ".{}.qymcad-mcp-{}.tmp.{ext}",
-            path.file_stem().and_then(|n| n.to_str()).unwrap_or("export"),
-            std::process::id()
-        ));
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)
-            .map_err(|e| Error::Io(format!("cannot create a temporary file next to {final_path}: {e}")))?;
-        let result = self.export_to(format, &tmp, quality, &ids, final_path);
-        match result {
-            Ok(mut report) => {
-                std::fs::rename(&tmp, path).map_err(|e| {
-                    let _ = std::fs::remove_file(&tmp);
-                    Error::Io(format!("cannot move the export into place at {final_path}: {e}"))
-                })?;
-                report.bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-                Ok(report)
-            }
-            Err(e) => {
-                let _ = std::fs::remove_file(&tmp);
-                Err(e)
-            }
-        }
+        // Write inside a private directory created fresh next to the target (mode 0700; `create_dir` never follows
+        // or reuses an existing entry, a planted symlink included: that name is skipped), then rename the file over the target. QymCAD's writers open
+        // their path by name, so the file must live where no other user can swap it; writing the target directly
+        // would truncate whatever inode it is (a hard link, a late symlink). A rename only replaces the directory
+        // entry (docs/SECURITY.md).
+        let stage = private_dir_next_to(path)
+            .map_err(|e| Error::Io(format!("cannot create a private staging directory next to {final_path}: {e}")))?;
+        let tmp = stage.join(format!("export.{ext}"));
+        let result = self.export_to(format, &tmp, quality, &ids, final_path).and_then(|mut report| {
+            std::fs::rename(&tmp, path).map_err(|e| Error::Io(format!("cannot move the export into place at {final_path}: {e}")))?;
+            report.bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            Ok(report)
+        });
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir(&stage);
+        result
     }
 
     /// The actual write, into `tmp` (a fresh file); the report names `final_path`.
@@ -220,5 +208,57 @@ impl Session {
             qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
         }
         Ok(report)
+    }
+}
+
+static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Create a fresh directory `.{stem}.qymcad-mcp-{pid}-{n}.d` (mode 0700) next to `path`, like `mkdtemp`: a name that
+/// already exists, whatever it is, is skipped rather than used.
+fn private_dir_next_to(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    let stem = path.file_stem().and_then(|n| n.to_str()).unwrap_or("export");
+    let mut last = None;
+    for _ in 0..64 {
+        let dir = path.with_file_name(format!(
+            ".{stem}.qymcad-mcp-{}-{}.d",
+            std::process::id(),
+            STAGE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        match std::fs::DirBuilder::new().mode(0o700).create(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("no free name")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// Entries planted at the next staging names (symlinks to another directory) are skipped, never followed or
+    /// reused; the directory made is private (review round 2, Codex).
+    #[test]
+    fn staging_skips_planted_entries() {
+        let base = std::env::temp_dir().join(format!("qymcad-mcp-stage-{}", std::process::id()));
+        let elsewhere = base.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let target = base.join("part.stl");
+        let n = STAGE_SEQ.load(Ordering::Relaxed);
+        let name = |k: u64| base.join(format!(".part.qymcad-mcp-{}-{k}.d", std::process::id()));
+        for k in n..n + 3 {
+            std::os::unix::fs::symlink(&elsewhere, name(k)).unwrap();
+        }
+        let dir = private_dir_next_to(&target).unwrap();
+        assert_eq!(dir, name(n + 3), "the three planted names are skipped");
+        let meta = std::fs::symlink_metadata(&dir).unwrap();
+        assert!(meta.is_dir() && !meta.file_type().is_symlink());
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(meta.permissions().mode() & 0o777, 0o700, "private");
+        assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0, "nothing created through a link");
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

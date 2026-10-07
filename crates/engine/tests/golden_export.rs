@@ -151,8 +151,9 @@ fn finer_quality_never_loses_accuracy() {
     }
     let (max_tris, max_err) = last.unwrap();
     assert!(max_tris > first.unwrap(), "max quality refines the holes: {max_tris} vs draft {first:?}");
-    // Derived bound: the only curved faces are the four Ø4.5 × 6 holes. A chord with sagitta ≤ d cuts off a segment of
-    // area ≤ (2/3)·chord·d, so an inscribed polygon misses at most (2/3)·perimeter·d of each hole's section.
+    // Derived bound: the only curved faces are the four Ø4.5 × 6 holes. An inscribed chord with sagitta s ≤ d cuts off
+    // a circular segment of area ≤ (2/3)·(its arc length)·s (the ratio is 2/3 for small arcs and falls to 1/2 for a
+    // half circle), so the polygon misses at most (2/3)·perimeter·d of each hole's section.
     let bound = 4.0 * (2.0 / 3.0) * (2.0 * PI * 2.25) * Quality::Max.deflection() * 6.0;
     assert!(max_err <= bound, "max quality volume error {max_err} mm³ exceeds the chord bound {bound}");
 }
@@ -338,6 +339,8 @@ fn render_side_and_iso_views() {
     // from the front: plate x −30..30 and block x 45..55, 85 mm wide in all, limited by the width
     let cw = (x1 - x0 + 1) as f64;
     assert_close(cw, 0.86 * 512.0, 2.0, "front width in pixels");
+    // and the height: 6 mm at the same scale, 0.86·512·6/85 ≈ 31.1 px (±1.5 px of raster edges)
+    assert_close((y1 - y0 + 1) as f64, 0.86 * 512.0 * 6.0 / 85.0, 1.5, "front height in pixels");
     // the empty columns between them are x 30..45: they place the block to a fraction of a millimetre
     let mm = |x: usize| -30.0 + (x - x0) as f64 / cw * 85.0;
     let empty: Vec<usize> = (x0..=x1).filter(|&x| (y0..=y1).all(|y| img.is_bg(x, y))).collect();
@@ -386,9 +389,30 @@ fn export_does_not_write_through_a_hard_link() {
     let leftovers: Vec<_> = std::fs::read_dir(target.parent().unwrap())
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+        .filter(|e| e.file_name().to_string_lossy().contains(".qymcad-mcp-"))
         .collect();
-    assert!(leftovers.is_empty(), "no temporary files left behind");
+    assert!(leftovers.is_empty(), "no staging directory left behind");
+}
+
+/// Review round 2 (Codex): a part placed in its parent (turned 90° about Z, moved +100 in x) renders and exports in
+/// world space. Plate [−30, −20, 0, 30, 20, 6] → x' = 100 − y, y' = x → [80, −30, 0, 120, 30, 6].
+#[test]
+fn a_placed_part_renders_and_exports_in_world_space() {
+    let (mut s, _, _) = build(false);
+    let path = scratch("placed.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let parts: Vec<usize> = project.components.iter().enumerate().filter(|(_, c)| c.parent.is_some()).map(|(i, _)| i).collect();
+    assert_eq!(parts.len(), 1, "one part under the root");
+    project.components[parts[0]].transform = [0.0, -1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (o, r) = Session::open(&path).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let want = [80.0, -30.0, 0.0, 120.0, 30.0, 6.0];
+    assert_bbox(o.render(View::Top, 256, 256, None).unwrap().bbox, want, 0.05, "render bbox of the placed part");
+    let stl = scratch("placed.stl");
+    o.export(ExportFormat::Stl, &stl, Quality::Standard, None).unwrap();
+    assert_bbox(tri_bbox(&read_stl(&stl)), want, 1e-3, "STL of the placed part");
 }
 
 /// Review finding (Codex, phase 3C): a document whose feature failed (e.g. opened from a file) shows the failed
