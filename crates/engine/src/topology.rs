@@ -337,7 +337,7 @@ fn flatten_union<'a>(v: &'a [Sel], out: &mut Vec<&'a Sel>) {
 fn balanced(mut qs: Vec<Query>) -> Result<Query> {
     match qs.len() {
         0 => Err(Error::Invalid("`union` needs at least one selection".into())),
-        1 => Ok(qs.pop().expect("one")),
+        1 => qs.pop().ok_or_else(|| Error::Invalid("`union` needs at least one selection".into())),
         n => {
             let right = qs.split_off(n / 2);
             Ok(Query::Union(Box::new(balanced(qs)?), Box::new(balanced(right)?)))
@@ -551,7 +551,7 @@ impl Session {
     /// (F-3B-1). Edges come back from the B-reps (`restore_edges`, no rebuild, so stored edge queries keep their
     /// meaning, F-3B-2); missing faces need one full rebuild.
     pub(crate) fn ensure_topology(&mut self) -> Result<()> {
-        self.restore_edges();
+        self.restore_edges()?;
         let consumed = self.p.consumed_bodies();
         let missing = self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).any(|b| {
             !consumed.contains(&b)

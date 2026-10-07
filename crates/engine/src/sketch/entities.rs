@@ -454,7 +454,7 @@ impl Session {
         // The turn the value lies in: the dimension measures 0..360 from the reference.
         let turn = (deg / 360.0).floor() * 360.0;
         let txt = |n: &Num, v: f64| n.expr().unwrap_or_else(|| format!("{v}"));
-        let ae = if turn == 0.0 { txt(a, deg) } else { format!("({})-{turn}", txt(a, deg)) };
+        let ae = if turn == 0.0 { txt(a, deg) } else { format!("({})-({turn})", txt(a, deg)) };
         let len = vr * (deg - turn).to_radians();
         Constraint::ArcLength {
             c: center,

@@ -884,7 +884,7 @@ fn face_axis_default_body_is_the_current_body_of_the_active_part() {
     assert_close(v, PI * (400.0 - 100.0) * 30.0, 0.5, "tube about the hub's axis");
 }
 
-/// Review #20: a rolled-back feature leaves every existing body bit-identical. The failed edit makes the rebuild
+/// Review #20: a rolled-back feature leaves every existing body B-rep byte-identical. The failed edit makes the rebuild
 /// retry with everything dirty (F-005); after a parameter edit a full rebuild does not reproduce the bodies
 /// exactly (F-017: the pocket comes out 0.001 mm different), so keeping the retried shapes would move old
 /// geometry although "nothing changed".
@@ -901,8 +901,14 @@ fn a_rolled_back_feature_leaves_old_bodies_bit_identical() {
     s.extrude(&Extrude { direction: Direction::Reverse, ..extrude(pocket, 3.0.into(), Op::Cut) }).unwrap();
     s.param_set("t", &Num::Value(10.0)).unwrap();
     let before: Vec<(Id, u64)> = s.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
+    let breps = |s: &Session| {
+        let _gate = qymcad_kernel::kernel_gate();
+        s.result_bodies().iter().map(|b| (b.id, s.shape(b.id).unwrap().to_brep_bytes().unwrap())).collect::<Vec<_>>()
+    };
+    let before_breps = breps(&s);
     let e = s.fillet(None, &along_z(), &100.0.into(), None).unwrap_err();
     assert!(matches!(e, Error::Rebuild(_)), "{e}");
+    assert!(breps(&s) == before_breps, "old body B-rep bytes changed after rollback");
     let after: Vec<(Id, u64)> = s.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
     let show = |v: &[(Id, u64)]| v.iter().map(|(i, b)| format!("{i}: {}", f64::from_bits(*b))).collect::<Vec<_>>();
     assert_eq!(after, before, "volumes after rollback {:?} vs before {:?}", show(&after), show(&before));
@@ -932,10 +938,12 @@ fn a_failing_topology_rebuild_is_reported_and_changes_nothing() {
     let filleted = 8000.0 - (4.0 - PI) * 4.0 * 20.0;
     let before: Vec<(Id, u64)> = o.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
     assert_close(f64::from_bits(before[0].1), filleted, 1e-3, "opened as saved");
+    let before_timeline = o.info().timeline;
     let e = o.topology(None, false).unwrap_err();
     assert!(matches!(e, Error::Rebuild(_)), "{e}");
     let after: Vec<(Id, u64)> = o.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
     assert_eq!(after, before, "the session is as opened");
+    assert_eq!(o.info().timeline, before_timeline, "timeline ids and kinds remain as opened");
 }
 
 /// Review #22: revolve with op intersect. A 40 × 40 × 20 block ∩ a cylinder r 10, 0 ≤ z ≤ 30 (rectangle
@@ -964,4 +972,37 @@ fn identical_fixed_axes_share_one_datum() {
     assert_eq!(datums(&s), 2, "a different line gets its own datum");
     s.circular_array(None, &2.0.into(), &360.0.into(), Some(&AxisRef::Through { origin: [0.0; 3], dir: [-1.0, 0.0, 0.0] }), None).unwrap();
     assert_eq!(datums(&s), 3, "the opposite sense turns the other way: its own datum");
+}
+
+/// C6: edit validation matches creation; a negative/fractional count is not rounded into a different array.
+#[test]
+fn edited_array_counts_refuse_negative_numbers() {
+    check_invalid_array_count(-5.0);
+}
+
+#[test]
+fn edited_array_counts_refuse_fractional_numbers() {
+    check_invalid_array_count(2.5);
+}
+
+fn check_invalid_array_count(invalid: f64) {
+    for circular in [false, true] {
+        let mut s = Session::new_part();
+        s.param_set("copies", &2.0.into()).unwrap();
+        cylinder(&mut s, 10.0, 0.0, 2.0.into(), 2.0.into(), Op::Add);
+        if circular {
+            s.circular_array(None, &n("copies"), &360.0.into(), None, None).unwrap();
+        } else {
+            let d = ArrayDir { dx: 3.0.into(), dy: 0.0.into(), dz: 0.0.into(), count: n("copies") };
+            s.linear_array(None, &d, None, None).unwrap();
+        }
+        // Two disjoint cylinders, radius 1 and height 2: V = 2 * pi * 1² * 2.
+        assert_close(volume(&s), 4.0 * PI, 1e-6, "two copies");
+        {
+            let before = s.info();
+            let e = s.param_set("copies", &invalid.into()).unwrap_err();
+            assert!(e.to_string().contains("count must be a whole number from 1 to 1000"), "{e}");
+            assert_eq!(s.info(), before, "invalid count edit must roll back");
+        }
+    }
 }

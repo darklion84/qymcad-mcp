@@ -330,6 +330,27 @@ impl Session {
                 break;
             }
         }
+        // Horizontal + PointOnCircle also admit a reference on the -x side. That alternate branch
+        // satisfies ArcLength while rotating every direction by 180°, so reject it through the same
+        // residual/rollback path as a failed solve.
+        let sketch = &self.p.sketches[si];
+        if sketch.constraints.iter().any(|constraint| match *constraint {
+            Constraint::ArcLength { c, a, .. }
+                if !sketch.entities.iter().any(|e| match e.kind {
+                    EntityKind::Line { a: p, b } => p == a || b == a,
+                    EntityKind::Arc { center, a: p, b, .. } => center == a || p == a || b == a,
+                    EntityKind::Circle { center, .. } => center == a,
+                    EntityKind::Ellipse { c, ma, mi } => c == a || ma == a || mi == a,
+                }) =>
+            {
+                let center = sketch.points.iter().find(|p| p.id == c);
+                let reference = sketch.points.iter().find(|p| p.id == a);
+                center.zip(reference).is_some_and(|(c, a)| a.x < c.x)
+            }
+            _ => false,
+        }) {
+            return f64::INFINITY;
+        }
         residual
     }
 
@@ -366,5 +387,51 @@ fn plane_desc(p: &SketchPlane) -> String {
         SketchPlane::World(b) => format!("{b:?}"),
         SketchPlane::Datum(id) => format!("plane {id}"),
         SketchPlane::Face(body, k) => format!("face {} of body {body}", k.id),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_flipped_angle_reference_is_refused_and_rolled_back() {
+        let mut s = Session::new_part();
+        s.param_set("rot", &Num::Value(30.0)).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let added = s
+            .sketch_polygon(
+                sk,
+                &PolygonSpec {
+                    cx: Num::Value(20.0),
+                    cy: Num::Value(30.0),
+                    sides: 3,
+                    r: Some(Num::Value(10.0)),
+                    angle: Some(Num::Expr("rot".into())),
+                    vertex: None,
+                    construction: false,
+                    dimensioned: true,
+                },
+            )
+            .unwrap();
+        let before = s.sketch_detail(sk).unwrap();
+        let reference = before.points.iter().find(|p| p.role == Some("angle_reference")).unwrap().id;
+        let si = s.sketch_si(sk).unwrap();
+        let err = s
+            .transaction(|s| {
+                // A 180° rotation about C preserves radius, equal sides, Horizontal, PointOnCircle and
+                // directed ArcLength when the reference rotates too: this is the alternate satisfied branch.
+                for p in &mut s.p.sketches[si].points {
+                    if added.points[1..].contains(&p.id) || p.id == reference {
+                        p.x = 2.0 * 20.0 - p.x;
+                        p.y = 2.0 * 30.0 - p.y;
+                    }
+                }
+                assert!(s.p.sketch_residuals(si).iter().all(|r| r.abs() < 1e-6));
+                s.finish_sketch_edit(si)
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("does not solve"), "{err}");
+        assert_eq!(s.sketch_detail(sk).unwrap(), before, "the flipped branch must roll back");
     }
 }

@@ -2336,7 +2336,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
 
 ## export
 
-Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count and per-body mesh volume (compare with the B-rep volume from doc_info).
+Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {

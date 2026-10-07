@@ -242,7 +242,7 @@ impl Session {
 
     /// Every array's total copy count, with the current parameter values, within `MAX_ARRAY_COPIES`. Counts can
     /// be expressions (`count`, `count2`, `count3` feature dimensions), so a parameter edit can grow them;
-    /// `param_set` calls this before rebuilding. Counts are rounded and floored at 1 as QymCAD does.
+    /// `param_set` calls this before rebuilding. Each count must be a whole number in the same range as at creation.
     pub(crate) fn check_array_limits(&self) -> Result<()> {
         let vars = self.p.param_map();
         let dim = |node: Id, key: &str, stored: u32| -> Result<u64> {
@@ -250,7 +250,7 @@ impl Session {
                 Some(e) if !e.trim().is_empty() => Num::Expr(e.clone()).eval(&vars)?,
                 _ => f64::from(stored),
             };
-            Ok(v.round().max(1.0) as u64)
+            Ok(u64::from(self.count(&Num::Value(v))?))
         };
         for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
             let total = match n.kind {

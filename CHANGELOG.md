@@ -37,6 +37,21 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-3A-1..F-3A-6.
 
 ### Fixed
+- Array count expressions use the creation-time whole-number range on parameter edits; negative and fractional
+  counts are refused before regeneration and rolled back (C6, F-3B-11).
+- Live edges without usable persistent names refuse topology restoration instead of a full rebuild (C4, F-3B-1).
+- Rollback goldens compare old body B-rep bytes and topology timeline entries (C2/C3, F-3B-12/F-3B-1).
+- Singleton selection unions no longer use a panicking extraction; positive modifier dimensions explicitly
+  require finite values (C5/C7).
+- Formula-derived goldens cover intersect/through/symmetric extrusions and rectangles on previously pinned
+  corners, including server and GUI parameter edits (C8/C11, F-003/F-3A-4).
+- Settled server solves refuse a negative-x direction reference; negative-turn operands are parenthesized
+  explicitly (C9/C10, F-3A-7).
+- Sketch removal protects surviving helpers selectively, retains original self-Midpoints, drops deleted endpoint
+  dimensions, and prunes unused angle references after direction removal (C12/C14/C19, F-3A-8).
+- Implied Parallel satisfaction uses an angle tolerance independent of line length (C13, F-3A-11).
+- Document the coordinate sign-crossing refusal decision, world-space render bbox, current export verification,
+  and document-wide output refusal on any regeneration error (C15–C18).
 - Line-line distances refuse contradictory rank-dependent parallelism and restore the whole sketch (A1).
 - Removing unrelated sketch geometry preserves free direction helpers and their parametric ArcLength dimensions;
   helpers are pruned when their owner is removed (A2, F-3A-8).
@@ -55,7 +70,9 @@ All notable changes to this project are documented here. The format follows
   selections budgeted so documents stay saveable; arrays capped at 1000 copies (also on parameter edits);
   a face axis without a body uses the active part's current body; strict `[x, y, z]` and tolerance parsing;
   `ensure_topology` reports a failed rebuild and undoes it; a failed or retried feature no longer rebuilds old
-  bodies; fixed datum axes reused; `shell` requires open faces (QymCAD has no closed shell). FINDINGS F-3B-8..14.
+  bodies; fixed datum axes reused; `shell` requires open faces (QymCAD has no closed shell); through holes store
+  10000 mm depth and refuse stock whose bbox diagonal exceeds it (later growth can make them blind).
+  FINDINGS F-3B-8..15.
 - `param_set` refuses the names `pi`, `tau`, `e`: QymCAD reads them as constants (F-3A-1).
 - Sketches are solved until they settle (one QymCAD solve can stop short, F-3A-2).
 - A parameter edit that leaves a sketch unsolved is refused and rolled back (was committed silently).

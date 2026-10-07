@@ -81,7 +81,7 @@ pub struct Rendered {
     pub view: View,
     /// The bodies drawn.
     pub bodies: Vec<Id>,
-    /// Union of the drawn bodies' B-rep bounding boxes, `[xmin, ymin, zmin, xmax, ymax, zmax]` mm.
+    /// World-space union of the drawn bodies' B-rep bounding boxes, `[xmin, ymin, zmin, xmax, ymax, zmax]` mm.
     pub bbox: [f64; 6],
 }
 

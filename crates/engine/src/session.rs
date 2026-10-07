@@ -65,7 +65,7 @@ impl Session {
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
-        sess.restore_edges();
+        sess.restore_edges()?;
         sess.p.eval_parameters();
         if missing {
             sess.p.mark_all_dirty();
@@ -256,21 +256,32 @@ impl Session {
     /// Fill `regen_edges` for live bodies that lack them, from their B-reps, through the same `Kernel::edges` the
     /// regenerate post pass uses (F-3B-1). Without it a stored edge query resolves against an empty pool and rounds
     /// every edge (F-3B-2), on the first rebuild after opening.
-    pub(crate) fn restore_edges(&mut self) {
+    pub(crate) fn restore_edges(&mut self) -> Result<()> {
         use qymcad_core::feature::Kernel;
         let need: Vec<Id> = self.shapes.keys().copied().filter(|b| !self.p.regen_edges.contains_key(b)).collect();
         if need.is_empty() {
-            return;
+            return Ok(());
         }
         let _gate = qymcad_kernel::kernel_gate();
         let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut self.shapes)), ..Default::default() };
+        let mut error = None;
         for b in need {
             let edges = kernel.edges(b);
+            if edges.is_empty() && kernel.shapes.borrow().get(&b).is_some_and(|sh| !sh.edges_info().is_empty()) {
+                error = Some(Error::Invalid(format!(
+                    "body {b} has live edges but no usable named edges; refusing a full topology rebuild (F-3B-2)"
+                )));
+                break;
+            }
             if !edges.is_empty() {
                 self.p.regen_edges.insert(b, edges);
             }
         }
         self.shapes = kernel.shapes.into_inner();
+        match error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 
@@ -280,5 +291,32 @@ pub(crate) fn restore_faces(p: &mut Project) {
             let faces = p.bodies[i].faces.clone();
             p.regen_faces.insert(body, faces);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_unnamed_edges_refuse_topology_restoration() {
+        let mut s = Session::new_part();
+        let sh = {
+            let _gate = qymcad_kernel::kernel_gate();
+            let sh = Shape::cylinder(2.0, 3.0).unwrap();
+            let edges = sh.edges_info();
+            assert!(!edges.is_empty(), "the cylinder has live edges");
+            sh.rename_edges(&edges.iter().map(|e| (e.id, 0)).collect::<Vec<_>>());
+            assert!(!sh.edges_info().is_empty());
+            sh
+        };
+        s.shapes.insert(42, sh);
+        let e = s.ensure_topology().unwrap_err();
+        assert!(e.to_string().contains("body 42 has live edges but no usable named edges"), "{e}");
+        assert!(s.p.regen_edges.is_empty());
+        assert!(s.shapes.contains_key(&42), "error preserves original live shape");
+        // A cylinder r=2, h=3 has volume pi*r²*h = 12*pi.
+        let _gate = qymcad_kernel::kernel_gate();
+        assert!((s.shapes[&42].volume() - 12.0 * std::f64::consts::PI).abs() < 1e-8);
     }
 }

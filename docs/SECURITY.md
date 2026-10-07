@@ -18,6 +18,11 @@ talks only to the MCP client that spawned it. It opens no network ports.
   QymCAD's writers reopen it by name. `.qcad` saves use QymCAD's own temp-and-rename.
 - **Optional confinement.** Set `QYMCAD_MCP_ROOT=/some/dir` in the server's environment to refuse any path
   outside that directory (symlinks are resolved before the check).
+- **Regeneration errors anywhere in the document.** Export and render refuse when any timeline node has a
+  regeneration error, even if the caller selects a clean body. This deliberately strict document-wide rule
+  prevents output being mistaken for a successfully built model: failed QymCAD modifiers can pass their source
+  shape through (FINDINGS F-008). Evidence: `golden_export.rs`
+  `export_and_render_refuse_a_document_with_failed_features`.
 - **Overwriting a full document with an empty one** is refused by QymCAD's guarded save.
 - **Expressions that crash the evaluator.** QymCAD's expression parser recurses without a depth cap; an agent
   string of 100 000 `(` overflowed the stack and killed the server. Every expression is checked first: at most

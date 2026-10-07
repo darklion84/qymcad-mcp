@@ -102,7 +102,9 @@ normal result with `isError: true` and the message (the model must see it). Argu
 - `tests/golden_*.rs` (`golden_plate`, `golden_features`: every 3B operation) — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
   rebuild path** (`common::gui_edit_param` reproduces QymCAD.app's open → edit parameter → rebuild sequence).
 - `tests/golden_export.rs` — every export format read back (STEP volume via `read_exact`, STL/3MF mesh volume and
-  bbox, GLB metres/+Y up, OBJ triangle count), quality presets, body selection; renders decoded with the `png`
+  bbox, GLB metres/+Y up, OBJ geometric read-back), `finer_quality_never_loses_accuracy`, body selection;
+  the placed-part test verifies world-space render/export geometry, and staging-directory tests verify safe
+  output creation and hard-link replacement. Renders are decoded with the `png`
   crate (size, coverage, plate aspect 1.5, holes show background).
 - `tests/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
 - `crates/mcp/tests/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and

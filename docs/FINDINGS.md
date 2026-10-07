@@ -47,7 +47,11 @@ Conventions:
   `[-h, 0]` for `Backward`, `[-h/2, h/2]` for `BothWays`; `down` only extends the far side. A pocket sketched on a
   plane at the top face must use `Backward`. `through: true` ignores the height and spans the whole source body.
 - **Evidence:** observed (prototype pocket cut nothing with `down`); source: `regen.rs` (~2951-2999),
-  `crates/qymcad-core/src/feature.rs` (~1472-1481).
+  `crates/qymcad-core/src/feature.rs` (~1472-1481). Formula-derived tests in `golden_extrude.rs`:
+  `intersect_keeps_only_the_overlap_and_follows_height`,
+  `through_cut_spans_both_sides_of_an_interior_plane_and_follows_stock_height`,
+  `symmetric_extrude_uses_half_the_height_on_each_side` check volumes/bboxes on creation, server and GUI edits;
+  deliberate union/finite-cut/forward-reach mutations each fail.
 
 ## F-004 Base-plane normals: XZ points to −Y
 
@@ -255,7 +259,11 @@ Conventions:
   call `Session::ensure_topology`, which does the same and rebuilds everything once only when a current body has
   no faces (a file saved without them). If that rebuild fails, the document and the shapes (kept as B-rep bytes)
   are put back and the errors returned (test `a_failing_topology_rebuild_is_reported_and_changes_nothing`; before,
-  a failed fillet was silently passed through and the body changed).
+  a failed fillet was silently passed through and the body changed). That test also compares timeline ids/kinds.
+  If `Shape::edges_info()` is nonempty but `Kernel::edges` yields no usable named edges, restoration refuses
+  before falling back to a full rebuild (F-3B-2). Evidence: source `qymcad-kernel/src/kernel.rs:386-399` filters
+  zero ids or polylines with fewer than two points; test `session::tests::live_unnamed_edges_refuse_topology_restoration`
+  renames a cylinder's edges to zero, proves refusal and retained shape/volume; bypassing the guard fails it.
 
 ## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
 
@@ -398,7 +406,11 @@ Conventions:
 - **Evidence:** source: `regen.rs` `prep_lineararray` (~2229-2260); observed with a probe 2026-10-05; test:
   `golden_features.rs` `array_copies_are_bounded` (1089 and 1001 copies were built before the bound).
 - **How we handle it:** at most 1000 copies per array in total (`patterns::MAX_ARRAY_COPIES`), checked at creation
-  and in `param_set` before rebuilding (the edit is refused and rolled back). The QymCAD GUI is not limited.
+  and in `param_set` before rebuilding (the edit is refused and rolled back). Each edited count, like creation,
+  must be a whole number in 1..=1000; rounding/flooring invalid expressions is refused. Evidence:
+  `golden_features.rs` `edited_array_counts_refuse_negative_numbers` and `edited_array_counts_refuse_fractional_numbers`
+  cover linear/circular edits to -5 and 2.5, exact document rollback and V=2*pi*1²*2. Restoring the old coercion
+  fails both tests. The QymCAD GUI is not limited and retains its upstream rounding behavior.
 
 ## F-3B-12 A full rebuild does not reproduce parameter-edited bodies bit for bit
 
@@ -408,7 +420,8 @@ Conventions:
   shape with a fresh one; `atomic` then restored the document but kept those shapes. A rolled-back feature moved
   the plate of F-017 from 22559.52 to 22560 mm³.
 - **Evidence:** test: `golden_features.rs` `a_rolled_back_feature_leaves_old_bodies_bit_identical` (failed with
-  exactly those volumes before the fix); `rollback.rs` `a_failed_sketch_edit_restores_old_shapes_bit_identically`
+  exactly those volumes before the fix; now also compares serialized B-rep bytes of the old result bodies,
+  with no digest dependency; forcing a rollback rebuild fails the byte comparison); `rollback.rs` `a_failed_sketch_edit_restores_old_shapes_bit_identically`
   reproduced 22559.519999999993 → 22560 during sketch rollback. Pending engine-level sketch edits can also make
   an atomic feature rebuild old shapes before restoring an older project mesh: test
   `a_failed_feature_uses_a_clean_baseline_for_pending_sketch_edits` (20³ block minus Ø4 through circle: 8000−80π).
@@ -533,7 +546,10 @@ Conventions:
   rotation).
 - **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` (~3043-3105, `radius_center_at` ~3095, 3141-3265);
   test: `golden_sketch.rs` `three_lines_close_a_triangle`, `arc_joins_a_polyline_into_a_tombstone`;
-  `sketch_behaviour.rs` `circles_on_a_vertex_share_or_get_their_centre`.
+  `sketch_behaviour.rs` `circles_on_a_vertex_share_or_get_their_centre`; `golden_shared_rect.rs`
+  `rectangle_on_previously_pinned_corners_follows_its_parameters` and `_gui_parameters` share two earlier pinned
+  corners, verify DOF (0,0), and check V=w*h*t and the bbox after server/GUI width edits. Bypassing independent
+  rectangle size dimensions fails with DOF (0,2).
 - **How we handle it:** every entity, rect and circle included, adds its dimensions only when independent
   (`add_constraint_if_independent`, F-3A-11), so a shared point is not dimensioned twice.
 
@@ -583,11 +599,20 @@ Conventions:
 - **How we handle it:** parametric directions (arc ends, polygon rotation) are `ArcLength` dimensions from a
   construction point on the +x side of the centre (`Horizontal` + `PointOnCircle`, role `angle_reference` in
   `sketch_info`), `len = (r)*(a)*pi/180`, valid while the angle stays in the turn it was created in ([0°, 360°)
-  for 0..359°). Linear coordinates still cannot cross zero: `param_set` refuses such an edit and rolls back
+  for 0..359°). Negative turns explicitly group the subtraction operand, e.g. `(rot)-(-360)`;
+  `golden_negative_direction.rs` tests -30° -> -120° using C+R(cos(theta),sin(theta)) on server and GUI paths.
+  Restoring the old `(rot)--360` expression fails the formatting regression (the pinned parser accepts it today).
+  Horizontal + PointOnCircle also admit a -x reference. No natural flip was observed for r 10 -> 100 -> 5,
+  centre (20,30) -> (200,300) -> (5,300), and rotations 30 -> 120 -> 210 -> 300 -> 30 on both paths
+  (`golden_reference.rs`). Rotating a triangle and its reference by 180° does preserve every raw constraint;
+  `sketch::tests::a_flipped_angle_reference_is_refused_and_rolled_back` proves this alternate branch and full
+  rollback. The engine checks free ArcLength references after each settled solve and refuses a -x reference
+  through the residual/rollback path. This guard is engine-only; the pinned GUI does not gain it.
+  Linear coordinates still cannot cross zero: `param_set` refuses such an edit and rolls back
   (F-3A-2 settled solve + residual check); in the app the sketch would not solve. Decision (2026-10-05): keep the
   refusal, and the server instructions tell the agent to place the origin so parametric coordinates keep their
   sign. Splitting sums into positive terms (works for some expressions only) and far anchors (zoom the GUI view
-  out) were rejected.
+  out) were rejected. See ADR [0006](adr/0006-sign-crossing-coordinates.md).
 
 ## F-3A-8 Deleting an entity drops spline control points and free dimension helpers
 
@@ -600,9 +625,17 @@ Conventions:
   `sketch_behaviour.rs` `removing_an_entity_keeps_splines`, `golden_sketch.rs`
   `unrelated_removal_keeps_parametric_polygon_direction` and `_gui` (rotation 30° → 120° stayed at 30° before
   the fix; x extent √3 r instead of 2r).
-- **How we handle it:** `sketch_remove_entity` protects all existing points with temporary self-Midpoint markers
-  during `delete_entities`, removes the markers, then prunes helpers no longer tied to surviving entities or
-  splines. The polygon regression also verifies helpers disappear when their owner is removed.
+- **How we handle it:** `sketch_remove_entity` protects spline controls and free helpers tied to surviving
+  entity/spline points with temporary self-Midpoint markers. Points owned exclusively by the removed entity
+  are not protected, so their dimensions disappear too. Existing Midpoints/frame points need no markers;
+  cleanup removes only the marker ids inserted by the call. Evidence: `sketch_removal.rs`
+  `removing_a_line_drops_its_endpoint_dimension_to_surviving_geometry` and
+  `removing_an_entity_keeps_a_preexisting_self_midpoint`; targeted over-protection/unscoped-marker mutations fail.
+  The polygon regression also verifies helpers disappear when their owner is removed.
+  Removing the last direction dimension prunes its reference and leftover Horizontal/PointOnCircle supports;
+  removing a support first keeps the point while ArcLength still uses it. Evidence:
+  `removing_the_last_direction_dimension_prunes_its_angle_reference` checks all three deletion orders and the
+  regular hexagon's one newly free rotation (DOF (1,0)); disabling cleanup fails the regression.
 
 ## F-3A-9 Reference radius/diameter dimensions are refreshed from circles only
 
@@ -640,4 +673,9 @@ Conventions:
   and after (more redundancy = refused; a fully implied geometric constraint is checked for satisfaction by its own
   residual before being skipped) and still requires the solve to reach residual ≤ 1e-6. For a line-line distance,
   omit the required Parallel only when it is both rank-dependent and satisfied; otherwise contradictory
-  parallelism refuses the whole constrain call and restores the sketch.
+  parallelism refuses the whole constrain call and restores the sketch. Parallel's raw residual is an
+  unnormalized cross product (mm², source `qymcad-core/src/solver.rs:1024-1030`); the engine compares the absolute
+  cross product of unit directions (sin(theta) < 1e-9). Evidence: `sketch_parallel.rs`
+  `implied_parallelism_uses_angle_tolerance_at_any_line_length` accepts a 5e-10-radian deviation for both
+  1 mm and 1e6 mm lines; restoring the raw residual refuses the long line. The contradictory A1 regression
+  still passes.

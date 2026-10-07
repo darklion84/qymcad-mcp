@@ -72,7 +72,7 @@ pub(crate) const THROUGH_DEPTH: f64 = 10000.0;
 /// Evaluate a dimension; positive values only.
 fn positive(s: &Session, n: &Num, what: &str) -> Result<f64> {
     let v = n.eval(&s.p.param_map())?;
-    if v.is_nan() || v <= 0.0 {
+    if !(v.is_finite() && v > 0.0) {
         return Err(Error::Invalid(format!("{what} must be positive, got {v}")));
     }
     Ok(v)

@@ -158,10 +158,13 @@ impl Session {
         // between them" only when they are parallel, so parallelism is added with it unless already implied.
         if let (ConstraintKind::Distance, [G::Line(a, b), G::Line(c2, d)]) = (spec.kind, gs.as_slice()) {
             let par = Constraint::Parallel { a: *a, b: *b, c: *c2, d: *d };
-            let n = self.p.sketches[si].constraints.len();
             self.p.sketches[si].constraints.push(par);
             let implied = self.p.sketch_dof(si).0 == before.0;
-            let holds = self.p.sketch_residuals(si).get(n).is_some_and(|r| *r < 1e-9);
+            let (pa, pb, pc, pd) = (self.xy_or0(si, *a), self.xy_or0(si, *b), self.xy_or0(si, *c2), self.xy_or0(si, *d));
+            let (ux, uy, vx, vy) = (pb.0 - pa.0, pb.1 - pa.1, pd.0 - pc.0, pd.1 - pc.1);
+            let (lu, lv) = (ux.hypot(uy), vx.hypot(vy));
+            // The raw Parallel residual is a cross product in mm²; compare sin(theta) instead.
+            let holds = lu > 0.0 && lv > 0.0 && ((ux / lu) * (vy / lv) - (uy / lu) * (vx / lv)).abs() < 1e-9;
             if implied && !holds {
                 return Err(Error::Invalid(format!(
                     "a distance between lines needs them parallel, but parallelism is contradicted by the constraints in sketch {sketch}"
@@ -216,14 +219,32 @@ impl Session {
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }
-            // `delete_entities` keeps only points that entities use (and the frame and midpoints), so it would drop
-            // spline controls and free dimension helpers such as angle references (FINDINGS F-3A-8). Protect all
-            // points for the call; `prune_debris` then removes the ones no longer tied to surviving geometry.
-            let marker = |p: Id| Constraint::Midpoint { p, a: p, b: p };
-            let points: Vec<Id> = s.p.sketches[si].points.iter().map(|p| p.id).collect();
-            s.p.sketches[si].constraints.extend(points.iter().map(|&p| marker(p)));
+            // Upstream drops free helpers and spline controls (FINDINGS F-3A-8). Protect only those tied to
+            // surviving geometry: endpoints owned exclusively by the removed entity must lose their dimensions.
+            let sk = &s.p.sketches[si];
+            let owned: HashSet<Id> = sk.entities.iter().flat_map(|e| entity_points(&e.kind)).collect();
+            let mut surviving: HashSet<Id> = sk.entities.iter().filter(|e| e.id != entity).flat_map(|e| entity_points(&e.kind)).collect();
+            let mut protected: HashSet<Id> = sk.splines.iter().flat_map(|sp| sp.points.iter().copied()).collect();
+            surviving.extend(protected.iter().copied());
+            protected.extend(
+                sk.constraints
+                    .iter()
+                    .map(|c| c.points())
+                    .filter(|pts| pts.iter().any(|p| surviving.contains(p)))
+                    .flatten()
+                    .filter(|p| !owned.contains(p)),
+            );
+            let already_protected: HashSet<Id> = sk
+                .system_ids()
+                .into_iter()
+                .chain(sk.constraints.iter().filter_map(|c| if let Constraint::Midpoint { p, .. } = c { Some(*p) } else { None }))
+                .collect();
+            let markers: HashSet<Id> = protected.difference(&already_protected).copied().collect();
+            s.p.sketches[si].constraints.extend(markers.iter().map(|&p| Constraint::Midpoint { p, a: p, b: p }));
             s.p.delete_entities(si, &[entity]);
-            s.p.sketches[si].constraints.retain(|c| !matches!(*c, Constraint::Midpoint { p, a, b } if p == a && a == b));
+            s.p.sketches[si]
+                .constraints
+                .retain(|c| !matches!(*c, Constraint::Midpoint { p, a, b } if p == a && a == b && markers.contains(&p)));
             s.prune_debris(si);
             s.finish_sketch_edit(si)
         })
@@ -240,7 +261,51 @@ impl Session {
             if matches!(c, Constraint::Fixed { p } if sk.system_ids().contains(p)) {
                 return Err(Error::Invalid(format!("constraint {index} anchors the sketch's origin/axes and cannot be removed")));
             }
+            // Free ArcLength starts are engine-created angle references. Support constraints alone do not
+            // give a helper a purpose after its last dimension has gone.
+            let used: HashSet<Id> = sk
+                .entities
+                .iter()
+                .flat_map(|e| entity_points(&e.kind))
+                .chain(sk.splines.iter().flat_map(|sp| sp.points.iter().copied()))
+                .chain(sk.system_ids())
+                .collect();
+            let helpers: HashSet<Id> = sk
+                .constraints
+                .iter()
+                .filter_map(|c| match *c {
+                    Constraint::ArcLength { a, .. } if !used.contains(&a) => Some(a),
+                    // After ArcLength removal the support pair still identifies a retained reference helper.
+                    Constraint::PointOnCircle { p, c }
+                        if !used.contains(&p)
+                            && used.contains(&c)
+                            && sk
+                                .constraints
+                                .iter()
+                                .any(|support| matches!(*support, Constraint::Horizontal { a, b } if a == c && b == p)) =>
+                    {
+                        Some(p)
+                    }
+                    _ => None,
+                })
+                .collect();
             s.p.delete_sketch_constraint(si, index);
+            let sk = &mut s.p.sketches[si];
+            let live: HashSet<Id> = sk
+                .constraints
+                .iter()
+                .filter(|c| {
+                    !matches!(c,
+                        Constraint::Horizontal { a, b } if used.contains(a) && helpers.contains(b)
+                    ) && !matches!(c,
+                        Constraint::PointOnCircle { p, c } if helpers.contains(p) && used.contains(c)
+                    )
+                })
+                .flat_map(|c| c.points())
+                .collect();
+            let unused: HashSet<Id> = helpers.difference(&live).copied().collect();
+            sk.points.retain(|p| !unused.contains(&p.id));
+            sk.constraints.retain(|c| !c.points().iter().any(|p| unused.contains(p)));
             s.finish_sketch_edit(si)
         })
     }
