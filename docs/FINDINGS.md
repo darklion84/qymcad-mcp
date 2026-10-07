@@ -378,3 +378,16 @@ Conventions:
   agent cannot choose the side.
 - **Evidence:** observed with a probe (face areas after a 2/4 chamfer at each corner), 2026-10-05; test:
   `golden_features.rs` `chamfer_vertical_edges` pins the (+x, +y) case.
+
+## F-3B-15 A hole has no through-all; the app's dialog caps the depth at 10000 mm
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `HoleTool` is `{kind, diameter, depth, dia2, depth2}`; there is no extent or through flag, and `prep_hole`
+  reuses the stored depth (or its `depth` expression) on every rebuild. The app's hole command asks for a depth in
+  0.1–10000 mm. A "through" depth computed from the stock at creation becomes a blind hole after the stock grows.
+- **Evidence:** source: `crates/qymcad-core/src/model/regen.rs` `HoleTool` (~205-214), `prep_hole` (~2075);
+  `crates/qymcad-part/src/lib.rs` hole command params (~3448). observed before the fix: 40 × 30 block, h 10 → 100,
+  through Ø6 hole stopped at ≈ 52 mm (volume 118530.01 instead of 117172.57). test: `golden_features.rs`
+  `through_hole_stays_through_when_the_stock_grows` (server and GUI path).
+- **How we handle it:** `depth` omitted = 10000 mm (`modifiers::THROUGH_DEPTH`), the dialog's own maximum: through
+  for anything that fits a printer, and the GUI shows an ordinary hole with that depth.

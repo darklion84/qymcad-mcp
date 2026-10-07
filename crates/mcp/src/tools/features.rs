@@ -134,7 +134,8 @@ pub struct HoleArgs {
     /// Depth from the face, mm (number or expression). Give `depth` or `through`.
     #[serde(default)]
     pub depth: Option<Num>,
-    /// Through all (the depth is fixed when created at more than the body's size).
+    /// Through all: stored as a 10000 mm depth (the app's own maximum; QymCAD holes have no through-all), so it
+    /// stays through when the part grows.
     #[serde(default)]
     pub through: bool,
     /// plain (default), counterbore (dia2 × depth2 at the face), countersink (cone from dia2 at the face down to

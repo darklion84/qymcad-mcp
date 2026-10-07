@@ -1167,7 +1167,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
     },
     "through": {
       "default": false,
-      "description": "Through all (the depth is fixed when created at more than the body's size).",
+      "description": "Through all: stored as a 10000 mm depth (the app's own maximum; QymCAD holes have no through-all), so it\nstays through when the part grows.",
       "type": "boolean"
     }
   },

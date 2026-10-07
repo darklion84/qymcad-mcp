@@ -443,6 +443,26 @@ fn hole_diameter_follows_its_parameter() {
     assert_close(volume(&o), a * b * h - PI * 4.0 * 4.0, 1e-3, "reopened, d=4");
 }
 
+/// Review #6: a through hole stays through when the stock grows far past its size at creation (10 → 100 mm; the
+/// old depth was the creation-time bbox diagonal + 1 ≈ 52 mm), in this server and through the GUI rebuild path.
+#[test]
+fn through_hole_stays_through_when_the_stock_grows() {
+    let (a, b) = (40.0, 30.0);
+    let mut s = Session::new_part();
+    s.param_set("h", &Num::Value(10.0)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &a.into(), &b.into(), false).unwrap();
+    let (blk, _) = s.extrude(&extrude(sk, n("h"), Op::Add)).unwrap();
+    s.hole(&hole(Sel::OfFeature { feature: blk, role: Some(Role::CapEnd) }, None, 6.0.into(), None)).unwrap();
+    assert_close(volume(&s), a * b * 10.0 - PI * 9.0 * 10.0, 1e-3, "through at h=10");
+    s.param_set("h", &Num::Value(100.0)).unwrap();
+    assert_close(volume(&s), a * b * 100.0 - PI * 9.0 * 100.0, 1e-2, "through at h=100");
+    let path = scratch("through_hole_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    let v = gui_edit_param(&path, "h", "150");
+    assert_close(v, a * b * 150.0 - PI * 9.0 * 150.0, 1e-2, "GUI edit h=150");
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Shell, push face
 
