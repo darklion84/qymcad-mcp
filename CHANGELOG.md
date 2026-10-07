@@ -23,6 +23,17 @@ All notable changes to this project are documented here. The format follows
   atomic, every dimension may be an expression. `Session::open` restores faces like the app. MCP tools of the same
   names. Golden tests with hand-computed volumes, GUI-path tests, protocol tests. FINDINGS F-3B-1..F-3B-7
   (notably: stored edge queries break after reopening, so edges are stored as pick lists).
+
+### Fixed
+- Phase 3B review round 1: non-finite dimensions ("nan", "1e400") refused; extrude/revolve `target` must be a
+  current body; edge `largest` ranks by true length; ids validated anywhere in a selection; unions balanced and
+  selections budgeted so documents stay saveable; arrays capped at 1000 copies (also on parameter edits);
+  a face axis without a body uses the active part's current body; strict `[x, y, z]` and tolerance parsing;
+  `ensure_topology` reports a failed rebuild and undoes it; a failed or retried feature no longer rebuilds old
+  bodies; fixed datum axes reused; `shell` requires open faces (QymCAD has no closed shell). FINDINGS F-3B-8..14.
+
 ### Security
+- Expressions are bounded (1000 characters, 64 levels of nesting) before QymCAD's recursive evaluator: a deep
+  expression from an agent crashed the server (F-3B-9).
 - File paths accepted by tools are restricted to their file type (`.qcad`) and optionally confined to
   `QYMCAD_MCP_ROOT` (docs/SECURITY.md).

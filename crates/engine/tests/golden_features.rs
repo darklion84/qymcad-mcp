@@ -584,7 +584,7 @@ fn too_big_fillet_is_rolled_back_with_the_reason() {
     let before = s.info().timeline.len();
     let e = s.fillet(None, &along_z(), &15.0.into(), None).unwrap_err();
     let Error::Rebuild(lines) = &e else { panic!("expected a rebuild error, got {e}") };
-    assert!(!lines.is_empty() && !lines[0].is_empty(), "{e}");
+    assert!(lines.iter().any(|l| l.contains("fillet R15.00 only works edge by edge")), "QymCAD's reason: {e}");
     eprintln!("too-big fillet: {e}");
     assert_eq!(s.info().timeline.len(), before, "nothing added");
     assert_close(volume(&s), 8000.0, 1e-6, "volume unchanged");

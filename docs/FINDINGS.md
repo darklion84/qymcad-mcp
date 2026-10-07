@@ -107,8 +107,10 @@ Conventions:
 - **What:** `MeshFace.id` / `MeshEdge.id` are recipe-based names (`project.names`) that survive regeneration and
   upstream edits; `add_fillet(src, r, ids)` matches them by name, and stale ids are repaired only on an
   unambiguous match (logged in `RegenReport.rebinds`). Descriptive selections (`refs::Ref` + `Query::{Adjacent,
-  TangentChain, Oriented, Extreme, OfFeature, ...}`) via `add_fillet_ref` / `add_chamfer_ref` are the robust
-  form. Topology must be re-read after every regenerate; ids live on the specific body.
+  TangentChain, Oriented, Extreme, OfFeature, ...}`) via `add_fillet_ref` / `add_chamfer_ref` are re-evaluated on
+  every rebuild, **but stored edge queries are not safe in QymCAD.app after reopening (F-3B-2)**: this server
+  stores edges as pick lists and keeps queries only for faces. Topology must be re-read after every regenerate;
+  ids live on the specific body.
 - **Evidence:** source: `crates/qymcad-core/src/names.rs`, `crates/qymcad-core/src/refs.rs` (~69-154),
   `crates/qymcad-testkit/tests/topo_naming_survives_edit.rs`.
 
@@ -219,6 +221,9 @@ Conventions:
     rounded (removed 2 x 412.2 mm³). The test asserts the bug; when it fails, QymCAD fixed it.
   - observed: a block with an `Oriented`-query fillet on the 4 vertical edges, reopened and fully rebuilt, had 26
     faces (all 12 edges rounded) instead of 10.
+  - control: `golden_features.rs` `stored_edge_query_is_safe_to_inspect_and_edit_after_open` — the same stored
+    query reopened in this server (edges restored from the B-reps, `Session::restore_edges`) rounds one rim only,
+    on inspection and after editing the radius.
   - source: `regen.rs` `prep_fillet` (~1317-1380), `live_fillet_edges` (~2614-2632).
 - **How we handle it:** `fillet` and `chamfer` resolve the agent's selection (ids or description) at creation
   and store a pick list of persistent edge names. Those survive upstream edits that keep the faces' recipes
@@ -234,10 +239,13 @@ Conventions:
 ## F-3B-3 An empty edge list means "every edge"
 
 - **Version:** v0.1.0-dev.20261001
-- **What:** fillet/chamfer with an empty edge list round/bevel the whole body. A pick list that lost all its
-  edges is refused (`EdgesNotFound`), but a descriptive query that resolves to nothing is passed on as empty.
+- **What:** fillet/chamfer with an empty edge list round/bevel every SHARP edge of the body (smooth, tangent edges
+  are skipped). A pick list that lost all its edges is refused (`EdgesNotFound`), but a descriptive query that
+  resolves to nothing is passed on as empty.
 - **Evidence:** source: `regen.rs` `prep_fillet` / `prep_chamfer` (`asked_edges` is computed from
-  `picked_descs()`, empty for descriptive queries); consequence observed in F-3B-2.
+  `picked_descs()`, empty for descriptive queries); `crates/qymcad-kernel/src/kernel.rs` fillet (~657-660: an empty
+  list becomes `sharp_edge_ids()`, ~678 `fillet_all`) and chamfer (~800-806 `chamfer_all`); consequence observed
+  in F-3B-2.
 - **How we handle it:** a selection that resolves to no edge is refused at creation (test
   `stale_and_foreign_ids_are_clear_errors`); edges are stored as pick lists (F-3B-2).
 
@@ -280,8 +288,11 @@ Conventions:
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** a cylindrical face's closing line is an edge whose `edge_face_pairs` entry names the same face twice;
-  descriptions such as "along z" include it, but fillet/chamfer ignore it. `MeshFace.normal` of a planar face is
-  outward. A fillet larger than the geometry fails with a node error ("fillet R15.00 only works edge by edge").
+  descriptions such as "along z" include it. Seams are not blendable: the kernel drops smooth edges from a
+  fillet/chamfer and moves a seam off an edge that lies along one before blending, refusing the edge if it cannot
+  (`occt_io.cpp` `bladeable` / `along_a_seam` / `off_seams_first`, ~317-348). `MeshFace.normal` of a planar face
+  is outward. A fillet larger than the geometry fails with a node error ("fillet R15.00 only works edge by edge",
+  pinned in the test).
 - **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
   them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.
 

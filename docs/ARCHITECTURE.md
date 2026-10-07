@@ -21,12 +21,12 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `params.rs` | parameters: lowercase names (F-001), evaluation, propagation to sketches and features (F-002), usage lookup |
 | `sketch.rs` | sketches on base/datum planes or faces; fully dimensioned entities; contour/nesting/DOF report |
 | `features.rs` | datum planes; extrude/cut/add/intersect |
-| `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query`; `select`; `ensure_topology` after open (F-3B-1); `source_body` (only unconsumed bodies, F-009) |
+| `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-3B-8, balanced unions and a size/depth budget F-3B-10); `select`; `ensure_topology` after open (F-3B-1; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
 | `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-3B-2), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
-| `patterns.rs` | linear/circular arrays and mirror of the whole body (F-3B-5); `AxisRef` → datum axes |
+| `patterns.rs` | linear/circular arrays and mirror of the whole body (F-3B-5), at most 1000 copies also on parameter edits (F-3B-11); `AxisRef` → datum axes (identical fixed axes reused) |
 | `info.rs` | `DocInfo` snapshot for the agent |
-| `value.rs` | `Num` (number or expression) |
+| `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-3B-9) |
 | `error.rs` | `Error` with agent-oriented messages |
 
 ## The regenerate pipeline (`Session::rebuild`)
@@ -86,6 +86,6 @@ normal result with `isError: true` and the message (the model must see it). Argu
 | 0 | Repository skeleton, pinned build, docs, ADRs, smoke test | done |
 | 1 | Engine core: session, regenerate pipeline, params, rect/circle sketches, extrude/cut, offset plane | done |
 | 2 | MCP transport + phase-1 tools, protocol tests, registration | done |
-| 3 | Sketch entities & constraints; topology + fillet/chamfer/hole/shell/arrays/mirror/revolve; export + render | — |
+| 3 | Sketch entities & constraints (3A); topology + fillet/chamfer/hole/shell/arrays/mirror/revolve (3B); export + render (3C) | in progress: 3B implemented and in review on `phase3/3b-features`; 3A, 3C on their branches |
 | 4 | Acceptance on real parts (collet test plate, hanging shelf) vs build123d references | — |
 | 5 | Release 0.1.0 | — |
