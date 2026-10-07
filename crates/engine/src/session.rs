@@ -65,7 +65,9 @@ impl Session {
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
-        sess.restore_edges()?;
+        // A body whose edges cannot be restored must not stop the file from opening: the document stays usable,
+        // and `ensure_topology` reports the problem when topology is actually needed.
+        let _ = sess.restore_edges();
         sess.p.eval_parameters();
         if missing {
             sess.p.mark_all_dirty();
