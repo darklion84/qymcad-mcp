@@ -10,3 +10,6 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   re-solves every sketch that has any expression on every parameter edit. Solving only the sketches whose
   expressions mention the changed name (directly or through other parameters) is a performance optimisation for
   large documents; it must keep F-001 (case-insensitive matching) and F-002 in mind. Raised in the phase 3A review.
+- **One helper for "snapshot live shapes, rebuild on copies, restore on failure".** `Session::sketch_edit` and
+  `Session::param_set` carry the same B-rep-copy snapshot logic (F-3B-12); extract it so both change together.
+  Raised by Claude in the round-3 verification.

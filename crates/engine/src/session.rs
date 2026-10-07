@@ -65,9 +65,13 @@ impl Session {
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let mut sess = Session { p: project, shapes, path: Some(path.to_path_buf()) };
-        // A body whose edges cannot be restored must not stop the file from opening: the document stays usable,
-        // and `ensure_topology` reports the problem when topology is actually needed.
-        let _ = sess.restore_edges();
+        // Clean documents remain usable even without named edges, but rebuilding with an empty edge pool
+        // can silently round every edge of a stored query (F-3B-2).
+        if let Err(e) = sess.restore_edges() {
+            if missing || sess.p.timeline.iter().any(|n| n.dirty) {
+                return Err(Error::Invalid(format!("cannot open safely: {e}; the document requires a rebuild")));
+            }
+        }
         sess.p.eval_parameters();
         if missing {
             sess.p.mark_all_dirty();

@@ -10,7 +10,7 @@
 use super::purpose;
 use crate::error::{Error, Result};
 use crate::session::Session;
-use crate::value::Num;
+use crate::value::{check_expr, Num};
 use qymcad_core::feature::Winding;
 use qymcad_core::geom::Point2;
 use qymcad_core::model::{Constraint, EntityKind, Id};
@@ -225,7 +225,7 @@ impl Session {
             let mut dims = Vec::new();
             for (k, &p) in points.iter().enumerate() {
                 let Xy(x, y) = &pl.points[k];
-                dims.extend(self.pin_dims(si, p, x, v[k].0, y, v[k].1));
+                dims.extend(self.pin_dims(si, p, x, v[k].0, y, v[k].1)?);
             }
             self.add_independent(si, dims);
         }
@@ -286,19 +286,19 @@ impl Session {
             _ => return Err(Error::Invalid("the arc was not created".into())),
         };
         if a.dimensioned {
-            let mut dims: Vec<Constraint> = self.pin_dims(si, center, &a.cx, c.0, &a.cy, c.1).into();
+            let mut dims: Vec<Constraint> = self.pin_dims(si, center, &a.cx, c.0, &a.cy, c.1)?.into();
             match form {
                 Form::Angles { r, vr, a0, va0, a1, va1 } => {
                     dims.push(radius_dim(center, vr, r.expr().unwrap_or_default()));
                     let parametric = [r, a0, a1].iter().any(|x| x.expr().is_some());
-                    dims.push(self.direction_dim(si, center, ps, r, vr, a0, va0, parametric));
-                    dims.push(self.direction_dim(si, center, pe, r, vr, a1, va1, parametric));
+                    dims.push(self.direction_dim(si, center, ps, r, vr, a0, va0, parametric)?);
+                    dims.push(self.direction_dim(si, center, pe, r, vr, a1, va1, parametric)?);
                 }
                 Form::Points { s, e } => {
-                    dims.extend(self.pin_dims(si, ps, &s.0, sp.0, &s.1, sp.1));
+                    dims.extend(self.pin_dims(si, ps, &s.0, sp.0, &s.1, sp.1)?);
                     // The end point has one freedom left (along the circle): pin the coordinate that moves
                     // most along it, x where the circle is steep, y where it is flat.
-                    let [dx, dy] = self.pin_dims(si, pe, &e.0, ep.0, &e.1, ep.1);
+                    let [dx, dy] = self.pin_dims(si, pe, &e.0, ep.0, &e.1, ep.1)?;
                     dims.push(if (ep.1 - c.1).abs() >= (ep.0 - c.0).abs() { dx } else { dy });
                 }
             }
@@ -365,10 +365,10 @@ impl Session {
                     *expr = r.expr().unwrap_or_default();
                 }
                 if g.dimensioned {
-                    let mut dims: Vec<Constraint> = self.pin_dims(si, center, &g.cx, c.0, &g.cy, c.1).into();
+                    let mut dims: Vec<Constraint> = self.pin_dims(si, center, &g.cx, c.0, &g.cy, c.1)?.into();
                     let va = ang.eval(&vars)?;
                     let parametric = r.expr().is_some() || ang.expr().is_some();
-                    dims.push(self.direction_dim(si, center, v0, r, vr, ang, va, parametric));
+                    dims.push(self.direction_dim(si, center, v0, r, vr, ang, va, parametric)?);
                     self.add_independent(si, dims);
                 }
             }
@@ -378,8 +378,8 @@ impl Session {
                 let Some(Xy(x, y)) = &g.vertex else {
                     return Err(Error::Invalid("give either `r` (and optionally `angle`) or `vertex`".into()));
                 };
-                let mut dims: Vec<Constraint> = self.pin_dims(si, center, &g.cx, c.0, &g.cy, c.1).into();
-                dims.extend(self.pin_dims(si, v0, x, v.0, y, v.1));
+                let mut dims: Vec<Constraint> = self.pin_dims(si, center, &g.cx, c.0, &g.cy, c.1)?.into();
+                dims.extend(self.pin_dims(si, v0, x, v.0, y, v.1)?);
                 self.add_independent(si, dims);
             }
             None => {}
@@ -416,9 +416,9 @@ impl Session {
         let (p1, p2) = (center_of(self, 3)?, center_of(self, 1)?);
         tangency_as_perpendicular(&mut self.p.sketches[si], cons_before);
         if sl.dimensioned {
-            let mut dims: Vec<Constraint> = self.pin_dims(si, p1, &sl.x1, c1.0, &sl.y1, c1.1).into();
-            dims.extend(self.pin_dims(si, p2, &sl.x2, c2.0, &sl.y2, c2.1));
-            dims.push(radius_dim(p1, w / 2.0, sl.width.expr().map(|e| half(&e)).unwrap_or_default()));
+            let mut dims: Vec<Constraint> = self.pin_dims(si, p1, &sl.x1, c1.0, &sl.y1, c1.1)?.into();
+            dims.extend(self.pin_dims(si, p2, &sl.x2, c2.0, &sl.y2, c2.1)?);
+            dims.push(radius_dim(p1, w / 2.0, sl.width.expr().map(|e| half(&e)).transpose()?.unwrap_or_default()));
             self.add_independent(si, dims);
         }
         self.finish_sketch_edit(si)?;
@@ -436,19 +436,29 @@ impl Session {
     ///   0..360°), so the parameter may sweep the whole turn (FINDINGS F-3A-7), and it has no soft arm-length
     ///   term, so a radius change settles in one solve (F-3A-2).
     #[allow(clippy::too_many_arguments)]
-    fn direction_dim(&mut self, si: usize, center: Id, p: Id, r: &Num, vr: f64, a: &Num, deg: f64, parametric: bool) -> Constraint {
+    fn direction_dim(&mut self, si: usize, center: Id, p: Id, r: &Num, vr: f64, a: &Num, deg: f64, parametric: bool) -> Result<Constraint> {
         let m = fold(deg).abs();
         if a.expr().is_none() {
             if m < 1e-9 || (m - 180.0).abs() < 1e-9 {
-                return Constraint::Horizontal { a: center, b: p };
+                return Ok(Constraint::Horizontal { a: center, b: p });
             }
             if (m - 90.0).abs() < 1e-9 {
-                return Constraint::Vertical { a: center, b: p };
+                return Ok(Constraint::Vertical { a: center, b: p });
             }
         }
         if !parametric {
             let (o, gx) = self.p.ensure_axis(si, 0);
-            return Constraint::AngleLines { a: o, b: gx, c: center, d: p, deg: m, expr: String::new(), driven: false, off: 0.0, at: None };
+            return Ok(Constraint::AngleLines {
+                a: o,
+                b: gx,
+                c: center,
+                d: p,
+                deg: m,
+                expr: String::new(),
+                driven: false,
+                off: 0.0,
+                at: None,
+            });
         }
         let reference = self.angle_reference(si, center, vr);
         // The turn the value lies in: the dimension measures 0..360 from the reference.
@@ -456,16 +466,9 @@ impl Session {
         let txt = |n: &Num, v: f64| n.expr().unwrap_or_else(|| format!("{v}"));
         let ae = if turn == 0.0 { txt(a, deg) } else { format!("({})-({turn})", txt(a, deg)) };
         let len = vr * (deg - turn).to_radians();
-        Constraint::ArcLength {
-            c: center,
-            a: reference,
-            b: p,
-            ccw: true,
-            len,
-            off: 0.0,
-            expr: format!("({})*({ae})*pi/180", txt(r, vr)),
-            driven: false,
-        }
+        let expr = format!("({})*({ae})*pi/180", txt(r, vr));
+        check_expr(&expr)?;
+        Ok(Constraint::ArcLength { c: center, a: reference, b: p, ccw: true, len, off: 0.0, expr, driven: false })
     }
 
     /// A construction point on the circle around `center`, on its +x side (`Horizontal` + `PointOnCircle`):
@@ -510,12 +513,10 @@ fn fold(deg: f64) -> f64 {
 }
 
 /// `e/2`, parenthesised unless `e` is a single name or number.
-fn half(e: &str) -> String {
-    if e.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') {
-        format!("{e}/2")
-    } else {
-        format!("({e})/2")
-    }
+fn half(e: &str) -> Result<String> {
+    let expr = if e.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') { format!("{e}/2") } else { format!("({e})/2") };
+    check_expr(&expr)?;
+    Ok(expr)
 }
 
 /// Rewrite the slot's `Tangent { a, b, c }` constraints (line a-b touches the circle around c) as
@@ -598,7 +599,7 @@ mod tests {
     fn angles_fold_into_the_unsigned_range() {
         assert_eq!(fold(180.0), 180.0);
         assert_eq!(fold(-180.0), 180.0);
-        assert_eq!(half("w"), "w/2");
-        assert_eq!(half("w+2"), "(w+2)/2");
+        assert_eq!(half("w").unwrap(), "w/2");
+        assert_eq!(half("w+2").unwrap(), "(w+2)/2");
     }
 }

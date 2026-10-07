@@ -81,7 +81,8 @@ pub fn tools() -> Vec<Tool> {
         tool_content(
             "render",
             "Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted \
-             to the frame (not to scale between calls). Use it to check shape and feature placement after building.",
+             to the frame (not to scale between calls). Use it to check shape and feature placement after building. Refuses rendering if \
+             any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: RenderArgs| {
                 let s = st.doc()?;
                 let ids = resolve_bodies(s, &a.bodies)?;

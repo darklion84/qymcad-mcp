@@ -49,12 +49,14 @@ impl Num {
 
     /// The expression for a dimension that stores a magnitude (`|Δ|`): when the current value is negative, the
     /// side comes from the geometry and the expression is negated so it evaluates positive.
-    pub(crate) fn magnitude_expr(&self, value: f64) -> String {
-        match self.expr() {
+    pub(crate) fn magnitude_expr(&self, value: f64) -> Result<String> {
+        let expr = match self.expr() {
             None => String::new(),
             Some(e) if value < 0.0 => format!("-({e})"),
             Some(e) => e,
-        }
+        };
+        check_expr(&expr)?;
+        Ok(expr)
     }
 }
 
@@ -80,7 +82,7 @@ const MAX_EXPR_NESTING: usize = 64;
 
 /// Refuse expressions that could overflow QymCAD's recursive parser. Every string the engine hands to QymCAD's
 /// evaluator goes through here: `Num::eval` (all feature and sketch dimensions are evaluated before they are
-/// stored) and `Session::param_set` (parameters).
+/// stored), `Session::param_set` (parameters), and generated dimension formulas before storing them.
 pub(crate) fn check_expr(e: &str) -> Result<()> {
     if e.chars().count() > MAX_EXPR_LEN {
         return Err(Error::Expr(format!("expression longer than {MAX_EXPR_LEN} characters")));

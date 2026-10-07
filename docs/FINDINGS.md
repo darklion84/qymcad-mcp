@@ -264,6 +264,11 @@ Conventions:
   before falling back to a full rebuild (F-3B-2). Evidence: source `qymcad-kernel/src/kernel.rs:386-399` filters
   zero ids or polylines with fewer than two points; test `session::tests::live_unnamed_edges_refuse_topology_restoration`
   renames a cylinder's edges to zero, proves refusal and retained shape/volume; bypassing the guard fails it.
+  Opening with failed edge restoration is refused only if missing shapes or dirty nodes require a rebuild;
+  the error identifies the body and the file stays byte-identical. A clean document still opens, with topology
+  reporting the problem later. Evidence: `open_edges.rs`
+  `open_refuses_unnamed_edges_before_a_dirty_stored_query_rebuild` (box, stored Along(z) query; dirty fillet or
+  missing fillet B-rep) and `open_keeps_a_clean_document_with_unnamed_edges_usable`; bypassing the open guard fails.
 
 ## F-3B-2 A stored edge *query* rounds every edge after the document is reopened
 
@@ -380,7 +385,11 @@ Conventions:
   server died, EOF on stdout, before the gate); source: `crates/qymcad-core/src/expr.rs` (~131-234).
 - **How we handle it:** `value::check_expr` (≤ 1000 characters; ≤ 64 nested parentheses, `^`, consecutive signs)
   runs in `Num::eval`, through which every feature and sketch dimension passes before it is stored, and in
-  `param_set`. Files are not checked on open (docs/SECURITY.md: open trusted files only).
+  `param_set`. Generated formulas also pass `check_expr` before storage: negative-coordinate magnitude,
+  slot half-width, and directed ArcLength with turn subtraction. Valid input can exceed the budget after
+  composition; `expression_limits.rs` covers length and depth at each site, with unchanged sketches on refusal.
+  Removing the generated checks fails all six regressions. Files are not checked on open
+  (docs/SECURITY.md: open trusted files only).
 
 ## F-3B-10 A deep query ladder makes the document unsaveable
 
@@ -426,15 +435,23 @@ Conventions:
   an atomic feature rebuild old shapes before restoring an older project mesh: test
   `a_failed_feature_uses_a_clean_baseline_for_pending_sketch_edits` (20³ block minus Ø4 through circle: 8000−80π).
   `a_feature_refuses_a_failing_dirty_baseline_before_editing` checks refusal before adding a datum.
+  `an_unsolved_parameter_edit_restores_project_and_breps_exactly` and
+  `a_failed_parameter_rebuild_restores_project_and_breps_exactly` compare exact project serialization and every
+  live body B-rep on the pocket fixture after t 6 → 10. Restoring rollback propagation/regeneration fails both
+  byte checks; the unsolved path also preserves a pending dirty sketch.
   Source: `crates/qymcad-core/src/model/regen.rs:699-734`, `regen_plan` conservatively includes every node that
   may rebuild, following dirty inputs through the timeline.
 - **How we handle it:** `atomic` first rebuilds pending dirty nodes and refuses the new edit if that baseline
-  has errors; only then is the project snapshotted. Its retry marks only newly created nodes dirty. `sketch_edit`
+  has errors; only then is the project snapshotted. Feature calls remain refused while the dirty baseline cannot
+  rebuild. Parameter and sketch edits bypass `atomic`, so they can repair that baseline. Its retry marks only
+  newly created nodes dirty. `sketch_edit`
   marks the sketch dirty in a project copy to plan affected bodies, including already dirty nodes, before the
   edit. It retains those original live shape handles and rebuilds on independent B-rep copies; its retry is
   limited to the planned nodes. Failure restores the project and the original shapes without another rebuild,
-  preserving exact volume bits. Untouched shapes remain live. `open`, `param_set`, and `ensure_topology` keep
-  the full retry.
+  preserving exact volume bits. `param_set` restores the original project directly if a sketch fails to solve,
+  since propagation has not rebuilt shapes. Otherwise it snapshots the planned bodies before regeneration,
+  rebuilds on independent B-rep copies, retries only planned nodes, and restores the project and original handles
+  on failure. Untouched shapes remain live. `open` and `ensure_topology` keep the full retry.
 
 ## F-3B-13 There is no closed (hollow, unopened) shell
 

@@ -89,3 +89,61 @@ fn a_failed_sketch_edit_restores_old_shapes_bit_identically() {
     assert!(s.rebuild().errors.is_empty());
     assert_eq!(volume_bits(&s), before, "a later rebuild changes nothing");
 }
+
+fn edited_pocket() -> Session {
+    let mut s = Session::new_part();
+    s.param_set("t", &6.0.into()).unwrap();
+    s.param_set("x", &20.0.into()).unwrap();
+    let plate = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(plate, &0.0.into(), &0.0.into(), &60.0.into(), &40.0.into(), false).unwrap();
+    s.extrude(&extrude(plate, Num::Expr("t".into()), Op::Add)).unwrap();
+    let (top, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &Num::Expr("t".into()), None).unwrap();
+    let pocket = s.sketch_create(&PlaneRef::Plane(top), None).unwrap();
+    s.sketch_rect(pocket, &0.0.into(), &0.0.into(), &30.0.into(), &16.0.into(), false).unwrap();
+    s.extrude(&Extrude { direction: Direction::Reverse, ..extrude(pocket, 3.0.into(), Op::Cut) }).unwrap();
+    let helper = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("signed coordinate")).unwrap();
+    s.sketch_rect(helper, &Num::Expr("x".into()), &0.0.into(), &4.0.into(), &4.0.into(), true).unwrap();
+    s.param_set("t", &10.0.into()).unwrap();
+    // V = stock width*length*height - pocket width*length*depth; allow F-017's 0.001 mm depth nudge.
+    assert_close(s.result_bodies()[0].volume, 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1.0, "parameter-edited pocket");
+    s
+}
+
+fn brep_bytes(s: &Session) -> Vec<(Id, Vec<u8>)> {
+    let _gate = qymcad_kernel::kernel_gate();
+    s.project()
+        .timeline
+        .iter()
+        .flat_map(|n| n.kind.bodies())
+        .filter_map(|id| s.shape(id).map(|sh| (id, sh.to_brep_bytes().unwrap())))
+        .collect()
+}
+
+fn rejected_parameter_preserves_state(s: &mut Session, name: &str, value: f64, rebuild_error: bool) {
+    let before = serde_json::to_vec(s.project()).unwrap();
+    let shapes = brep_bytes(s);
+    let error = s.param_set(name, &value.into()).unwrap_err();
+    assert_eq!(matches!(error, Error::Rebuild(_)), rebuild_error, "{error}");
+    assert!(brep_bytes(s) == shapes, "parameter rollback changed committed B-rep bytes ({name})");
+    assert!(serde_json::to_vec(s.project()).unwrap() == before, "parameter rollback changed the project ({name})");
+}
+
+#[test]
+fn an_unsolved_parameter_edit_restores_project_and_breps_exactly() {
+    let mut s = edited_pocket();
+    // Keep an unrelated pending dirty sketch to prove restoring the snapshot also restores dirty flags.
+    let pending = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("pending sketch")).unwrap();
+    s.sketch_circle(pending, &0.0.into(), &0.0.into(), &2.0.into(), true).unwrap();
+    assert!(s.project().timeline.iter().any(|n| n.dirty));
+    rejected_parameter_preserves_state(&mut s, "x", -20.0, false);
+}
+
+#[test]
+fn a_failed_parameter_rebuild_restores_project_and_breps_exactly() {
+    let mut s = edited_pocket();
+    // A negative extrusion height is rejected by regeneration, after propagation has succeeded.
+    rejected_parameter_preserves_state(&mut s, "t", -1.0, true);
+    let before = brep_bytes(&s);
+    assert!(s.rebuild().errors.is_empty());
+    assert!(brep_bytes(&s) == before, "a later clean rebuild must change nothing");
+}

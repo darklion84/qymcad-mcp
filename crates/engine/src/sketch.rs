@@ -97,12 +97,12 @@ impl Session {
         let [bl, br, tr, tl] = self.rect_corners(si, &lines)?;
         // Corners may be shared with earlier geometry (QymCAD merges points within 1e-6): only independent
         // dimensions are added, as for every other entity.
-        self.add_independent(si, [dist(br, bl, 1, vw, w.magnitude_expr(vw)), dist(tl, bl, 2, vh, h.magnitude_expr(vh))]);
+        self.add_independent(si, [dist(br, bl, 1, vw, w.magnitude_expr(vw)?), dist(tl, bl, 2, vh, h.magnitude_expr(vh)?)]);
         let c = self.p.alloc_id();
         let s = &mut self.p.sketches[si];
         s.points.push(SketchPoint { id: c, x: vx, y: vy });
         s.constraints.push(Constraint::Midpoint { p: c, a: bl, b: tr });
-        self.pin_point(si, c, cx, vx, cy, vy);
+        self.pin_point(si, c, cx, vx, cy, vy)?;
         self.finish_sketch_edit(si)?;
         Ok(lines)
     }
@@ -130,10 +130,10 @@ impl Session {
             .ok_or_else(|| Error::Invalid("circle was not created".into()))?;
         let idx = self.p.ensure_diameter(si, center, true).ok_or_else(|| Error::Invalid("cannot dimension the circle".into()))?;
         if let Constraint::Diameter { expr, d: dd, .. } = &mut self.p.sketches[si].constraints[idx] {
-            *expr = d.magnitude_expr(vd);
+            *expr = d.magnitude_expr(vd)?;
             *dd = vd;
         }
-        self.pin_point(si, center, cx, vx, cy, vy);
+        self.pin_point(si, center, cx, vx, cy, vy)?;
         self.finish_sketch_edit(si)?;
         Ok(eid)
     }
@@ -222,13 +222,14 @@ impl Session {
     /// the initial geometry and the expression is negated when its value is negative (see `Num::magnitude_expr`).
     /// Only the independent dimensions are added: the point may be shared with earlier, already dimensioned
     /// geometry (a circle centred on a polyline vertex takes that vertex as its centre, FINDINGS F-3A-4).
-    fn pin_point(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) {
-        let dims = self.pin_dims(si, p, x, vx, y, vy);
+    fn pin_point(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) -> Result<()> {
+        let dims = self.pin_dims(si, p, x, vx, y, vy)?;
         self.add_independent(si, dims);
+        Ok(())
     }
 
     /// The two dimensions of `pin_point` ([x, y]), not yet added.
-    pub(crate) fn pin_dims(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) -> [Constraint; 2] {
+    pub(crate) fn pin_dims(&mut self, si: usize, p: Id, x: &Num, vx: f64, y: &Num, vy: f64) -> Result<[Constraint; 2]> {
         let origin = self.p.ensure_origin(si);
         let x_on_axis = x.expr().is_none() && vx == 0.0;
         let y_on_axis = y.expr().is_none() && vy == 0.0;
@@ -236,13 +237,13 @@ impl Session {
         let xaxis = if y_on_axis { Some(self.p.ensure_axis(si, 0)) } else { None };
         let cx = match yaxis {
             Some((a, b)) => Constraint::PointOnLine { p, a, b },
-            None => dist(p, origin, 1, vx.abs(), x.magnitude_expr(vx)),
+            None => dist(p, origin, 1, vx.abs(), x.magnitude_expr(vx)?),
         };
         let cy = match xaxis {
             Some((a, b)) => Constraint::PointOnLine { p, a, b },
-            None => dist(p, origin, 2, vy.abs(), y.magnitude_expr(vy)),
+            None => dist(p, origin, 2, vy.abs(), y.magnitude_expr(vy)?),
         };
-        [cx, cy]
+        Ok([cx, cy])
     }
 
     /// Add each candidate dimension only if it removes a degree of freedom (`add_constraint_if_independent`).

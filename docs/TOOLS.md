@@ -2446,7 +2446,7 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
 
 ## render
 
-Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). Use it to check shape and feature placement after building.
+Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {

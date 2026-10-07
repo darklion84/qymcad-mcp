@@ -46,11 +46,15 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 - `atomic(edit)` — features: rebuild pending dirty nodes first, refusing the new edit if that baseline fails;
   snapshot the clean `Project`, apply, rebuild (retrying only new nodes); if a node created by the edit has an
   error, restore the snapshot, drop shapes of removed bodies and return `Error::Rebuild`.
+  If pending dirty nodes cannot rebuild, feature calls remain refused until parameter or sketch edits repair
+  the document. Those repair paths bypass `atomic` and can edit a failing baseline.
 - `sketch_edit` — retain the original live shapes of bodies in the sketch's dirty rebuild plan; rebuild on
   independent B-rep copies and retry only planned nodes. Failure restores the project and those original handles
   without another rebuild, so old bodies remain bit-identical (F-3B-12).
 - `transact(edit)` — sketch geometry (no rebuild needed): restore on error.
-- `param_set` — the same, plus re-propagation after restoring.
+- `param_set` — restore the original project directly when propagation leaves a sketch unsolved (no shapes
+  have changed). Before rebuilding, retain original live shapes of planned bodies and regenerate on B-rep
+  copies, retrying only planned nodes; failure restores the project and original handles without regeneration.
 
 ## Sketch dimensions
 Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along
@@ -117,6 +121,6 @@ normal result with `isError: true` and the message (the model must see it). Argu
 | 0 | Repository skeleton, pinned build, docs, ADRs, smoke test | done |
 | 1 | Engine core: session, regenerate pipeline, params, rect/circle sketches, extrude/cut, offset plane | done |
 | 2 | MCP transport + phase-1 tools, protocol tests, registration | done |
-| 3 | Sketch entities & constraints (3A); topology + fillet/chamfer/hole/shell/arrays/mirror/revolve (3B); export + render (3C) | in progress: 3B implemented and in review on `phase3/3b-features`; 3A, 3C on their branches |
+| 3 | Sketch entities & constraints (3A); topology + fillet/chamfer/hole/shell/arrays/mirror/revolve (3B); export + render (3C) | implemented and integrated; review fixes in progress on `phase3/codex-r2` |
 | 4 | Acceptance on real parts (collet test plate, hanging shelf) vs build123d references | — |
 | 5 | Release 0.1.0 | — |

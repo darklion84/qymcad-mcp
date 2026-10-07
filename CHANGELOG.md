@@ -37,6 +37,15 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-3A-1..F-3A-6.
 
 ### Fixed
+- Refuse opening unnamed live edges when dirty nodes or missing shapes require regeneration; clean documents
+  remain usable and topology reports the issue later (D1, F-3B-1).
+- Parameter rollback restores exact project state and original B-reps without regeneration, including pending
+  dirty flags on unsolved-sketch rejection (D2, F-3B-12).
+- Render tool text states document-wide regeneration-error refusal; architecture documents feature baseline
+  repair through parameter/sketch edits and the integrated phase-3 status; protocol coverage includes every
+  registered tool (D3/D4/D7).
+- The planted-staging-entry regression uses an isolated counter and interleaves unrelated staging allocations
+  to remain reliable under concurrent exports (D6).
 - Array count expressions use the creation-time whole-number range on parameter edits; negative and fractional
   counts are refused before regeneration and rolled back (C6, F-3B-11).
 - Live edges without usable persistent names refuse topology restoration instead of a full rebuild (C4, F-3B-1).
@@ -85,6 +94,8 @@ All notable changes to this project are documented here. The format follows
 - `param_delete` works for an old parameter named `pi`/`tau`/`e`; `sketch_add` refuses an empty list.
 
 ### Security
+- Check generated dimension formulas against input expression length/nesting limits before storage; refuse
+  overflowing negative coordinates, slot half-widths and directed-angle arc lengths atomically (D5, F-3B-9).
 - Exports are written via a temporary file and an atomic rename (no write-through of hard links); export and
   render refuse documents with features that did not build (review findings, phase 3C).
 - Expressions are bounded (1000 characters, 64 levels of nesting) before QymCAD's recursive evaluator: a deep

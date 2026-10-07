@@ -216,6 +216,10 @@ static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 /// Create a fresh directory `.{stem}.qymcad-mcp-{pid}-{n}.d` (mode 0700) next to `path`, like `mkdtemp`: a name that
 /// already exists, whatever it is, is skipped rather than used.
 fn private_dir_next_to(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    private_dir_next_to_with_seq(path, &STAGE_SEQ)
+}
+
+fn private_dir_next_to_with_seq(path: &Path, seq: &std::sync::atomic::AtomicU64) -> std::io::Result<std::path::PathBuf> {
     use std::os::unix::fs::DirBuilderExt;
     let stem = path.file_stem().and_then(|n| n.to_str()).unwrap_or("export");
     let mut last = None;
@@ -223,7 +227,7 @@ fn private_dir_next_to(path: &Path) -> std::io::Result<std::path::PathBuf> {
         let dir = path.with_file_name(format!(
             ".{stem}.qymcad-mcp-{}-{}.d",
             std::process::id(),
-            STAGE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         match std::fs::DirBuilder::new().mode(0o700).create(&dir) {
             Ok(()) => return Ok(dir),
@@ -237,7 +241,7 @@ fn private_dir_next_to(path: &Path) -> std::io::Result<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::AtomicU64;
 
     /// Entries planted at the next staging names (symlinks to another directory) are skipped, never followed or
     /// reused; the directory made is private (review round 2, Codex).
@@ -247,12 +251,20 @@ mod tests {
         let elsewhere = base.join("elsewhere");
         std::fs::create_dir_all(&elsewhere).unwrap();
         let target = base.join("part.stl");
-        let n = STAGE_SEQ.load(Ordering::Relaxed);
+        let n = 0;
+        let seq = AtomicU64::new(n);
         let name = |k: u64| base.join(format!(".part.qymcad-mcp-{}-{k}.d", std::process::id()));
         for k in n..n + 3 {
             std::os::unix::fs::symlink(&elsewhere, name(k)).unwrap();
         }
-        let dir = private_dir_next_to(&target).unwrap();
+        // Another staging user may allocate after the test has planted its names. Advance past all three names
+        // deterministically, as four intervening exports would, without depending on the test scheduler.
+        for _ in 0..4 {
+            let other = private_dir_next_to(&base.join("other.stl")).unwrap();
+            std::fs::remove_dir(other).unwrap();
+        }
+        let dir = private_dir_next_to_with_seq(&target, &seq).unwrap();
+        // Starting at n and refusing three occupied names must allocate n + 3 regardless of unrelated users.
         assert_eq!(dir, name(n + 3), "the three planted names are skipped");
         let meta = std::fs::symlink_metadata(&dir).unwrap();
         assert!(meta.is_dir() && !meta.file_type().is_symlink());

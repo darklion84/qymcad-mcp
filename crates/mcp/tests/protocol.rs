@@ -90,12 +90,13 @@ fn lists_tools_with_object_schemas() {
     c.init();
     let tools = c.request("tools/list", json!({}))["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    for want in [
+    let expected = [
         "doc_new",
         "doc_open",
         "doc_save",
         "doc_info",
         "param_set",
+        "param_delete",
         "sketch_create",
         "sketch_add",
         "sketch_info",
@@ -116,12 +117,28 @@ fn lists_tools_with_object_schemas() {
         "linear_array",
         "circular_array",
         "mirror",
-    ] {
+    ];
+    for want in expected {
         assert!(names.contains(&want), "missing {want} in {names:?}");
     }
+    assert_eq!(names.len(), expected.len(), "every registered tool must be covered");
     for t in &tools {
         assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
         assert!(!t["description"].as_str().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn output_descriptions_explain_document_wide_refusal() {
+    let mut c = Client::start();
+    c.init();
+    let tools = c.request("tools/list", json!({}))["result"]["tools"].as_array().unwrap().clone();
+    for name in ["export", "render"] {
+        let description = tools.iter().find(|t| t["name"] == name).unwrap()["description"].as_str().unwrap();
+        assert!(
+            description.contains("any timeline node has a regeneration error, even when the selected bodies are clean"),
+            "{name} must describe document-wide refusal: {description}"
+        );
     }
 }
 
