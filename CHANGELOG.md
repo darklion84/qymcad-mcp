@@ -37,6 +37,10 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-039..F-044.
 
 ### Fixed
+- Expression-driven offset datums now carry persisted sketch dependencies for server and native GUI parameter
+  rebuilds, including chained offsets and legacy files opened in the server. Pocket regressions verify floor
+  placement and a top opening; F-017's supposed depth drift was a sealed internal void. Volume tolerances are
+  tightened and standalone datum extrusions check cap positions (F1, F-017, ADR 0007).
 - Every rebuild path refuses stored edge queries dependent on live bodies whose named edges could not be
   restored after a clean open; errors identify the body and preserve exact Project/B-rep state, including
   unsafe full retries. Named queries and unrelated features remain usable (E1, F-023/F-024).

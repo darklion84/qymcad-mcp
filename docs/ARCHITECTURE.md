@@ -19,7 +19,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 |---|---|
 | `session.rs` | `Session` (one `Project` + live `Shape`s + path); `rebuild()`; `atomic()` / `transact()`; result bodies; name/id resolution |
 | `params.rs` | parameters: lowercase names (F-001), evaluation, propagation to sketches and features (F-002), usage lookup |
-| `sketch.rs` | sketches on base/datum planes or faces; rect/circle; pinning; `sketch_edit` (rebuild dependents); settled solve |
+| `sketch.rs` | sketches on base/datum planes or faces; persisted datum-distance dependencies (F-017, ADR 0007); rect/circle; pinning; `sketch_edit` (rebuild dependents); settled solve |
 | `sketch/entities.rs` | line, polyline, arc, polygon, slot: QymCAD adders + independent driving dimensions |
 | `sketch/constrain.rs` | `sketch_constrain` (constraints, dimensions, over-constraint refusal), entity/constraint removal |
 | `sketch/detail.rs` | `SketchDetail`: entities, points (frame roles), constraints for the agent |

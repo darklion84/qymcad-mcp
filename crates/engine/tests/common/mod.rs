@@ -27,6 +27,12 @@ pub fn gui_edit_param(path: &std::path::Path, name: &str, expr: &str) -> f64 {
 /// `gui_edit_param`, returning the final body's volume and bounding box (for edits that move or rotate geometry
 /// without changing the volume).
 pub fn gui_edit_param_body(path: &std::path::Path, name: &str, expr: &str) -> (f64, [f64; 6]) {
+    let (volume, bbox, _) = gui_edit_param_faces(path, name, expr);
+    (volume, bbox)
+}
+
+/// Native GUI rebuild geometry, without any engine propagation or repair.
+pub fn gui_edit_param_faces(path: &std::path::Path, name: &str, expr: &str) -> (f64, [f64; 6], Vec<qymcad_core::geom::MeshFace>) {
     let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     project.ensure_document();
     // finish_project_load: faces stored in the bodies go back into `regen_faces` (edges are not restored).
@@ -62,5 +68,45 @@ pub fn gui_edit_param_body(path: &std::path::Path, name: &str, expr: &str) -> (f
     assert!(report.errors.is_empty(), "GUI-path rebuild errors: {:?}", report.errors);
     let consumed = project.consumed_bodies();
     let last = project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).expect("a body");
-    (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]))
+    (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]), project.regen_faces[&last].clone())
+}
+
+/// Check an open rectangular top pocket, including placement that volume/bbox alone cannot establish.
+#[allow(clippy::too_many_arguments)]
+pub fn assert_top_pocket(
+    s: &mut qymcad_engine::Session,
+    w: f64,
+    l: f64,
+    t: f64,
+    pw: f64,
+    pl: f64,
+    depth: f64,
+    holes_area: f64,
+    face_count: usize,
+) {
+    let topo = s.topology(None, false).unwrap();
+    let faces: Vec<_> = topo.faces.iter().map(|f| (f.centroid[2], f.normal.unwrap_or([0.0; 3]), f.area)).collect();
+    assert_pocket_faces(&faces, w, l, t, pw, pl, depth, holes_area, face_count);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn assert_pocket_faces(
+    faces: &[(f64, [f64; 3], f64)],
+    w: f64,
+    l: f64,
+    t: f64,
+    pw: f64,
+    pl: f64,
+    depth: f64,
+    holes_area: f64,
+    face_count: usize,
+) {
+    let up: Vec<_> = faces.iter().filter(|(_, n, _)| n[2] > 1.0 - 1e-9).collect();
+    let floor = up.iter().find(|(_, _, area)| (*area - pw * pl).abs() < 1e-3).expect("rectangular pocket floor");
+    assert_close(floor.0, t - depth, 1e-6, "pocket floor z = thickness - depth");
+    assert_eq!(faces.len(), face_count, "an open pocket has four walls and a floor, no ceiling");
+    let top = up.iter().find(|(z, _, _)| (*z - t).abs() < 1e-6).expect("top face at stock thickness");
+    // MeshFace areas use tessellation: small circles have ≈ 1.42 mm³ mesh-volume error at t=6 (F-021).
+    // A 2 mm² allowance covers that approximation but cannot hide the missing 480 mm² pocket opening.
+    assert_close(top.2, w * l - holes_area - pw * pl, 2.0, "top face area excludes the pocket opening");
 }

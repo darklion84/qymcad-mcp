@@ -160,6 +160,7 @@ fn errors_are_reported_the_right_way() {
 /// The golden plate (see crates/engine/tests/golden_plate.rs), built purely through MCP calls.
 #[test]
 fn builds_saves_and_reopens_the_plate() {
+    let expected = |t: f64| 60.0 * 40.0 * t - 4.0 * std::f64::consts::PI * (4.5_f64 / 2.0).powi(2) * t - 30.0 * 16.0 * 3.0;
     let mut c = Client::start();
     c.init();
     c.ok("doc_new", json!({}));
@@ -183,10 +184,10 @@ fn builds_saves_and_reopens_the_plate() {
     let p = c.ok("plane_offset", json!({ "base": "XY", "dist": "t", "name": "top" }));
     assert!(p["plane"].is_u64());
     c.ok("sketch_create", json!({ "plane": { "plane": "top" }, "name": "pocket sketch" }));
-    c.ok("sketch_add", json!({ "sketch": "pocket sketch", "entities": [{ "type": "rect", "w": "pw", "h": "pl" }] }));
+    c.ok("sketch_add", json!({ "sketch": "pocket sketch", "entities": [{ "type": "rect", "w": 30, "h": 16 }] }));
     let r = c.ok("extrude", json!({ "sketch": "pocket sketch", "height": "pd", "op": "cut", "direction": "reverse", "name": "pocket" }));
     let v = r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
-    assert!((v - 12578.2965).abs() < 1e-3, "volume {v}");
+    assert!((v - expected(6.0)).abs() < 1e-3, "volume {v}");
 
     let path = std::env::temp_dir().join(format!("qymcad-mcp-protocol-{}.qcad", std::process::id()));
     let saved = c.ok("doc_save", json!({ "path": path.to_str().unwrap() }));
@@ -196,10 +197,19 @@ fn builds_saves_and_reopens_the_plate() {
     c2.init();
     let o = c2.ok("doc_open", json!({ "path": path.to_str().unwrap() }));
     let v2 = o["doc"]["bodies"][0]["volume"].as_f64().unwrap();
-    assert!((v2 - 12578.2965).abs() < 1e-3, "reopened volume {v2}");
+    assert!((v2 - expected(6.0)).abs() < 1e-3, "reopened volume {v2}");
     let r = c2.ok("param_set", json!({ "name": "t", "value": 10 }));
     let v3 = r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
-    assert!((v3 - 21923.8275).abs() < 1.0, "after t=10: {v3}");
+    let topo = c2.ok("topology", json!({ "edges": false }));
+    let faces = topo["faces"].as_array().unwrap();
+    let floor = faces
+        .iter()
+        .find(|f| (f["area"].as_f64().unwrap() - 30.0 * 16.0).abs() < 1e-3 && f["normal"][2].as_f64().unwrap_or(0.0) > 0.99)
+        .unwrap();
+    let z = floor["centroid"][2].as_f64().unwrap();
+    assert!((z - (10.0 - 3.0)).abs() < 1e-6, "MCP pocket floor z: got {z}, expected 7");
+    assert_eq!(faces.len(), 15, "open pocket must have no ceiling");
+    assert!((v3 - expected(10.0)).abs() < 1e-3, "after t=10: {v3}");
     let _ = std::fs::remove_file(&path);
 }
 

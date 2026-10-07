@@ -70,7 +70,7 @@ impl Session {
             )));
         }
         // Propagation has dirtied every affected node. Preserve their original handles and rebuild on
-        // independent B-rep copies, like sketch_edit: regenerating a restored recipe drifts (F-034).
+        // independent B-rep copies, like sketch_edit: rollback must retain the original representation (F-034).
         let nodes: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
         let saved: crate::error::Result<HashMap<Id, qymcad_kernel::Shape>> = {
             let _gate = qymcad_kernel::kernel_gate();

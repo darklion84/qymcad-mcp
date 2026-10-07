@@ -884,10 +884,9 @@ fn face_axis_default_body_is_the_current_body_of_the_active_part() {
     assert_close(v, PI * (400.0 - 100.0) * 30.0, 0.5, "tube about the hub's axis");
 }
 
-/// Review #20: a rolled-back feature leaves every existing body B-rep byte-identical. The failed edit makes the rebuild
-/// retry with everything dirty (F-005); after a parameter edit a full rebuild does not reproduce the bodies
-/// exactly (F-017: the pocket comes out 0.001 mm different), so keeping the retried shapes would move old
-/// geometry although "nothing changed".
+/// Review #20: a rolled-back feature leaves every existing body B-rep byte-identical. The pocket fixture must
+/// first be geometrically correct after its parameter edit; preserving the committed B-rep then verifies that
+/// a refused feature keeps the exact original representation, even when another rebuild has the same geometry.
 #[test]
 fn a_rolled_back_feature_leaves_old_bodies_bit_identical() {
     let mut s = Session::new_part();
@@ -900,6 +899,8 @@ fn a_rolled_back_feature_leaves_old_bodies_bit_identical() {
     s.sketch_rect(pocket, &0.0.into(), &0.0.into(), &30.0.into(), &16.0.into(), false).unwrap();
     s.extrude(&Extrude { direction: Direction::Reverse, ..extrude(pocket, 3.0.into(), Op::Cut) }).unwrap();
     s.param_set("t", &Num::Value(10.0)).unwrap();
+    assert_top_pocket(&mut s, 60.0, 40.0, 10.0, 30.0, 16.0, 3.0, 0.0, 11);
+    assert_close(volume(&s), 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1e-3, "parameter-edited pocket");
     let before: Vec<(Id, u64)> = s.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
     let breps = |s: &Session| {
         let _gate = qymcad_kernel::kernel_gate();

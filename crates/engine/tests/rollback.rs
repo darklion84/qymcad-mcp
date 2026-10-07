@@ -75,8 +75,9 @@ fn a_failed_sketch_edit_restores_old_shapes_bit_identically() {
     s.sketch_rect(pocket, &0.0.into(), &0.0.into(), &30.0.into(), &16.0.into(), false).unwrap();
     s.extrude(&Extrude { direction: Direction::Reverse, ..extrude(pocket, 3.0.into(), Op::Cut) }).unwrap();
     s.param_set("t", &10.0.into()).unwrap();
-    // Plate minus rectangular pocket: 60·40·10 - 30·16·3 mm³; F-017 allows a 0.001 mm cut-depth nudge.
-    assert_close(s.result_bodies()[0].volume, 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1.0, "edited plate");
+    assert_top_pocket(&mut s, 60.0, 40.0, 10.0, 30.0, 16.0, 3.0, 0.0, 11);
+    // Plate minus rectangular pocket: 60·40·10 - 30·16·3 mm³.
+    assert_close(s.result_bodies()[0].volume, 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1e-3, "edited plate");
     let before = volume_bits(&s);
     let recipe = serde_json::to_value(s.project()).unwrap();
     // Opening the outer contour prevents the already built extrusion (and its pocket) from rebuilding.
@@ -104,8 +105,9 @@ fn edited_pocket() -> Session {
     let helper = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("signed coordinate")).unwrap();
     s.sketch_rect(helper, &Num::Expr("x".into()), &0.0.into(), &4.0.into(), &4.0.into(), true).unwrap();
     s.param_set("t", &10.0.into()).unwrap();
-    // V = stock width*length*height - pocket width*length*depth; allow F-017's 0.001 mm depth nudge.
-    assert_close(s.result_bodies()[0].volume, 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1.0, "parameter-edited pocket");
+    assert_top_pocket(&mut s, 60.0, 40.0, 10.0, 30.0, 16.0, 3.0, 0.0, 11);
+    // V = stock width*length*height - pocket width*length*depth.
+    assert_close(s.result_bodies()[0].volume, 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1e-3, "parameter-edited pocket");
     s
 }
 

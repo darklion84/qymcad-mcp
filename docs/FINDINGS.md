@@ -164,19 +164,45 @@ Conventions:
 - **Version:** v0.1.0-dev.20261001
 - **What:** `bbox()` comes from `BRepBndLib::Add`, which includes tolerances. A 60 × 40 × 6 plate after hole/pocket
   cuts reports 60.0126 × 40.0126 × 6.0126 (+0.0063 mm per side). Compare sizes with a tolerance of ~0.05 mm;
-  use volume for exact checks.
+  use volume for exact size checks and face positions/topology for placement (F-017).
 - **Evidence:** test: `crates/engine/tests/golden_plate.rs` `plate_volume_and_bbox`.
 
-## F-017 After a parameter edit a cut can come out 0.001 mm deeper than on a fresh build
+## F-017 Parallel preparation can capture a datum sketch's old placement
 
 - **Version:** v0.1.0-dev.20261001
-- **What:** a 30 × 16 pocket cut 3 mm down from a datum plane at the top face is exact when built fresh, but after
-  changing the plate thickness (which moves the plane and the top face) the rebuilt part has 0.48 mm³ less
-  volume, i.e. the pocket is 3.001 deep. Reproducible for any thickness. Probably the coincident-face nudge of
-  one-sided cuts (F-003) applied against the moved plane. 0.004 % of volume: irrelevant for printing, but
-  golden tests that edit parameters use a 1 mm³ tolerance. Not investigated further.
-- **Evidence:** observed with a probe test (t = 6/8/10 → +4: built exact, edited −0.48 mm³ every time); also in
-  the 2026-10-04 prototype (21923.347 vs 21923.83).
+- **What:** the former “0.001 mm deeper” diagnosis was wrong. For a literal 30 × 16 pocket sketched on an XY
+  datum at `t`, changing stock thickness 6 → 10 leaves the pocket floor at z=3 instead of z=7, creating a
+  sealed internal void. The datum's origin itself does update; parallel preparation captured its old sketch
+  frame before the timeline walk resolved the datum. The cut's 0.001 mm entry clearance now lies inside stock:
+  extra removed volume = 30 × 16 × 0.001 = 0.48 mm³. Stock bbox and regeneration errors cannot expose this.
+  Sketches with unrelated dimension expressions mask the fault by being marked dirty before preparation.
+- **Root cause:** `FeatureKind::inputs` omits sketch→datum and child-datum→parent-datum references;
+  `node_reads_any` adds only face-body placement dependencies. `ready_from` therefore allows a dependent solid
+  to prepare before datum resolution. A dirty sketch declares its sketch id as pending, blocking its consumers
+  until the walk reaches that sketch. Native GUI datum creation uses exactly the same offset definition and
+  `set_feat_dim(id, "dist", expr)` as the engine; moving the expression elsewhere on the plane cannot fix it.
+- **Evidence:**
+  - source: `crates/qymcad-part/src/lib.rs:641-659` (offset creation), `:344-352` (`store_cmd_exprs`);
+    `crates/qymcad-core/src/model/sketch.rs:3819-3850` (distance evaluation), `:3356-3373` (sketch frame).
+  - source: `crates/qymcad-core/src/model/regen.rs:984-1069` (parallel preparation), `:1109-1114` (datum
+    resolution), `:2313-2340` (`ready_from`), `:2587-2610` (combine placement capture), `:2990-3002` (clearance);
+    `crates/qymcad-core/src/feature.rs:2567-2632` (inputs), `model/regen.rs:622-629` (`node_reads_any`).
+  - source: `crates/qymcad-core/src/model.rs:2328-2347` scans every feature-dimension expression for changed
+    parameters; `model/regen.rs:3078-3079` validates every stored expression, including sketch-node entries.
+  - test: `golden_plate.rs` direct/chained literal-pocket edits through server, saved/opened server, and native
+    `common::gui_edit_param_faces`; before fix: “pocket floor z = thickness - depth: got 3, expected 7 ± 0.000001”.
+    Tests check floor position, upward normal, opening area, 15 faces (no ceiling), and formula volume at 1e-3 mm³.
+  - test: `golden_datum.rs` checks both caps of a standalone literal extrusion when only its datum parameter
+    changes (volume stays W×L×H). Disabling datum tracking fails server, GUI, and reopened placement tests.
+- **How we handle it:** retain the GUI's native datum definitions and persist each parameterized ancestor's
+  distance expression in the dependent sketch node's `feat_dims`, under reserved `datum_dist_<plane id>` keys.
+  These expressions act only as scheduling dependencies, without altering sketch dimensions or geometry.
+  Native GUI parameter marking dirties the sketch, supplying the missing barrier. Creation and `Session::open`
+  reconcile these keys; opening legacy files adds them and rebuilds affected sketches, and saving persists them
+  for GUI edits. Obsolete keys are removed after datum definition changes/reattachment. See ADR [0007](adr/0007-datum-sketch-dependencies.md).
+  GUI structural edits (new/reattached sketches or replacement distance expressions) cannot refresh the guards
+  in the running app: reopen/save through the server before further GUI parameter edits. This is a persisted
+  engine workaround, not an upstream scheduler fix. The old 1 mm³ cut-volume tolerance is removed.
 
 ## F-018 The app bundle does not carry the release tag in Info.plist
 
@@ -445,24 +471,24 @@ Conventions:
   cover linear/circular edits to -5 and 2.5, exact document rollback and V=2*pi*1²*2. Restoring the old coercion
   fails both tests. The QymCAD GUI is not limited and retains its upstream rounding behavior.
 
-## F-034 A full rebuild does not reproduce parameter-edited bodies bit for bit
+## F-034 Rollback must preserve the original project and B-rep representation
 
 - **Version:** v0.1.0-dev.20261001
-- **What:** after a parameter edit (F-017) the bodies differ slightly from a fresh build of the same recipe. The
-  engine's rebuild retried a failed pass with the whole timeline dirty (F-005), which replaced every old body's
-  shape with a fresh one; `atomic` then restored the document but kept those shapes. A rolled-back feature moved
-  the plate of F-017 from 22559.52 to 22560 mm³.
+- **What:** the engine once retried a failed pass with the whole timeline dirty (F-005), replacing old shapes;
+  `atomic` then restored the document but kept the retried shapes. The historical 22559.52 → 22560 mm³ change
+  repaired a wrongly placed sealed pocket (F-017), rather than demonstrating normal cut-depth drift. Datum
+  dependency tracking now fixes that geometry, and the rollback fixtures assert the correct open pocket first.
+  A refused edit must still preserve exact committed project/B-rep state, including pending dirty flags.
 - **Evidence:** test: `golden_features.rs` `a_rolled_back_feature_leaves_old_bodies_bit_identical` (failed with
   exactly those volumes before the fix; now also compares serialized B-rep bytes of the old result bodies,
-  with no digest dependency; forcing a rollback rebuild fails the byte comparison); `rollback.rs` `a_failed_sketch_edit_restores_old_shapes_bit_identically`
+  with no digest dependency); `rollback.rs` `a_failed_sketch_edit_restores_old_shapes_bit_identically`
   reproduced 22559.519999999993 → 22560 during sketch rollback. Pending engine-level sketch edits can also make
   an atomic feature rebuild old shapes before restoring an older project mesh: test
   `a_failed_feature_uses_a_clean_baseline_for_pending_sketch_edits` (20³ block minus Ø4 through circle: 8000−80π).
   `a_feature_refuses_a_failing_dirty_baseline_before_editing` checks refusal before adding a datum.
   `an_unsolved_parameter_edit_restores_project_and_breps_exactly` and
   `a_failed_parameter_rebuild_restores_project_and_breps_exactly` compare exact project serialization and every
-  live body B-rep on the pocket fixture after t 6 → 10. Restoring rollback propagation/regeneration fails both
-  byte checks; the unsolved path also preserves a pending dirty sketch.
+  live body B-rep on the pocket fixture after t 6 → 10; the unsolved path also preserves a pending dirty sketch.
   Source: `crates/qymcad-core/src/model/regen.rs:699-734`, `regen_plan` follows dirty body/datum inputs through
   the timeline, but omits dirty sketch outputs; the edge-query safety preflight adds their dependents (F-023).
 - **How we handle it:** `atomic` first rebuilds pending dirty nodes and refuses the new edit if that baseline

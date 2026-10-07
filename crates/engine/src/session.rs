@@ -73,6 +73,10 @@ impl Session {
             }
         }
         sess.p.eval_parameters();
+        let sketches: Vec<Id> = sess.p.sketches.iter().map(|s| s.id).collect();
+        for sid in sketches {
+            sess.track_datum_dependencies(sid);
+        }
         if missing {
             sess.p.mark_all_dirty();
         }
@@ -119,9 +123,8 @@ impl Session {
 
     /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
     /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
-    /// after a parameter edit is not bit-identical (F-017) — old geometry would move although the edit failed and
-    /// was rolled back, or had nothing to do with it (F-034). F-005 still holds: a datum created by the edit is
-    /// one of its nodes.
+    /// need not be bit-identical — a refused edit must retain the exact old representation (F-034).
+    /// F-005 still holds: a datum created by the edit is one of its nodes.
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {

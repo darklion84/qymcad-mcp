@@ -14,7 +14,7 @@ use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::value::Num;
 use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane};
-use qymcad_core::model::{Constraint, EntityKind, Id, SketchPoint};
+use qymcad_core::model::{Constraint, EntityKind, Id, PlaneDef, SketchPoint};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -77,7 +77,46 @@ impl Session {
         self.p.add_sketch_node(sid, name);
         let si = self.sketch_si(sid)?;
         self.p.sketches[si].plane = sp;
+        self.track_datum_dependencies(sid);
         Ok(sid)
+    }
+
+    /// Native feature dimensions make a datum sketch dirty before parallel preparation (F-017).
+    /// The pinned scheduler otherwise misses the datum dependency and can capture an old sketch frame.
+    /// Persist one expression per ancestor: the GUI's parameter marking then provides the same barrier.
+    pub(crate) fn track_datum_dependencies(&mut self, sid: Id) {
+        let Some(si) = self.p.sketch_index(sid) else { return };
+        let mut desired = HashMap::new();
+        if let SketchPlane::Datum(mut plane) = self.p.sketches[si].plane {
+            // Bound traversal even for malformed cycles in externally produced documents.
+            for _ in 0..self.p.planes.len() {
+                if let Some(expr) = self.p.feat_dim(plane, "dist") {
+                    desired.insert(format!("datum_dist_{plane}"), expr.to_lowercase());
+                }
+                match self.p.planes.iter().find(|p| p.id == plane).map(|p| &p.def) {
+                    Some(PlaneDef::OffsetPlane { plane: parent, .. }) => plane = *parent,
+                    _ => break,
+                }
+            }
+        }
+        // A GUI edit may change the datum expression or reattach the sketch. Drop only obsolete guards.
+        let obsolete: Vec<String> = self
+            .p
+            .feat_dims
+            .get(&sid)
+            .into_iter()
+            .flat_map(|m| m.keys())
+            .filter(|k| k.starts_with("datum_dist_") && !desired.contains_key(*k))
+            .cloned()
+            .collect();
+        for key in obsolete {
+            self.p.set_feat_dim(sid, &key, String::new());
+        }
+        for (key, expr) in desired {
+            if self.p.feat_dim(sid, &key) != Some(expr.as_str()) {
+                self.p.set_feat_dim(sid, &key, expr);
+            }
+        }
     }
 
     /// Add a rectangle centred at (`cx`, `cy`) of size `w` × `h` in sketch coordinates. Returns its four line
@@ -260,7 +299,7 @@ impl Session {
     pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
         let before = self.p.clone();
         // regen_plan includes transitive sketch dependents and any already dirty nodes. Keep their original
-        // handles, rebuilding on independent B-rep copies: restoring a recipe by rebuilding drifts (F-034).
+        // handles, rebuilding on independent B-rep copies: rollback retains the original representation (F-034).
         let has_dependents = !before.dependents_of(sketch).is_empty();
         let mut planned = before.clone();
         planned.mark_sketch_dirty(sketch);
