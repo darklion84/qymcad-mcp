@@ -69,3 +69,9 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   Fix ideas: detect duplicate ids and warn; classify a face as sphere only when its vertices do not all lie on two
   or fewer circles about one axis (or ask the kernel's native surface type); duplicate names are an upstream
   candidate (QymCAD blend-face naming).
+- **Client interop (MiMo Code as a live tester, 2026-10-08):** its MCP client sends object/array values of our
+  untyped/`anyOf` arguments as JSON strings: `select faces "{\"facing\": \"+z\"}"`, `edges "[1610612748, ...]"`,
+  `revolve axis "{\"line\": 22}"`, `sketch_create plane {"plane":19}` (untagged enum mismatch), and it truncated
+  `doc_save {"path": ...}`. Only plain-string forms worked. Consider accepting a string that parses as JSON for
+  these arguments, and typed schemas instead of untyped `anyOf` where possible. Unverified MiMo claim: 2-3 of 5
+  render images did not match the current body while the caption did (may be the client attaching images).
