@@ -382,7 +382,8 @@ pub fn tools() -> Vec<Tool> {
              {\"edges_of\": {\"facing\": \"+z\"}} (top outline), {\"along\": \"z\"} (vertical edges), or \
              {\"concave\": true} (inward corners, including boss/plate circles). For a named boss/plate junction \
              use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}. \
-             Concave/convex exclude seams and G1 tangent junctions. The edges \
+             Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement \
+             among five arc-length samples are omitted. The edges \
              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
              for the geometry is an error and nothing changes.",
                 stale!()

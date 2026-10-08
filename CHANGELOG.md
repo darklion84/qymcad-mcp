@@ -47,6 +47,12 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-039..F-044.
 
 ### Fixed
+- Planar/straight concave/convex corners use numerical allowances, restoring omitted 45° chamfer boundaries
+  and 30° wedges while retaining conservative curved uncertainty (ADR 0010, F-053).
+- Concave/convex edge filters require a sign above normal/tangent uncertainty at five arc-length samples;
+  ambiguous shallow junctions and edges with disagreeing signs are omitted. Cylinder normals preserve the
+  facet normal when winding alignment is unreliable; the untested analytic circle-tangent refinement is removed
+  (ADR 0010, F-053).
 - Undo preserves monotonic ids so removed-body references/picks cannot alias new nodes; snapshots omit embedded
   source payloads and restore them by id. Feature deletion shares the MCP history snapshot instead of copying twice.
 - Export and render repeat current document warnings, including sealed-void diagnostics.

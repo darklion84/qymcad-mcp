@@ -16,6 +16,8 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); \
     {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved \
     junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; \
+    uncertain shallow signs or disagreement among five \
+    arc-length samples are omitted; \
     {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest \
     edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, \
     cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} \
@@ -559,7 +561,8 @@ pub fn tools() -> Vec<Tool> {
             "Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). \
              Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
              a boss/plate curved junction, \
-             pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}.",
+             pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. \
+             Uncertain shallow signs or disagreement among five arc-length samples are omitted.",
             |st, a: SelectArgs| {
                 let s = st.doc()?;
                 let body = body_of(s, &a.body)?;

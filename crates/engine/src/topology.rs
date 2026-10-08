@@ -474,13 +474,15 @@ impl Session {
     }
 
     /// Signed local dihedral: face A's inward tangent dotted with face B's outward normal.
-    /// Shared triangle sides supply oriented tangents; analytic cylinder/circle data refine curved samples.
+    /// Five shared-side samples must agree beyond their normal/tangent uncertainty.
     fn corner_edges(&self, body: Id, concave: bool) -> Vec<u32> {
         let Some(shape) = self.shapes.get(&body) else { return Vec::new() };
         let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Vec::new() };
         let faces: HashMap<_, _> = self.p.regen_faces.get(&body).into_iter().flatten().map(|f| (f.id, f)).collect();
         let _gate = qymcad_kernel::kernel_gate();
-        let smooth: HashMap<_, _> = shape.edges_info().into_iter().map(|e| (e.id, e.smooth)).collect();
+        // Reuse the engine's face-sketch planarity check (F-011), once per face.
+        let planes: HashMap<_, _> = faces.iter().filter_map(|(&id, f)| corner_planar_normal(shape, f, mesh).map(|n| (id, n))).collect();
+        let edges: HashMap<_, _> = shape.edges_info().into_iter().map(|e| (e.id, e)).collect();
         let pairs: HashMap<_, _> = shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect();
         self.p
             .regen_edges
@@ -488,26 +490,47 @@ impl Session {
             .into_iter()
             .flatten()
             .filter_map(|e| {
-                if smooth.get(&e.id).copied().unwrap_or(true) {
+                let edge = edges.get(&e.id)?;
+                if edge.smooth {
                     return None;
                 }
                 let [a, b] = *pairs.get(&e.id)?;
                 if a == b || a == 0 || b == 0 {
                     return None;
                 }
-                let (point, mut tangent, na, nb) = edge_face_sample(e, faces.get(&a)?, faces.get(&b)?, mesh)?;
-                let na = local_normal(shape, a, point, na);
-                let nb = local_normal(shape, b, point, nb);
-                if e.radius > 1e-9 {
-                    let analytic = unit(cross(e.axis, sub(point, e.center))).ok()?;
-                    tangent = analytic.map(|x| x * dot(analytic, tangent).signum());
+                let poly = &edge.poly;
+                let line = if e.radius == 0.0 && polyline_is_straight(poly) { Some(unit(sub(e.b, e.a)).ok()?) } else { None };
+                let tangent_error = if line.is_some() {
+                    1e-6
+                } else if e.radius > 1e-9 {
+                    // A circular chord bisects the angular sweep; no analytic tangent replacement.
+                    angular_error(MESH_ANGLE / 2.0)
+                } else {
+                    angular_error(MESH_ANGLE)
+                };
+                let mut agreed = None;
+                for fraction in [0.1, 0.3, 0.5, 0.7, 0.9] {
+                    let target = polyline_point(poly, fraction)?;
+                    let (point, tangent, na, nb) = edge_face_sample(e, faces.get(&a)?, faces.get(&b)?, mesh, target)?;
+                    let tangent = if let Some(line) = line {
+                        // Preserve the shared side's winding with the native line's exact direction.
+                        let alignment = dot(line, tangent);
+                        if alignment.abs() <= 1e-9 {
+                            return None;
+                        }
+                        line.map(|x| x * alignment.signum())
+                    } else {
+                        tangent
+                    };
+                    let na = planes.get(&a).map(|&n| (n, 1e-6)).unwrap_or_else(|| local_normal(shape, a, point, na));
+                    let nb = planes.get(&b).map(|&n| (n, 1e-6)).unwrap_or_else(|| local_normal(shape, b, point, nb));
+                    let sign = robust_corner_sign(na, nb, tangent, tangent_error)?;
+                    if agreed.is_some_and(|previous| previous != sign) {
+                        return None;
+                    }
+                    agreed = Some(sign);
                 }
-                if dot(na, nb).abs() > 0.99999 {
-                    return None;
-                }
-                let inward = cross(na, tangent);
-                let sign = dot(inward, nb);
-                ((sign > 1e-6 && concave) || (sign < -1e-6 && !concave)).then_some(e.id)
+                (agreed == Some(concave)).then_some(e.id)
             })
             .collect()
     }
@@ -683,22 +706,86 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
-/// Outward normal at a cylinder sample (inward radial on a bore), or local mesh normal otherwise.
-fn local_normal(shape: &Shape, face: u32, point: [f64; 3], mesh_normal: [f64; 3]) -> [f64; 3] {
+// F-021: use the full angular deflection for unknown surface normals, rather than assuming
+// the typical half-deflection facet error is a guaranteed maximum on arbitrary surfaces.
+const MESH_ANGLE: f64 = 0.3;
+
+/// Euclidean distance between unit vectors separated by at most `angle` radians.
+fn angular_error(angle: f64) -> f64 {
+    2.0 * (angle / 2.0).sin()
+}
+
+type LocalNormal = ([f64; 3], f64);
+
+/// Match topology's native cylinder/cone precedence before applying mesh planarity.
+fn corner_planar_normal(shape: &Shape, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3]> {
+    if shape.face_axis(face.id).is_some() {
+        return None;
+    }
+    planar_normal(face, mesh)
+}
+
+/// Outward cylinder normal plus a numerical allowance, or facet normal plus F-021 uncertainty.
+/// The pinned kernel offers no cone apex/angle getter or general surface normal-at-point API.
+fn local_normal(shape: &Shape, face: u32, point: [f64; 3], mesh_normal: [f64; 3]) -> LocalNormal {
     if let Some((origin, axis, _)) = shape.face_cylinder(face) {
         let offset = sub(point, origin);
         if let Ok(radial) = unit(sub(offset, axis.map(|x| x * dot(offset, axis)))) {
-            return radial.map(|x| x * dot(radial, mesh_normal).signum());
+            let alignment = dot(radial, mesh_normal);
+            if alignment.abs() > 1e-9 {
+                return (radial.map(|x| x * alignment.signum()), 1e-6);
+            }
         }
     }
-    mesh_normal
+    (mesh_normal, angular_error(MESH_ANGLE))
+}
+
+/// For unit inputs, the triple product error is bounded by the sum of the three vector errors
+/// (expand the difference one vector at a time). Never assign a sign inside that uncertainty.
+fn robust_corner_sign(na: LocalNormal, nb: LocalNormal, tangent: [f64; 3], tangent_error: f64) -> Option<bool> {
+    let sign = dot(cross(na.0, tangent), nb.0);
+    let margin = na.1 + nb.1 + tangent_error;
+    (sign.abs() > margin).then_some(sign > 0.0)
+}
+
+/// A nondegenerate native polyline is straight when every point lies on its endpoint line
+/// within 1e-9 of the chord length. Two-point polylines satisfy this automatically.
+fn polyline_is_straight(poly: &[[f32; 3]]) -> bool {
+    let (Some(start), Some(end)) = (poly.first(), poly.last()) else { return false };
+    let start = start.map(f64::from);
+    let chord = sub(end.map(f64::from), start);
+    let length = norm(chord);
+    if length <= 1e-12 {
+        return false;
+    }
+    let direction = chord.map(|x| x / length);
+    poly.iter().all(|p| norm(cross(sub(p.map(f64::from), start), direction)) <= 1e-9 * length)
+}
+
+/// Point at a fraction of native polyline arc length; missing/degenerate polylines fail closed.
+fn polyline_point(poly: &[[f32; 3]], fraction: f64) -> Option<[f64; 3]> {
+    let total = polyline_length(poly);
+    if total <= 1e-12 {
+        return None;
+    }
+    let mut remaining = fraction * total;
+    for side in poly.windows(2) {
+        let start = side[0].map(f64::from);
+        let delta = sub(side[1].map(f64::from), start);
+        let length = norm(delta);
+        if length > 1e-12 && remaining <= length {
+            return Some(std::array::from_fn(|i| start[i] + delta[i] * remaining / length));
+        }
+        remaining -= length;
+    }
+    None
 }
 
 type EdgeSample = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 
-/// Find the shared tessellated side nearest the edge midpoint. The winding of A determines its boundary
+/// Find the shared tessellated side nearest the arc-length sample. The winding of A determines its boundary
 /// tangent, so nA × tangent points into A even on nonconvex caps. Faces may duplicate vertex indices.
-fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<EdgeSample> {
+fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core::geom::Mesh, target: [f64; 3]) -> Option<EdgeSample> {
     let triangles = |face: &MeshFace| -> Option<Vec<[[f64; 3]; 3]>> {
         face.triangles
             .iter()
@@ -721,9 +808,9 @@ fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core
             if length2 <= eps * eps {
                 continue;
             }
-            let t = (dot(sub(e.mid, start), delta) / length2).clamp(0.0, 1.0);
+            let t = (dot(sub(target, start), delta) / length2).clamp(0.0, 1.0);
             let point = std::array::from_fn(|j| start[j] + t * delta[j]);
-            sides.push((norm(sub(point, e.mid)), start, end, point, normal));
+            sides.push((norm(sub(point, target)), start, end, point, normal));
         }
     }
     sides.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -799,3 +886,9 @@ fn polyline_length(p: &[[f32; 3]]) -> f64 {
         })
         .sum()
 }
+
+#[cfg(test)]
+mod normal_tests;
+
+#[cfg(test)]
+mod corner_tests;
