@@ -33,3 +33,15 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - `doc_open` returns stored and rebuilt bboxes without saying which is which;
   - origin/frame points appear in `sketch_info` only after the first `sketch_add`;
   - the 0.001 mm cut entry clearance on internal planes cannot be turned off.
+- **Phase 4 acceptance findings** (Sonnet subagent building collet_test/hanging_shelf from the build123d scripts, 2026-10-08):
+  - **Investigate first (possible upstream bug):** a seat revolved (cut, 360°) from a profile drawn on the
+    -x side of its own axis gave cone faces with axis [0,0,-1], and a later 0.5 chamfer on the mouth circles failed
+    with "chamfer 0.50 too big"; the same profile on the +x side chamfered fine. Reproduce, find whether QymCAD's
+    revolve or the chamfer is at fault, and either normalise the profile side or explain it in the error.
+  - **doc_info bbox right after doc_open is inflated by 1.24 mm** on the shelf (x ±135.236 for a 268 mm part, which
+    reads as larger than a 270 mm bed); after a rebuild it is the usual ~0.12 mm padding. Use a tight bbox.
+  - The pocket cut from the internal plane z=10 left the floor at 9.999 (F-061 entry clearance), so the volume
+    is 0.0088% below build123d (-42.0 mm3 = 0.001 x pocket area). The agent did not use the recommended
+    "sketch on the top, cut reverse" pattern; consider stating in the extrude/plane_offset descriptions which
+    pattern gives an exact floor.
+  - Mouth-circle chamfer via of_feature also returns the seam line; the agent fell back to explicit ids.
