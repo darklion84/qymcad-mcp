@@ -73,7 +73,7 @@ lists (F-024); no new upstream file format, dependencies, or native stored query
 
 Empty corner previews name the requested inward/outward corner count and the opposite count for the body.
 When requested corners exist, say "none survives the rest of the selection", which also holds under
-subtraction. A shared predicate with omission reporting adds "no edge is both" only for an `and` spine
+subtraction. A shared predicate with omission reporting adds "no edge is both" only for an `and` tree
 of corner leaves and corner-free subtrees containing both signs. Merely mentioning both signs in unions
 or other compositions keeps the both-sign sentence without that clause. Bare empty filters retain their
 zero-count wording. MCP `backlog_review` pins mixed-sign unions/subtraction, including unions nested under
