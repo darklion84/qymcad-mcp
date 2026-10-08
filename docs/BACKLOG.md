@@ -22,4 +22,15 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   cylinder normal) or the analytic circle tangent in `Session::corner_edges` leaves every test green, because the
   tessellated normals at the sampled edge point are already accurate on the test parts. Add a coarse-tessellation
   or small-radius case that needs them, or remove them.
+- **Document (or avoid) the 0.001 mm cut entry clearance on internal datum planes** (live test 2026-10-08): a cut
+  sketched on a datum plane inside the stock starts 0.001 mm behind the plane (a void of 4.001 instead of 4, floor at
+  z = 2.999). QymCAD offsets the cut tool to avoid coplanar faces (see F-017); harmless on a top face, a real
+  geometry change inside. At least state it in FINDINGS and in the extrude description.
+- **Empty-selection hint wording** (live test): say "0 concave (inward) edges; this body has N convex edges", drop the
+  `between` example on a single-feature body, and repeat the hint in fillet/chamfer "matched no edge" errors.
+- **`doc_save` without a path after switching models** (live test): after undo/delete into a different model, a bare
+  `doc_save` overwrites the last file. Warn or refuse when the file holds a different model than the session's
+  (e.g. a different first feature), unless a path is given.
+- **Minor output consistency** (live test): stable edge order between bodies; `volume_mm3` (rounded) in rebuild
+  results vs `volume` (full precision) in doc_info.
 
