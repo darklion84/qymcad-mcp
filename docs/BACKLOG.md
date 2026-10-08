@@ -18,14 +18,8 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   features with edge queries.
 - **The rebuild guard clones the `Project` on every public rebuild** (MiMo, final review): fine for small parts;
   make the retry-plan check incremental if large documents get slow.
-- **Curved-junction fillets are hard to select** (live final test): `{"concave": true}` covers straight edges
-  between planar faces only, so a boss-to-plate fillet needs `{"between": [{"of_feature": X, "role": "wall"},
-  {"of_feature": Y, "role": "cap_end"}]}`. Hint at it when a concave/convex selection is empty, or add the
-  example to the fillet description; or extend concave/convex to curved junctions.
-- **Stale-geometry warning on open compares volume only** (live final test): a stored sealed void vs a rebuilt open
-  pocket differs by 0.48 mm³ and reads as noise. Also compare shell/solid/face counts and run the void check on the
-  stored body.
-- **`export` does not repeat document warnings** (e.g. a sealed void) in its result.
-- **`undo` echoes the undone call's arguments**; also show the restored values (e.g. parameter t back to 5).
-- **Topology and sketch contour areas are tessellated** (~0.1–0.2 % off analytic); say so in the descriptions.
+- **Curved-corner refinements are untested** (Claude's verification of B1): disabling `local_normal` (analytic
+  cylinder normal) or the analytic circle tangent in `Session::corner_edges` leaves every test green, because the
+  tessellated normals at the sampled edge point are already accurate on the test parts. Add a coarse-tessellation
+  or small-radius case that needs them, or remove them.
 

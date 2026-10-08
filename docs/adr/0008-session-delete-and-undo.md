@@ -24,7 +24,9 @@ deletion, retaining each payload once while any history snapshot refers to it. R
 to the live source pool on restore and prune them when their final referencing snapshot is evicted.
 A failed call restores the originals and adds no history. A successful call retains its pre-edit snapshot;
 `undo` restores it directly without regeneration. Keep at most 16 entries per document, evicting the oldest.
-Retain the tool name and arguments in each entry; undo returns them with restored bodies/errors/warnings.
+Retain the tool name and arguments in each entry; undo returns them with restored bodies/errors/warnings
+and the complete current parameter list (names, expressions and evaluated values). This shows restored
+dependent values and parameter removal after undoing creation without inferring state from old arguments.
 Remember eviction separately from snapshots so exhaustion reports the history limit instead of ordinary
 empty history. Deletion inside an existing tool boundary shares that snapshot; direct engine deletion retains
 its own rollback snapshot. Successful deletion returns all removed timeline node ids/names/kinds.

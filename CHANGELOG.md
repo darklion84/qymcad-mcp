@@ -10,9 +10,10 @@ All notable changes to this project are documented here. The format follows
   source bodies. Session `undo` retains 16 successful modelling calls and restores exact Project/B-rep state;
   document replacement resets history, and saving/exporting files is outside modelling undo (ADR 0008).
 - Advisory rebuild warnings identify features whose results acquire excess shells over solids (possible internal
-  voids). Opening stale stored geometry warns when rebuilt volume/bounds differ (ADR 0009).
-- Edge selections accept `{"concave": true}` and `{"convex": true}` in compositions: straight junctions between
-  planar faces are classified; curved, seam and tangent junctions are excluded (ADR 0010).
+  voids). Opening stale stored geometry warns when rebuilt volume/bounds or shell/solid/face counts differ,
+  and checks stored bodies for voids even on clean reopen (ADR 0009).
+- Edge selections accept `{"concave": true}` and `{"convex": true}` in compositions, including curved
+  junctions such as boss/plate circles; seam and G1 tangent junctions are excluded (ADR 0010).
 - Sketch inspection reports the native world frame. Extrude booleans show cut/add/intersect operations in
   the timeline, and cylinder axes report the point at the face's axial centroid (ADR 0011).
 - Repository skeleton: Cargo workspace (`qymcad-engine`, `qymcad-mcp`), QymCAD pinned at `v0.1.0-dev.20261001`,
@@ -48,10 +49,14 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - Undo preserves monotonic ids so removed-body references/picks cannot alias new nodes; snapshots omit embedded
   source payloads and restore them by id. Feature deletion shares the MCP history snapshot instead of copying twice.
-- Undo returns the tool name/arguments and restored bodies/diagnostics; exhausting evicted history reports
+- Export and render repeat current document warnings, including sealed-void diagnostics.
+- Topology face areas and sketch contour areas are documented as tessellation-based, typically about
+  0.1–0.2% below analytic areas for curved geometry.
+- Undo returns the tool name/arguments, restored parameter expressions/values and bodies/diagnostics; exhausting evicted history reports
   `history limit reached (16): older calls cannot be undone`.
 - Empty concave/convex previews return zero matches and compose as empty sets; fillet/chamfer still refuse
-  empty final selections. The top-level `select` description includes concave examples.
+  empty final selections. Empty corner selections include a named-feature `between` hint; the fillet
+  description includes the same example.
 - Disconnected arrays and other multi-solid results no longer trigger void warnings. Stale-open warnings use
   four-decimal metrics, show bbox changes only beyond F-016 tolerance, and identify rebuilt geometry as current.
 - `feature_delete` returns every deleted node's id/name/kind, including cascades; its description explains

@@ -984,7 +984,7 @@ Delete one entity (with the points only it used and the constraints on them) or 
 
 ## sketch_info
 
-A sketch's plane and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take.
+A sketch's plane and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Contour areas are tessellation-based, typically about 0.1–0.2% below analytic areas for curved contours; use analytic dimensions for exact areas.
 
 ```json
 {
@@ -1442,7 +1442,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
 
 ## fillet
 
-Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline) or {"along": "z"} (vertical edges). The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -2343,7 +2343,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
 
 ## export
 
-Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
+Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count, current document warnings and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -2453,7 +2453,7 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
 
 ## render
 
-Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
+Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -2592,7 +2592,7 @@ Delete a timeline feature, sketch or datum atomically and return deleted node id
 
 ## undo
 
-Undo the last successful modelling tool call in this document, returning its name/arguments and the restored bodies and rebuild diagnostics. Restores the recipe and exact live B-reps. Retains at most 16 calls; reports when older calls were dropped at this limit. Failed calls and read/save/export tools do not consume history. doc_new/doc_open start fresh history. This session undo does not revert files written to disk; no redo.
+Undo the last successful modelling tool call in this document, returning its name/arguments and the restored parameter expressions/values, bodies and rebuild diagnostics. The params list shows what is now in effect, including parameter removal after undoing creation. Restores the recipe and exact live B-reps. Retains at most 16 calls; reports when older calls were dropped at this limit. Failed calls and read/save/export tools do not consume history. doc_new/doc_open start fresh history. This session undo does not revert files written to disk; no redo.
 
 ```json
 {
@@ -2603,7 +2603,7 @@ Undo the last successful modelling tool call in this document, returning its nam
 
 ## topology
 
-List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, centroid, outward normal for planes, area, axis+radius for cylinders/cones) and edges (kind line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE body and are only valid after the latest feature: every feature makes a new body, so call topology again after each one. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; prefer descriptive selections (see `select`) over raw ids.
+List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, centroid, outward normal for planes, tessellation-based area (typically about 0.1–0.2% below analytic for curved faces; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE body and are only valid after the latest feature: every feature makes a new body, so call topology again after each one. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; prefer descriptive selections (see `select`) over raw ids.
 
 ```json
 {
@@ -2779,7 +2779,7 @@ List the faces and edges of a body with persistent ids: faces (kind plane/cylind
 
 ## select
 
-Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward planar corners, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}.
+Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including a boss/plate curved junction, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}.
 
 ```json
 {
@@ -2836,7 +2836,7 @@ Preview what a face or edge selection resolves to on a body right now (the same 
               "type": "object"
             }
           ],
-          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners at straight edges between two planar faces (curved junctions, seams and tangent junctions are excluded); {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
         },
         {
           "type": "null"
@@ -2869,7 +2869,7 @@ Preview what a face or edge selection resolves to on a body right now (the same 
               "type": "object"
             }
           ],
-          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners at straight edges between two planar faces (curved junctions, seams and tangent junctions are excluded); {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
         },
         {
           "type": "null"

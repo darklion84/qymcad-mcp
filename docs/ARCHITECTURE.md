@@ -64,9 +64,10 @@ calls retain up to 16 source-free recipe snapshots plus call metadata. Restorati
 by id and preserves the monotonic id allocator (F-056). Native sketch deletion's removed sources are retained
 once in a session archive while undo references them. Deletion reuses an enclosing tool boundary; direct
 engine deletion creates its own. Undo restores a snapshot without regeneration and reports its call and
-restored bodies/diagnostics; eviction is remembered for limit-exhaustion messages. Read/save/export calls do
+restored parameters/bodies/diagnostics; eviction is remembered for limit-exhaustion messages. Read/save/export calls do
 not enter modelling history; doc_new/doc_open replace the Session and its history. Opening compares stored
-and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds (ADR 0009).
+and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds, compares shell/solid/face
+counts, and inspects stored bodies for sealed voids (ADR 0009). Export/render repeat current document warnings.
 Empty-document saves inspect existing targets and require `allow_empty` to replace stored bodies (ADR 0012).
 
 ## Sketch dimensions
@@ -78,7 +79,9 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 ## Topology and selections
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
-mapped onto `refs::Query`, with engine-only concave/convex planar-corner filters lowered to ids). Edge selections are resolved when the feature is created and stored as pick lists:
+mapped onto `refs::Query`, with engine-only concave/convex local-corner filters lowered to ids). Corner signs
+use outward adjacent triangles plus analytic cylinder normals and circle tangents, excluding seams and G1
+junctions (ADR 0010). Edge selections are resolved when the feature is created and stored as pick lists:
 stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
 face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-025).

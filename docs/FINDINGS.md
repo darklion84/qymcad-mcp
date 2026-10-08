@@ -795,7 +795,10 @@ Conventions:
   `disjoint_array_copies_do_not_warn_about_a_void` derives V=3*2*3*4=72 with three shells/three solids;
   restoring shell-count-only detection makes it fail.
 - **How we handle it:** feature-named warning when excess shells increase relative to the old/source body;
-  disconnected solids stay silent. Session diagnostics survive failed edits/undo, and are not stored in `.qcad`
+  disconnected solids stay silent. Also inspect each stored B-rep on open, including clean opens without
+  regeneration (`opening_unchanged_sealed_geometry_checks_the_stored_body_for_voids` derives the same interior
+  volume). Export/render repeat the current warning strings (`backlog_output_history` compares against
+  `doc_info` and retains render's image). Session diagnostics survive failed edits/undo, and are not stored in `.qcad`
   (ADR [0009](adr/0009-advisory-geometry-diagnostics.md)).
 
 ## F-052 Stored B-reps can disagree with the recipe without a rebuild error
@@ -807,13 +810,21 @@ Conventions:
 - **Evidence:** `usability_warnings::opening_stale_stored_geometry_warns_about_the_rebuilt_body` stores a
   20*30*6 B-rep alongside dirty height 10, then opens with V=20*30*10; `opening_stale_pocket_warns_even_when_the_bbox_is_unchanged`
   changes depth 3→4 with delta V=4*6*1=24; unchanged dirty boolean rebuild stays silent.
-- **How we handle it:** compare stored and rebuilt volume/bbox on open: 0.05 mm per bound from F-016 and
+  `opening_legacy_sealed_plate_reports_the_stored_shell_difference` reconstructs F-017's legacy preparation:
+  stored V=60*40*10−30*16*3.001 versus rebuilt V=60*40*10−30*16*3, a 0.48 mm³ difference, with shells 2→1
+  and faces 12→11. `opening_detects_a_face_count_difference_with_equal_volume_and_bounds` splits four cube
+  walls: V=20³ and bounds unchanged, faces 4*2+2→6. `opening_stale_disjoint_array_reports_solid_counts_without_a_void_warning`
+  changes three disjoint 2*3*4 prisms to two, reporting solids 3→2 and faces 18→12 without a void warning.
+  Native face count is the sum of `Shape::face_kinds` (source: `qymcad-kernel/src/lib.rs:890-892`).
+- **How we handle it:** compare stored and rebuilt shell/solid counts exactly and face counts when available,
+  in addition to volume/bbox on open: 0.05 mm per bound from F-016 and
   `max(1e-6,1e-9*max(|Vold|,|Vnew|))` mm³ numerical volume tolerance. Warn with body/name and before/after
   metrics with four decimals, bbox only beyond its tolerance, and guidance that rebuilt geometry is now used
-  and save updates the file. Unconditional bbox formatting fails the same-bbox pocket regression; equal metrics
-  cannot prove identical topology (ADR 0009).
+  and save updates the file. Include shell/solid/face differences and flag excess stored shells as a sealed
+  void even when the rebuild repaired it. Unconditional bbox formatting fails the same-bbox pocket regression;
+  equal metrics and counts still cannot prove identical geometry (ADR 0009).
 
-## F-053 Signed planar corners require local face geometry
+## F-053 Signed corners, including curved junctions, require local face geometry
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `Shape::edge_face_pairs` returns the two adjacent faces; seams can repeat a face. `refs::Query`
@@ -821,10 +832,22 @@ Conventions:
   vertices for reversed faces. An incident triangle supplies the local inward face tangent.
 - **Evidence:** source: `qymcad-kernel/src/lib.rs:1314-1332`, `occt_bridge.cpp:60-68,3091-3115`,
   `qymcad-core/src/refs.rs` `Query`; MCP `edge_corners::concave_and_convex_select_l_profile_corners_along_y`.
-- **How we handle it:** on straight edges of two planar faces, dot face A's local inward tangent with face B's
+  `golden_curved_corners` checks boss/plate and both bore rims, the concave counterbore floor/wall circle
+  (larger radius; the smaller-radius shoulder is convex), two-cylinder wall intersections, an elliptic oblique
+  rim and cone/plane rims. Volumes derive from prisms, cylinders, disc overlap and the frustum formula.
+  Its boss-base fillet adds `2π[R*r²(1−π/4)+r³(5/6−π/4)]` by Pappus; independent r/d/h/t edits follow through
+  the reopened server and native GUI paths. Source: `face_cylinder` in `qymcad-kernel/src/lib.rs:1243`,
+  edge analytic centre/axis/radius in `qymcad-core/src/geom.rs` `MeshEdge`, native smooth flags in
+  `qymcad-kernel/src/lib.rs:953-994`. Removing curved classification fails all seven curved regressions.
+- **How we handle it:** for two distinct adjacent faces, dot face A's local inward tangent with face B's
   outward normal: positive = concave, negative = convex. Local triangles handle concave caps unlike a global
-  face centroid. Exclude curves, seams and tangent junctions; lower composable filters to persistent ids
+  face centroid. Match shared triangle sides nearest the edge midpoint by coordinates; winding orients the
+  tangent. Analytic radial cylinder normals keep the outward orientation (reversed on bores); analytic circle
+  tangents refine chords. Other surfaces/edges use local tessellation. Exclude seams, native smooth/G1
+  junctions, near-parallel normals and unavailable/degenerate shared triangles; lower composable filters to persistent ids
   (ADR [0010](adr/0010-planar-edge-corners.md), F-024).
+  Empty corner previews carry a named-feature `between` hint; direct/nested hint regressions are in MCP
+  `edge_corners`. Modifiers continue refusing empty final selections (F-025).
 
 ## F-054 Native face sketch origins are projected coordinate origins
 
@@ -877,3 +900,16 @@ Conventions:
   new empty files, and replacement of already empty files. Disabling the guard fails the regression.
 - **How we handle it:** empty result documents inspect existing targets and refuse to replace stored bodies
   unless `allow_empty=true` (ADR 0012).
+
+## F-058 Reported face and sketch contour areas come from tessellation
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** face areas sum mesh triangle areas; sketch contour areas use the shoelace sum of contour points.
+  These are approximate for curved geometry, commonly about 0.1–0.2% below analytic areas, rather than native
+  B-rep surface integrals. The approximation varies with tessellation and shape.
+- **Evidence:** source: `qymcad-core/src/geom.rs:675-695` (`meshface_from_triangles`), `:242-252`
+  (`Contour::signed_area`); engine `topology.rs` copies `MeshFace.area`, and `sketch.rs` uses `signed_area().abs()`.
+  Observed: live final-test report (`tasks/qymcad-tests/final-test-report.md` in the 3d_modeling project)
+  reported roughly 0.1–0.2% discrepancies on curved areas.
+- **How we handle it:** `topology` and `sketch_info` descriptions state the approximation and direct agents
+  to analytic dimensions for exact areas. B-rep volume remains the exact geometry check.
