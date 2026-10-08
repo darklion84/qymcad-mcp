@@ -44,4 +44,11 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
     is 0.0088% below build123d (-42.0 mm3 = 0.001 x pocket area). The agent did not use the recommended
     "sketch on the top, cut reverse" pattern; consider stating in the extrude/plane_offset descriptions which
     pattern gives an exact floor.
+  - **Bug (ours or native classification):** the shelf's flat pocket floor (all 12 edges at z=9.999) is reported by
+    topology/select as kind "sphere", radius 533.76, centre z=-505.22, before and after rebuild; a sphere through
+    the floor plane is impossible. `{"facing":"+z"}` still returns it although facing is documented as planar faces.
+    Repro: tmp/mcp-test/phase4/hanging_shelf.qcad (face 1073741842). Confirmed by mcp-tester5.
+  - The 1.236 mm bbox inflation after doc_open reproduces after a save/reopen round trip and also shows in the
+    render caption; STL export of the same body is exact (±134 × ±85). The collet coupon has none, so the
+    suspect is the shelf's B-spline blend corners (Bnd_Box from poles).
   - Mouth-circle chamfer via of_feature also returns the seam line; the agent fell back to explicit ids.
