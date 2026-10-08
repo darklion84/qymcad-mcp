@@ -80,8 +80,15 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
 mapped onto `refs::Query`, with engine-only concave/convex local-corner filters lowered to ids). Corner signs
-use outward adjacent triangles plus analytic cylinder normals and circle tangents, excluding seams and G1
-junctions (ADR 0010). Edge selections are resolved when the feature is created and stored as pick lists:
+use outward adjacent triangles plus analytic cylinder normals at five native-polyline arc-length fractions.
+Each signed dot product must exceed a margin derived from normal/tangent uncertainty, and all signs must
+agree; seams, G1 junctions and ambiguous edges are omitted (ADR 0010). Engine-identified planes reuse the
+face-sketch planarity check and straight zero-radius native polylines use exact endpoint directions, both
+with numerical allowances. Native cylinder/cone identification takes precedence over mesh planarity.
+Other faces retain facet normals; circle/arc edges use chord tangents.
+The angular-deflection allowances and finite samples are engineering
+checks, not a guarantee for arbitrary unsampled surface behavior or variation along one facet side.
+Edge selections are resolved when the feature is created and stored as pick lists:
 stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
 face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-025).

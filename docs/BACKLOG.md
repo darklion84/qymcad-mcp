@@ -18,10 +18,6 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   features with edge queries.
 - **The rebuild guard clones the `Project` on every public rebuild** (MiMo, final review): fine for small parts;
   make the retry-plan check incremental if large documents get slow.
-- **Curved-corner refinements are untested** (Claude's verification of B1): disabling `local_normal` (analytic
-  cylinder normal) or the analytic circle tangent in `Session::corner_edges` leaves every test green, because the
-  tessellated normals at the sampled edge point are already accurate on the test parts. Add a coarse-tessellation
-  or small-radius case that needs them, or remove them.
 - **Document (or avoid) the 0.001 mm cut entry clearance on internal datum planes** (live test 2026-10-08): a cut
   sketched on a datum plane inside the stock starts 0.001 mm behind the plane (a void of 4.001 instead of 4, floor at
   z = 2.999). QymCAD offsets the cut tool to avoid coplanar faces (see F-017); harmless on a top face, a real

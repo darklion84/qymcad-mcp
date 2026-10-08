@@ -838,14 +838,46 @@ Conventions:
   Its boss-base fillet adds `2π[R*r²(1−π/4)+r³(5/6−π/4)]` by Pappus; independent r/d/h/t edits follow through
   the reopened server and native GUI paths. Source: `face_cylinder` in `qymcad-kernel/src/lib.rs:1243`,
   edge analytic centre/axis/radius in `qymcad-core/src/geom.rs` `MeshEdge`, native smooth flags in
-  `qymcad-kernel/src/lib.rs:953-994`. Removing curved classification fails all seven curved regressions.
+  `qymcad-kernel/src/lib.rs:953-994`. The kernel's `face_axis` (`lib.rs:1211`, `occt_io.cpp:680`) returns a
+  cone's reference-axis origin and direction, not apex/angle data; there is no general surface-normal-at-point
+  getter. `topology::normal_tests::cylinder_normal_corrects_a_facet_that_reverses_a_shallow_sign` supplies an
+  8° facet error reversing a 4° corner sign, recovered by the exact radial normal. Its alignment-fallback test
+  covers zero and near-zero radial/facet dot products. The shallow conical spotface golden checks omission
+  with a formula-derived removed volume. `topology::corner_tests::native_spline_crease_with_changing_sign_is_omitted`
+  builds a valid closed native Bezier solid of volume `240-10-4/15 mm³`; its curved continuous crease changes
+  sign away from the midpoint. All five facet samples clear their margins and include both corner signs.
+  A straight-seam prototype instead had one shared tessellated side despite changing surface normals;
+  every fraction read the same facet normal, so boundary curvature is required for this fixture's tessellation.
+  `golden_planar_corners` checks two convex 135° boundaries of a 45° chamfer (V=3160 mm³), a concave
+  90° V-groove bottom (V=3136 mm³), and a convex 30° wedge (V=600√3 mm³), including formula bounds,
+  edge positions/lengths and planar adjacency. Before correction the chamfer and wedge were omitted.
+  Reverting only planar normals to mesh uncertainty fails the wedge; reverting plane and line allowances
+  fails the chamfer too. `topology::corner_tests::straight_polyline_detection_uses_relative_collinearity`
+  checks two-point/subdivided lines, three length scales, curved and degenerate polylines.
+  `topology::normal_tests::narrow_native_cylinders_and_cones_keep_their_curved_normal_path` checks
+  native 0.1° cylinder/cone sectors against the frustum-volume formula times `0.1/360`; both pass
+  mesh planarity but must keep the curved path. Removing the analytic-type guard fails the test.
 - **How we handle it:** for two distinct adjacent faces, dot face A's local inward tangent with face B's
   outward normal: positive = concave, negative = convex. Local triangles handle concave caps unlike a global
-  face centroid. Match shared triangle sides nearest the edge midpoint by coordinates; winding orients the
-  tangent. Analytic radial cylinder normals keep the outward orientation (reversed on bores); analytic circle
-  tangents refine chords. Other surfaces/edges use local tessellation. Exclude seams, native smooth/G1
-  junctions, near-parallel normals and unavailable/degenerate shared triangles; lower composable filters to persistent ids
-  (ADR [0010](adr/0010-planar-edge-corners.md), F-024).
+  face centroid. Match shared triangle sides by coordinates at five native-polyline arc-length fractions
+  (0.1, 0.3, 0.5, 0.7, 0.9); winding orients each chord tangent. Analytic radial cylinder normals keep the
+  outward orientation (reversed on bores), falling back to the facet normal when alignment is unreliable.
+  Engine-identified planar faces use `planar_normal` with numerical allowance `1e-6`, reusing the
+  face-sketch planarity check (F-011), after native cylinder/cone identification via `face_axis` as in
+  `topology`; narrow native curved patches retain their previous normal path. Zero-radius edges with native polylines collinear within `1e-9`
+  relative to their chord length use the exact native endpoint direction, aligned to triangle winding,
+  with allowance `1e-6`. Two distinct points qualify; degenerate/closed polylines do not.
+  Analytic circle tangents remain removed. With `delta(theta)=2*sin(theta/2)`, assign other noncylindrical
+  normals `delta(0.3)` from F-021, circular chord tangents `delta(0.15)`, other curved tangents
+  `delta(0.3)`, and analytic cylinder normals `1e-6`.
+  The absolute triple product must exceed the sum of these
+  three vector-error allowances at every sample; all signs must agree. Omit seams, native smooth/G1
+  junctions, uncertain signs and unavailable/degenerate samples. The angular-deflection allowance is an
+  engineering estimate, not a formal OCCT normal-error bound. Plane/line allowances assume the established
+  engine planarity check (triangle-normal agreement within ~0.25°) and native-polyline collinearity identify
+  planes/lines; neither is an analytic OCCT type proof. Finite samples cannot exclude arbitrary
+  unsampled sign changes or normal variation within a single shared facet side. Lower composable filters to persistent ids (ADR
+  [0010](adr/0010-planar-edge-corners.md), F-024).
   Empty corner previews carry a named-feature `between` hint; direct/nested hint regressions are in MCP
   `edge_corners`. Modifiers continue refusing empty final selections (F-025).
 

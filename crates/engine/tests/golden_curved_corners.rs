@@ -270,3 +270,44 @@ fn concave_boss_fillet_rounds_one_circle_and_follows_parameters_on_server_and_gu
         assert_close(volume(&opened), expected, tolerance, &format!("server boss-base fillet follows {name}"));
     }
 }
+
+#[test]
+fn shallow_conical_spotface_rim_is_omitted_when_its_sign_is_uncertain() {
+    let mut s = plate();
+    // The cone rises 3 degrees above XY: delta_z=(R-r)*tan(3 degrees).
+    let depth = 5.0 * 3.0_f64.to_radians().tan();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XZ), None).unwrap();
+    s.sketch_polyline(
+        sk,
+        &PolylineSpec {
+            points: [(0.0, -1.0), (5.0, -1.0), (5.0, 6.0 - depth), (10.0, 6.0), (0.0, 6.0)]
+                .into_iter()
+                .map(|(x, z)| Xy(x.into(), z.into()))
+                .collect(),
+            closed: true,
+            construction: false,
+            dimensioned: false,
+        },
+    )
+    .unwrap();
+    let (_, report) = s
+        .revolve(&Revolve {
+            sketch: sk,
+            profiles: None,
+            axis: AxisRef::SketchY,
+            angle: 360.0.into(),
+            direction: Direction::Normal,
+            op: Op::Cut,
+            target: None,
+            name: Some("shallow spotface".into()),
+        })
+        .unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    // Bore plus frustum less its overlapping bore: πr²*t + π*d*(R²+Rr-2r²)/3.
+    let removed = PI * 25.0 * 6.0 + PI * depth * (100.0 + 50.0 - 50.0) / 3.0;
+    assert_close(volume(&s), W * L * 6.0 - removed, 1e-3, "shallow spotface volume");
+    let topo = s.topology(None, true).unwrap();
+    let rim = circle_at(&topo, 10.0, 6.0);
+    assert!(!corners(&mut s, &Sel::Concave).contains(&rim), "shallow spotface rim must not be concave");
+    assert!(!corners(&mut s, &Sel::Convex).contains(&rim), "uncertain shallow spotface rim must be omitted");
+}
