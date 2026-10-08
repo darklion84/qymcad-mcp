@@ -95,7 +95,7 @@ Save the document as .qcad; the directory must exist. An explicit path permits r
 
 ## doc_info
 
-The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. Bboxes include OCCT tolerance padding in-session (up to about 0.3 mm on curved bodies); after doc_open stored B-reps may report tighter bounds. Use volume_mm3 for size checks and topology face positions for placement.
+The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. Bboxes use fresh tessellation with 0.005 mm nominal deflection (larger bodies over 500 mm diagonal use 1e-5 of the diagonal) plus f32 coordinate rounding, including after doc_open and rebuild; they approximate extrema and may slightly under-bound curves (native padded bounds are a fallback if meshing fails). Use volume_mm3 for size checks and topology face positions for placement.
 
 ```json
 {
@@ -1024,7 +1024,7 @@ A sketch's plane (named datums show name and plane id) and world_frame (origin m
 
 ## plane_offset
 
-Create a datum plane parallel to a base or datum plane at a distance (e.g. the top face level for a pocket: {"base": "XY", "dist": "t"}). Returns its id; sketch on it with {"plane": id}.
+Create a datum plane parallel to a base or datum plane at a distance (e.g. the top face level for a pocket: {"base": "XY", "dist": "t"}). Returns its id; sketch on it with {"plane": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.
 
 ```json
 {
@@ -1131,7 +1131,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
 
 ## extrude
 
-Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -1282,7 +1282,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
 
 ## revolve
 
-Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer when a full-turn revolve profile lies on the negative side of its axis; try the equivalent positive-side profile or reverse the construction-axis line endpoints (for a partial turn this changes the sweep). Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {

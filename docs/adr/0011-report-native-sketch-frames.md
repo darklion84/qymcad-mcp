@@ -30,3 +30,5 @@ axis point lies on the axis, not on the cylindrical surface.
 
 Evidence: `crates/engine/tests/usability_info.rs`, `crates/mcp/tests/usability_reporting.rs`, and U6 source
 references in `tasks/u6-integration.md`.
+
+BBox reporting policy superseded by [ADR 0015](0015-tight-reporting-bounds.md) after phase-4 acceptance exposed unmeshed torus enclosure inflation (F-066).

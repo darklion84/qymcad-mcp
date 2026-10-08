@@ -23,8 +23,8 @@ pub struct BodyInfo {
     /// mm³, serialized as `volume_mm3` at native floating-point precision.
     #[serde(rename = "volume_mm3")]
     pub volume: f64,
-    /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm. OCCT tolerance/meshing padding on curved bodies
-    /// can exceed tight bounds by up to ~0.3 mm; reopening may tighten bounds (FINDINGS F-016).
+    /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm, from fresh nominal-deflection tessellation
+    /// (.005 mm, scaled to 1e-5 of diagonals over 500 mm) plus f32 coordinate rounding; native bounds are a fallback if meshing fails (F-066).
     pub bbox: [f64; 6],
 }
 
@@ -48,12 +48,42 @@ impl BodyMetrics {
     fn of(shape: &Shape) -> Self {
         Self {
             volume: shape.volume(),
-            bbox: shape.bbox(),
+            bbox: reporting_bbox(shape),
             shells: shape.shell_count(),
             solids: shape.solid_count(),
             faces: shape.face_kinds().map(|kinds| kinds.into_iter().sum()),
         }
     }
+}
+
+/// Reporting bounds must not depend on the live shape's triangulation state (F-066).
+/// Tessellate an independent copy: the native tessellator cleans/replaces triangulations even via &Shape.
+fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
+    let _gate = qymcad_kernel::kernel_gate();
+    let measured = || {
+        let copy = Shape::from_brep_bytes(&shape.to_brep_bytes()?)?;
+        // Keep .005 mm accuracy for ordinary parts, but avoid unbounded mesh growth on huge imports.
+        // F-066: upstream also scales deflection with size to bound curved-body mesh costs.
+        let deflection = 0.005_f64.max(copy.bbox_diag() * 1e-5);
+        let (mesh, faces) = copy.tessellate_merged(deflection)?;
+        // A partial mesh cannot establish the body's extrema. Retain conservative native bounds instead.
+        let face_count: u32 = copy.face_kinds()?.into_iter().sum();
+        if faces.len() != face_count as usize || mesh.verts.is_empty() {
+            return None;
+        }
+        let mut bbox = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        for v in &mesh.verts {
+            for (i, coordinate) in [v.x, v.y, v.z].into_iter().enumerate() {
+                if !coordinate.is_finite() {
+                    return None;
+                }
+                bbox[i] = bbox[i].min(coordinate);
+                bbox[i + 3] = bbox[i + 3].max(coordinate);
+            }
+        }
+        Some(bbox)
+    };
+    measured().or_else(|| shape.bbox())
 }
 
 pub struct Session {
@@ -140,7 +170,7 @@ impl Session {
             let Some(sh) = sess.shapes.get(&id) else { continue };
             let new = BodyMetrics::of(sh);
             let (volume, rebuilt) = (old.volume, new.volume);
-            // F-016's 0.05 mm allowance applies to padded bounds, not volume. Boolean volume
+            // The 0.05 mm comparison allowance applies to approximate bounds, not volume (F-066). Boolean volume
             // comparisons use numerical roundoff only, so interior changes with identical bboxes warn.
             let volume_tol = (volume.abs().max(rebuilt.abs()) * 1e-9).max(1e-6);
             let bounds = old.bbox.zip(new.bbox);
@@ -518,7 +548,7 @@ impl Session {
             .filter(|b| !consumed.contains(b))
             .filter_map(|b| {
                 let sh = self.shapes.get(&b)?;
-                Some(BodyInfo { id: b, name: self.node_name(b), volume: sh.volume(), bbox: sh.bbox().unwrap_or([0.0; 6]) })
+                Some(BodyInfo { id: b, name: self.node_name(b), volume: sh.volume(), bbox: reporting_bbox(sh).unwrap_or([0.0; 6]) })
             })
             .collect()
     }
@@ -618,6 +648,23 @@ pub(crate) fn restore_faces(p: &mut Project) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reporting_sphere_bounds_follow_nominal_accuracy_at_part_and_large_import_scales() {
+        for radius in [2.0, 1000.0] {
+            let shape = {
+                let _gate = qymcad_kernel::kernel_gate();
+                Shape::sphere_named(radius, [1, 2, 3]).unwrap()
+            };
+            // A sphere has bounds ±r and diagonal 2*r*sqrt(3). Use nominal deflection
+            // max(.005, diagonal*1e-5) plus f32 coordinate rounding, rather than native padding.
+            let tolerance = 0.005_f64.max(2.0 * radius * 3.0_f64.sqrt() * 1e-5) + f32::EPSILON as f64 * radius;
+            let bbox = reporting_bbox(&shape).unwrap();
+            for (actual, expected) in bbox.into_iter().zip([-radius, -radius, -radius, radius, radius, radius]) {
+                assert!((actual - expected).abs() <= tolerance, "sphere bbox: {actual} vs {expected} ± {tolerance}");
+            }
+        }
+    }
 
     #[test]
     fn live_unnamed_edges_refuse_topology_restoration() {

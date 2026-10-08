@@ -107,8 +107,18 @@ impl Session {
     /// Edges are stored as a pick list, like `fillet`.
     pub fn chamfer(&mut self, body: Option<Id>, edges: &Sel, dist: &Num, d2: Option<&Num>, name: Option<&str>) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
+        let mut revolve_source = false;
         self.atomic(|s| {
             let src = s.source_body(body)?;
+            let mut ancestor = Some(src);
+            while let Some(id) = ancestor {
+                let Some(node) = s.p.timeline.iter().find(|n| n.id == id) else { break };
+                if matches!(node.kind, FeatureKind::Revolve { .. }) {
+                    revolve_source = true;
+                    break;
+                }
+                ancestor = node.kind.consumed_body();
+            }
             let d = positive(s, dist, "chamfer distance")?;
             let d2v = d2.map(|n| positive(s, n, "chamfer d2")).transpose()?;
             let ids = s.edges_now(src, edges)?;
@@ -120,6 +130,14 @@ impl Session {
             }
             s.set_node_name(id, name);
             Ok(id)
+        })
+        .map_err(|mut error| {
+            if revolve_source {
+                if let Error::Rebuild(lines) = &mut error {
+                    lines.push("if this mouth edge comes from a full-turn revolve with its profile on the negative side of its axis, try the equivalent profile on the positive side or reverse the construction-axis line endpoints; pinned OCCT can refuse cone/plane chamfers because of surface parameterization, even when the distance fits (F-067)".into());
+                }
+            }
+            error
         })
     }
 

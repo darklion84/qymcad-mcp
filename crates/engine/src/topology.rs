@@ -497,7 +497,7 @@ impl Session {
             } else if let Some((o, d)) = shape.face_axis(f.id) {
                 fi.kind = FaceKind::Cone;
                 fi.axis = Some([o, d]);
-            } else if let Some((c, r)) = self.p.face_sphere(body, &face_key(f)) {
+            } else if let Some((c, r)) = self.validated_face_sphere(body, f) {
                 fi.kind = FaceKind::Sphere;
                 fi.center = Some(c);
                 fi.radius = Some(r);
@@ -532,6 +532,27 @@ impl Session {
         out_faces.sort_unstable_by_key(|f| f.id);
         out_edges.sort_unstable_by_key(|e| e.id);
         Ok(Topology { body, faces: out_faces, edges: out_edges })
+    }
+
+    /// Native face_sphere is a permissive mesh fit (F-065), not a surface-type query.
+    /// Validate every vertex of this face at f32 mesh-coordinate accuracy before trusting it.
+    fn validated_face_sphere(&self, body: Id, face: &MeshFace) -> Option<([f64; 3], f64)> {
+        let (center, radius) = self.p.face_sphere(body, &face_key(face))?;
+        let mesh = &self.p.bodies[self.p.mesh_index(body)?].mesh;
+        let mut scale = radius.max(1.0);
+        let mut residual = 0.0_f64;
+        for &ti in &face.triangles {
+            for &vi in mesh.tris.get(ti as usize)? {
+                let v = mesh.verts.get(vi as usize)?;
+                let point = [v.x, v.y, v.z];
+                scale = point.into_iter().chain(center).map(f64::abs).fold(scale, f64::max);
+                residual = residual.max((norm(sub(point, center)) - radius).abs());
+            }
+        }
+        // Coordinates originate in f32 (F-063); 16 ulps allow the fitted center/radius arithmetic.
+        // This is a fit acceptance tolerance, independent of tessellation chord deflection:
+        // sphere mesh vertices themselves lie on the surface.
+        (residual <= 16.0 * f32::EPSILON as f64 * scale).then_some((center, radius))
     }
 
     /// Resolve a selection against `body` (default: the current body) now, as QymCAD will at the next rebuild.
@@ -602,7 +623,7 @@ impl Session {
         let planes: HashMap<_, _> = faces
             .iter()
             .filter_map(|(&id, f)| {
-                if self.p.face_sphere(body, &face_key(f)).is_some() {
+                if self.validated_face_sphere(body, f).is_some() {
                     return None;
                 }
                 corner_planar_normal(shape, f, mesh).map(|n| (id, n))

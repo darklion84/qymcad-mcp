@@ -53,6 +53,10 @@ All notable changes to this project are documented here. The format follows
 - Export body result `mesh_volume` is renamed to `mesh_volume_mm3` (mm³), with no compatibility alias.
 
 ### Fixed
+- Extrude and offset-plane descriptions explain why a reverse cut from the stock top gives an exact pocket floor.
+- Failed chamfers on revolve-derived bodies include a conditional cone-mouth profile/axis workaround for the pinned OCCT parameterization issue.
+- Report tight mesh-derived body bounds after open and rebuild, fixing inflated shelf rim bounds in doc_info, doc_open and render captions.
+- Reject spurious spherical mesh fits on planar pocket floors; topology and kind selections report their plane normal.
 - Empty composed corner selections report the body's actual inward/outward counts and explain that none
   survives the rest of the selection, including subtraction. A shared check adds "no edge is both" only
   when a positive intersection requires both signs; signs under any other composition do not count (G1c).

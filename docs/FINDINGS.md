@@ -159,14 +159,16 @@ Conventions:
   Unfocused keystrokes act as hotkeys (Delete removed a sketch dimension once). Not used by the server.
 - **Evidence:** observed 2026-10-04.
 
-## F-016 `Shape::bbox()` is inflated by edge tolerances after booleans
+## F-016 Native `Shape::bbox()` is inflated by tolerances and geometric enclosures
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `bbox()` comes from `BRepBndLib::Add`, which includes tolerances. A 60 × 40 × 6 plate after hole/pocket
   cuts reports 60.0126 × 40.0126 × 6.0126 (+0.0063 mm per side). A ~0.05 mm size tolerance fits this plate;
-  curved countersinks can carry about 0.26 mm padding (live k5-test-report, 2026-10-08), so reporting descriptions
-  allow up to ~0.3 mm, not a universal 0.05 mm bound;
+  curved countersinks can carry about 0.26 mm padding (live k5-test-report, 2026-10-08), so the former reporting descriptions
+  allowed up to ~0.3 mm rather than a universal 0.05 mm bound;
   use volume for exact size checks and face positions/topology for placement (F-017).
+- **Server reporting:** superseded by F-066: fresh mesh extrema replace native padded reporting bounds.
+  The observations above describe the native getter and the server before H1.
 - **Evidence:** test: `crates/engine/tests/golden_plate.rs` `plate_volume_and_bbox`.
 - **Reopened bounds:** B-rep deserialization can give tighter bounds than live in-session boolean shapes.
   `doc_info` documents this difference (U6f); exact volume and topology positions remain the size/placement
@@ -1004,7 +1006,8 @@ Conventions:
   `golden_cut_clearance::internal_cut_entry_seam_and_top_face_cut_agree_on_server_and_gui_paths` derives
   internal V=20*30*20-4*6*(depth+.001), floor z=3-.001, and top-entry V=20*30*20-4*6*depth, floor z=20-depth;
   depth 4 then 5 agrees through server and native GUI parameter edits.
-- **How we handle it:** extrude documents the clearance; preserve native recipes without compensation.
+- **How we handle it:** extrude and plane_offset explain the exact-floor pattern: sketch at the stock top
+  and cut in reverse, so entry clearance is outside material; preserve native recipes without compensation.
   No native disable-seam extent flag exists. F-017's dependency workaround remains independent.
 
 
@@ -1092,3 +1095,103 @@ Conventions:
   Blend face names with source edge ids outside the picks (source: `model/regen.rs:2763-2789` prepares all
   edge blend names). This would be incomplete for unnamed/duplicate edges; native contour enumeration would
   require an upstream FFI addition.
+
+
+## F-065 Upstream sphere fits can accept a flat rounded pocket floor
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `Project::face_sphere` is a least-squares fit to this face's mesh vertices, not a native
+  surface query. Unscaled normal equations with an absolute pivot cutoff do not reliably reject a
+  numerically singular coplanar point set. Its 2% radius residual and 0.9 normal cosine checks can then
+  accept a large spurious sphere over a wide plane. This is an upstream bug candidate.
+- **Evidence:** source: `crates/qymcad-core/src/model/assembly.rs:2330-2345,2367-2437,2443-2465`.
+  Repro: fixture `crates/engine/tests/fixtures/hanging_shelf.qcad`, pocket floor face 1073741842;
+  268×170 R15 stock, 260×162 R11 pocket cut from z=10, R4 bottom loop fillet. The floor's
+  support plane is z=10−0.001 (F-061); all its edges lie on that plane, yet upstream returns a sphere.
+  `golden_acceptance::shelf_floor_is_planar_after_open_and_rebuild` failed before the server fix
+  with `left: Sphere, right: Plane`. Minimal fit-only repro:
+  `upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh` loads stored mesh data and places only that
+  floor in regen_faces, then calls `Project::face_sphere` without a native Shape or recipe rebuild. Every
+  referenced vertex has z=10−.001, and the accepted sphere contradicts their radial distances beyond
+  coordinate precision. Native `face_cylinder`/`face_axis` are kernel queries
+  (`crates/qymcad-kernel/src/lib.rs:1211-1225,1243-1266`); no per-face native plane/sphere getter exists.
+- **How we handle it:** validate the fitted radial residual of every vertex on the same face against
+  16·f32::EPSILON·max(1,radius,absolute coordinates,absolute center coordinates), allowing mesh
+  coordinate rounding (F-063) and fit arithmetic, rather than a percentage of radius. Rejecting the
+  spurious fit lets the existing planar-normal path report the floor, and avoids excluding it from
+  corner normals. Sphere precedence remains for actual sphere fits, protecting sparse curved patches.
+  Restoring the native 2% allowance makes the regression fail again; outward shell corner spheres
+  (`golden_features::shell_open_top`) and the single-triangle native sphere guard remain green.
+
+
+## F-066 Unmeshed torus bounds explain the shelf's open-time inflation
+
+- **Version:** v0.1.0-dev.20261001 (OCCT 7.9.3)
+- **What:** `Shape::bbox` calls `BRepBndLib::Add`, using triangulations when present, otherwise geometric
+  enclosures. Saved binary B-reps exclude triangulations; clean open deserializes those shapes and its no-op
+  dirty regenerate retains them. Dirty feature rebuilds tessellate the new shapes, so bounds differ.
+  The four outer top-rim corner faces are native tori, not B-splines: unmeshed OCCT torus bounds use
+  enclosing points at radius `(major+minor)*sec(pi/8)`. Here major+minor=15, giving excess
+  `15*(sec(pi/8)-1)=1.2358830044 mm`, plus native tolerance, exactly explaining the open bbox.
+- **Evidence:** source: `crates/qymcad-kernel/src/lib.rs:1508-1510`, `occt_helical.cpp:764-770`,
+  `occt_io.cpp:23-27,76-84`, `kernel.rs:170-171`; engine `session.rs` open/deserialization and
+  `regenerate_dirty_with_shapes`. OCCT V7_9_3 sources: `src/BRepBndLib/BRepBndLib.cxx:91-106`,
+  `src/BndLib/BndLib_AddSurface.cxx:277-279`, `src/BndLib/BndLib.cxx:96-110,1540-1548`.
+  A direct OCCT probe on fixture body 123 identifies its four torus enclosures; `AddOptimal(shape,false,false)`
+  agrees with formula extents ±134×±85, but no optimal getter is exposed by the pinned Rust kernel.
+- **How we handle it:** reporting (`result_bodies`, open stored/rebuilt metrics and thus doc_info/render/undo)
+  measures vertices of `tessellate_merged(max(.005,diagonal*1e-5))` on an independent B-rep copy.
+  Bodies up to 500 mm diagonal use .005 mm; larger imports use size-adaptive accuracy to avoid
+  runaway mesh growth (native size-scaling rationale: `lib.rs:1568-1574`). The native tessellator
+  cleans/replaces triangulations even through `&Shape` (`occt_bridge.cpp:133-153`); copying avoids observer
+  mutation. Merged meshes include all solids (`lib.rs:1542-1566`). Incomplete face coverage, nonfinite
+  vertices or failed copies/meshes fall back to native conservative bounds. Deflection is nominal, with
+  f32 coordinate rounding (`occt_bridge.cpp:52-58`, `lib.rs:2039-2057`); curve extrema can be slightly
+  under-bounded. The native rescue mesher disables surface-deflection control (`occt_bridge.cpp:167-176`),
+  so this is an engineering approximation, not a universal certified containment or error bound.
+- **Tests:** `golden_acceptance::shelf_bounds_are_tight_on_open_rebuild_and_save_round_trip` checks
+  ±268/2×±170/2×[0,17] with tolerance `.005+f32::EPSILON*134`, derived from requested chord deflection
+  and coordinate precision, including doc_info, render, save/reopen and parameter rebuilds. Reporting preserves
+  B-rep bytes and the live native bbox/triangulation state. Sphere bounds are tested at r=2 and
+  r=1000 against ±r and the size-derived deflection tolerance. Before fix: `got -135.23588310438592, expected -134 ± 0.005015974044799805`.
+  Switching back to native-first bounds makes the same regression red; restored from /tmp backup.
+  MCP `backlog_selection::opened_shelf_reports_tight_bounds_in_both_fields_and_render_caption` checks both
+  doc_open bbox fields, doc_info and the caption through actual tool handlers.
+
+
+## F-067 Revolved cone parameterization can defeat a later mouth chamfer (upstream candidate)
+
+- **Version:** v0.1.0-dev.20261001 (OCCT 7.9.3)
+- **What:** revolving equivalent cone profiles on opposite sides of a construction axis can create different
+  cone surface-frame handedness. Pinned OCCT can refuse the cone/plane mouth chamfer on the indirect frame,
+  even though the solid is valid and the same distances fit the equivalent direct-frame geometry. Axis sign
+  alone is not the cause: reversing the requested revolve axis changes handedness/success while the cone's
+  axial sign can stay unchanged. This is an upstream parameterization bug candidate; no exact failing
+  OCCT internal branch is claimed. QymCAD's seam rescue repairs some simple cases, so negative-side
+  profiles do not universally fail.
+- **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs:3765-3776` resolves a line axis from its
+  endpoint difference; `model/regen.rs:2511,2553-2558` forwards it; `crates/qymcad-kernel/src/kernel.rs:495`,
+  `occt_bridge.cpp:2793-2800` call `BRepPrimAPI_MakeRevol`. Chamfer seeds use `BRepFilletAPI_MakeChamfer`
+  (`occt_io.cpp:908`), retrying after seam rescue (`:1658-1665`). The source itself warns a reversed
+  circular frame makes cone/plane chamfers fail (`:1467-1469`). Any native failure maps to
+  `ChamferTooBig` (`kernel.rs:817`), so the distance diagnosis is not proof of an oversized chamfer.
+- **Minimal native OCCT repro:** box [-15,15]×[-15,15]×[0,10]; revolve the XZ face with points
+  (0,-1),(3.375,-1),(1.875,11),(0,11) about +Z for 2*pi and subtract it; chamfer the two mouth circles
+  .5 mm with `BRepFilletAPI_MakeChamfer::Add(distance,edge)`. Reflect the profile in x=0, reversing point
+  order to retain face winding. Direct OCCT (no QymCAD rescue) succeeds for the original/direct cone frame,
+  fails for reflected/indirect; reversing the axis swaps success. `BRepCheck_Analyzer` accepts the cut.
+  The cone radius is r(z)=3.25−.125*z: intended bottom Ø6.5/top Ø4 with 1 mm same-taper overrun.
+- **Server repro/controls:** `golden_revolve_chamfer::centered_conical_seat_chamfers_from_both_profile_sides`
+  proves both centered profiles work through QymCAD rescue with formula frustum and bevel volumes.
+  `upstream_negative_side_shelf_refuses_each_mouth_but_axis_reversal_recovers` reflects fixture profiles
+  around their own x=±119 axes, preserving r(z), all other geometry and pre-chamfer volume. Every one
+  of the eight native mouth-circle chamfers fails, and reversing the construction-axis endpoints recovers.
+  `negative_side_revolve_chamfer_error_suggests_profile_or_axis_workaround` initially failed because
+  `chamfer 0.50 too big` omitted advice; disabling the new advice reproduces that failure.
+- **How we handle it (option b):** after a failed chamfer whose source chain contains a revolve, retain the
+  native reason and add conditional advice: for a full-turn negative-side profile try the equivalent positive
+  side or reverse the construction-axis line endpoints. Document the limitation on revolve. Partial-turn
+  endpoint reversal changes the sweep. Preserve recipes/axes; a cone axis sign cannot prove frame handedness,
+  and replacing moving line axes by static datums loses their dependency. A future full-turn-only hidden
+  reversed line sharing original endpoints could preserve motion, but requires a sketch/recipe policy and
+  does not cover opposite-side multi-profiles or generic datum axes. Automatic normalization is deferred.

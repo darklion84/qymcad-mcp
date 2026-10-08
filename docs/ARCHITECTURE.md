@@ -139,8 +139,9 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 Output policy: every body-volume field in rebuild results, `doc_info` and undo is `volume_mm3`, at native
 floating-point precision without decimal rounding. Volume is a B-rep integral in mm³. Display clients may
 round it for presentation. Mesh export reports per-body `mesh_volume_mm3`, also in mm³ (including GLB),
-and omits it for exact STEP exports. Bboxes retain OCCT tolerance/meshing padding (observed up to ~0.3 mm on curved
-bodies); reopening can tighten them. Use volume and topology positions for accurate size/placement checks.
+and omits it for exact STEP exports. Bboxes measure a fresh independent B-rep copy tessellated at nominal deflection
+max(0.005 mm, 1e-5 of body diagonal), plus f32 coordinate rounding, consistently after open and rebuild (F-066). Curve extrema may be slightly
+under-bounded; incomplete/failed tessellation falls back to conservative native padded bounds. Use volume and topology positions for accurate size/placement checks.
 Topology coordinates keep their existing presentation rounding; sorting happens before formatting.
 
 Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a

@@ -311,7 +311,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "plane_offset",
             "Create a datum plane parallel to a base or datum plane at a distance (e.g. the top face level for a pocket: \
-             {\"base\": \"XY\", \"dist\": \"t\"}). Returns its id; sketch on it with {\"plane\": id}.",
+             {\"base\": \"XY\", \"dist\": \"t\"}). Returns its id; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",
             |st, a: PlaneOffsetArgs| {
                 let s = st.doc()?;
                 let base = a.base.resolve(s)?;
@@ -326,6 +326,7 @@ pub fn tools() -> Vec<Tool> {
                  new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also \
                  returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. \
                  On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. \
+                 For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. \
                  Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock.",
                 stale!()
             ),
@@ -359,7 +360,7 @@ pub fn tools() -> Vec<Tool> {
             "revolve",
             concat!(
                 "Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the \
-             part's body), cut, intersect, or a new body. Atomic.",
+             part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer when a full-turn revolve profile lies on the negative side of its axis; try the equivalent positive-side profile or reverse the construction-axis line endpoints (for a partial turn this changes the sweep).",
                 stale!()
             ),
             |st, a: RevolveArgs| {

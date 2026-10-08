@@ -71,7 +71,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "doc_info",
             "The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. \
-             Bboxes include OCCT tolerance padding in-session (up to about 0.3 mm on curved bodies); after doc_open stored B-reps may report tighter bounds. \
+             Bboxes use fresh tessellation with 0.005 mm nominal deflection (larger bodies over 500 mm diagonal use 1e-5 of the diagonal) plus f32 coordinate rounding, including after doc_open and rebuild; they approximate extrema and may slightly under-bound curves (native padded bounds are a fallback if meshing fails). \
              Use volume_mm3 for size checks and topology face positions for placement.",
             |st, _: NoArgs| Ok(serde_json::to_value(st.doc()?.info()).unwrap_or(Value::Null)),
         ),

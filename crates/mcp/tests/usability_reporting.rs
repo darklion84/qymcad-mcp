@@ -57,7 +57,7 @@ fn reporting_descriptions_explain_frames_save_directory_and_bbox_padding() {
         ("sketch_create", "x/y directions"),
         ("sketch_info", "world_frame"),
         ("doc_save", "directory must exist"),
-        ("doc_info", "OCCT tolerance padding"),
+        ("doc_info", "0.005 mm nominal deflection"),
         ("doc_info", "doc_open"),
     ] {
         let description = tools.iter().find(|t| t["name"] == name).unwrap()["description"].as_str().unwrap();

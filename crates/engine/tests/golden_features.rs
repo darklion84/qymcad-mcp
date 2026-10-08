@@ -903,8 +903,9 @@ fn a_rolled_back_feature_leaves_old_bodies_bit_identical() {
     assert_close(volume(&s), 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1e-3, "parameter-edited pocket");
     let before: Vec<(Id, u64)> = s.result_bodies().iter().map(|b| (b.id, b.volume.to_bits())).collect();
     let breps = |s: &Session| {
+        let bodies = s.result_bodies();
         let _gate = qymcad_kernel::kernel_gate();
-        s.result_bodies().iter().map(|b| (b.id, s.shape(b.id).unwrap().to_brep_bytes().unwrap())).collect::<Vec<_>>()
+        bodies.iter().map(|b| (b.id, s.shape(b.id).unwrap().to_brep_bytes().unwrap())).collect::<Vec<_>>()
     };
     let before_breps = breps(&s);
     let e = s.fillet(None, &along_z(), &100.0.into(), None).unwrap_err();

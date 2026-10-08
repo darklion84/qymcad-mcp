@@ -96,10 +96,12 @@ fn kind_filters_match_topology_taxonomy() {
 }
 
 #[test]
-fn bbox_description_acknowledges_curved_padding() {
+fn bbox_description_explains_tessellation_accuracy() {
     let list = Registry::new().list();
     let description = list.iter().find(|t| t["name"] == "doc_info").unwrap()["description"].as_str().unwrap();
-    assert!(description.contains("0.3 mm"), "doc_info must describe observed curved padding: {description}");
+    for required in ["0.005 mm", "nominal", "f32", "under-bound", "fallback"] {
+        assert!(description.contains(required), "doc_info must explain {required}: {description}");
+    }
 }
 
 #[test]
@@ -175,4 +177,23 @@ fn face_kind_modifiers_refuse_unsupported_persistent_kind_queries() {
         );
         assert_eq!(call(&mut r, "doc_info", json!({})), before, "{tool} refusal preserves the document");
     }
+}
+
+#[test]
+fn opened_shelf_reports_tight_bounds_in_both_fields_and_render_caption() {
+    let mut r = Registry::new();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../engine/tests/fixtures/hanging_shelf.qcad");
+    let opened = call(&mut r, "doc_open", json!({"path":path}));
+    // Centered stock width/length/height; subtractive features leave the side-wall extrema.
+    // .005 nominal chord deflection + f32 rounding at coordinate 134 mm.
+    let tolerance = 0.005 + f32::EPSILON as f64 * 134.0;
+    let info = call(&mut r, "doc_info", json!({}));
+    for b in [&opened["rebuild"]["bodies"][0], &opened["doc"]["bodies"][0], &info["bodies"][0]] {
+        for (actual, expected) in b["bbox"].as_array().unwrap().iter().zip([-134.0, -85.0, 0.0, 134.0, 85.0, 17.0]) {
+            assert!((actual.as_f64().unwrap() - expected).abs() <= tolerance, "tight bbox: {b}");
+        }
+    }
+    let render = r.call("render", json!({"view":"top", "width":128, "height":128})).unwrap().unwrap();
+    let caption = render.iter().find_map(|item| item["text"].as_str()).unwrap();
+    assert!(caption.contains("bbox x -134..134 y -85..85 z") && caption.contains("..17 mm"), "tight render caption: {caption}");
 }
