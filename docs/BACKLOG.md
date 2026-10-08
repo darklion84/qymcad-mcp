@@ -60,3 +60,12 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - a cut that removes nothing reports the raw key "error-cut-removed-nothing" with no hint (e.g. "cut in reverse").
   - wish: kind "torus" (fillet corner tori are "other", like NURBS); asymmetric chamfer result does not say
     which face took `dist`.
+- **Bug (found by Codex as a live tester, confirmed 2026-10-08):** a cone cut by a full-turn revolve whose profile
+  lies on the negative side of an upward axis line, then chamfered 0.5 on both rims, succeeds but its chamfer faces
+  are split in two and each half-pair shares one face id (11 faces, ids 1073741836 and 1073741837 twice); the top
+  pair is reported as kind "sphere" r=3.0606 (two coaxial circles always lie on a common sphere, so the H2 vertex
+  check passes). `select(faces=<id>)` returns two rows for one id. Reversing the axis line gives 9 unique faces,
+  all cones. Repro: tmp/mcp-test/h1-codex/cone_negative_chamfer.qcad vs cone_negative_axis_reversed.qcad.
+  Fix ideas: detect duplicate ids and warn; classify a face as sphere only when its vertices do not all lie on two
+  or fewer circles about one axis (or ask the kernel's native surface type); duplicate names are an upstream
+  candidate (QymCAD blend-face naming).
