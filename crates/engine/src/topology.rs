@@ -540,14 +540,16 @@ impl Session {
                 format!("0 {side} edges; this body has {opposite} {other} edges")
             } else {
                 let plural = if count == 1 { "edge" } else { "edges" };
-                format!("this body has {count} {side} {plural}, but none matches the other conditions of the selection; it has {opposite} {other} edges")
+                format!(
+                    "this body has {count} {side} {plural}, but none survives the rest of the selection; it has {opposite} {other} edges"
+                )
             }
         };
         let mut hint = match (concave, convex) {
             (true, false) => single(inward, "concave (inward)", outward, "convex"),
             (false, true) => single(outward, "convex (outward)", inward, "concave"),
             (true, true) => {
-                format!("0 selected concave (inward) or convex (outward) edges; this body has {inward} concave and {outward} convex edges")
+                format!("0 selected concave (inward) or convex (outward) edges (no edge is both); this body has {inward} concave and {outward} convex edges")
             }
             _ => return None,
         };
@@ -680,8 +682,9 @@ impl Session {
     }
 
     /// For bare corners and positive intersections, count only uncertain edges satisfying all
-    /// other conditions. Other compositions report uncertain body edges absent from the result.
-    pub fn corner_omission_note(&self, body: Id, sel: &Sel, selected: &[u32]) -> Result<Option<String>> {
+    /// other conditions; contradictory corner signs omit nothing. Other compositions report only
+    /// the uncertain body total, without implying causation or membership in the result.
+    pub fn corner_omission_note(&self, body: Id, sel: &Sel) -> Result<Option<String>> {
         let uncertain: Vec<_> = self.classified_corners(body).into_iter().filter_map(|(id, sign)| sign.is_none().then_some(id)).collect();
         fn replace(sel: &Sel, uncertain: &[u32]) -> Option<Sel> {
             match sel {
@@ -692,22 +695,20 @@ impl Session {
             }
         }
         if let Some(candidates) = replace(sel, &uncertain) {
+            // Positive intersections cannot match an edge of both signs, even if its sign is uncertain.
+            if sel.corner_filters() == (true, true) {
+                return Ok(None);
+            }
             let count = self.resolve_sel(body, Element::Edges, &candidates)?.len();
             Ok((count > 0).then(|| format!("omitted {count} uncertain edges")))
         } else {
-            let count = uncertain.iter().filter(|id| !selected.contains(id)).count();
             let total = uncertain.len();
             let edges = if total == 1 { "edge" } else { "edges" };
-            let absent = if count == total {
-                if count == 1 {
-                    "it is".to_string()
-                } else {
-                    "they are".to_string()
-                }
-            } else {
-                format!("{count} of them {}", if count == 1 { "is" } else { "are" })
-            };
-            Ok((count > 0).then(|| format!("this body has {total} {edges} whose corner side is uncertain; {absent} not in this result")))
+            Ok((total > 0).then(|| {
+                format!(
+                    "this body has {total} {edges} whose corner side is uncertain; corner filters treat them as neither concave nor convex"
+                )
+            }))
         }
     }
 

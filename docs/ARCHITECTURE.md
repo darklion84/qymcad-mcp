@@ -97,7 +97,8 @@ unidentified curved type remains; otherwise mesh-planar normals retain a triangl
 Fitted spheres and axis-bearing faces never receive a plane normal. Cone normals retain a one-degree allowance;
 3° and steeper circular countersinks are tested, while native smoothness below ~1.5° can omit shallow rims.
 For bare filters and positive intersections, corner previews count uncertain candidates matching the other
-selection conditions; other compositions report uncertain body edges absent from the result. Sampled G1
+selection conditions; intersections requiring both corner signs report no omission because no edge is both.
+Other compositions report the uncertain body total and corner-filter treatment without claiming omission or membership. Sampled G1
 junctions and seams are excluded from that count.
 Other faces retain facet normals and other curved edges chord tangents.
 The angular-deflection allowances and finite samples are engineering

@@ -166,3 +166,27 @@ fn sparse_mesh_only_planes_keep_uncertainty_that_prevents_shallow_wrong_signs() 
     assert_eq!(robust_corner_sign(([0.0, 0.0, 1.0], 1e-6), facet, [0.0, 1.0, 0.0], 1e-6), None);
     assert_eq!(mesh_plane_allowance(1, true), 1e-6, "native plane proof preserves ordinary planar corners");
 }
+
+#[test]
+fn cone_meridian_fit_at_large_coordinates_accepts_f32_rounding_but_rejects_noncone_deviation() {
+    use qymcad_core::geom::{Mesh, Point3};
+
+    let origin = [1000.0; 3];
+    let axis = [0.0, 0.0, 1.0];
+    // A true cone generator r(z)=1+0.37z, translated to (1000,1000,1000), then rounded
+    // exactly like native f32 mesh coordinates. f32 spacing here is 2^(9-23) mm.
+    let mut mesh = Mesh {
+        verts: [0.0, 0.25, 0.5, 0.75, 1.0]
+            .into_iter()
+            .map(|z| Point3::new((1001.0 + 0.37 * z) as f32 as f64, 1000.0, (1000.0 + z) as f32 as f64))
+            .collect(),
+        tris: vec![[0, 1, 2], [2, 3, 4]],
+    };
+    let face = MeshFace { triangles: vec![0, 1], normal: [0.0; 3], centroid: Point3::new(1000.0, 1000.0, 1000.0), area: 0.0, id: 1 };
+    let slope = cone_slope(&face, &mesh, origin, axis).expect("true translated cone survives native coordinate rounding");
+    // Endpoint rounding contributes at most one f32 spacing over this 1 mm span.
+    assert!((slope - 0.37).abs() <= 2.0_f64.powi(9 - 23), "formula slope survives f32 endpoints: {slope}");
+    // 0.01 mm is nearly ten times the 1e-6*1001.37 mm coordinate-scaled fit band.
+    mesh.verts[2].x += 0.01;
+    assert!(cone_slope(&face, &mesh, origin, axis).is_none(), "deviation above the fit band must not acquire analytic cone normals");
+}

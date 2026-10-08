@@ -59,8 +59,11 @@ seams and such sampled G1 junctions do not contribute to the count. Unknown G1 f
 as uncertain because their exact normal is unavailable. Corner previews report "omitted N uncertain edges"
 when nonzero, even if other corners matched. For bare filters and positive `and` compositions, evaluate
 the selection with corner leaves replaced by uncertain ids. This counts only edges satisfying the other
-conditions. Union/subtraction/tangent-chain compositions instead report the body total and the absent
-subset, distinguishing them when some uncertain edges appear in the actual result: counterfactual substitution need not represent an omission under negation or expansion.
+conditions. A positive intersection requiring both corner signs is unsatisfiable and reports no omission,
+including nested intersections: no edge is both concave and convex. Union/subtraction/tangent-chain
+compositions instead report only the uncertain body total: "corner filters treat them as neither concave
+nor convex". This makes no causal or result-membership claim; counterfactual substitution need not
+represent an omission under negation or expansion, and uncertain edges can remain in the result.
 Analytic circular countersinks at ≥3° are verified; a 0.9° spotface remains omitted. Unrefined surfaces retain an effective ~20–30° or larger threshold depending on
 the other face and tangent; this is stated in select/fillet descriptions rather than hidden.
 
@@ -69,8 +72,10 @@ API, just as the engine already lowers `largest` edges by true length. Fillet/ch
 lists (F-024); no new upstream file format, dependencies, or native stored query types are introduced.
 
 Empty corner previews name the requested inward/outward corner count and the opposite count for the body.
-When requested corners exist, say they were eliminated by the selection's other conditions. Bare empty
-filters retain their zero-count wording.
+When requested corners exist, say "none survives the rest of the selection", which also holds under
+subtraction. Hints mentioning both signs add "no edge is both" to explain contradictory intersections
+despite nonzero body counts. Bare empty filters retain their zero-count wording. MCP `backlog_review`
+pins both-sign intersections, empty subtraction and flat/nested contradictory omission counts.
 Only multi-feature source chains receive a named-feature `between` example. Fillet/chamfer repeat the hint
 in their empty-match errors. Noncorner empty selections remain ordinary empty results.
 

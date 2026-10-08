@@ -41,7 +41,7 @@ fn composed_convex_hint_reports_all_box_corners() {
     empty_hint(
         &mut r,
         json!({"and":[{"convex":true},{"kind":"circle"}]}),
-        "this body has 12 convex (outward) edges, but none matches the other conditions of the selection; it has 0 concave edges",
+        "this body has 12 convex (outward) edges, but none survives the rest of the selection; it has 0 concave edges",
     );
     empty_hint(&mut r, json!({"concave":true}), "0 concave (inward) edges; this body has 12 convex edges");
 }
@@ -61,19 +61,23 @@ fn composed_concave_hint_reports_cone_plane_rim() {
     empty_hint(
         &mut r,
         json!({"and":[{"concave":true},{"kind":"line"}]}),
-        "this body has 1 concave (inward) edge, but none matches the other conditions of the selection; it has 12 convex edges",
+        "this body has 1 concave (inward) edge, but none survives the rest of the selection; it has 12 convex edges",
     );
 }
 
 fn shallow_hole() -> Registry {
     let mut r = block();
     // R-r=6-2=4; depth=(R-r)*tan(0.9°), a deliberately uncertain circular rim.
-    call(
+    let depth2 = 4.0 * 0.9_f64.to_radians().tan();
+    let built = call(
         &mut r,
         "hole",
         json!({"face":{"facing":"+z"}, "diameter":4, "depth":6,
-        "kind":"countersink", "dia2":12, "depth2":4.0*0.9_f64.to_radians().tan()}),
+        "kind":"countersink", "dia2":12, "depth2":depth2}),
     );
+    // Bore plus countersink frustum, subtracting their shared cylindrical depth.
+    let expected = 40.0 * 40.0 * 10.0 - std::f64::consts::PI * (2.0_f64.powi(2) * 6.0 + depth2 * ((36.0 + 12.0 + 4.0) / 3.0 - 4.0));
+    assert!((built["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-6);
     r
 }
 
@@ -93,9 +97,79 @@ fn uncertain_note_respects_other_and_conditions() {
 fn uncertain_note_in_nonmonotone_compositions_is_truthful() {
     let mut r = shallow_hole();
     let minus = call(&mut r, "select", json!({"edges":{"minus":[{"convex":true},{"kind":"circle"}]}}));
-    assert_eq!(minus["note"], "this body has 1 edge whose corner side is uncertain; it is not in this result");
+    assert_eq!(
+        minus["note"],
+        "this body has 1 edge whose corner side is uncertain; corner filters treat them as neither concave nor convex"
+    );
     let union = call(&mut r, "select", json!({"edges":{"union":[{"convex":true},{"kind":"circle"}]}}));
-    assert!(union.get("note").is_none(), "union includes the uncertain circle, so it is not omitted: {union}");
+    assert_eq!(
+        union["note"],
+        "this body has 1 edge whose corner side is uncertain; corner filters treat them as neither concave nor convex"
+    );
+}
+
+fn contradictory_corner_intersection(selection: Value) {
+    let mut r = shallow_hole();
+    assert_eq!(call(&mut r, "select", json!({"edges":{"convex":true}}))["note"], "omitted 1 uncertain edges");
+    let selected = call(&mut r, "select", json!({"edges":selection}));
+    assert_eq!(selected["count"], 0, "no edge can have both signs");
+    assert!(selected.get("note").is_none(), "uncertainty cannot omit an impossible match: {selected}");
+}
+
+#[test]
+fn contradictory_corner_intersection_has_no_omission_note() {
+    contradictory_corner_intersection(json!({"and":[{"concave":true},{"convex":true}]}));
+}
+
+#[test]
+fn nested_contradictory_corner_intersection_has_no_omission_note() {
+    contradictory_corner_intersection(json!({"and":[{"concave":true},{"and":[{"convex":true},{"kind":"circle"}]}]}));
+}
+
+#[test]
+fn subtracted_corner_filter_note_makes_no_membership_claim() {
+    let mut r = shallow_hole();
+    let note = "this body has 1 edge whose corner side is uncertain; corner filters treat them as neither concave nor convex";
+    for kind in ["line", "circle"] {
+        let base = call(&mut r, "select", json!({"edges":{"kind":kind}}));
+        let selected = call(&mut r, "select", json!({"edges":{"minus":[{"kind":kind},{"convex":true}]}}));
+        assert_eq!(selected["note"], note);
+        if kind == "circle" {
+            // Native smoothness leaves the shallow R=6 rim outside both corner sets, so subtraction keeps it.
+            let rim = base["edges"].as_array().unwrap().iter().find(|e| e["radius"] == 6.0).unwrap();
+            assert!(selected["edges"].as_array().unwrap().iter().any(|e| e["id"] == rim["id"]));
+        } else {
+            // Stock lines are convex; cone/bore seams survive, and the circular rim is never a line.
+            assert_eq!(selected["count"], 2);
+            assert!(selected["edges"].as_array().unwrap().iter().all(|e| e["seam"] == true));
+        }
+    }
+}
+
+#[test]
+fn empty_minus_corner_hint_describes_surviving_selection() {
+    let mut r = block();
+    empty_hint(
+        &mut r,
+        json!({"minus":[{"convex":true},{"kind":"line"}]}),
+        "this body has 12 convex (outward) edges, but none survives the rest of the selection; it has 0 concave edges",
+    );
+}
+
+#[test]
+fn both_sign_intersection_hint_explains_impossibility() {
+    let mut r = block();
+    empty_hint(
+        &mut r,
+        json!({"and":[{"concave":true},{"convex":true}]}),
+        "0 selected concave (inward) or convex (outward) edges (no edge is both); this body has 0 concave and 12 convex edges",
+    );
+    let mut r = shallow_hole();
+    empty_hint(
+        &mut r,
+        json!({"and":[{"concave":true},{"convex":true}]}),
+        "0 selected concave (inward) or convex (outward) edges (no edge is both); this body has 1 concave and 13 convex edges",
+    );
 }
 
 fn rounded_drilled_block() -> Registry {
@@ -292,6 +366,10 @@ fn kernel_chamfer_extends_beyond_cylinder_selection() {
     // Propagated straight bevels: triangular area c²/2 times 4(h-r)+2(l-2r).
     // Four selected quarter-cylinder ends sum to π∫₀ᶜ[r²-(r-x)²]dx = π(rc²-c³/3).
     // Two selected bore rims sum to 2π∫₀ᶜ[(R+x)²-R²]dx = 2π(Rc²+c³/3).
+    // The four selected long fillet-cylinder boundary lines are G1 plane/cylinder junctions:
+    // radial normals equal the adjacent planes' (0,±1,0) or (0,0,1), giving internal dihedral 180°.
+    // They remove no volume and have no term; the formula without them matches within 1e-6 mm³.
+    // F-063 also records exact outward-normal/180° evidence for the generated plane/cone junctions.
     let removed = (4.0 * (h - fillet_r) + 2.0 * (l - 2.0 * fillet_r)) * c.powi(2) / 2.0
         + std::f64::consts::PI * (fillet_r * c.powi(2) - c.powi(3) / 3.0)
         + 2.0 * std::f64::consts::PI * (bore_r * c.powi(2) + c.powi(3) / 3.0);
@@ -300,7 +378,7 @@ fn kernel_chamfer_extends_beyond_cylinder_selection() {
 }
 
 #[test]
-fn uncertain_union_note_distinguishes_body_total_from_absent_subset() {
+fn uncertain_union_note_reports_body_total_without_membership_claims() {
     let mut r = block();
     // Two disjoint R=6 shallow countersinks at x=±8: separation16 > 2R, one uncertain rim per cone.
     for x in [-8, 8] {
@@ -325,7 +403,7 @@ fn uncertain_union_note_distinguishes_body_total_from_absent_subset() {
         .clone();
     let selected = call(&mut r, "select", json!({"edges":{"union":[{"convex":true},[rim]]}}));
     assert_eq!(
-        selected["note"], "this body has 2 edges whose corner side is uncertain; 1 of them is not in this result",
-        "two uncertain rims, one included by the pick branch, one absent"
+        selected["note"], "this body has 2 edges whose corner side is uncertain; corner filters treat them as neither concave nor convex",
+        "body total stays two even when a pick branch includes one uncertain rim"
     );
 }

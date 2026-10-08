@@ -19,7 +19,9 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims \
     at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), \
     and fallback facet normals can require \
-    about 20–30 degrees. Corner previews report omitted uncertain edges; \
+    about 20–30 degrees. Bare corner and positive `and` previews count omitted uncertain candidates; \
+    an `and` requiring both signs matches no edge and reports no omission. Other compositions report the \
+    uncertain body total: corner filters treat those edges as neither concave nor convex; \
     {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest \
     edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, \
     cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} \
@@ -580,7 +582,7 @@ pub fn tools() -> Vec<Tool> {
              Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
              a boss/plate curved junction, \
              pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. \
-             Uncertain shallow signs or disagreement among five arc-length samples are omitted. Bare corner filters and positive `and` selections count only uncertain edges matching the other conditions; other compositions report uncertain body edges absent from the result. \
+             Uncertain shallow signs or disagreement among five arc-length samples are omitted. Bare corner filters and positive `and` selections count only uncertain edges matching the other conditions; an `and` requiring both concave and convex matches no edge and reports no omission. Other compositions report the uncertain body total: corner filters treat those edges as neither concave nor convex, without claiming omission or result membership. \
              Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness \
              threshold about 1.5 degrees). Fallback facet \
              normals can require about 20–30 degrees.",
@@ -610,7 +612,7 @@ pub fn tools() -> Vec<Tool> {
                     }
                 }
                 if el == Element::Edges && sel.corner_filters() != (false, false) {
-                    if let Some(note) = s.corner_omission_note(body, &sel, &ids).map_err(err)? {
+                    if let Some(note) = s.corner_omission_note(body, &sel).map_err(err)? {
                         out["note"] = json!(note);
                     }
                 }

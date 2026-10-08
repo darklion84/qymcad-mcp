@@ -53,15 +53,18 @@ All notable changes to this project are documented here. The format follows
 - Export body result `mesh_volume` is renamed to `mesh_volume_mm3` (mm³), with no compatibility alias.
 
 ### Fixed
-- Empty composed corner selections report the body's actual inward/outward counts and explain when other
-  conditions remove all requested corners; fillet/chamfer errors repeat the same hint (G1).
-- Corner omission notes honor other positive intersection conditions; other compositions report only uncertain
-  body edges absent from the result. Coordinate-aware cone fitting excludes eight verified tangent chamfer-chain
+- Empty composed corner selections report the body's actual inward/outward counts and explain that none
+  survives the rest of the selection, including subtraction; both-sign hints explain that no edge is both.
+  Fillet/chamfer errors repeat the same hint (G1, R3).
+- Corner omission notes honor other positive intersection conditions and report no omission for contradictory
+  corner signs. Other compositions report only the uncertain body total and corner-filter treatment without
+  claiming absence or causation (R1–R2). Coordinate-aware cone fitting excludes eight verified tangent chamfer-chain
   junctions while preserving genuinely uncertain shallow rims (G2, F-063).
 - Direction errors list accepted unsigned axes as well as signed axes; incompatible kind errors use lowercase
   public names; sketch datum labels include the timeline name and native plane id (G6).
 - Fillet/chamfer descriptions explain kernel tangent-chain propagation beyond selected-edge previews. A formula
-  and six derived bevel-plane normals pin the extra blending without an inferred runtime warning (G5, F-064).
+  and six derived bevel-plane normals pin the extra blending without an inferred runtime warning; four selected
+  long G1 boundaries have 180° internal dihedrals and remove no volume (G5, R4, F-064).
 - Analytic cone meridian normals and verified native circle tangents classify 20°, 10°, 5° and 3° countersink
   rims correctly. Corner previews report uncertain omitted edges, including shallow native smoothness below
   ~1.5°; the 0.9° fixture remains omitted. Sparse curved faces retain conservative normal allowances (ADR 0010).

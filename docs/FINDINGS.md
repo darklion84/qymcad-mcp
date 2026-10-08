@@ -1042,13 +1042,23 @@ Conventions:
   f32 spacing near 20 is 2^(4−23)=1.9073486328125e-6 mm. Accepted fitted cone normals differ from
   their adjacent plane normals by at most 0.714e-6, below the unchanged 1e-6 sampled G1 threshold.
   Before fix the regression reports eight uncertain edges. Restoring local-only fit tolerance reproduces it.
+  `topology::normal_tests::cone_meridian_fit_at_large_coordinates_accepts_f32_rounding_but_rejects_noncone_deviation`
+  checks r(z)=1+0.37z translated to world coordinates near 1000 mm after f32 promotion, rejecting a
+  0.01 mm meridian deviation above the coordinate-scaled tolerance. Local-only tolerance fails acceptance.
 - **How we handle it:** include absolute mesh coordinate scale in the cone-fit residual tolerance while
   retaining the existing axial-span check, one-degree cone allowance and sampled G1 threshold. Seams and
   these verified tangent junctions contribute no uncertainty count. Truly shallow rims remain uncertain.
   Bare corner and positive `and` previews replace corner leaves with uncertain ids before evaluating other
-  conditions. Union/subtraction/tangent-chain compositions instead report the uncertain body total and
-  distinguish any absent subset. `backlog_review::uncertain_union_note_distinguishes_body_total_from_absent_subset`
-  checks two shallow rims with one included through a union pick branch; only the other is described as absent.
+  conditions, except that a positive intersection requiring both signs is impossible and reports no omission.
+  MCP `backlog_review::contradictory_corner_intersection_has_no_omission_note` and
+  `nested_contradictory_corner_intersection_has_no_omission_note` check flat/nested intersections on a
+  formula-verified 0.9° countersink with one uncertain rim.
+  Union/subtraction/tangent-chain compositions report only the uncertain body total and explain that
+  corner filters treat those edges as neither concave nor convex, without any causal or result-membership
+  claim. `backlog_review::uncertain_note_in_nonmonotone_compositions_is_truthful` checks minus/union;
+  `subtracted_corner_filter_note_makes_no_membership_claim` covers a corner filter on the subtracted side,
+  including a circular uncertain rim retained in the result. `uncertain_union_note_reports_body_total_without_membership_claims`
+  checks two shallow rims with one included through a union pick branch; the note still reports the body total.
 
 
 ## F-064 Fillet and chamfer contours propagate beyond the selected edge ids
@@ -1071,6 +1081,11 @@ Conventions:
   `[4(h-r)+2(L-2r)]c²/2 + π(rc²-c³/3) + 2π(Rc²+c³/3)`, h=10,L=40,r=1,R=4,c=.5 mm.
   These are straight triangular prisms, four quarter-cylinder end bevels and two bore-rim bevels,
   derived by integrating the difference of radius-squared cross sections; test tolerance 1e-6 mm³.
+  The preview also selects the four long G1 boundary lines of the two fillet cylinders. At those
+  plane/cylinder junctions the outward radial normal equals the adjacent plane normal, (0,±1,0) or
+  (0,0,1), so the internal dihedral is 180°. They remove no volume: the formula excludes any term for
+  them and agrees with the native volume difference within 1e-6 mm³. F-063's exact outward-normal
+  probe gives corresponding 180° evidence for the generated plane/cone G1 junctions.
 - **How we handle it:** describe propagation explicitly in fillet/chamfer tool documentation; preserve native
   behavior and selected-edge preview. No inferred face-count warning: ordinary corner patches, splitting
   and merging make that criterion unsound. A future positive-evidence warning could inspect actual output
