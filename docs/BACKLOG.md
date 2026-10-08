@@ -20,3 +20,16 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   former semantics of both callers (document the difference or align); the `to_query` kind error is worded for
   faces even for edges; `empty_corner_hint` recomputes `classified_corners` up to three times.
 
+- **Low items from the G1-G6 live tests** (mcp-tester4/5):
+  - unnamed objects show raw localization keys as names: datum planes as "name-plane (plane 24)", bodies as
+    "feat-name-extrude"/"feat-name-hole"…, while unnamed sketches read "Sketch 3";
+  - number agreement: "omitted 1 uncertain edges", "1 edge … treat them";
+  - the `between` suggestion appears on any body with two or more features in its chain, even with no named
+    junction to offer;
+  - the same body's bbox differs by the curved-body padding (~0.02 mm) between the feature result and a later
+    rebuild;
+  - `fillet R0.50 failed on 1 edges` gives no reason or suggestion;
+  - the `along` error lists the axis strings but not the accepted [x, y, z] vector;
+  - `doc_open` returns stored and rebuilt bboxes without saying which is which;
+  - origin/frame points appear in `sketch_info` only after the first `sketch_add`;
+  - the 0.001 mm cut entry clearance on internal planes cannot be turned off.
