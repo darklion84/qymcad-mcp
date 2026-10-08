@@ -35,3 +35,14 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - the 0.001 mm cut entry clearance on internal planes cannot be turned off.
 - **Phase 4 acceptance findings** (Sonnet subagent building collet_test/hanging_shelf from the build123d scripts, 2026-10-08):
   - Mouth-circle chamfer via of_feature also returns the seam line; the agent fell back to explicit ids.
+- **Low items from the H1-H4 review** (MiMo):
+  - a planar face whose mesh vertices are all cocircular could in theory pass the sphere-fit validation
+    (zero residual). Not reproduced: circular pocket floors Ø6-Ø250, with and without a floor fillet, classify
+    as plane on both the old and the new binary (checked 2026-10-08; the upstream singular-system cutoff
+    rejects them). Cheap hardening: reject a fit when all face vertices are coplanar.
+  - `kernel_gate` is not re-entrant and `reporting_bbox` always takes it; any future caller that holds the gate
+    across `result_bodies`/`info`/`render` deadlocks. Add a precondition comment or a debug re-entrancy check.
+  - the revolve-chamfer advice fires on any chamfer rebuild failure with revolve ancestry (also a genuinely
+    oversized chamfer); the ancestry walk follows only boolean operand `a`.
+  - UPGRADING.md: the pinning test `upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh` must be removed
+    when QymCAD fixes the fit.
