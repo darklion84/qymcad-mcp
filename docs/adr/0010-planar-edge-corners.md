@@ -73,9 +73,11 @@ lists (F-024); no new upstream file format, dependencies, or native stored query
 
 Empty corner previews name the requested inward/outward corner count and the opposite count for the body.
 When requested corners exist, say "none survives the rest of the selection", which also holds under
-subtraction. Hints mentioning both signs add "no edge is both" to explain contradictory intersections
-despite nonzero body counts. Bare empty filters retain their zero-count wording. MCP `backlog_review`
-pins both-sign intersections, empty subtraction and flat/nested contradictory omission counts.
+subtraction. A shared predicate with omission reporting adds "no edge is both" only for an `and` spine
+of corner leaves and corner-free subtrees containing both signs. Merely mentioning both signs in unions
+or other compositions keeps the both-sign sentence without that clause. Bare empty filters retain their
+zero-count wording. MCP `backlog_review` pins mixed-sign unions/subtraction, including unions nested under
+`and`, and flat/nested contradictory intersections and omission counts.
 Only multi-feature source chains receive a named-feature `between` example. Fillet/chamfer repeat the hint
 in their empty-match errors. Noncorner empty selections remain ordinary empty results.
 

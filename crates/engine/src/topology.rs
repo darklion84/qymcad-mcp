@@ -258,6 +258,21 @@ impl Sel {
         }
     }
 
+    /// Replace corner leaves only along an `and` spine; other subtrees must be corner-free.
+    fn replace_corner_filters(&self, ids: &[u32]) -> Option<Self> {
+        match self {
+            Self::Concave | Self::Convex => Some(Self::Ids(ids.to_vec())),
+            Self::And(a, b) => Some(Self::And(Box::new(a.replace_corner_filters(ids)?), Box::new(b.replace_corner_filters(ids)?))),
+            other if other.corner_filters() == (false, false) => Some(other.clone()),
+            _ => None,
+        }
+    }
+
+    /// Both signs must occur as required leaves of a positive intersection.
+    fn requires_both_signs(&self) -> bool {
+        self.corner_filters() == (true, true) && self.replace_corner_filters(&[]).is_some()
+    }
+
     /// An explicit pick list (`Ids`), as opposed to a description.
     pub fn is_ids(&self) -> bool {
         matches!(self, Sel::Ids(_))
@@ -549,7 +564,8 @@ impl Session {
             (true, false) => single(inward, "concave (inward)", outward, "convex"),
             (false, true) => single(outward, "convex (outward)", inward, "concave"),
             (true, true) => {
-                format!("0 selected concave (inward) or convex (outward) edges (no edge is both); this body has {inward} concave and {outward} convex edges")
+                let contradiction = if sel.requires_both_signs() { " (no edge is both)" } else { "" };
+                format!("0 selected concave (inward) or convex (outward) edges{contradiction}; this body has {inward} concave and {outward} convex edges")
             }
             _ => return None,
         };
@@ -686,17 +702,9 @@ impl Session {
     /// the uncertain body total, without implying causation or membership in the result.
     pub fn corner_omission_note(&self, body: Id, sel: &Sel) -> Result<Option<String>> {
         let uncertain: Vec<_> = self.classified_corners(body).into_iter().filter_map(|(id, sign)| sign.is_none().then_some(id)).collect();
-        fn replace(sel: &Sel, uncertain: &[u32]) -> Option<Sel> {
-            match sel {
-                Sel::Concave | Sel::Convex => Some(Sel::Ids(uncertain.to_vec())),
-                Sel::And(a, b) => Some(Sel::And(Box::new(replace(a, uncertain)?), Box::new(replace(b, uncertain)?))),
-                other if other.corner_filters() == (false, false) => Some(other.clone()),
-                _ => None,
-            }
-        }
-        if let Some(candidates) = replace(sel, &uncertain) {
+        if let Some(candidates) = sel.replace_corner_filters(&uncertain) {
             // Positive intersections cannot match an edge of both signs, even if its sign is uncertain.
-            if sel.corner_filters() == (true, true) {
+            if sel.requires_both_signs() {
                 return Ok(None);
             }
             let count = self.resolve_sel(body, Element::Edges, &candidates)?.len();

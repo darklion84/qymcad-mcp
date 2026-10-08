@@ -54,7 +54,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 - Empty composed corner selections report the body's actual inward/outward counts and explain that none
-  survives the rest of the selection, including subtraction; both-sign hints explain that no edge is both.
+  survives the rest of the selection, including subtraction. A shared check adds "no edge is both" only
+  when a positive intersection requires both signs, excluding mixed-sign unions/subtraction (G1c).
   Fillet/chamfer errors repeat the same hint (G1, R3).
 - Corner omission notes honor other positive intersection conditions and report no omission for contradictory
   corner signs. Other compositions report only the uncertain body total and corner-filter treatment without

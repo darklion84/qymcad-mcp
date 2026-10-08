@@ -113,6 +113,7 @@ fn contradictory_corner_intersection(selection: Value) {
     assert_eq!(call(&mut r, "select", json!({"edges":{"convex":true}}))["note"], "omitted 1 uncertain edges");
     let selected = call(&mut r, "select", json!({"edges":selection}));
     assert_eq!(selected["count"], 0, "no edge can have both signs");
+    assert!(selected["hint"].as_str().unwrap().contains("(no edge is both)"), "required signs explain the empty result: {selected}");
     assert!(selected.get("note").is_none(), "uncertainty cannot omit an impossible match: {selected}");
 }
 
@@ -170,6 +171,34 @@ fn both_sign_intersection_hint_explains_impossibility() {
         json!({"and":[{"concave":true},{"convex":true}]}),
         "0 selected concave (inward) or convex (outward) edges (no edge is both); this body has 1 concave and 13 convex edges",
     );
+}
+
+#[test]
+fn mixed_branch_corner_hint_does_not_claim_both_signs_required() {
+    let mut r = block();
+    empty_hint(
+        &mut r,
+        json!({"and":[{"union":[{"concave":true},{"kind":"circle"}]},{"convex":true}]}),
+        "0 selected concave (inward) or convex (outward) edges; this body has 0 concave and 12 convex edges",
+    );
+}
+
+#[test]
+fn mixed_sign_corner_hints_on_a_zero_corner_body_do_not_claim_contradiction() {
+    let mut r = block();
+    call(&mut r, "fillet", json!({"edges":{"convex":true},"radius":1}));
+    // Rounding every prism corner leaves only tangent junctions and seams.
+    for sign in ["concave", "convex"] {
+        assert_eq!(call(&mut r, "select", json!({"edges":{sign:true}}))["count"], 0);
+    }
+    for selection in [
+        json!({"union":[{"and":[{"concave":true},{"kind":"circle"}]},{"and":[{"convex":true},{"kind":"line"}]}]}),
+        json!({"minus":[{"union":[{"concave":true},{"convex":true}]},{"kind":"circle"}]}),
+        json!({"union":[{"concave":true},{"convex":true}]}),
+        json!({"and":[{"union":[{"concave":true},{"kind":"circle"}]},{"convex":true}]}),
+    ] {
+        empty_hint(&mut r, selection, "0 selected concave (inward) or convex (outward) edges; this body has 0 concave and 0 convex edges");
+    }
 }
 
 fn rounded_drilled_block() -> Registry {
