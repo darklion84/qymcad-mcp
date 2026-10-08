@@ -46,3 +46,17 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
     oversized chamfer); the ancestry walk follows only boolean operand `a`.
   - UPGRADING.md: the pinning test `upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh` must be removed
     when QymCAD fixes the fit.
+- **Low items from the H1-H4 live test** (mcp-tester6, 2026-10-08):
+  - revolve-chamfer error: "chamfer 0.50 too big" is the native reason but false here; "negative side of its axis"
+    is undefined (it depends on the axis line's direction, not on sketch x); "(F-067)" means nothing to a user;
+    the failure needs more than the orientation (all clean-block variants passed, an overlapping-cone case
+    failed and reversing the axis line fixed it). Say concretely: draw the axis line toward sketch +y and the
+    profile at larger x.
+  - bbox formats differ inside one doc_open result: rebuild/feature results round to 0.001 (which can exceed the
+    true extent, e.g. 36.173 > 36.1725), doc.bodies gives raw f32 noise (-3.5999999046325684, -2.78e-15); the
+    render caption rounds to 0.1/0.01. Document or unify.
+  - topology/sketch_info areas: "typically 0.1-0.2% low" understates small faces (-0.37% Ø8 floor, -0.38% full
+    sphere, -0.72..-0.79% small spherical patches).
+  - a cut that removes nothing reports the raw key "error-cut-removed-nothing" with no hint (e.g. "cut in reverse").
+  - wish: kind "torus" (fillet corner tori are "other", like NURBS); asymmetric chamfer result does not say
+    which face took `dist`.
