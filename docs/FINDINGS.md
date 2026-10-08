@@ -163,7 +163,9 @@ Conventions:
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `bbox()` comes from `BRepBndLib::Add`, which includes tolerances. A 60 × 40 × 6 plate after hole/pocket
-  cuts reports 60.0126 × 40.0126 × 6.0126 (+0.0063 mm per side). Compare sizes with a tolerance of ~0.05 mm;
+  cuts reports 60.0126 × 40.0126 × 6.0126 (+0.0063 mm per side). A ~0.05 mm size tolerance fits this plate;
+  curved countersinks can carry about 0.26 mm padding (live k5-test-report, 2026-10-08), so reporting descriptions
+  allow up to ~0.3 mm, not a universal 0.05 mm bound;
   use volume for exact size checks and face positions/topology for placement (F-017).
 - **Evidence:** test: `crates/engine/tests/golden_plate.rs` `plate_volume_and_bbox`.
 - **Reopened bounds:** B-rep deserialization can give tighter bounds than live in-session boolean shapes.
@@ -250,7 +252,11 @@ Conventions:
   `mesh_job` / `tree_to_write` (~681, ~876); `crates/qymcad-core/src/model/assembly.rs` `export_node` (~344);
   `crates/qymcad/src/gui/panels_windows.rs` `mesh_quality_dialog` (~1721-1727); `crates/qymcad-io/src/gltf.rs`
   (~24). test: `crates/engine/tests/golden_export.rs` (`step_reads_back_with_the_same_volume`,
-  `glb_is_in_metres_with_y_up`, `threemf_is_in_millimetres`).
+  `glb_is_in_metres_with_y_up`, `threemf_is_in_millimetres`). GLB now decodes binary positions/indices from
+  an asymmetric 6*10*8 box: expected bounds [0.008,0,-0.022,0.014,0.008,-0.012] m, signed V=480/1000³ m³
+  and outward triangle winding. `obj_multiple_bodies_use_global_vertex_offsets_and_preserve_each_solid` checks
+  each object's exclusive global vertex range, formula bounds and signed volume; reflection/winding/offset
+  mutations turn these regressions red (tasks/review-c1.md).
 
 ## F-021 Mesh quality presets do not change small holes: the kernel's angular deflection (0.3 rad) decides
 
@@ -516,7 +522,9 @@ Conventions:
   marks the sketch dirty in a project copy to plan affected bodies, including already dirty nodes, before the
   edit. It retains those original live shape handles and rebuilds on independent B-rep copies; its retry is
   limited to the planned nodes. Failure restores the project and the original shapes without another rebuild,
-  preserving exact volume bits. `param_set` restores the original project directly if a sketch fails to solve,
+  preserving exact volume bits. Both paths now use `Session::with_rebuild_copies`; skipping its original-handle
+  restore makes both exact-B-rep rollback regressions red (tasks/review-c1.md). `param_set` restores the original
+  project directly if a sketch fails to solve,
   since propagation has not rebuilt shapes. Otherwise it snapshots the planned bodies before regeneration,
   rebuilds on independent B-rep copies, retries only planned nodes, and restores the project and original handles
   on failure. Untouched shapes remain live. `open` and `ensure_topology` keep the full retry.
@@ -857,29 +865,21 @@ Conventions:
   `topology::normal_tests::narrow_native_cylinders_and_cones_keep_their_curved_normal_path` checks
   native 0.1° cylinder/cone sectors against the frustum-volume formula times `0.1/360`; both pass
   mesh planarity but must keep the curved path. Removing the analytic-type guard fails the test.
-- **How we handle it:** for two distinct adjacent faces, dot face A's local inward tangent with face B's
-  outward normal: positive = concave, negative = convex. Local triangles handle concave caps unlike a global
-  face centroid. Match shared triangle sides by coordinates at five native-polyline arc-length fractions
-  (0.1, 0.3, 0.5, 0.7, 0.9); winding orients each chord tangent. Analytic radial cylinder normals keep the
-  outward orientation (reversed on bores), falling back to the facet normal when alignment is unreliable.
-  Engine-identified planar faces use `planar_normal` with numerical allowance `1e-6`, reusing the
-  face-sketch planarity check (F-011), after native cylinder/cone identification via `face_axis` as in
-  `topology`; narrow native curved patches retain their previous normal path. Zero-radius edges with native polylines collinear within `1e-9`
-  relative to their chord length use the exact native endpoint direction, aligned to triangle winding,
-  with allowance `1e-6`. Two distinct points qualify; degenerate/closed polylines do not.
-  Analytic circle tangents remain removed. With `delta(theta)=2*sin(theta/2)`, assign other noncylindrical
-  normals `delta(0.3)` from F-021, circular chord tangents `delta(0.15)`, other curved tangents
-  `delta(0.3)`, and analytic cylinder normals `1e-6`.
-  The absolute triple product must exceed the sum of these
-  three vector-error allowances at every sample; all signs must agree. Omit seams, native smooth/G1
-  junctions, uncertain signs and unavailable/degenerate samples. The angular-deflection allowance is an
-  engineering estimate, not a formal OCCT normal-error bound. Plane/line allowances assume the established
-  engine planarity check (triangle-normal agreement within ~0.25°) and native-polyline collinearity identify
-  planes/lines; neither is an analytic OCCT type proof. Finite samples cannot exclude arbitrary
-  unsampled sign changes or normal variation within a single shared facet side. Lower composable filters to persistent ids (ADR
-  [0010](adr/0010-planar-edge-corners.md), F-024).
-  Empty corner previews carry a named-feature `between` hint; direct/nested hint regressions are in MCP
-  `edge_corners`. Modifiers continue refusing empty final selections (F-025).
+- **How we handle it:** for distinct adjacent faces, dot face A's local inward tangent with face B's
+  outward normal: positive = concave, negative = convex. Coordinate-matched shared sides at five arc-length
+  fractions (0.1,0.3,0.5,0.7,0.9) orient the tangent by outward winding. Cylinder normals are radial;
+  cone normals use their axis plus the meridian slope from that face's vertices (F-059). Native circle/arc
+  tangents and collinear native line directions are oriented by shared-side winding with `1e-6` allowance.
+  Cylinder normals and proven native planes also receive `1e-6`; cone normals retain delta(1°), and other
+  facet normals/tangents receive delta(0.3 rad), where delta(theta)=2*sin(theta/2). Mesh-only plane normals
+  receive the conservative allowance in F-060. All sample signs must agree and clear the sum of allowances.
+  Seams, native smooth edges, degenerate samples and ambiguous signs are not selected. Native smoothness
+  includes shallow sharp edges below ~1.5° (occt_io.cpp:778-804); the omission count includes those unless
+  every sample's normals agree within `1e-6`. Unknown curved G1 facets can therefore count as uncertain.
+  Five samples and mesh-error allowances remain engineering checks, not a formal bound on arbitrary unsampled
+  surface behavior. Empty previews state the requested/opposite corner counts, adding a `between` example
+  only for multi-feature source chains; fillet/chamfer repeat the hint on empty matches. Corner previews
+  also report "omitted N uncertain edges" (MCP `backlog_selection`, `edge_corners`; ADR 0010).
 
 ## F-054 Native face sketch origins are projected coordinate origins
 
@@ -931,7 +931,10 @@ Conventions:
   after undo. It now verifies unchanged file bytes on refusal, delete/undo, explicit/default paths, override,
   new empty files, and replacement of already empty files. Disabling the guard fails the regression.
 - **How we handle it:** empty result documents inspect existing targets and refuse to replace stored bodies
-  unless `allow_empty=true` (ADR 0012).
+  unless `allow_empty=true` (ADR 0012). Pathless saves additionally require the saved/loaded first body-producing
+  node id/kind to remain in the timeline; parameter edits preserve it, undo/delete replacement can remove it.
+  `save_lineage` verifies unchanged file bytes on refusal, normal/reopened edits, explicit path/overwrite override,
+  initially empty files and `doc_new` requiring a path; disabling the guard fails (ADR 0014).
 
 ## F-058 Reported face and sketch contour areas come from tessellation
 
@@ -945,3 +948,74 @@ Conventions:
   reported roughly 0.1–0.2% discrepancies on curved areas.
 - **How we handle it:** `topology` and `sketch_info` descriptions state the approximation and direct agents
   to analytic dimensions for exact areas. B-rep volume remains the exact geometry check.
+
+
+## F-059 A native cone's generator can be recovered from its own vertices
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `face_axis` exposes origin/direction, and vertices from the same native cone satisfy r(z)=r0+s*z
+  in its meridian plane. Their widest axial span determines s=dr/dz; every vertex is checked against that line.
+  The generator axis+s*radial is perpendicular to the normal radial-s*axis. Triangle winding chooses its
+  outward sense, including inward bore faces. Degenerate axial spans or failed fits retain facet uncertainty.
+- **Evidence:** `topology::normal_tests::native_cone_meridian_normals_match_formula_and_outward_winding`
+  uses native R=10,r=5,h=5*tan(alpha) cones at 0.9/3/5/10/20/45°; V=pi*h*(R²+Rr+r²)/3 and normal
+  (sin(alpha)*cos(phi),sin(alpha)*sin(phi),cos(alpha)) agree within 1e-7, including reversed winding/axis.
+  Mesh coordinate rounding limits tighter slope comparisons. The analytic circle-tangent test proves
+  (-sin(phi),cos(phi),0) even at chord-midpoint samples; reversing its cross product makes it fail.
+  `golden_curved_corners::shallow_countersink_rims_are_convex_and_follow_server_and_gui_edits` checks
+  20/10/5/3/30/45° circular rims and server/native GUI depth edits against bore+frustum overlap volume.
+  Before fix: "20 degree countersink rim must be convex"; restoring full cone uncertainty fails at 10°.
+  The 0.9° spotface remains omitted and reports one uncertain edge, excluding its seams.
+- **How we handle it:** analytic cone normals retain a one-degree engineering allowance; native circle/arc
+  tangents use a numerical allowance. Slopes ≥3° are verified; below ~1.5° native smoothness can omit rims.
+  Unrefined facets retain the full 0.3-radian allowance and may need ~20–30° or more, depending on both faces
+  and tangent. Expose degree thresholds and omission counts in selection/fillet descriptions (ADR 0010).
+
+## F-060 Few curved triangles do not establish native planarity
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** one triangle always passes `planar_normal`. `Project::face_sphere` is a vertex fit, not a kernel
+  type getter, and requires at least 12 vertices. `Shape::face_kinds` exposes aggregate native surface counts,
+  not a per-id plane getter; its seven slots are plane/cylinder/cone/sphere/torus/freeform/other.
+- **Evidence:** source: `qymcad-core/src/model/assembly.rs:2330-2375`, `qymcad-kernel/src/lib.rs:888-893`,
+  `occt_helical.cpp:1354-1376`. `single_triangle_native_sphere_must_not_receive_a_plane_normal` reduces
+  the face mesh of a native R=2 sphere to one triangle (V=4*pi*2³/3); before fix and after guard-removal
+  mutation: "native sphere must not receive a plane normal even with one triangle".
+  `sparse_mesh_only_planes_keep_uncertainty_that_prevents_shallow_wrong_signs` checks decreasing allowances
+  for 1/2/100 triangles and omission of a wrong 9° facet sign; forcing numerical allowance makes it red.
+- **How we handle it:** reject axis-bearing faces, fitted spheres and mesh planes on bodies with no native
+  planar surfaces. An axis-free face on a body with only plane/cylinder/cone types is a proven native plane.
+  In mixed bodies, mesh-planar faces use delta(max(0.3/sqrt(n),acos(0.99999))), n=triangle count, instead of
+  exact allowance; even dense patches retain nonzero uncertainty. Native torus/freeform identity cannot be
+  assigned per face from aggregate counts, so uncertain mixed patches remain conservative rather than guessed.
+
+## F-061 One-sided native cuts include a 0.001 mm entry seam
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** native `tool_extent` extends the entry end 0.001 mm behind the sketch plane for one-sided cuts
+  with zero `down`, regardless of whether the plane coincides with a stock face. Internal planes remove extra
+  material; at a stock boundary the extension lies outside stock. Through-all and symmetric reach bypass it.
+  The far stock boundary has separate outward clearance for breaking through.
+- **Evidence:** source: `qymcad-core/src/model/regen.rs:2587-2610,2949-3006`; test:
+  `golden_cut_clearance::internal_cut_entry_seam_and_top_face_cut_agree_on_server_and_gui_paths` derives
+  internal V=20*30*20-4*6*(depth+.001), floor z=3-.001, and top-entry V=20*30*20-4*6*depth, floor z=20-depth;
+  depth 4 then 5 agrees through server and native GUI parameter edits.
+- **How we handle it:** extrude documents the clearance; preserve native recipes without compensation.
+  No native disable-seam extent flag exists. F-017's dependency workaround remains independent.
+
+
+## F-062 Native selections have binary intersections and no kind query
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `refs::Query::Filter` is a binary intersection; no native geometric-kind variant exists.
+  Existing edge modifiers store resolved persistent ids (F-024), while face modifiers persist native queries.
+- **Evidence:** source: `qymcad-core/src/refs.rs:69-115`; MCP `backlog_selection` checks 3/200-operand
+  intersections, 0/1 refusal, the existing 512-part budget, taxonomy equality and refusal of all three face
+  modifiers. `golden_selection_kinds::kind_selected_fillet_survives_server_and_gui_parameter_edits` checks
+  V=(20*16-4*(1-pi/4)*r²)*h and eight cap arcs of length pi*r/2 on server/native GUI edits; mutating line
+  filters to select circles makes both taxonomy and geometry regressions red.
+- **How we handle it:** balance N-operand MCP intersections and retain F-032's size/depth limits. Lower
+  kind previews using topology's shared classifier; `curve` matches arc/other edges, excluding full circles.
+  Edge modifiers keep normal pick storage. Stop face-kind persistence: freezing kind leaves to face ids would
+  not discover new faces, whereas true dynamic persistence needs an upstream Query change. Pending that choice,
+  face modifiers return a clear preview-only error with existing alternatives (ADR 0013, tasks/review-c1.md).

@@ -20,10 +20,11 @@ pub struct NodeIssue {
 pub struct BodyInfo {
     pub id: Id,
     pub name: String,
-    /// mm³
+    /// mm³, serialized as `volume_mm3` at native floating-point precision.
+    #[serde(rename = "volume_mm3")]
     pub volume: f64,
-    /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm. OCCT bounds include edge tolerances: after booleans they
-    /// exceed the exact geometry by up to ~0.01 mm per side (FINDINGS F-016).
+    /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm. OCCT tolerance/meshing padding on curved bodies
+    /// can exceed tight bounds by up to ~0.3 mm; reopening may tighten bounds (FINDINGS F-016).
     pub bbox: [f64; 6],
 }
 
@@ -59,12 +60,18 @@ pub struct Session {
     pub(crate) p: Project,
     pub(crate) shapes: HashMap<Id, Shape>,
     path: Option<PathBuf>,
+    // Saved model's first body-producing node. History restores recipes, never this association.
+    saved_lineage: Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)>,
     pub(crate) advisory_warnings: Vec<NodeIssue>,
     pub(crate) undo: std::collections::VecDeque<crate::history::Snapshot>,
     pub(crate) undo_limit_reached: bool,
     pub(crate) tool_edit_active: bool,
     // Originals removed by native sketch deletion, retained once while undo still references them.
     pub(crate) retired_sources: HashMap<Id, qymcad_core::model::SourceFile>,
+}
+
+fn first_body_feature(project: &Project) -> Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)> {
+    project.timeline.iter().find(|n| !n.kind.bodies().is_empty()).map(|n| (n.id, std::mem::discriminant(&n.kind)))
 }
 
 impl Session {
@@ -77,6 +84,7 @@ impl Session {
             p,
             shapes: HashMap::new(),
             path: None,
+            saved_lineage: None,
             advisory_warnings: Vec::new(),
             undo: Default::default(),
             undo_limit_reached: false,
@@ -99,10 +107,12 @@ impl Session {
             breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
         };
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
+        let saved_lineage = first_body_feature(&project);
         let mut sess = Session {
             p: project,
             shapes,
             path: Some(path.to_path_buf()),
+            saved_lineage,
             advisory_warnings: Vec::new(),
             undo: Default::default(),
             undo_limit_reached: false,
@@ -183,6 +193,12 @@ impl Session {
 
     /// Save, explicitly allowing replacement of a body-containing file by an empty document when requested.
     pub fn save_with_options(&mut self, path: Option<&Path>, allow_empty: bool) -> Result<PathBuf> {
+        self.save_with_overwrite(path, allow_empty, false)
+    }
+
+    /// Save with explicit permission to reuse the associated path for a different model.
+    /// `allow_empty` independently controls replacing stored bodies with an empty document.
+    pub fn save_with_overwrite(&mut self, path: Option<&Path>, allow_empty: bool, overwrite: bool) -> Result<PathBuf> {
         let target = match path {
             Some(p) => p.to_path_buf(),
             None => self.path.clone().ok_or_else(|| Error::Invalid("the document has no file yet; give a path".into()))?,
@@ -199,12 +215,23 @@ impl Session {
                 )));
             }
         }
+        // Keep the existing explicit empty-save permission: it intentionally replaces the model.
+        if path.is_none() && !overwrite && !(allow_empty && self.result_bodies().is_empty()) {
+            if let Some((id, kind)) = self.saved_lineage {
+                if !self.p.timeline.iter().any(|n| n.id == id && std::mem::discriminant(&n.kind) == kind) {
+                    return Err(Error::Invalid(format!(
+                        "this is a different model from the one last loaded or saved at {s}; give a path or set overwrite=true to replace it"
+                    )));
+                }
+            }
+        }
         let breps: Vec<(Id, Vec<u8>)> = {
             let _gate = qymcad_kernel::kernel_gate();
             self.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
         };
         qymcad_io::save_project_guarded_with_brep(&self.p, s, &breps).map_err(|e| Error::Io(format!("cannot save {s}: {e}")))?;
         self.path = Some(target.clone());
+        self.saved_lineage = first_body_feature(&self.p);
         Ok(target)
     }
 
@@ -418,6 +445,56 @@ impl Session {
             return Err(Error::Rebuild(new_errors));
         }
         Ok((value, r))
+    }
+
+    /// Rebuild edits on independent copies of planned live shapes, restoring the original project, handles
+    /// and diagnostics on failure (F-034). Callers retain their own retry plan and existing-error policy.
+    pub(crate) fn with_rebuild_copies<T>(
+        &mut self,
+        before: Project,
+        nodes: &HashSet<Id>,
+        context: &str,
+        edit: impl FnOnce(&mut Session) -> Result<T>,
+    ) -> Result<T> {
+        let before_warnings = self.advisory_warnings.clone();
+        let copies: Result<HashMap<Id, Shape>> = {
+            let _gate = qymcad_kernel::kernel_gate();
+            self.p
+                .timeline
+                .iter()
+                .filter(|n| nodes.contains(&n.id))
+                .flat_map(|n| n.kind.bodies())
+                .filter_map(|id| {
+                    self.shapes.get(&id).map(|sh| {
+                        sh.to_brep_bytes()
+                            .and_then(|b| Shape::from_brep_bytes(&b))
+                            .map(|copy| (id, copy))
+                            .ok_or_else(|| Error::Io(format!("cannot snapshot body {id} before {context}")))
+                    })
+                })
+                .collect()
+        };
+        let mut saved = match copies {
+            Ok(copies) => copies,
+            Err(e) => {
+                self.p = before;
+                return Err(e);
+            }
+        };
+        for (id, copy) in &mut saved {
+            if let Some(original) = self.shapes.get_mut(id) {
+                std::mem::swap(original, copy);
+            }
+        }
+        let result = edit(self);
+        if result.is_err() {
+            self.p = before;
+            self.advisory_warnings = before_warnings;
+            let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
+            self.shapes.retain(|id, _| live.contains(id));
+            self.shapes.extend(saved);
+        }
+        result
     }
 
     /// Run edits that do not need a rebuild (sketch geometry) as one unit: on error the document is restored.

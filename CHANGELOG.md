@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- Selection `and` accepts two or more operands; kind filters reuse topology's native/mesh classification.
+  `curve` matches arc/other edges; face-kind filters are preview-only pending a native persistence decision (ADR 0013).
 - `feature_delete` refuses dependent nodes unless `cascade=true`; deletion is atomic and restores consumed
   source bodies. Session `undo` retains 16 successful modelling calls and restores exact Project/B-rep state;
   document replacement resets history, and saving/exporting files is outside modelling undo (ADR 0008).
@@ -47,12 +49,22 @@ All notable changes to this project are documented here. The format follows
   sketch contract tests, protocol test. FINDINGS F-039..F-044.
 
 ### Fixed
+- Analytic cone meridian normals and verified native circle tangents classify 20°, 10°, 5° and 3° countersink
+  rims correctly. Corner previews report uncertain omitted edges, including shallow native smoothness below
+  ~1.5°; the 0.9° fixture remains omitted. Sparse curved faces retain conservative normal allowances (ADR 0010).
+- Empty corner hints name inward/outward and opposite counts, offer `between` only on multi-feature bodies,
+  and repeat in fillet/chamfer errors. Topology/adjacency/select ids sort stably.
+- Body volume fields consistently use `volume_mm3` at native precision; curved bbox padding is documented
+  up to about 0.3 mm. Pathless saves guard model lineage with an explicit `overwrite` override (ADR 0014).
+- Extrude documents the native 0.001 mm entry clearance on internal planes; formula tests verify server/GUI
+  agreement with top-face cuts. No geometry compensation changes native recipes.
+- Sketch/parameter edits share one exact-geometry rollback helper; tests decode asymmetric GLB binary
+  positions/indices and winding, and verify per-object geometry/global offsets in multi-body OBJ exports.
 - Planar/straight concave/convex corners use numerical allowances, restoring omitted 45° chamfer boundaries
   and 30° wedges while retaining conservative curved uncertainty (ADR 0010, F-053).
 - Concave/convex edge filters require a sign above normal/tangent uncertainty at five arc-length samples;
   ambiguous shallow junctions and edges with disagreeing signs are omitted. Cylinder normals preserve the
-  facet normal when winding alignment is unreliable; the untested analytic circle-tangent refinement is removed
-  (ADR 0010, F-053).
+  facet normal when winding alignment is unreliable; native circle tangents have independent formula and mutation checks (ADR 0010, F-053).
 - Undo preserves monotonic ids so removed-body references/picks cannot alias new nodes; snapshots omit embedded
   source payloads and restore them by id. Feature deletion shares the MCP history snapshot instead of copying twice.
 - Export and render repeat current document warnings, including sealed-void diagnostics.
@@ -61,8 +73,8 @@ All notable changes to this project are documented here. The format follows
 - Undo returns the tool name/arguments, restored parameter expressions/values and bodies/diagnostics; exhausting evicted history reports
   `history limit reached (16): older calls cannot be undone`.
 - Empty concave/convex previews return zero matches and compose as empty sets; fillet/chamfer still refuse
-  empty final selections. Empty corner selections include a named-feature `between` hint; the fillet
-  description includes the same example.
+  empty final selections. Empty corner selections include a named-feature `between` hint on multi-feature bodies; fillet/chamfer
+  errors repeat the same guidance.
 - Disconnected arrays and other multi-solid results no longer trigger void warnings. Stale-open warnings use
   four-decimal metrics, show bbox changes only beyond F-016 tolerance, and identify rebuilt geometry as current.
 - `feature_delete` returns every deleted node's id/name/kind, including cascades; its description explains

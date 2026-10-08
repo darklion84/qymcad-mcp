@@ -17,7 +17,7 @@ fn sealed_pocket(r: &mut Registry) -> Vec<String> {
     call(r, "extrude", json!({"sketch":"pocket_profile", "height":3, "op":"cut", "direction":"reverse", "name":"pocket"}));
     let info = call(r, "doc_info", json!({}));
     // An interior cut includes the 0.001 mm entry clearance: V=20³−4*6*(3+0.001).
-    assert!((info["bodies"][0]["volume"].as_f64().unwrap() - (20.0_f64.powi(3) - 4.0 * 6.0 * 3.001)).abs() < 1e-6);
+    assert!((info["bodies"][0]["volume_mm3"].as_f64().unwrap() - (20.0_f64.powi(3) - 4.0 * 6.0 * 3.001)).abs() < 1e-6);
     let warnings: Vec<String> = serde_json::from_value(info["warnings"].clone()).unwrap();
     assert!(warnings.iter().any(|w| w.contains("pocket") && w.contains("sealed internal void")));
     warnings
@@ -62,7 +62,7 @@ fn undo_reports_restored_parameter_expressions_values_and_bodies() {
     assert_eq!(result["params"], json!([{"name":"t", "expr":"5", "value":5.0}, {"name":"h", "expr":"t+1", "value":6.0}]));
     assert_eq!(result["undone"], json!({"tool":"param_set", "arguments":args}));
     // Restored prism height is h=t+1: V=20*30*(5+1).
-    assert_eq!(result["bodies"][0]["volume_mm3"], 20.0 * 30.0 * (5.0 + 1.0));
+    assert!((result["bodies"][0]["volume_mm3"].as_f64().unwrap() - 20.0 * 30.0 * (5.0 + 1.0)).abs() < 1e-9);
     call(&mut r, "param_set", json!({"name":"spare", "value":7}));
     let creation_undo = call(&mut r, "undo", json!({}));
     assert_eq!(creation_undo["params"], before["params"], "undoing parameter creation reports its absence");

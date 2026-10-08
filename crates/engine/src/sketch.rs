@@ -316,63 +316,27 @@ impl Session {
     /// rebuilt; if a feature that built before fails now, the edit is rolled back and the errors returned.
     pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
         let before = self.p.clone();
-        let before_warnings = self.advisory_warnings.clone();
-        // regen_plan includes transitive sketch dependents and any already dirty nodes. Keep their original
-        // handles, rebuilding on independent B-rep copies: rollback retains the original representation (F-034).
-        let has_dependents = !before.dependents_of(sketch).is_empty();
+        // regen_plan includes transitive sketch dependents and any already dirty nodes.
         let mut planned = before.clone();
         planned.mark_sketch_dirty(sketch);
         let mut nodes: HashSet<Id> = planned.regen_plan().nodes.into_iter().collect();
         // regen_plan omits dirty sketch outputs; regenerate still rebuilds their consumers (F-023).
         nodes.extend(before.dependents(sketch));
-        let mut saved: HashMap<Id, qymcad_kernel::Shape> = if has_dependents {
-            let _gate = qymcad_kernel::kernel_gate();
-            before
-                .timeline
-                .iter()
-                .filter(|n| nodes.contains(&n.id))
-                .flat_map(|n| n.kind.bodies())
-                .filter_map(|id| {
-                    self.shapes.get(&id).map(|sh| {
-                        sh.to_brep_bytes()
-                            .and_then(|b| qymcad_kernel::Shape::from_brep_bytes(&b))
-                            .map(|copy| (id, copy))
-                            .ok_or_else(|| Error::Io(format!("cannot snapshot body {id} before sketch edit")))
-                    })
-                })
-                .collect::<Result<_>>()?
-        } else {
-            HashMap::new()
-        };
-        for (id, copy) in &mut saved {
-            if let Some(original) = self.shapes.get_mut(id) {
-                std::mem::swap(original, copy);
-            }
-        }
-        let value = match edit(self) {
-            Ok(v) => v,
-            Err(e) => {
-                self.p = before;
-                self.shapes.extend(saved);
-                return Err(e);
-            }
-        };
-        if self.p.dependents_of(sketch).is_empty() {
-            return Ok((value, None));
-        }
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
-        let r = self.rebuild_retrying(Some(&nodes));
-        let broken: Vec<String> =
-            r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
-        if !broken.is_empty() {
-            self.p = before;
-            self.advisory_warnings = before_warnings;
-            let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
-            self.shapes.retain(|id, _| live.contains(id));
-            self.shapes.extend(saved);
-            return Err(Error::Rebuild(broken));
-        }
-        Ok((value, Some(r)))
+        let copies = if before.dependents_of(sketch).is_empty() { HashSet::new() } else { nodes.clone() };
+        self.with_rebuild_copies(before, &copies, "sketch edit", |s| {
+            let value = edit(s)?;
+            if s.p.dependents_of(sketch).is_empty() {
+                return Ok((value, None));
+            }
+            let r = s.rebuild_retrying(Some(&nodes));
+            let broken: Vec<String> =
+                r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+            if !broken.is_empty() {
+                return Err(Error::Rebuild(broken));
+            }
+            Ok((value, Some(r)))
+        })
     }
 
     /// Solve sketch `si` until it settles. One `solve_sketch` call can stop at a compromise: QymCAD holds the arms

@@ -2,42 +2,16 @@
 
 Known follow-ups that were consciously deferred. Each item says where it came from.
 
-- **GLB export test checks accessor metadata only** (Codex review, phase 3C): decode the binary positions and
-  indices and use an asymmetric fixture to prove +Y vs −Y and winding. The writer is QymCAD's (`qymcad_io::export_glb`).
-- **OBJ export with several bodies** (Codex and MiMo reviews, phase 3C): the single-body read-back (bbox, volume)
-  is in `obj_is_the_same_solid_in_millimetres`; the per-body `o body_k` offsets across bodies are not tested.
 - **Re-solve only the sketches a parameter edit reaches.** `Session::propagate_params` (crates/engine/src/params.rs)
   re-solves every sketch that has any expression on every parameter edit. Solving only the sketches whose
   expressions mention the changed name (directly or through other parameters) is a performance optimisation for
   large documents; it must keep F-001 (case-insensitive matching) and F-002 in mind. Raised in the phase 3A review.
-- **One helper for "snapshot live shapes, rebuild on copies, restore on failure".** `Session::sketch_edit` and
-  `Session::param_set` carry the same B-rep-copy snapshot logic (F-034); extract it so both change together.
-  Raised by Claude in the round-3 verification.
 - **`Patch` edge queries are not gated by the unrestorable-edge guard** (MiMo, final review): the guard in
   `Session::rebuild_retrying` covers fillet/chamfer stored queries; extend it if the engine ever creates Patch
   features with edge queries.
 - **The rebuild guard clones the `Project` on every public rebuild** (MiMo, final review): fine for small parts;
   make the retry-plan check incremental if large documents get slow.
-- **Document (or avoid) the 0.001 mm cut entry clearance on internal datum planes** (live test 2026-10-08): a cut
-  sketched on a datum plane inside the stock starts 0.001 mm behind the plane (a void of 4.001 instead of 4, floor at
-  z = 2.999). QymCAD offsets the cut tool to avoid coplanar faces (see F-017); harmless on a top face, a real
-  geometry change inside. At least state it in FINDINGS and in the extrude description.
-- **Empty-selection hint wording** (live test): say "0 concave (inward) edges; this body has N convex edges", drop the
-  `between` example on a single-feature body, and repeat the hint in fillet/chamfer "matched no edge" errors.
-- **`doc_save` without a path after switching models** (live test): after undo/delete into a different model, a bare
-  `doc_save` overwrites the last file. Warn or refuse when the file holds a different model than the session's
-  (e.g. a different first feature), unless a path is given.
-- **Minor output consistency** (live test): stable edge order between bodies; `volume_mm3` (rounded) in rebuild
-  results vs `volume` (full precision) in doc_info.
-- **Harden corner classification on tiny curved faces that look planar** (MiMo, K1-K5 re-review): a single- or
-  few-triangle torus/sphere/B-spline face passes `planar_normal` and gets the exact 1e-6 allowance, so a 9-17
-  degree junction could flip. Also reject `face_sphere` in `corner_planar_normal`, or give mesh-planar faces a
-  small nonzero allowance.
-- **Cone/plane rims are omitted up to ~20-30 degrees of slope** (live test 2026-10-08): a countersink rim at 20 degrees
-  (160 degree dihedral) is in neither concave nor convex, while a plane/plane edge at the same angle is found. The
-  cone normal carries the full tessellation allowance because the pinned kernel has no cone apex/angle getter.
-  State the effective threshold in the select/fillet descriptions, report an "omitted N uncertain edges" count with
-  corner selections, and derive analytic cone normals (e.g. from the cone's axis via face_axis plus the rim/edge
-  geometry) when possible. Also: a 3-item `and` (only 2 allowed today), selection by edge kind (line/circle), and
-  the doc_info bbox padding note (up to ~0.26 mm observed on countersinks, not "about 0.05").
-
+- **Persist face-kind selections in modifiers** (C1/E7 native-capability gate): previews support kind filters,
+  but `refs::Query` has no native kind variant. Choose between lowering to fixed persistent face ids (does not
+  discover newly created faces) and adding upstream native query support. Until a decision, face modifiers
+  refuse kind filters; edge modifiers already store resolved ids. Evidence/options: ADR 0013 and tasks/review-c1.md.

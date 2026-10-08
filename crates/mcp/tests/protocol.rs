@@ -199,7 +199,7 @@ fn builds_saves_and_reopens_the_plate() {
     let mut c2 = Client::start();
     c2.init();
     let o = c2.ok("doc_open", json!({ "path": path.to_str().unwrap() }));
-    let v2 = o["doc"]["bodies"][0]["volume"].as_f64().unwrap();
+    let v2 = o["doc"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
     assert!((v2 - expected(6.0)).abs() < 1e-3, "reopened volume {v2}");
     let r = c2.ok("param_set", json!({ "name": "t", "value": 10 }));
     let v3 = r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();

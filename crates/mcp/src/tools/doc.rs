@@ -27,6 +27,9 @@ pub struct SaveArgs {
     /// Permit an empty document to overwrite an existing .qcad containing bodies. Default false.
     #[serde(default)]
     pub allow_empty: bool,
+    /// Permit a pathless save to replace the last file after the saved model's first solid feature was removed or replaced. Default false; give an explicit path instead to choose the destination.
+    #[serde(default)]
+    pub overwrite: bool,
 }
 
 pub fn tools() -> Vec<Tool> {
@@ -52,22 +55,22 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "doc_save",
-            "Save the document as .qcad; the directory must exist. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
+            "Save the document as .qcad; the directory must exist. A pathless save requires the first solid feature of the last loaded/saved model to remain; after undo/delete replaces that model, give a path or overwrite=true. Normal edits keep the association. doc_new needs an explicit path. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true; that explicit empty replacement also resets the association. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
             |st, a: SaveArgs| {
                 let s = st.doc()?;
                 let target = match &a.path {
                     Some(p) => Some(checked_path(p, &["qcad"])?),
                     None => None,
                 };
-                let path = s.save_with_options(target.as_deref(), a.allow_empty).map_err(err)?;
+                let path = s.save_with_overwrite(target.as_deref(), a.allow_empty, a.overwrite).map_err(err)?;
                 Ok(json!({ "saved": path.display().to_string() }))
             },
         ),
         tool(
             "doc_info",
-            "The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume mm³, bbox), errors and warnings. \
-             Bboxes include OCCT tolerance padding in-session (allow about 0.05 mm); after doc_open stored B-reps may report tighter bounds. \
-             Use volume for size checks and topology face positions for placement.",
+            "The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. \
+             Bboxes include OCCT tolerance padding in-session (up to about 0.3 mm on curved bodies); after doc_open stored B-reps may report tighter bounds. \
+             Use volume_mm3 for size checks and topology face positions for placement.",
             |st, _: NoArgs| Ok(serde_json::to_value(st.doc()?.info()).unwrap_or(Value::Null)),
         ),
     ]

@@ -241,7 +241,8 @@ impl Session {
     fn edges_now(&self, src: Id, sel: &Sel) -> Result<Vec<u32>> {
         let ids = self.resolve_sel(src, Element::Edges, sel)?;
         if ids.is_empty() {
-            return Err(Error::Invalid(format!("the edge selection matched no edge of body {src}")));
+            let hint = self.empty_corner_hint(src, sel).map(|h| format!("; {h}")).unwrap_or_default();
+            return Err(Error::Invalid(format!("the edge selection matched no edge of body {src}{hint}")));
         }
         Ok(ids)
     }

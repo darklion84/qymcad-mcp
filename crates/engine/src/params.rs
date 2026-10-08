@@ -5,7 +5,7 @@ use crate::session::{Rebuild, Session};
 use crate::value::Num;
 use qymcad_core::model::{Id, Param};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct ParamInfo {
@@ -77,45 +77,14 @@ impl Session {
                 nodes.extend(self.p.dependents(sketch.id));
             }
         }
-        let before_warnings = self.advisory_warnings.clone();
-        let saved: crate::error::Result<HashMap<Id, qymcad_kernel::Shape>> = {
-            let _gate = qymcad_kernel::kernel_gate();
-            self.p
-                .timeline
-                .iter()
-                .filter(|n| nodes.contains(&n.id))
-                .flat_map(|n| n.kind.bodies())
-                .filter_map(|id| {
-                    self.shapes.get(&id).map(|sh| {
-                        sh.to_brep_bytes()
-                            .and_then(|b| qymcad_kernel::Shape::from_brep_bytes(&b))
-                            .map(|copy| (id, copy))
-                            .ok_or_else(|| Error::Io(format!("cannot snapshot body {id} before parameter rebuild")))
-                    })
-                })
-                .collect()
-        };
-        let mut saved = match saved {
-            Ok(saved) => saved,
-            Err(e) => {
-                self.p = before;
-                return Err(e);
+        self.with_rebuild_copies(before, &nodes, "parameter rebuild", |s| {
+            let r = s.rebuild_retrying(Some(&nodes));
+            if !r.errors.is_empty() {
+                let lines = r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+                return Err(Error::Rebuild(lines));
             }
-        };
-        for (id, copy) in &mut saved {
-            if let Some(original) = self.shapes.get_mut(id) {
-                std::mem::swap(original, copy);
-            }
-        }
-        let r = self.rebuild_retrying(Some(&nodes));
-        if !r.errors.is_empty() {
-            let lines = r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
-            self.p = before;
-            self.advisory_warnings = before_warnings;
-            self.shapes.extend(saved);
-            return Err(Error::Rebuild(lines));
-        }
-        Ok(r)
+            Ok(r)
+        })
     }
 
     /// Delete a parameter. Refused while an expression still uses it.

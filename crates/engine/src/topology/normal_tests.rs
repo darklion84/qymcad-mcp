@@ -92,3 +92,77 @@ fn shallow_wrong_facet_sign_is_omitted_by_the_uncertainty_margin() {
     assert!(dot(cross(na.0, tangent), facet.0) > 0.0, "unbounded facet sign is wrongly concave");
     assert_eq!(robust_corner_sign(na, facet, tangent, 1e-6), None, "wrong shallow facet sign must be omitted");
 }
+
+#[test]
+fn single_triangle_native_sphere_must_not_receive_a_plane_normal() {
+    let _gate = qymcad_kernel::kernel_gate();
+    let shape = Shape::sphere_named(2.0, [1, 2, 3]).unwrap();
+    assert!((shape.volume() - 4.0 * std::f64::consts::PI * 8.0 / 3.0).abs() < 1e-8);
+    let (mesh, faces) = shape.tessellate_merged(0.05).unwrap();
+    let mut face = faces[0].clone();
+    face.triangles.truncate(1);
+    assert!(planar_normal(&face, &mesh).is_some(), "one curved facet appears planar");
+    assert!(corner_planar_normal(&shape, &face, &mesh).is_none(), "native sphere must not receive a plane normal even with one triangle");
+}
+
+#[test]
+fn native_cone_meridian_normals_match_formula_and_outward_winding() {
+    let _gate = qymcad_kernel::kernel_gate();
+    for slope_deg in [0.9_f64, 3.0, 5.0, 10.0, 20.0, 45.0] {
+        let angle = slope_deg.to_radians();
+        let height = 5.0 * angle.tan();
+        let shape = Shape::cone_named(10.0, 5.0, height, [1, 2, 3]).unwrap();
+        let expected_volume = std::f64::consts::PI * height * (100.0 + 50.0 + 25.0) / 3.0;
+        assert!((shape.volume() - expected_volume).abs() < 1e-8);
+        let (mesh, faces) = shape.tessellate_merged(0.05).unwrap();
+        let face = faces.iter().find(|f| shape.face_axis(f.id).is_some()).unwrap();
+        let (origin, axis) = shape.face_axis(face.id).unwrap();
+        let slope = cone_slope(face, &mesh, origin, axis).expect("native cone vertices determine its generator");
+        assert!(
+            (slope + 5.0 / height).abs() < 1e-7 * (5.0 / height).max(1.0),
+            "dr/dz follows formula: slope={slope}, expected={}, axis={axis:?}",
+            -5.0 / height
+        );
+        for azimuth in [0.0_f64, 0.7, 2.0, 4.0] {
+            let point = [7.5 * azimuth.cos(), 7.5 * azimuth.sin(), height / 2.0];
+            let expected = [angle.sin() * azimuth.cos(), angle.sin() * azimuth.sin(), angle.cos()];
+            // A facet eight degrees away still orients the reconstructed normal correctly.
+            let facet_angle = angle + 8.0_f64.to_radians();
+            let facet = [facet_angle.sin() * azimuth.cos(), facet_angle.sin() * azimuth.sin(), facet_angle.cos()];
+            let normal = cone_normal(origin, axis, slope, point, facet).unwrap();
+            assert!(norm(sub(normal.0, expected)) < 1e-7, "cone normal equals analytic formula at {slope_deg} degrees");
+            assert_eq!(normal.1, angular_error(1.0_f64.to_radians()));
+            let inward = cone_normal(origin, axis, slope, point, facet.map(|x| -x)).unwrap();
+            assert!(norm(sub(inward.0, expected.map(|x| -x))) < 1e-7, "bore winding reverses analytic cone normal");
+            let reversed_axis = cone_normal(origin, axis.map(|x| -x), -slope, point, facet).unwrap();
+            assert!(norm(sub(reversed_axis.0, expected)) < 1e-7, "axis sense does not change the normal");
+        }
+    }
+}
+
+#[test]
+fn analytic_circle_tangent_matches_formula_at_chord_points() {
+    let mut edge = MeshEdge { radius: 7.0, center: [2.0, 3.0, 4.0], axis: [0.0, 0.0, 1.0], ..Default::default() };
+    for theta in [0.0_f64, 0.3, 1.9, 4.5] {
+        // Midpoint of a symmetric circle chord lies radially inward by cos(half sweep).
+        let radius = 7.0 * 0.15_f64.cos();
+        let point = [2.0 + radius * theta.cos(), 3.0 + radius * theta.sin(), 4.0];
+        let expected = [-theta.sin(), theta.cos(), 0.0];
+        assert!(norm(sub(circle_tangent(&edge, point).unwrap(), expected)) < 1e-12);
+        edge.axis = [0.0, 0.0, -1.0];
+        assert!(norm(sub(circle_tangent(&edge, point).unwrap(), expected.map(|x| -x))) < 1e-12);
+        edge.axis = [0.0, 0.0, 1.0];
+    }
+}
+
+#[test]
+fn sparse_mesh_only_planes_keep_uncertainty_that_prevents_shallow_wrong_signs() {
+    let one = mesh_plane_allowance(1, false);
+    let two = mesh_plane_allowance(2, false);
+    let many = mesh_plane_allowance(100, false);
+    assert!(one > two && two > many && many > 1e-6);
+    let facet_angle = (-9.0_f64).to_radians();
+    let facet = ([facet_angle.sin(), 0.0, facet_angle.cos()], one);
+    assert_eq!(robust_corner_sign(([0.0, 0.0, 1.0], 1e-6), facet, [0.0, 1.0, 0.0], 1e-6), None);
+    assert_eq!(mesh_plane_allowance(1, true), 1e-6, "native plane proof preserves ordinary planar corners");
+}

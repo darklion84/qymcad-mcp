@@ -61,7 +61,7 @@ pub fn round(v: f64, dp: i32) -> f64 {
     scaled.round() / k
 }
 
-/// A rebuild report, compact: rounded numbers, empty lists omitted.
+/// A rebuild report: full-precision volume, rounded bounds, empty lists omitted.
 pub fn rebuild_json(r: &Rebuild) -> Value {
     let bodies: Vec<Value> = r
         .bodies
@@ -70,7 +70,7 @@ pub fn rebuild_json(r: &Rebuild) -> Value {
             json!({
                 "id": b.id,
                 "name": b.name,
-                "volume_mm3": round(b.volume, 4),
+                "volume_mm3": b.volume,
                 "bbox": b.bbox.iter().map(|v| round(*v, 3)).collect::<Vec<_>>(),
             })
         })

@@ -79,11 +79,13 @@ fn a_failed_sketch_edit_restores_old_shapes_bit_identically() {
     // Plate minus rectangular pocket: 60·40·10 - 30·16·3 mm³.
     assert_close(s.result_bodies()[0].volume, 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * 3.0, 1e-3, "edited plate");
     let before = volume_bits(&s);
+    let shapes = brep_bytes(&s);
     let recipe = serde_json::to_value(s.project()).unwrap();
     // Opening the outer contour prevents the already built extrusion (and its pocket) from rebuilding.
     let e = s.sketch_edit(plate, |s| s.sketch_remove_entity(plate, lines[0])).unwrap_err();
     assert!(matches!(e, Error::Rebuild(_)), "{e}");
     let after = volume_bits(&s);
+    assert!(brep_bytes(&s) == shapes, "sketch rollback changed committed B-rep bytes");
     let show = |v: &[(Id, u64)]| v.iter().map(|(id, bits)| (*id, f64::from_bits(*bits))).collect::<Vec<_>>();
     assert_eq!(after, before, "old body volumes after sketch rollback {:?} vs before {:?}", show(&after), show(&before));
     assert_eq!(serde_json::to_value(s.project()).unwrap(), recipe, "project restored exactly");

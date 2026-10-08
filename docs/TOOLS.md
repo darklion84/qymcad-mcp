@@ -64,7 +64,7 @@ Open a .qcad file written by QymCAD of the same release (or by this server). Reb
 
 ## doc_save
 
-Save the document as .qcad; the directory must exist. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true. Open it in the QymCAD app with File > Open; double-click does not work on macOS.
+Save the document as .qcad; the directory must exist. A pathless save requires the first solid feature of the last loaded/saved model to remain; after undo/delete replaces that model, give a path or overwrite=true. Normal edits keep the association. doc_new needs an explicit path. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true; that explicit empty replacement also resets the association. Open it in the QymCAD app with File > Open; double-click does not work on macOS.
 
 ```json
 {
@@ -73,6 +73,11 @@ Save the document as .qcad; the directory must exist. Refuses to overwrite a fil
     "allow_empty": {
       "default": false,
       "description": "Permit an empty document to overwrite an existing .qcad containing bodies. Default false.",
+      "type": "boolean"
+    },
+    "overwrite": {
+      "default": false,
+      "description": "Permit a pathless save to replace the last file after the saved model's first solid feature was removed or replaced. Default false; give an explicit path instead to choose the destination.",
       "type": "boolean"
     },
     "path": {
@@ -90,7 +95,7 @@ Save the document as .qcad; the directory must exist. Refuses to overwrite a fil
 
 ## doc_info
 
-The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume mm³, bbox), errors and warnings. Bboxes include OCCT tolerance padding in-session (allow about 0.05 mm); after doc_open stored B-reps may report tighter bounds. Use volume for size checks and topology face positions for placement.
+The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. Bboxes include OCCT tolerance padding in-session (up to about 0.3 mm on curved bodies); after doc_open stored B-reps may report tighter bounds. Use volume_mm3 for size checks and topology face positions for placement.
 
 ```json
 {
@@ -1126,7 +1131,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
 
 ## extrude
 
-Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -1442,7 +1447,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
 
 ## fillet
 
-Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -2779,7 +2784,7 @@ List the faces and edges of a body with persistent ids: faces (kind plane/cylind
 
 ## select
 
-Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including a boss/plate curved junction, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}. Uncertain shallow signs or disagreement among five arc-length samples are omitted.
+Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including a boss/plate curved junction, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}. Uncertain shallow signs or disagreement among five arc-length samples are omitted and counted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees.
 
 ```json
 {
@@ -2836,7 +2841,7 @@ Preview what a face or edge selection resolves to on a body right now (the same 
               "type": "object"
             }
           ],
-          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), and fallback facet normals can require about 20–30 degrees. Corner previews report omitted uncertain edges; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's classification. Face-kind filters are preview-only for hole/shell/push_face because QymCAD has no persistent kind query; use explicit face ids or facing/of_feature there. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
         },
         {
           "type": "null"
@@ -2869,7 +2874,7 @@ Preview what a face or edge selection resolves to on a body right now (the same 
               "type": "object"
             }
           ],
-          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), and fallback facet normals can require about 20–30 degrees. Corner previews report omitted uncertain edges; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's classification. Face-kind filters are preview-only for hole/shell/push_face because QymCAD has no persistent kind query; use explicit face ids or facing/of_feature there. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
         },
         {
           "type": "null"

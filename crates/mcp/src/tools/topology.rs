@@ -4,7 +4,7 @@
 
 use super::common::{err, round, ObjRef};
 use super::{tool, Tool};
-use qymcad_engine::{Axis, AxisRef, EdgeKind, Element, FaceKind, Id, Role, Sel, Session, Topology};
+use qymcad_engine::{Axis, AxisRef, EdgeKind, Element, FaceKind, Id, Role, Sel, SelectionKind, Session, Topology};
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Map, Value};
@@ -16,19 +16,28 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); \
     {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved \
     junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; \
-    uncertain shallow signs or disagreement among five \
-    arc-length samples are omitted; \
+    uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims \
+    at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), \
+    and fallback facet normals can require \
+    about 20–30 degrees. Corner previews report omitted uncertain edges; \
     {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest \
     edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, \
     cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} \
     the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; \
     {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, \
-    {\"minus\": [a, b]}, {\"and\": [a, b]}. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}.";
+    {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. \
+    {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes \
+    full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's \
+    classification. Face-kind filters are preview-only for hole/shell/push_face because QymCAD has no persistent \
+    kind query; use explicit face ids or facing/of_feature there. Example, the top outline of a block: \
+    {\"edges_of\": {\"facing\": \"+z\"}}.";
 
 /// A selection as the agent writes it (names still unresolved).
 #[derive(Clone, Debug)]
 pub enum SelArg {
     Ids(Vec<u32>),
+    /// Geometric face/edge kind, using the topology taxonomy.
+    Kind(SelectionKind),
     OfFeature {
         /// Feature id or name whose generated faces to select.
         feature: ObjRef,
@@ -70,20 +79,11 @@ pub enum SelArg {
 }
 
 impl SelArg {
-    fn has_corner_filter(&self) -> bool {
-        match self {
-            Self::Concave | Self::Convex => true,
-            Self::Union(v) => v.iter().any(Self::has_corner_filter),
-            Self::And(a, b) | Self::Minus(a, b) | Self::Between(a, b) => a.has_corner_filter() || b.has_corner_filter(),
-            Self::EdgesOf(s) | Self::TangentChain { seed: s, .. } => s.has_corner_filter(),
-            _ => false,
-        }
-    }
-
     pub fn resolve(&self, s: &Session) -> Result<Sel, String> {
         let b = |x: &SelArg| x.resolve(s).map(Box::new);
         Ok(match self {
             SelArg::Ids(v) => Sel::Ids(v.clone()),
+            SelArg::Kind(kind) => Sel::Kind(*kind),
             SelArg::OfFeature { feature, role } => Sel::OfFeature { feature: feature.resolve(s)?, role: *role },
             SelArg::Facing { dir, tol_deg } => Sel::Facing { dir: *dir, tol_deg: *tol_deg },
             SelArg::Along { dir, tol_deg } => Sel::Along { dir: *dir, tol_deg: *tol_deg },
@@ -111,8 +111,9 @@ impl SelArg {
     }
 
     fn parse_object(o: &Map<String, Value>) -> Result<SelArg, String> {
-        const KEYS: [&str; 13] = [
+        const KEYS: [&str; 14] = [
             "ids",
+            "kind",
             "of_feature",
             "facing",
             "along",
@@ -158,6 +159,10 @@ impl SelArg {
                 Value::Array(_) => Self::parse(val)?,
                 _ => return Err("`ids` takes a list of ids".into()),
             },
+            "kind" => SelArg::Kind(
+                serde_json::from_value(val.clone())
+                    .map_err(|_| format!("unknown kind {val}: line, circle, arc, curve, plane, cylinder, cone, sphere, other"))?,
+            ),
             "of_feature" => {
                 let feature = serde_json::from_value::<ObjRef>(val.clone())
                     .map_err(|_| format!("of_feature: expected an id or a name, got {val}"))?;
@@ -197,14 +202,27 @@ impl SelArg {
                 SelArg::Minus(a, b)
             }
             "and" => {
-                let (a, b) = pair("and")?;
-                SelArg::And(a, b)
+                let items =
+                    val.as_array().filter(|v| v.len() >= 2).ok_or_else(|| "`and` takes a list of at least two selections".to_string())?;
+                balanced_and(items.iter().map(Self::parse).collect::<Result<_, _>>()?)?
             }
             _ => match val.as_array() {
                 Some(v) if !v.is_empty() => SelArg::Union(v.iter().map(Self::parse).collect::<Result<_, _>>()?),
                 _ => return Err("`union` takes a non-empty list of selections".into()),
             },
         })
+    }
+}
+
+/// Keep a wide intersection within the same query-depth budget as a wide union (F-032).
+fn balanced_and(mut items: Vec<SelArg>) -> Result<SelArg, String> {
+    match items.len() {
+        0 => Err("`and` takes a list of at least two selections".into()),
+        1 => items.pop().ok_or_else(|| "`and` takes a list of at least two selections".into()),
+        n => {
+            let right = items.split_off(n / 2);
+            Ok(SelArg::And(Box::new(balanced_and(items)?), Box::new(balanced_and(right)?)))
+        }
     }
 }
 
@@ -562,7 +580,10 @@ pub fn tools() -> Vec<Tool> {
              Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
              a boss/plate curved junction, \
              pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. \
-             Uncertain shallow signs or disagreement among five arc-length samples are omitted.",
+             Uncertain shallow signs or disagreement among five arc-length samples are omitted and counted. \
+             Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness \
+             threshold about 1.5 degrees). Fallback facet \
+             normals can require about 20–30 degrees.",
             |st, a: SelectArgs| {
                 let s = st.doc()?;
                 let body = body_of(s, &a.body)?;
@@ -583,8 +604,16 @@ pub fn tools() -> Vec<Tool> {
                         json!({ "body": body, "count": ids.len(), "edges": rows })
                     }
                 };
-                if ids.is_empty() && a.edges.as_ref().is_some_and(SelArg::has_corner_filter) {
-                    out["hint"] = json!("0 corner edges; for a junction between named features use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}");
+                if ids.is_empty() && el == Element::Edges {
+                    if let Some(hint) = s.empty_corner_hint(body, &sel) {
+                        out["hint"] = json!(hint);
+                    }
+                }
+                if el == Element::Edges && sel.corner_filters() != (false, false) {
+                    let omitted = s.corner_omitted_count(body);
+                    if omitted > 0 {
+                        out["note"] = json!(format!("omitted {omitted} uncertain edges"));
+                    }
                 }
                 round_json(&mut out, 4);
                 Ok(out)

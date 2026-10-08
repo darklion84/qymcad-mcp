@@ -274,8 +274,8 @@ fn concave_boss_fillet_rounds_one_circle_and_follows_parameters_on_server_and_gu
 #[test]
 fn shallow_conical_spotface_rim_is_omitted_when_its_sign_is_uncertain() {
     let mut s = plate();
-    // The cone rises 3 degrees above XY: delta_z=(R-r)*tan(3 degrees).
-    let depth = 5.0 * 3.0_f64.to_radians().tan();
+    // At 0.9 degrees the remaining analytic-normal allowance may omit the rim.
+    let depth = 5.0 * 0.9_f64.to_radians().tan();
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XZ), None).unwrap();
     s.sketch_polyline(
         sk,
@@ -310,4 +310,59 @@ fn shallow_conical_spotface_rim_is_omitted_when_its_sign_is_uncertain() {
     let rim = circle_at(&topo, 10.0, 6.0);
     assert!(!corners(&mut s, &Sel::Concave).contains(&rim), "shallow spotface rim must not be concave");
     assert!(!corners(&mut s, &Sel::Convex).contains(&rim), "uncertain shallow spotface rim must be omitted");
+    assert_eq!(s.corner_omitted_count(topo.body), 1, "only the uncertain 0.9 degree rim is omitted; seams are not counted");
+}
+
+#[test]
+fn shallow_countersink_rims_are_convex_and_follow_server_and_gui_edits() {
+    for slope in [20.0_f64, 10.0, 5.0, 3.0, 30.0, 45.0] {
+        let mut s = plate();
+        let depth = 5.0 * slope.to_radians().tan();
+        s.param_set("sink_depth", &depth.into()).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XZ), None).unwrap();
+        s.sketch_polyline(
+            sk,
+            &PolylineSpec {
+                points: vec![
+                    Xy(0.0.into(), (-1.0).into()),
+                    Xy(5.0.into(), (-1.0).into()),
+                    Xy(5.0.into(), n("t-sink_depth")),
+                    Xy(10.0.into(), n("t")),
+                    Xy(0.0.into(), n("t")),
+                ],
+                closed: true,
+                construction: false,
+                dimensioned: true,
+            },
+        )
+        .unwrap();
+        let (_, r) = s
+            .revolve(&Revolve {
+                sketch: sk,
+                profiles: None,
+                axis: AxisRef::SketchY,
+                angle: 360.0.into(),
+                direction: Direction::Normal,
+                op: Op::Cut,
+                target: None,
+                name: Some("countersink".into()),
+            })
+            .unwrap();
+        assert!(r.errors.is_empty(), "{:?}", r.errors);
+        let expected = |d: f64| W * L * 6.0 - PI * 25.0 * 6.0 - PI * d * (100.0 + 50.0 - 50.0) / 3.0;
+        assert_close(volume(&s), expected(depth), 1e-3, "frustum minus overlapping bore");
+        let topo = s.topology(None, true).unwrap();
+        let rim = circle_at(&topo, 10.0, 6.0);
+        assert!(corners(&mut s, &Sel::Convex).contains(&rim), "{slope} degree countersink rim must be convex");
+        assert!(!corners(&mut s, &Sel::Concave).contains(&rim));
+        let path = scratch(&format!("sink_{slope}_gui.qcad"));
+        s.save(Some(&path)).unwrap();
+        let edited_depth = depth * 0.9;
+        assert_close(gui_edit_param(&path, "sink_depth", &edited_depth.to_string()), expected(edited_depth), 1e-3, "GUI sink depth");
+        s.param_set("sink_depth", &edited_depth.into()).unwrap();
+        assert_close(volume(&s), expected(edited_depth), 1e-3, "server sink depth");
+        let topo = s.topology(None, true).unwrap();
+        let rim = circle_at(&topo, 10.0, 6.0);
+        assert!(corners(&mut s, &Sel::Convex).contains(&rim), "edited {slope} degree countersink rim must remain convex");
+    }
 }

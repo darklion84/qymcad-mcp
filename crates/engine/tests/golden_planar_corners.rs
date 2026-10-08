@@ -103,3 +103,16 @@ fn thirty_degree_wedge_corner_is_convex() {
     assert!(convex.contains(&apex), "30-degree wedge corner must be convex: {apex}, got {convex:?}");
     assert!(!s.select(None, Element::Edges, &Sel::Concave).unwrap().1.contains(&apex));
 }
+
+#[test]
+fn twenty_degree_plane_to_plane_wedge_corner_stays_convex() {
+    let mut s = Session::new_part();
+    let width = 10.0 / 20.0_f64.to_radians().tan();
+    let sk = triangle(&mut s, [(0.0, 0.0), (width, 0.0), (0.0, 10.0)]);
+    extrude(&mut s, sk, 12.0, Op::Add, Direction::Symmetric);
+    check_geometry(&s, width * 10.0 * 12.0 / 2.0, [0.0, -6.0, 0.0, width, 6.0, 10.0]);
+    let topo = s.topology(None, true).unwrap();
+    let edge = edge_at(&topo, [width, 0.0, 0.0], 12.0);
+    assert!(s.select(None, Element::Edges, &Sel::Convex).unwrap().1.contains(&edge));
+    assert!(!s.select(None, Element::Edges, &Sel::Concave).unwrap().1.contains(&edge));
+}

@@ -39,6 +39,46 @@ pub enum EdgeKind {
     Other,
 }
 
+/// A geometric kind in a selection; `Other` applies to either faces or edges.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SelectionKind {
+    Line,
+    Circle,
+    Arc,
+    /// Noncircular curved edges: arcs and other curves; excludes full circles.
+    Curve,
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Other,
+}
+
+impl SelectionKind {
+    fn face(self) -> Option<FaceKind> {
+        match self {
+            Self::Plane => Some(FaceKind::Plane),
+            Self::Cylinder => Some(FaceKind::Cylinder),
+            Self::Cone => Some(FaceKind::Cone),
+            Self::Sphere => Some(FaceKind::Sphere),
+            Self::Other => Some(FaceKind::Other),
+            _ => None,
+        }
+    }
+
+    fn matches_edge(self, kind: EdgeKind) -> bool {
+        matches!(
+            (self, kind),
+            (Self::Line, EdgeKind::Line)
+                | (Self::Circle, EdgeKind::Circle)
+                | (Self::Arc, EdgeKind::Arc)
+                | (Self::Other, EdgeKind::Other)
+                | (Self::Curve, EdgeKind::Arc | EdgeKind::Other)
+        )
+    }
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct FaceInfo {
     /// Persistent face id (valid for this body, after the latest rebuild).
@@ -174,6 +214,8 @@ impl Element {
 pub enum Sel {
     /// These ids (from `topology`).
     Ids(Vec<u32>),
+    /// Faces or edges with the same geometric kind reported by `topology`; resolved to ids for previews.
+    Kind(SelectionKind),
     /// Faces made by a feature (node id), optionally only one role (e.g. `CapEnd`: the top of an extrude).
     OfFeature { feature: Id, role: Option<Role> },
     /// Faces whose outward normal is within `tol_deg` of `dir`.
@@ -203,6 +245,19 @@ pub enum Sel {
 }
 
 impl Sel {
+    /// Whether this composition includes inward or outward edge corner filters.
+    pub fn corner_filters(&self) -> (bool, bool) {
+        let combine = |a: (bool, bool), b: (bool, bool)| (a.0 || b.0, a.1 || b.1);
+        match self {
+            Self::Concave => (true, false),
+            Self::Convex => (false, true),
+            Self::Union(v) => v.iter().map(Self::corner_filters).fold((false, false), combine),
+            Self::And(a, b) | Self::Minus(a, b) | Self::Between(a, b) => combine(a.corner_filters(), b.corner_filters()),
+            Self::EdgesOf(s) | Self::TangentChain { seed: s, .. } => s.corner_filters(),
+            _ => (false, false),
+        }
+    }
+
     /// An explicit pick list (`Ids`), as opposed to a description.
     pub fn is_ids(&self) -> bool {
         matches!(self, Sel::Ids(_))
@@ -217,6 +272,7 @@ impl Sel {
                 [one] => Query::Id(*one),
                 _ => Query::Ids(ids.clone()),
             },
+            Sel::Kind(_) => return Err(Error::Invalid("face kind selections are preview-only: QymCAD has no persistent kind query; use explicit face ids or a facing/of_feature description for modifiers".into())),
             Sel::OfFeature { feature, role } => {
                 if el == Element::Edges {
                     return bad("of_feature", "it names faces; use {\"edges_of\": {\"of_feature\": ...}}");
@@ -392,6 +448,10 @@ impl Session {
     pub fn topology(&mut self, body: Option<Id>, adjacency: bool) -> Result<Topology> {
         self.ensure_topology()?;
         let body = self.topo_body(body)?;
+        self.topology_now(body, adjacency)
+    }
+
+    fn topology_now(&self, body: Id, adjacency: bool) -> Result<Topology> {
         let shape = self.shapes.get(&body).ok_or_else(|| Error::NotFound(format!("body {body} has no built shape")))?;
         let faces = self.p.regen_faces.get(&body).map(Vec::as_slice).unwrap_or_default();
         let medges = self.p.regen_edges.get(&body).map(Vec::as_slice).unwrap_or_default();
@@ -422,13 +482,16 @@ impl Session {
             } else if let Some((o, d)) = shape.face_axis(f.id) {
                 fi.kind = FaceKind::Cone;
                 fi.axis = Some([o, d]);
-            } else if let Some(n) = mesh.and_then(|m| planar_normal(f, m)) {
-                fi.kind = FaceKind::Plane;
-                fi.normal = Some(n);
             } else if let Some((c, r)) = self.p.face_sphere(body, &face_key(f)) {
                 fi.kind = FaceKind::Sphere;
                 fi.center = Some(c);
                 fi.radius = Some(r);
+            } else if let Some(n) = mesh.and_then(|m| planar_normal(f, m)) {
+                fi.kind = FaceKind::Plane;
+                fi.normal = Some(n);
+            }
+            if let Some(edges) = &mut fi.edges {
+                edges.sort_unstable();
             }
             out_faces.push(fi);
         }
@@ -451,6 +514,8 @@ impl Session {
                 seam: pairs.get(&e.id).is_some_and(|[a, b]| a == b),
             });
         }
+        out_faces.sort_unstable_by_key(|f| f.id);
+        out_edges.sort_unstable_by_key(|e| e.id);
         Ok(Topology { body, faces: out_faces, edges: out_edges })
     }
 
@@ -460,6 +525,32 @@ impl Session {
         self.ensure_topology()?;
         let body = self.topo_body(body)?;
         Ok((body, self.resolve_sel(body, el, sel)?))
+    }
+
+    /// Explain an empty corner selection, including the body's opposite corner count.
+    pub fn empty_corner_hint(&self, body: Id, sel: &Sel) -> Option<String> {
+        let (concave, convex) = sel.corner_filters();
+        let mut hint = match (concave, convex) {
+            (true, false) => format!("0 concave (inward) edges; this body has {} convex edges", self.corner_edges(body, false).len()),
+            (false, true) => format!("0 convex (outward) edges; this body has {} concave edges", self.corner_edges(body, true).len()),
+            (true, true) => format!(
+                "0 selected concave (inward) or convex (outward) edges; this body has {} concave and {} convex edges",
+                self.corner_edges(body, true).len(),
+                self.corner_edges(body, false).len()
+            ),
+            _ => return None,
+        };
+        let mut current = Some(body);
+        let mut features = 0;
+        while let Some(id) = current {
+            let Some(node) = self.p.timeline.iter().find(|n| n.id == id) else { break };
+            features += 1;
+            current = node.kind.consumed_body();
+        }
+        if features > 1 {
+            hint.push_str("; for a junction between named features use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}");
+        }
+        Some(hint)
     }
 
     /// True lengths of the edges of `body`, as `topology` reports them.
@@ -473,15 +564,31 @@ impl Session {
         medges.iter().map(|e| (e.id, edge_kind_length(e, &polylines).1)).collect()
     }
 
-    /// Signed local dihedral: face A's inward tangent dotted with face B's outward normal.
-    /// Five shared-side samples must agree beyond their normal/tangent uncertainty.
-    fn corner_edges(&self, body: Id, concave: bool) -> Vec<u32> {
+    /// Corner candidates exclude seams and proven sampled G1 junctions. Uncertain candidates have no sign.
+    fn classified_corners(&self, body: Id) -> Vec<(u32, Option<bool>)> {
         let Some(shape) = self.shapes.get(&body) else { return Vec::new() };
         let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Vec::new() };
         let faces: HashMap<_, _> = self.p.regen_faces.get(&body).into_iter().flatten().map(|f| (f.id, f)).collect();
         let _gate = qymcad_kernel::kernel_gate();
-        // Reuse the engine's face-sketch planarity check (F-011), once per face.
-        let planes: HashMap<_, _> = faces.iter().filter_map(|(&id, f)| corner_planar_normal(shape, f, mesh).map(|n| (id, n))).collect();
+        let planes: HashMap<_, _> = faces
+            .iter()
+            .filter_map(|(&id, f)| {
+                if self.p.face_sphere(body, &face_key(f)).is_some() {
+                    return None;
+                }
+                corner_planar_normal(shape, f, mesh).map(|n| (id, n))
+            })
+            .collect();
+        let cones: HashMap<_, _> = faces
+            .iter()
+            .filter_map(|(&id, f)| {
+                if shape.face_cylinder(id).is_some() {
+                    return None;
+                }
+                let (origin, axis) = shape.face_axis(id)?;
+                cone_slope(f, mesh, origin, axis).map(|slope| (id, (origin, axis, slope)))
+            })
+            .collect();
         let edges: HashMap<_, _> = shape.edges_info().into_iter().map(|e| (e.id, e)).collect();
         let pairs: HashMap<_, _> = shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect();
         self.p
@@ -491,55 +598,98 @@ impl Session {
             .flatten()
             .filter_map(|e| {
                 let edge = edges.get(&e.id)?;
-                if edge.smooth {
-                    return None;
-                }
                 let [a, b] = *pairs.get(&e.id)?;
                 if a == b || a == 0 || b == 0 {
                     return None;
                 }
-                let poly = &edge.poly;
-                let line = if e.radius == 0.0 && polyline_is_straight(poly) { Some(unit(sub(e.b, e.a)).ok()?) } else { None };
-                let tangent_error = if line.is_some() {
-                    1e-6
-                } else if e.radius > 1e-9 {
-                    // A circular chord bisects the angular sweep; no analytic tangent replacement.
-                    angular_error(MESH_ANGLE / 2.0)
-                } else {
-                    angular_error(MESH_ANGLE)
+                let normal = |id, point, facet| {
+                    planes
+                        .get(&id)
+                        .copied()
+                        .or_else(|| {
+                            let &(origin, axis, slope) = cones.get(&id)?;
+                            cone_normal(origin, axis, slope, point, facet)
+                        })
+                        .unwrap_or_else(|| local_normal(shape, id, point, facet))
                 };
-                let mut agreed = None;
-                for fraction in [0.1, 0.3, 0.5, 0.7, 0.9] {
-                    let target = polyline_point(poly, fraction)?;
-                    let (point, tangent, na, nb) = edge_face_sample(e, faces.get(&a)?, faces.get(&b)?, mesh, target)?;
-                    let tangent = if let Some(line) = line {
-                        // Preserve the shared side's winding with the native line's exact direction.
-                        let alignment = dot(line, tangent);
-                        if alignment.abs() <= 1e-9 {
+                if edge.smooth {
+                    // Native "smooth" includes shallow sharp edges below ~1.5 degrees. Count those
+                    // as omitted, but exclude junctions whose sampled normals prove G1 tangency.
+                    let g1 = [0.1, 0.3, 0.5, 0.7, 0.9].into_iter().all(|fraction| {
+                        let Some(target) = polyline_point(&edge.poly, fraction) else {
+                            return false;
+                        };
+                        let Some((point, _, na, nb)) =
+                            faces.get(&a).zip(faces.get(&b)).and_then(|(fa, fb)| edge_face_sample(e, fa, fb, mesh, target))
+                        else {
+                            return false;
+                        };
+                        norm(sub(normal(a, point, na).0, normal(b, point, nb).0)) <= 1e-6
+                    });
+                    return (!g1).then_some((e.id, None));
+                }
+                let classify = || -> Option<bool> {
+                    let line = if e.radius == 0.0 && polyline_is_straight(&edge.poly) { Some(unit(sub(e.b, e.a)).ok()?) } else { None };
+                    let mut agreed = None;
+                    for fraction in [0.1, 0.3, 0.5, 0.7, 0.9] {
+                        let target = polyline_point(&edge.poly, fraction)?;
+                        let (point, winding, na, nb) = edge_face_sample(e, faces.get(&a)?, faces.get(&b)?, mesh, target)?;
+                        // Native circle geometry supplies an exact tangent, tested with cone rims and formula circles.
+                        let analytic = line.or_else(|| circle_tangent(e, point));
+                        let (tangent, tangent_error) = if let Some(tangent) = analytic {
+                            let alignment = dot(tangent, winding);
+                            if alignment.abs() <= 1e-9 {
+                                return None;
+                            }
+                            (tangent.map(|x| x * alignment.signum()), 1e-6)
+                        } else {
+                            (winding, angular_error(MESH_ANGLE))
+                        };
+                        let sign = robust_corner_sign(normal(a, point, na), normal(b, point, nb), tangent, tangent_error)?;
+                        if agreed.is_some_and(|previous| previous != sign) {
                             return None;
                         }
-                        line.map(|x| x * alignment.signum())
-                    } else {
-                        tangent
-                    };
-                    let na = planes.get(&a).map(|&n| (n, 1e-6)).unwrap_or_else(|| local_normal(shape, a, point, na));
-                    let nb = planes.get(&b).map(|&n| (n, 1e-6)).unwrap_or_else(|| local_normal(shape, b, point, nb));
-                    let sign = robust_corner_sign(na, nb, tangent, tangent_error)?;
-                    if agreed.is_some_and(|previous| previous != sign) {
-                        return None;
+                        agreed = Some(sign);
                     }
-                    agreed = Some(sign);
-                }
-                (agreed == Some(concave)).then_some(e.id)
+                    agreed
+                };
+                Some((e.id, classify()))
             })
             .collect()
     }
 
+    /// Signed local dihedral, with five samples agreeing beyond their uncertainty.
+    fn corner_edges(&self, body: Id, concave: bool) -> Vec<u32> {
+        self.classified_corners(body).into_iter().filter_map(|(id, sign)| (sign == Some(concave)).then_some(id)).collect()
+    }
+
+    /// Number of nonseam corner candidates omitted by uncertainty or native shallow-angle smoothness.
+    pub fn corner_omitted_count(&self, body: Id) -> usize {
+        self.classified_corners(body).iter().filter(|(_, sign)| sign.is_none()).count()
+    }
+
     /// Lower engine-only edge filters to ids. QymCAD ranks `Largest` by chord rather than true length (F-030)
     /// and has no corner-sign query. All edge selections are stored as pick lists anyway (F-024).
-    fn lower_edge_filters(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Sel {
-        let sub = |x: &Sel, el: Element, lengths: &mut Option<HashMap<u32, f64>>| Box::new(self.lower_edge_filters(body, el, x, lengths));
-        match sel {
+    fn lower_edge_filters(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Result<Sel> {
+        let sub =
+            |x: &Sel, el: Element, lengths: &mut Option<HashMap<u32, f64>>| self.lower_edge_filters(body, el, x, lengths).map(Box::new);
+        Ok(match sel {
+            Sel::Kind(kind) => {
+                let topology = self.topology_now(body, false)?;
+                let ids = match el {
+                    Element::Faces => {
+                        let face_kind = kind.face().ok_or_else(|| Error::Invalid(format!("kind {kind:?} cannot select faces")))?;
+                        topology.faces.iter().filter(|f| f.kind == face_kind).map(|f| f.id).collect()
+                    }
+                    Element::Edges => {
+                        if kind.face().is_some() && *kind != SelectionKind::Other {
+                            return Err(Error::Invalid(format!("kind {kind:?} cannot select edges")));
+                        }
+                        topology.edges.iter().filter(|e| kind.matches_edge(e.kind)).map(|e| e.id).collect()
+                    }
+                };
+                Sel::Ids(ids)
+            }
             Sel::Concave | Sel::Convex if el == Element::Edges => Sel::Ids(self.corner_edges(body, matches!(sel, Sel::Concave))),
             Sel::Largest if el == Element::Edges => {
                 let l = lengths.get_or_insert_with(|| self.edge_lengths(body));
@@ -549,14 +699,14 @@ impl Session {
                 ids.sort_unstable();
                 Sel::Ids(ids)
             }
-            Sel::EdgesOf(f) => Sel::EdgesOf(sub(f, Element::Faces, lengths)),
-            Sel::TangentChain { seed, tol_deg } => Sel::TangentChain { seed: sub(seed, Element::Edges, lengths), tol_deg: *tol_deg },
-            Sel::Between(a, b) => Sel::Between(sub(a, Element::Faces, lengths), sub(b, Element::Faces, lengths)),
-            Sel::Union(v) => Sel::Union(v.iter().map(|x| *sub(x, el, lengths)).collect()),
-            Sel::Minus(a, b) => Sel::Minus(sub(a, el, lengths), sub(b, el, lengths)),
-            Sel::And(a, b) => Sel::And(sub(a, el, lengths), sub(b, el, lengths)),
+            Sel::EdgesOf(f) => Sel::EdgesOf(sub(f, Element::Faces, lengths)?),
+            Sel::TangentChain { seed, tol_deg } => Sel::TangentChain { seed: sub(seed, Element::Edges, lengths)?, tol_deg: *tol_deg },
+            Sel::Between(a, b) => Sel::Between(sub(a, Element::Faces, lengths)?, sub(b, Element::Faces, lengths)?),
+            Sel::Union(v) => Sel::Union(v.iter().map(|x| self.lower_edge_filters(body, el, x, lengths)).collect::<Result<_>>()?),
+            Sel::Minus(a, b) => Sel::Minus(sub(a, el, lengths)?, sub(b, el, lengths)?),
+            Sel::And(a, b) => Sel::And(sub(a, el, lengths)?, sub(b, el, lengths)?),
             other => other.clone(),
-        }
+        })
     }
 
     /// Every explicit id anywhere in `sel` must be a face or an edge of `body`, as its position requires (inside
@@ -585,6 +735,7 @@ impl Session {
             Sel::Union(v) => v.iter().try_for_each(|x| b(x, el)),
             Sel::Minus(x, y) | Sel::And(x, y) => b(x, el).and(b(y, el)),
             Sel::OfFeature { .. }
+            | Sel::Kind(_)
             | Sel::Facing { .. }
             | Sel::Along { .. }
             | Sel::Concave
@@ -596,16 +747,17 @@ impl Session {
 
     /// Resolve `sel` on `body`. Explicit ids that are not on the body are an error (stale or foreign ids).
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
-        let lowered = self.lower_edge_filters(body, el, sel, &mut None);
+        let lowered = self.lower_edge_filters(body, el, sel, &mut None)?;
         let sel = &lowered;
         let q = sel.to_query(el)?;
         self.check_ids(body, el, sel)?;
         let r = Ref::many(q);
-        let found = match el {
+        let mut found = match el {
             Element::Faces => self.p.resolve_face_refs(body, &r, "select"),
             Element::Edges => self.p.resolve_edge_refs(body, &r, "select"),
         }
         .map_err(|e| Error::Invalid(format!("selection did not resolve: {e:?}")))?;
+        found.sort_unstable();
         Ok(found)
     }
 
@@ -717,12 +869,67 @@ fn angular_error(angle: f64) -> f64 {
 
 type LocalNormal = ([f64; 3], f64);
 
-/// Match topology's native cylinder/cone precedence before applying mesh planarity.
-fn corner_planar_normal(shape: &Shape, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3]> {
+/// Native cylinders/cones and fitted spheres never receive a mesh-plane normal. The kernel
+/// exposes aggregate surface kinds, allowing native plane proof only when no unidentified curved kinds exist.
+fn corner_planar_normal(shape: &Shape, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<LocalNormal> {
     if shape.face_axis(face.id).is_some() {
         return None;
     }
-    planar_normal(face, mesh)
+    let kinds = shape.face_kinds()?;
+    if kinds[0] == 0 {
+        return None;
+    }
+    let normal = planar_normal(face, mesh)?;
+    let native_plane = kinds[3..].iter().all(|&count| count == 0);
+    Some((normal, mesh_plane_allowance(face.triangles.len(), native_plane)))
+}
+
+fn mesh_plane_allowance(triangles: usize, native_plane: bool) -> f64 {
+    if native_plane {
+        return 1e-6;
+    }
+    // Fewer samples are weaker evidence; never give a mesh-only plane numerical certainty.
+    angular_error((MESH_ANGLE / (triangles.max(1) as f64).sqrt()).max(0.99999_f64.acos()))
+}
+
+/// Cone vertices satisfy r(z)=r0+s*z in the axis meridian plane. Use the widest axial
+/// span and verify all face vertices fit it; degenerate patches retain facet uncertainty.
+fn cone_slope(face: &MeshFace, mesh: &qymcad_core::geom::Mesh, origin: [f64; 3], axis: [f64; 3]) -> Option<f64> {
+    let mut meridian = Vec::new();
+    for &ti in &face.triangles {
+        for &vi in mesh.tris.get(ti as usize)? {
+            let v = mesh.verts.get(vi as usize)?;
+            let offset = sub([v.x, v.y, v.z], origin);
+            let z = dot(offset, axis);
+            let r = norm(sub(offset, axis.map(|x| x * z)));
+            meridian.push((z, r));
+        }
+    }
+    let &(z0, r0) = meridian.iter().min_by(|a, b| a.0.total_cmp(&b.0))?;
+    let &(z1, r1) = meridian.iter().max_by(|a, b| a.0.total_cmp(&b.0))?;
+    let scale = meridian.iter().map(|(z, r)| z.abs().max(*r)).fold(1.0, f64::max);
+    if z1 - z0 <= 1e-9 * scale {
+        return None;
+    }
+    let slope = (r1 - r0) / (z1 - z0);
+    meridian.iter().all(|&(z, r)| (r - r0 - slope * (z - z0)).abs() <= 1e-6 * scale).then_some(slope)
+}
+
+/// A meridian generator is axis+s*radial. Its perpendicular radial-s*axis is the
+/// analytic normal; winding selects the outward sense. One degree remains as an engineering allowance.
+fn cone_normal(origin: [f64; 3], axis: [f64; 3], slope: f64, point: [f64; 3], winding: [f64; 3]) -> Option<LocalNormal> {
+    let offset = sub(point, origin);
+    let radial = unit(sub(offset, axis.map(|x| x * dot(offset, axis)))).ok()?;
+    let normal = unit(sub(radial, axis.map(|x| x * slope))).ok()?;
+    let alignment = dot(normal, winding);
+    (alignment.abs() > 1e-9).then(|| (normal.map(|x| x * alignment.signum()), angular_error(1.0_f64.to_radians())))
+}
+
+fn circle_tangent(edge: &MeshEdge, point: [f64; 3]) -> Option<[f64; 3]> {
+    if edge.radius <= 1e-9 {
+        return None;
+    }
+    unit(cross(edge.axis, sub(point, edge.center))).ok()
 }
 
 /// Outward cylinder normal plus a numerical allowance, or facet normal plus F-021 uncertainty.

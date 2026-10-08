@@ -45,6 +45,11 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 5. Report errors, warnings (`regen_warnings` plus session advisories) and the result bodies (unconsumed, with volume and bbox).
 
 ## Edits are atomic
+
+`sketch_edit` and `param_set` share `with_rebuild_copies`: retain planned original live handles, regenerate
+on independent B-rep copies, and restore Project/handles/diagnostics on failure. Callers keep their own retry
+plan and error policy (F-034).
+
 - `atomic(edit)` — features: rebuild pending dirty nodes first, refusing the new edit if that baseline fails;
   snapshot the clean `Project`, apply, rebuild (retrying only new nodes); if a node created by the edit has an
   error, restore the snapshot, drop shapes of removed bodies and return `Error::Rebuild`.
@@ -69,6 +74,8 @@ not enter modelling history; doc_new/doc_open replace the Session and its histor
 and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds, compares shell/solid/face
 counts, and inspects stored bodies for sealed voids (ADR 0009). Export/render repeat current document warnings.
 Empty-document saves inspect existing targets and require `allow_empty` to replace stored bodies (ADR 0012).
+Pathless saves also require the first body-producing node id/kind from the last load/save to remain in the
+recipe; an explicit path or `overwrite=true` permits another model (ADR 0014). `doc_new` needs a path.
 
 ## Sketch dimensions
 Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along
@@ -79,18 +86,24 @@ initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an 
 ## Topology and selections
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
-mapped onto `refs::Query`, with engine-only concave/convex local-corner filters lowered to ids). Corner signs
-use outward adjacent triangles plus analytic cylinder normals at five native-polyline arc-length fractions.
-Each signed dot product must exceed a margin derived from normal/tangent uncertainty, and all signs must
-agree; seams, G1 junctions and ambiguous edges are omitted (ADR 0010). Engine-identified planes reuse the
-face-sketch planarity check and straight zero-radius native polylines use exact endpoint directions, both
-with numerical allowances. Native cylinder/cone identification takes precedence over mesh planarity.
-Other faces retain facet normals; circle/arc edges use chord tangents.
+mapped onto `refs::Query`, with engine-only local-corner and kind filters lowered to ids). Topology lists,
+adjacency ids and selection results are sorted by persistent id. `and` supports two or more operands;
+kind previews use topology's classification, with `curve` matching arc/other edges (ADR 0013).
+Corner signs use outward adjacent triangles plus analytic cylinder/cone normals at five native-polyline
+arc-length fractions. Cone meridian vertices determine dr/dz; normals are perpendicular to that generator
+and oriented by winding. Native circular geometry supplies circle/arc tangents. All signs must exceed the
+normal/tangent uncertainty and agree (ADR 0010). Native aggregate surface kinds prove a plane only when no
+unidentified curved type remains; otherwise mesh-planar normals retain a triangle-count-dependent allowance.
+Fitted spheres and axis-bearing faces never receive a plane normal. Cone normals retain a one-degree allowance;
+3° and steeper circular countersinks are tested, while native smoothness below ~1.5° can omit shallow rims.
+Corner previews report omitted uncertain candidates; sampled G1 junctions and seams are excluded from that count.
+Other faces retain facet normals and other curved edges chord tangents.
 The angular-deflection allowances and finite samples are engineering
 checks, not a guarantee for arbitrary unsampled surface behavior or variation along one facet side.
 Edge selections are resolved when the feature is created and stored as pick lists:
 stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
-face) are stored as queries and keep following the geometry. A selection that matches nothing is refused (an
+face) are stored as queries and keep following the geometry. Face-kind filters are preview-only because
+QymCAD has no native kind query; modifiers refuse them pending a persistence decision (ADR 0013). A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-025).
 New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
 radius, angles — and add each only if it removes a degree of freedom (`add_constraint_if_independent`): a point
@@ -120,6 +133,12 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 | `lib.rs` | agent instructions; installed-app release check (F-018) |
 | `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-019) |
 
+Output policy: every body-volume field in rebuild results, `doc_info` and undo is `volume_mm3`, at native
+floating-point precision without decimal rounding. Volume is a B-rep integral in mm³. Display clients may
+round it for presentation. Bboxes retain OCCT tolerance/meshing padding (observed up to ~0.3 mm on curved
+bodies); reopening can tighten them. Use volume and topology positions for accurate size/placement checks.
+Topology coordinates keep their existing presentation rounding; sorting happens before formatting.
+
 Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a
 normal result with `isError: true` and the message (the model must see it). Argument structs use
 `deny_unknown_fields` so typos fail loudly.
@@ -129,7 +148,8 @@ normal result with `isError: true` and the message (the model must see it). Argu
 - `tests/golden_*.rs` (`golden_plate`, `golden_features`: every 3B operation) — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
   rebuild path** (`common::gui_edit_param` reproduces QymCAD.app's open → edit parameter → rebuild sequence).
 - `tests/golden_export.rs` — every export format read back (STEP volume via `read_exact`, STL/3MF mesh volume and
-  bbox, GLB metres/+Y up, OBJ geometric read-back), `finer_quality_never_loses_accuracy`, body selection;
+  bbox, GLB binary positions/indices with asymmetric metres/+Y-up and outward-winding checks, OBJ per-object
+  global offsets and geometric read-back), `finer_quality_never_loses_accuracy`, body selection;
   the placed-part test verifies world-space render/export geometry, and staging-directory tests verify safe
   output creation and hard-link replacement. Renders are decoded with the `png`
   crate (size, coverage, plate aspect 1.5, holes show background).

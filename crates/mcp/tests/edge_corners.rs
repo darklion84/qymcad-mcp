@@ -124,7 +124,7 @@ fn concave_on_a_cube_selects_zero_edges() {
     let r = c.ok("select", json!({ "edges": { "concave": true } }));
     assert_eq!(r["count"], 0);
     assert_eq!(r["edges"], json!([]));
-    assert_eq!(r["hint"], "0 corner edges; for a junction between named features use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}");
+    assert_eq!(r["hint"], "0 concave (inward) edges; this body has 12 convex edges");
 }
 
 #[test]
@@ -160,6 +160,7 @@ fn empty_final_corner_selection_refuses_fillet_and_chamfer() {
         let (bad, msg) = c.tool(tool, args);
         assert!(bad, "{tool} must refuse empty final edges: {msg}");
         assert!(msg.as_str().unwrap().contains("edge selection matched no edge"), "{tool}: {msg}");
+        assert!(msg.as_str().unwrap().contains("0 concave (inward) edges; this body has 12 convex edges"), "{tool}: {msg}");
         assert_eq!(c.ok("doc_info", json!({})), before, "{tool} refusal leaves the cube unchanged");
     }
 }
@@ -172,8 +173,8 @@ fn convex_on_a_cylinder_selects_both_rims_without_the_seam() {
     c.ok("sketch_create", json!({ "plane": "XY", "name": "circle" }));
     c.ok("sketch_add", json!({ "sketch": "circle", "entities": [{ "type": "circle", "d": 10 }] }));
     let r = c.ok("extrude", json!({ "sketch": "circle", "height": 20 }));
-    // Tool volumes are rounded to four decimal places: at most 0.00005 mm³ rounding error.
-    assert!((r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - std::f64::consts::PI * 5.0_f64.powi(2) * 20.0).abs() < 0.00005);
+    // Native volume is reported at full precision: V=πr²h, with only kernel roundoff.
+    assert!((r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - std::f64::consts::PI * 5.0_f64.powi(2) * 20.0).abs() < 1e-9);
     // Two circular cap/wall rims are convex; the closing seam is excluded.
     let r = c.ok("select", json!({ "edges": { "convex": true } }));
     assert_eq!(r["count"], 2, "a cylinder has two convex rims");

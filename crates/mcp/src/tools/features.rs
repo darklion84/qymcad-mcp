@@ -324,7 +324,9 @@ pub fn tools() -> Vec<Tool> {
             concat!(
                 "Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a \
                  new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also \
-                 returns the result bodies (volume, bbox).",
+                 returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. \
+                 On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. \
+                 Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock.",
                 stale!()
             ),
             |st, a: ExtrudeArgs| {
@@ -383,7 +385,9 @@ pub fn tools() -> Vec<Tool> {
              {\"concave\": true} (inward corners, including boss/plate circles). For a named boss/plate junction \
              use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}. \
              Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement \
-             among five arc-length samples are omitted. The edges \
+             among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; \
+             0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals \
+             can require about 20–30 degrees. The edges \
              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
              for the geometry is an error and nothing changes.",
                 stale!()

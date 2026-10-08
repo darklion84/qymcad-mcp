@@ -43,3 +43,7 @@ predictable for the small parametric parts this server targets, without introduc
 Native cleanup preserves QymCAD's deleted-body/external-reference semantics. Tests cover dependent refusal,
 source restoration, cascades, all three requested undo operations, exact geometry/recipe state and the history
 limit. The id allocator intentionally remains monotonic rather than being restored byte-for-byte.
+
+The sketch/parameter repair paths share `Session::with_rebuild_copies` (F-034). Both exact-B-rep rollback
+regressions fail when the helper omits original-handle restoration; retry plans and error policies stay
+with their callers. This extraction changes no stored recipe or undo semantics.

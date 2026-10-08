@@ -175,11 +175,19 @@ fn threemf_is_in_millimetres() {
 
 #[test]
 fn glb_is_in_metres_with_y_up() {
-    let (s, _, _) = build(false);
+    // Deliberately offset in +X/+Y: symmetric bounds cannot distinguish +Y from -Y.
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let (cx, cy, width, length, height) = (11.0, 17.0, 6.0, 10.0, 8.0);
+    s.sketch_rect(sk, &n(cx), &n(cy), &n(width), &n(length), false).unwrap();
+    let (body, _) = s.extrude(&extrude(sk, height, Op::Add, Direction::Normal, "asymmetric block")).unwrap();
+    assert_close(s.shape(body).unwrap().volume(), width * length * height, 1e-6, "asymmetric fixture volume");
     let path = scratch("export.glb");
-    s.export(ExportFormat::Glb, &path, Quality::Standard, None).unwrap();
+    let report = s.export(ExportFormat::Glb, &path, Quality::Standard, None).unwrap();
     let b = std::fs::read(&path).unwrap();
     assert_eq!(&b[0..4], b"glTF");
+    assert_eq!(u32::from_le_bytes(b[4..8].try_into().unwrap()), 2, "GLB version");
+    assert_eq!(u32::from_le_bytes(b[8..12].try_into().unwrap()) as usize, b.len());
     let json_len = u32::from_le_bytes(b[12..16].try_into().unwrap()) as usize;
     assert_eq!(&b[16..20], b"JSON");
     let doc: Value = serde_json::from_slice(&b[20..20 + json_len]).unwrap();
@@ -188,12 +196,97 @@ fn glb_is_in_metres_with_y_up() {
     let v = |k: &str| -> Vec<f64> { acc[k].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect() };
     let (mn, mx) = (v("min"), v("max"));
     // ours (x, y, z) mm, Z up  ->  glTF (x, z, −y) m, Y up
-    let want_min = [-0.030, 0.0, -0.020];
-    let want_max = [0.030, 0.006, 0.020];
+    let want_min = [(cx - width / 2.0) / 1000.0, 0.0, -(cy + length / 2.0) / 1000.0];
+    let want_max = [(cx + width / 2.0) / 1000.0, height / 1000.0, -(cy - length / 2.0) / 1000.0];
+    let bin_header = 20 + json_len;
+    assert_eq!(&b[bin_header + 4..bin_header + 8], b"BIN\0");
+    let bin_len = u32::from_le_bytes(b[bin_header..bin_header + 4].try_into().unwrap()) as usize;
+    let bin = &b[bin_header + 8..bin_header + 8 + bin_len];
+    // Decode independently of QymCAD's importer: accessor and buffer-view offsets both apply.
+    let data = |accessor: &Value| {
+        let view = &doc["bufferViews"][accessor["bufferView"].as_u64().unwrap() as usize];
+        assert_eq!(view["buffer"], 0);
+        let offset = view["byteOffset"].as_u64().unwrap_or(0) as usize + accessor["byteOffset"].as_u64().unwrap_or(0) as usize;
+        (&bin[offset..], view["byteStride"].as_u64().map(|v| v as usize))
+    };
+    assert_eq!(acc["componentType"], 5126, "float32 positions");
+    assert_eq!(acc["type"], "VEC3");
+    let (bytes, stride) = data(acc);
+    let vertices: Vec<[f64; 3]> = (0..acc["count"].as_u64().unwrap() as usize)
+        .map(|i| {
+            std::array::from_fn(|k| {
+                let at = i * stride.unwrap_or(12) + 4 * k;
+                f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as f64
+            })
+        })
+        .collect();
+    let index = doc["meshes"][0]["primitives"][0]["indices"].as_u64().unwrap() as usize;
+    let indices = &doc["accessors"][index];
+    assert_eq!(indices["componentType"], 5125, "uint32 indices");
+    assert_eq!(indices["type"], "SCALAR");
+    let (bytes, stride) = data(indices);
+    let ids: Vec<usize> = (0..indices["count"].as_u64().unwrap() as usize)
+        .map(|i| {
+            let at = i * stride.unwrap_or(4);
+            u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize
+        })
+        .collect();
+    assert_eq!(ids.len() % 3, 0);
+    assert!(ids.iter().all(|&i| i < vertices.len()), "all GLB indices reference exported vertices");
+    let triangles: Vec<_> = ids.as_chunks::<3>().0.iter().map(|t| t.map(|i| vertices[i])).collect();
+    assert_eq!(Some(triangles.len()), report.triangles);
+    assert_bbox(tri_bbox(&triangles), [want_min[0], want_min[1], want_min[2], want_max[0], want_max[1], want_max[2]], 1e-9, "GLB binary");
     for k in 0..3 {
         assert_close(mn[k], want_min[k], 1e-6, &format!("GLB min[{k}]"));
         assert_close(mx[k], want_max[k], 1e-6, &format!("GLB max[{k}]"));
     }
+    // The axis conversion has determinant +1, so winding stays outward and signed volume stays positive.
+    assert_close(tri_volume(&triangles), width * length * height / 1000.0_f64.powi(3), 1e-12, "GLB signed volume in metres cubed");
+    let center = [cx / 1000.0, height / 2000.0, -cy / 1000.0];
+    for [a, b, c] in triangles {
+        let ab = std::array::from_fn::<_, 3, _>(|k| b[k] - a[k]);
+        let ac = std::array::from_fn::<_, 3, _>(|k| c[k] - a[k]);
+        let normal = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+        let outward: f64 = (0..3).map(|k| normal[k] * ((a[k] + b[k] + c[k]) / 3.0 - center[k])).sum();
+        assert!(outward > 0.0, "GLB triangle winding must face away from the box centre: {outward}");
+    }
+}
+
+#[test]
+fn obj_multiple_bodies_use_global_vertex_offsets_and_preserve_each_solid() {
+    let (s, plate, block) = build(true);
+    let path = scratch("export_multiple.obj");
+    let report = s.export(ExportFormat::Obj, &path, Quality::Standard, None).unwrap();
+    assert_eq!(report.bodies.iter().map(|b| b.id).collect::<Vec<_>>(), [plate, block]);
+    let mut vertices = Vec::<[f64; 3]>::new();
+    let mut objects = Vec::<(String, usize, Vec<[usize; 3]>)>::new();
+    for line in std::fs::read_to_string(&path).unwrap().lines() {
+        if let Some(name) = line.strip_prefix("o ") {
+            objects.push((name.into(), vertices.len(), Vec::new()));
+        } else if let Some(coords) = line.strip_prefix("v ") {
+            let values: Vec<f64> = coords.split_whitespace().map(|w| w.parse().unwrap()).collect();
+            vertices.push(values.try_into().unwrap());
+        } else if let Some(face) = line.strip_prefix("f ") {
+            let ids: Vec<usize> = face.split_whitespace().map(|w| w.parse::<usize>().unwrap() - 1).collect();
+            objects.last_mut().unwrap().2.push(ids.try_into().unwrap());
+        }
+    }
+    assert_eq!(objects.iter().map(|o| o.0.as_str()).collect::<Vec<_>>(), ["body_1", "body_2"]);
+    let expected = [(PLATE, PLATE_BBOX), (BLOCK, [45.0, -5.0, 0.0, 55.0, 5.0, 5.0])];
+    for (k, (name, start, indices)) in objects.iter().enumerate() {
+        let end = objects.get(k + 1).map_or(vertices.len(), |o| o.1);
+        assert!(!indices.is_empty(), "{name} has triangles");
+        assert!(
+            indices.iter().flatten().all(|&i| i >= *start && i < end),
+            "{name} indices must use its global vertex range {start}..{end}"
+        );
+        let triangles: Vec<_> = indices.iter().map(|t| t.map(|i| vertices[i])).collect();
+        assert_bbox(tri_bbox(&triangles), expected[k].1, 1e-3, name);
+        // The plate's circles are inscribed polygons; the independent block is exact.
+        let tolerance = if k == 0 { expected[k].0 * 0.001 } else { 1e-6 };
+        assert_close(tri_volume(&triangles), expected[k].0, tolerance, &format!("{name} signed volume"));
+    }
+    assert_eq!(Some(objects.iter().map(|o| o.2.len()).sum()), report.triangles);
 }
 
 #[test]

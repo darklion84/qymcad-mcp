@@ -62,7 +62,7 @@ fn modelling_tools_undo_exact_breps_after_failed_read_and_save_calls() {
         };
         call(&mut r, operation, args);
         let after = call(&mut r, "doc_info", json!({}));
-        assert!((after["bodies"][0]["volume"].as_f64().unwrap() - volume).abs() < 1e-6);
+        assert!((after["bodies"][0]["volume_mm3"].as_f64().unwrap() - volume).abs() < 1e-6);
         assert_ne!(after["bodies"], before["bodies"]);
         let failure = r.call("fillet", json!({"edges":{"along":"z"}, "radius":100})).unwrap().unwrap_err();
         assert!(failure.contains("rolled back"), "{failure}");
