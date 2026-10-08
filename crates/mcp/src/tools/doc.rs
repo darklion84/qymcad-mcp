@@ -55,15 +55,17 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "doc_save",
-            "Save the document as .qcad; the directory must exist. A pathless save requires the first solid feature of the last loaded/saved model to remain; after undo/delete replaces that model, give a path or overwrite=true. Normal edits keep the association. doc_new needs an explicit path. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true; that explicit empty replacement also resets the association. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
+            "Save the document as .qcad; the directory must exist. An explicit path permits replacing an existing model; the result reports replaced=true when the target existed before saving (false for a fresh path). A pathless save requires the first solid feature of the last loaded/saved model to remain; after undo/delete replaces that model, give a path or overwrite=true. Normal edits keep the association. doc_new needs an explicit path. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true; that explicit empty replacement also resets the association. Open it in the QymCAD app with File > Open; double-click does not work on macOS.",
             |st, a: SaveArgs| {
                 let s = st.doc()?;
                 let target = match &a.path {
                     Some(p) => Some(checked_path(p, &["qcad"])?),
                     None => None,
                 };
+                let replaced = target.as_deref().or_else(|| s.path()).map(|p| p.try_exists()).transpose()
+                    .map_err(|e| format!("cannot inspect save target: {e}"))?.unwrap_or(false);
                 let path = s.save_with_overwrite(target.as_deref(), a.allow_empty, a.overwrite).map_err(err)?;
-                Ok(json!({ "saved": path.display().to_string() }))
+                Ok(json!({ "saved": path.display().to_string(), "replaced": replaced }))
             },
         ),
         tool(

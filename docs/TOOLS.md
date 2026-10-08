@@ -64,7 +64,7 @@ Open a .qcad file written by QymCAD of the same release (or by this server). Reb
 
 ## doc_save
 
-Save the document as .qcad; the directory must exist. A pathless save requires the first solid feature of the last loaded/saved model to remain; after undo/delete replaces that model, give a path or overwrite=true. Normal edits keep the association. doc_new needs an explicit path. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true; that explicit empty replacement also resets the association. Open it in the QymCAD app with File > Open; double-click does not work on macOS.
+Save the document as .qcad; the directory must exist. An explicit path permits replacing an existing model; the result reports replaced=true when the target existed before saving (false for a fresh path). A pathless save requires the first solid feature of the last loaded/saved model to remain; after undo/delete replaces that model, give a path or overwrite=true. Normal edits keep the association. doc_new needs an explicit path. Refuses to overwrite a file containing bodies when this document has no bodies, unless allow_empty=true; that explicit empty replacement also resets the association. Open it in the QymCAD app with File > Open; double-click does not work on macOS.
 
 ```json
 {
@@ -989,7 +989,7 @@ Delete one entity (with the points only it used and the constraints on them) or 
 
 ## sketch_info
 
-A sketch's plane and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Contour areas are tessellation-based, typically about 0.1–0.2% below analytic areas for curved contours; use analytic dimensions for exact areas.
+A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Contour areas are tessellation-based, typically about 0.1–0.2% below analytic areas for curved contours; use analytic dimensions for exact areas.
 
 ```json
 {
@@ -1447,7 +1447,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
 
 ## fillet
 
-Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -1539,7 +1539,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
 
 ## chamfer
 
-Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks differ. `edges` as for fillet. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks differ. `edges` as for fillet. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -2348,7 +2348,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
 
 ## export
 
-Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count, current document warnings and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
+Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count, current document warnings and per-body mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -2784,7 +2784,7 @@ List the faces and edges of a body with persistent ids: faces (kind plane/cylind
 
 ## select
 
-Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including a boss/plate curved junction, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}. Uncertain shallow signs or disagreement among five arc-length samples are omitted and counted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees.
+Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including a boss/plate curved junction, pass edges: {"concave": true}; combine with {"and": [{"concave": true}, {"along": "y"}]}. Uncertain shallow signs or disagreement among five arc-length samples are omitted. Bare corner filters and positive `and` selections count only uncertain edges matching the other conditions; other compositions report uncertain body edges absent from the result. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees.
 
 ```json
 {

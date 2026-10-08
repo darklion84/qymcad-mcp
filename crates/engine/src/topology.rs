@@ -530,14 +530,25 @@ impl Session {
     /// Explain an empty corner selection, including the body's opposite corner count.
     pub fn empty_corner_hint(&self, body: Id, sel: &Sel) -> Option<String> {
         let (concave, convex) = sel.corner_filters();
+        if !concave && !convex {
+            return None;
+        }
+        let inward = self.corner_edges(body, true).len();
+        let outward = self.corner_edges(body, false).len();
+        let single = |count: usize, side: &str, opposite: usize, other: &str| {
+            if count == 0 {
+                format!("0 {side} edges; this body has {opposite} {other} edges")
+            } else {
+                let plural = if count == 1 { "edge" } else { "edges" };
+                format!("this body has {count} {side} {plural}, but none matches the other conditions of the selection; it has {opposite} {other} edges")
+            }
+        };
         let mut hint = match (concave, convex) {
-            (true, false) => format!("0 concave (inward) edges; this body has {} convex edges", self.corner_edges(body, false).len()),
-            (false, true) => format!("0 convex (outward) edges; this body has {} concave edges", self.corner_edges(body, true).len()),
-            (true, true) => format!(
-                "0 selected concave (inward) or convex (outward) edges; this body has {} concave and {} convex edges",
-                self.corner_edges(body, true).len(),
-                self.corner_edges(body, false).len()
-            ),
+            (true, false) => single(inward, "concave (inward)", outward, "convex"),
+            (false, true) => single(outward, "convex (outward)", inward, "concave"),
+            (true, true) => {
+                format!("0 selected concave (inward) or convex (outward) edges; this body has {inward} concave and {outward} convex edges")
+            }
             _ => return None,
         };
         let mut current = Some(body);
@@ -668,6 +679,38 @@ impl Session {
         self.classified_corners(body).iter().filter(|(_, sign)| sign.is_none()).count()
     }
 
+    /// For bare corners and positive intersections, count only uncertain edges satisfying all
+    /// other conditions. Other compositions report uncertain body edges absent from the result.
+    pub fn corner_omission_note(&self, body: Id, sel: &Sel, selected: &[u32]) -> Result<Option<String>> {
+        let uncertain: Vec<_> = self.classified_corners(body).into_iter().filter_map(|(id, sign)| sign.is_none().then_some(id)).collect();
+        fn replace(sel: &Sel, uncertain: &[u32]) -> Option<Sel> {
+            match sel {
+                Sel::Concave | Sel::Convex => Some(Sel::Ids(uncertain.to_vec())),
+                Sel::And(a, b) => Some(Sel::And(Box::new(replace(a, uncertain)?), Box::new(replace(b, uncertain)?))),
+                other if other.corner_filters() == (false, false) => Some(other.clone()),
+                _ => None,
+            }
+        }
+        if let Some(candidates) = replace(sel, &uncertain) {
+            let count = self.resolve_sel(body, Element::Edges, &candidates)?.len();
+            Ok((count > 0).then(|| format!("omitted {count} uncertain edges")))
+        } else {
+            let count = uncertain.iter().filter(|id| !selected.contains(id)).count();
+            let total = uncertain.len();
+            let edges = if total == 1 { "edge" } else { "edges" };
+            let absent = if count == total {
+                if count == 1 {
+                    "it is".to_string()
+                } else {
+                    "they are".to_string()
+                }
+            } else {
+                format!("{count} of them {}", if count == 1 { "is" } else { "are" })
+            };
+            Ok((count > 0).then(|| format!("this body has {total} {edges} whose corner side is uncertain; {absent} not in this result")))
+        }
+    }
+
     /// Lower engine-only edge filters to ids. QymCAD ranks `Largest` by chord rather than true length (F-030)
     /// and has no corner-sign query. All edge selections are stored as pick lists anyway (F-024).
     fn lower_edge_filters(&self, body: Id, el: Element, sel: &Sel, lengths: &mut Option<HashMap<u32, f64>>) -> Result<Sel> {
@@ -676,14 +719,15 @@ impl Session {
         Ok(match sel {
             Sel::Kind(kind) => {
                 let topology = self.topology_now(body, false)?;
+                let name = format!("{kind:?}").to_lowercase();
                 let ids = match el {
                     Element::Faces => {
-                        let face_kind = kind.face().ok_or_else(|| Error::Invalid(format!("kind {kind:?} cannot select faces")))?;
+                        let face_kind = kind.face().ok_or_else(|| Error::Invalid(format!("kind {name} cannot select faces")))?;
                         topology.faces.iter().filter(|f| f.kind == face_kind).map(|f| f.id).collect()
                     }
                     Element::Edges => {
                         if kind.face().is_some() && *kind != SelectionKind::Other {
-                            return Err(Error::Invalid(format!("kind {kind:?} cannot select edges")));
+                            return Err(Error::Invalid(format!("kind {name} cannot select edges")));
                         }
                         topology.edges.iter().filter(|e| kind.matches_edge(e.kind)).map(|e| e.id).collect()
                     }
@@ -896,9 +940,11 @@ fn mesh_plane_allowance(triangles: usize, native_plane: bool) -> f64 {
 /// span and verify all face vertices fit it; degenerate patches retain facet uncertainty.
 fn cone_slope(face: &MeshFace, mesh: &qymcad_core::geom::Mesh, origin: [f64; 3], axis: [f64; 3]) -> Option<f64> {
     let mut meridian = Vec::new();
+    let mut coordinate_scale = 1.0_f64;
     for &ti in &face.triangles {
         for &vi in mesh.tris.get(ti as usize)? {
             let v = mesh.verts.get(vi as usize)?;
+            coordinate_scale = coordinate_scale.max(v.x.abs()).max(v.y.abs()).max(v.z.abs());
             let offset = sub([v.x, v.y, v.z], origin);
             let z = dot(offset, axis);
             let r = norm(sub(offset, axis.map(|x| x * z)));
@@ -912,7 +958,10 @@ fn cone_slope(face: &MeshFace, mesh: &qymcad_core::geom::Mesh, origin: [f64; 3],
         return None;
     }
     let slope = (r1 - r0) / (z1 - z0);
-    meridian.iter().all(|&(z, r)| (r - r0 - slope * (z - z0)).abs() <= 1e-6 * scale).then_some(slope)
+    // Native mesh vertices are f32 promoted to f64 (F-063); subtraction of the axis origin
+    // retains world-coordinate rounding even when this cone patch is small.
+    let fit_tolerance = 1e-6 * scale.max(coordinate_scale);
+    meridian.iter().all(|&(z, r)| (r - r0 - slope * (z - z0)).abs() <= fit_tolerance).then_some(slope)
 }
 
 /// A meridian generator is axis+s*radial. Its perpendicular radial-s*axis is the

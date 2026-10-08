@@ -207,7 +207,14 @@ impl Session {
             let f = self.p.sketch_owner(sketch).map(|owner| f.transformed(&self.p.world_transform(owner))).unwrap_or(f);
             SketchWorldFrame { origin: f.origin, x_axis: f.x, y_axis: f.y, normal: f.normal() }
         });
-        Ok(SketchInfo { id: s.id, name: s.name.clone(), plane: plane_desc(&s.plane), world_frame, dof: self.p.sketch_dof(si), contours })
+        Ok(SketchInfo {
+            id: s.id,
+            name: s.name.clone(),
+            plane: plane_desc(self, &s.plane),
+            world_frame,
+            dof: self.p.sketch_dof(si),
+            contours,
+        })
     }
 
     pub fn sketches(&self) -> Vec<SketchInfo> {
@@ -408,10 +415,17 @@ pub(crate) fn purpose(construction: bool) -> Purpose {
     }
 }
 
-fn plane_desc(p: &SketchPlane) -> String {
+fn plane_desc(session: &Session, p: &SketchPlane) -> String {
     match p {
         SketchPlane::World(b) => format!("{b:?}"),
-        SketchPlane::Datum(id) => format!("plane {id}"),
+        SketchPlane::Datum(id) => {
+            let name = session.node_name(*id);
+            if name.is_empty() {
+                format!("plane {id}")
+            } else {
+                format!("{name} (plane {id})")
+            }
+        }
         SketchPlane::Face(body, k) => format!("face {} of body {body}", k.id),
     }
 }

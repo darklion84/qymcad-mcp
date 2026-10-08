@@ -75,7 +75,7 @@ and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds, 
 counts, and inspects stored bodies for sealed voids (ADR 0009). Export/render repeat current document warnings.
 Empty-document saves inspect existing targets and require `allow_empty` to replace stored bodies (ADR 0012).
 Pathless saves also require the first body-producing node id/kind from the last load/save to remain in the
-recipe; an explicit path or `overwrite=true` permits another model (ADR 0014). `doc_new` needs a path.
+recipe; an explicit path or `overwrite=true` permits another model (ADR 0014). `doc_new` needs a path. Save results report pre-save target existence as `replaced`.
 
 ## Sketch dimensions
 Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along
@@ -96,7 +96,9 @@ normal/tangent uncertainty and agree (ADR 0010). Native aggregate surface kinds 
 unidentified curved type remains; otherwise mesh-planar normals retain a triangle-count-dependent allowance.
 Fitted spheres and axis-bearing faces never receive a plane normal. Cone normals retain a one-degree allowance;
 3° and steeper circular countersinks are tested, while native smoothness below ~1.5° can omit shallow rims.
-Corner previews report omitted uncertain candidates; sampled G1 junctions and seams are excluded from that count.
+For bare filters and positive intersections, corner previews count uncertain candidates matching the other
+selection conditions; other compositions report uncertain body edges absent from the result. Sampled G1
+junctions and seams are excluded from that count.
 Other faces retain facet normals and other curved edges chord tangents.
 The angular-deflection allowances and finite samples are engineering
 checks, not a guarantee for arbitrary unsampled surface behavior or variation along one facet side.
@@ -135,7 +137,8 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 
 Output policy: every body-volume field in rebuild results, `doc_info` and undo is `volume_mm3`, at native
 floating-point precision without decimal rounding. Volume is a B-rep integral in mm³. Display clients may
-round it for presentation. Bboxes retain OCCT tolerance/meshing padding (observed up to ~0.3 mm on curved
+round it for presentation. Mesh export reports per-body `mesh_volume_mm3`, also in mm³ (including GLB),
+and omits it for exact STEP exports. Bboxes retain OCCT tolerance/meshing padding (observed up to ~0.3 mm on curved
 bodies); reopening can tighten them. Use volume and topology positions for accurate size/placement checks.
 Topology coordinates keep their existing presentation rounding; sorting happens before formatting.
 

@@ -389,7 +389,7 @@ pub fn tools() -> Vec<Tool> {
              0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals \
              can require about 20–30 degrees. The edges \
              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
-             for the geometry is an error and nothing changes.",
+             for the geometry is an error and nothing changes. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges.",
                 stale!()
             ),
             |st, a: FilletArgs| {
@@ -402,7 +402,7 @@ pub fn tools() -> Vec<Tool> {
             "chamfer",
             concat!(
                 "Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks differ. `edges` as for \
-             fillet.",
+             fillet. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges.",
                 stale!()
             ),
             |st, a: ChamferArgs| {

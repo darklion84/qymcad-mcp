@@ -251,7 +251,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_info",
-            "A sketch's plane and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
+            "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
              entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); \
              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints \
              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \

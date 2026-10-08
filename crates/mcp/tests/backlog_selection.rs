@@ -141,7 +141,10 @@ fn corner_hint_is_reused_and_between_requires_multiple_body_features() {
     let empty = call(&mut r, "select", json!({"edges":{"concave":true}}));
     assert_eq!(empty["hint"], "0 concave (inward) edges; this body has 2 convex edges");
     let convex = call(&mut r, "select", json!({"edges":{"and":[{"convex":true}, []]}}));
-    assert_eq!(convex["hint"], "0 convex (outward) edges; this body has 0 concave edges");
+    assert_eq!(
+        convex["hint"],
+        "this body has 2 convex (outward) edges, but none matches the other conditions of the selection; it has 0 concave edges"
+    );
     for (tool, args) in
         [("fillet", json!({"edges":{"concave":true}, "radius":1})), ("chamfer", json!({"edges":{"concave":true}, "dist":1}))]
     {

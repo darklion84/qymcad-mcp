@@ -60,7 +60,7 @@ pub fn tools() -> Vec<Tool> {
             "export",
             "Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body \
              is placed where it stands in the document; one object per body, no colours. Returns the bodies written, \
-             triangle count, current document warnings and per-body mesh volume (compare with the B-rep volume from doc_info). Refuses export if \
+             triangle count, current document warnings and per-body mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info). Refuses export if \
              any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: ExportArgs| {
                 let path = checked_path(&a.path, a.format.extensions())?;
@@ -71,8 +71,8 @@ pub fn tools() -> Vec<Tool> {
                 v["warnings"] = json!(s.info().warnings);
                 if let Some(bodies) = v["bodies"].as_array_mut() {
                     for b in bodies {
-                        if let Some(mv) = b["mesh_volume"].as_f64() {
-                            b["mesh_volume"] = json!(round(mv, 3));
+                        if let Some(mv) = b["mesh_volume_mm3"].as_f64() {
+                            b["mesh_volume_mm3"] = json!(round(mv, 3));
                         }
                     }
                 }

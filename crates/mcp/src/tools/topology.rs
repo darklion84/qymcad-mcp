@@ -292,7 +292,7 @@ fn dir(v: &Value) -> Result<[f64; 3], String> {
 }
 
 fn signed_axis(v: &Value) -> Result<(Axis, bool), String> {
-    let bad = || format!("expected \"+x\", \"-x\", \"+y\", \"-y\", \"+z\" or \"-z\", got {v}");
+    let bad = || format!("expected \"x\", \"y\", \"z\", \"+x\", \"-x\", \"+y\", \"-y\", \"+z\" or \"-z\" (case-insensitive), got {v}");
     let s = v.as_str().ok_or_else(bad)?.trim().to_lowercase();
     let (neg, name) = match s.strip_prefix('-') {
         Some(rest) => (true, rest.to_string()),
@@ -580,7 +580,7 @@ pub fn tools() -> Vec<Tool> {
              Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
              a boss/plate curved junction, \
              pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. \
-             Uncertain shallow signs or disagreement among five arc-length samples are omitted and counted. \
+             Uncertain shallow signs or disagreement among five arc-length samples are omitted. Bare corner filters and positive `and` selections count only uncertain edges matching the other conditions; other compositions report uncertain body edges absent from the result. \
              Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness \
              threshold about 1.5 degrees). Fallback facet \
              normals can require about 20–30 degrees.",
@@ -610,9 +610,8 @@ pub fn tools() -> Vec<Tool> {
                     }
                 }
                 if el == Element::Edges && sel.corner_filters() != (false, false) {
-                    let omitted = s.corner_omitted_count(body);
-                    if omitted > 0 {
-                        out["note"] = json!(format!("omitted {omitted} uncertain edges"));
+                    if let Some(note) = s.corner_omission_note(body, &sel, &ids).map_err(err)? {
+                        out["note"] = json!(note);
                     }
                 }
                 round_json(&mut out, 4);

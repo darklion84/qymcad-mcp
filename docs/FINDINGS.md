@@ -877,7 +877,8 @@ Conventions:
   includes shallow sharp edges below ~1.5° (occt_io.cpp:778-804); the omission count includes those unless
   every sample's normals agree within `1e-6`. Unknown curved G1 facets can therefore count as uncertain.
   Five samples and mesh-error allowances remain engineering checks, not a formal bound on arbitrary unsampled
-  surface behavior. Empty previews state the requested/opposite corner counts, adding a `between` example
+  surface behavior. Empty previews state body-level requested/opposite corner counts, distinguishing corners eliminated by
+  other composition conditions (MCP `backlog_review` box and cone/plane tests), adding a `between` example
   only for multi-feature source chains; fillet/chamfer repeat the hint on empty matches. Corner previews
   also report "omitted N uncertain edges" (MCP `backlog_selection`, `edge_corners`; ADR 0010).
 
@@ -925,7 +926,8 @@ Conventions:
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** `qymcad_io::load_project` returns the stored Project, including its body pool, without regenerating
-  features. Native save can replace this file even if the new Project is empty.
+  features. Native save can replace this file even if the new Project is empty. Explicit-path saves may also
+  replace a different nonempty model; MCP reports pre-save target existence as `replaced`.
 - **Evidence:** source: `qymcad-io/src/project_file.rs:162-199`; MCP
   `usability_polish::empty_save_requires_override_to_replace_a_body_containing_file` first allowed overwriting
   after undo. It now verifies unchanged file bytes on refusal, delete/undo, explicit/default paths, override,
@@ -934,7 +936,9 @@ Conventions:
   unless `allow_empty=true` (ADR 0012). Pathless saves additionally require the saved/loaded first body-producing
   node id/kind to remain in the timeline; parameter edits preserve it, undo/delete replacement can remove it.
   `save_lineage` verifies unchanged file bytes on refusal, normal/reopened edits, explicit path/overwrite override,
-  initially empty files and `doc_new` requiring a path; disabling the guard fails (ADR 0014).
+  initially empty files and `doc_new` requiring a path; MCP
+  `backlog_review::save_reports_fresh_and_replaced_targets` checks fresh/repeated/associated/different-model
+  saves, reopening the replacement against prism V=10*12*2; disabling the guard fails (ADR 0014).
 
 ## F-058 Reported face and sketch contour areas come from tessellation
 
@@ -1019,3 +1023,57 @@ Conventions:
   Edge modifiers keep normal pick storage. Stop face-kind persistence: freezing kind leaves to face ids would
   not discover new faces, whereas true dynamic persistence needs an upstream Query change. Pending that choice,
   face modifiers return a clear preview-only error with existing alternatives (ADR 0013, tasks/review-c1.md).
+
+
+## F-063 Native mesh rounding depends on world coordinates, including small chamfer cones
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** native tessellation exports f32 vertices, promoted to f64. A small cone near x/y=±20 retains
+  that coordinate rounding after subtracting its axis origin. Local meridian scale alone can reject a valid
+  r(z) fit, losing analytic normals and falsely counting plane/cone tangent boundaries as uncertain.
+- **Evidence:** source: `qymcad-kernel/src/lib.rs:2039-2057` (`doc_to_bodies`, f32 `vbuf` and f64 promotion).
+  Test: MCP `backlog_review::chamfer_chain_tangent_junctions_are_not_uncertain_corners` reconstructs a
+  40×40×10 box, two top x-edge R1 fillets, Ø8 through hole, and 0.5 chamfer on cylinder boundaries.
+  Four conical end patches each have two nonseam straight plane/cone boundaries, length 0.5√2, at
+  midpoint z=10−1=9 or z=10−0.5/2=9.75. Exact OCCT probe (`BRepAdaptor_Surface`, `BRepLProp_SLProps`,
+  edge parameters at fractions 0.1/0.3/0.5/0.7/0.9) gives matching outward normals at all eight edges:
+  angle 0°, internal dihedral 180°. Plane normals are (±1,±1,0)/√2 or (±1,0,1)/√2.
+  Meridian fit residuals are 1.55–2.03e-6 mm versus the former local tolerance 1e-6 mm;
+  f32 spacing near 20 is 2^(4−23)=1.9073486328125e-6 mm. Accepted fitted cone normals differ from
+  their adjacent plane normals by at most 0.714e-6, below the unchanged 1e-6 sampled G1 threshold.
+  Before fix the regression reports eight uncertain edges. Restoring local-only fit tolerance reproduces it.
+- **How we handle it:** include absolute mesh coordinate scale in the cone-fit residual tolerance while
+  retaining the existing axial-span check, one-degree cone allowance and sampled G1 threshold. Seams and
+  these verified tangent junctions contribute no uncertainty count. Truly shallow rims remain uncertain.
+  Bare corner and positive `and` previews replace corner leaves with uncertain ids before evaluating other
+  conditions. Union/subtraction/tangent-chain compositions instead report the uncertain body total and
+  distinguish any absent subset. `backlog_review::uncertain_union_note_distinguishes_body_total_from_absent_subset`
+  checks two shallow rims with one included through a union pick branch; only the other is described as absent.
+
+
+## F-064 Fillet and chamfer contours propagate beyond the selected edge ids
+
+- **Version:** v0.1.0-dev.20261001
+- **What:** `BRepFilletAPI_MakeFillet` and `BRepFilletAPI_MakeChamfer` construct contours of tangent-continuous
+  edges when adding a seed. Thus kernel blending can modify edges absent from the resolved pick list, without
+  a warning. Corner filtering excludes G1 face junctions; contour propagation concerns tangent continuity
+  along consecutive edges, which is a separate property. `select` previews only the selected edges.
+- **Evidence:** source: `qymcad-kernel/src/occt_io.cpp:887-908` (`mk.Add` for selected edges),
+  `:997-1028` (explicitly handles generated faces from unselected edges), `:1534-1536,:1659-1661`
+  (native fillet/chamfer builders). Installed OCCT `BRepFilletAPI_MakeFillet.hxx:85-88` documents
+  tangent-edge contour construction; `BRepFilletAPI_MakeChamfer.hxx:62-67` documents propagation through
+  mutually tangent edges delimiting tangent support-face series. Test: MCP
+  `backlog_review::kernel_chamfer_extends_beyond_cylinder_selection` uses F-063's model. The preview has
+  2*4+3=11 cylinder boundaries: two four-boundary fillet cylinders plus two bore rims and its seam. Its
+  four end arcs seed contours that add four vertical stock corners and two top end edges absent from preview.
+  Equal setbacks bisect orthogonal support planes, creating four normals (±1,±1,0)/√2 and two
+  (±1,0,1)/√2; none exists before chamfer. The result has all six without a warning. Exact removed volume:
+  `[4(h-r)+2(L-2r)]c²/2 + π(rc²-c³/3) + 2π(Rc²+c³/3)`, h=10,L=40,r=1,R=4,c=.5 mm.
+  These are straight triangular prisms, four quarter-cylinder end bevels and two bore-rim bevels,
+  derived by integrating the difference of radius-squared cross sections; test tolerance 1e-6 mm³.
+- **How we handle it:** describe propagation explicitly in fillet/chamfer tool documentation; preserve native
+  behavior and selected-edge preview. No inferred face-count warning: ordinary corner patches, splitting
+  and merging make that criterion unsound. A future positive-evidence warning could inspect actual output
+  Blend face names with source edge ids outside the picks (source: `model/regen.rs:2763-2789` prepares all
+  edge blend names). This would be incomplete for unnamed/duplicate edges; native contour enumeration would
+  require an upstream FFI addition.

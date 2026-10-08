@@ -99,7 +99,7 @@ pub struct ExportedBody {
     /// Mesh formats: volume of the written mesh (sum of tetrahedra, absolute), mm³. Compare with the B-rep volume to see
     /// the tessellation error.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mesh_volume: Option<f64>,
+    pub mesh_volume_mm3: Option<f64>,
 }
 
 impl Session {
@@ -185,7 +185,7 @@ impl Session {
                     .tessellate_merged(deflection)
                     .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?;
                 mesh.transform(&self.p.body_world_transform(id));
-                report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume: Some(mesh.volume()) });
+                report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: Some(mesh.volume()) });
                 meshes.push(mesh);
             }
             let written = match format {
@@ -203,7 +203,7 @@ impl Session {
             for &id in ids {
                 let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
                 pairs.push((shape, self.p.body_world_transform(id)));
-                report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume: None });
+                report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: None });
             }
             qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
         }

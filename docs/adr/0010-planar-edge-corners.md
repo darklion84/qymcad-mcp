@@ -5,6 +5,7 @@
 - Revised for uncertainty margins and multiple samples (2026-10-08).
 - Corrected planar/straight uncertainty to preserve non-right-angle corners (2026-10-08).
 - Added verified cone/circle refinements, sparse-face allowances and omission reporting (2026-10-08).
+- Corrected composed hint/count scope and cone mesh rounding for tangent chamfer chains (2026-10-08).
 
 ## Context
 
@@ -30,8 +31,9 @@ and missing or degenerate shared tessellation are also omitted.
 
 Refine cylinder normals from the axis/radial direction and cone normals from the axis plus the face's
 own meridian vertices. Project every vertex onto the axis to obtain z and radial distance r. The widest
-axial span determines s=dr/dz; all vertices must fit r(z)=r0+s*(z-z0) within 1e-6 of the coordinate scale.
-An axial span below 1e-9 of that scale falls back to facets. The generator axis+s*radial has perpendicular
+axial span determines s=dr/dz; all vertices must fit r(z)=r0+s*(z-z0) within 1e-6 of the larger of
+meridian and absolute mesh coordinate scales. Native vertices are f32 promoted to f64; a small cone at a large coordinate retains that rounding (F-063).
+An axial span below 1e-9 of the meridian scale falls back to facets. The generator axis+s*radial has perpendicular
 normal radial-s*axis. Normalize and orient it by triangle winding; unreliable alignment falls back to facets.
 This uses no guessed apex or surface angle (F-059).
 
@@ -55,8 +57,11 @@ Native smooth flags classify angles below about 1.5° as smooth, including shall
 omitting them from selection. Count them as uncertain unless all five sampled normals agree within 1e-6;
 seams and such sampled G1 junctions do not contribute to the count. Unknown G1 facets can still be counted
 as uncertain because their exact normal is unavailable. Corner previews report "omitted N uncertain edges"
-when nonzero, even if other corners matched. Analytic circular countersinks at ≥3° are verified; a 0.9°
-spotface remains omitted. Unrefined surfaces retain an effective ~20–30° or larger threshold depending on
+when nonzero, even if other corners matched. For bare filters and positive `and` compositions, evaluate
+the selection with corner leaves replaced by uncertain ids. This counts only edges satisfying the other
+conditions. Union/subtraction/tangent-chain compositions instead report the body total and the absent
+subset, distinguishing them when some uncertain edges appear in the actual result: counterfactual substitution need not represent an omission under negation or expansion.
+Analytic circular countersinks at ≥3° are verified; a 0.9° spotface remains omitted. Unrefined surfaces retain an effective ~20–30° or larger threshold depending on
 the other face and tangent; this is stated in select/fillet descriptions rather than hidden.
 
 Lower these engine filters to persistent ids before evaluating compositions through QymCAD's existing query
@@ -64,6 +69,8 @@ API, just as the engine already lowers `largest` edges by true length. Fillet/ch
 lists (F-024); no new upstream file format, dependencies, or native stored query types are introduced.
 
 Empty corner previews name the requested inward/outward corner count and the opposite count for the body.
+When requested corners exist, say they were eliminated by the selection's other conditions. Bare empty
+filters retain their zero-count wording.
 Only multi-feature source chains receive a named-feature `between` example. Fillet/chamfer repeat the hint
 in their empty-match errors. Noncorner empty selections remain ordinary empty results.
 

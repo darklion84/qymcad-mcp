@@ -425,7 +425,7 @@ fn exports_through_mcp() {
     let r = c.ok("export", json!({ "format": "stl", "path": stl.to_str().unwrap(), "quality": "draft" }));
     assert_eq!(r["triangles"], json!(12), "a box is 12 triangles: {r}");
     assert_eq!(r["bodies"][0]["name"], "box");
-    assert!((r["bodies"][0]["mesh_volume"].as_f64().unwrap() - 1000.0).abs() < 1e-6, "{r}");
+    assert!((r["bodies"][0]["mesh_volume_mm3"].as_f64().unwrap() - 1000.0).abs() < 1e-6, "{r}");
     assert_eq!(std::fs::metadata(&stl).unwrap().len(), 84 + 12 * 50);
     let step = dir.join("box.stp");
     let r = c.ok("export", json!({ "format": "step", "path": step.to_str().unwrap(), "bodies": ["box"] }));

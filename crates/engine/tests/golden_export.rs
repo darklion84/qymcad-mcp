@@ -124,7 +124,7 @@ fn stl_mesh_matches_the_brep() {
     let v = tri_volume(&tris);
     // 0.1 %: tight enough that a missing Ø4.5 hole (95 mm³ = 0.76 %) fails; standard quality is ~0.01 %.
     assert!((v - PLATE).abs() / PLATE < 0.001, "STL volume {v} vs B-rep {PLATE}");
-    assert_close(r.bodies[0].mesh_volume.unwrap(), v, 0.05, "reported mesh volume");
+    assert_close(r.bodies[0].mesh_volume_mm3.unwrap(), v, 0.05, "reported mesh volume");
     assert_bbox(tri_bbox(&tris), PLATE_BBOX, 1e-3, "STL");
 }
 
