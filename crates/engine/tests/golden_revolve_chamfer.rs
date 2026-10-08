@@ -170,9 +170,9 @@ fn negative_side_revolve_chamfer_error_suggests_profile_or_axis_workaround() {
     let ids = mouth_circles(&s);
     let before = s.result_bodies()[0].volume;
     let error = s.chamfer(None, &Sel::Ids(ids), &0.5.into(), None, None).unwrap_err().to_string();
-    assert!(
-        error.contains("revolve") && error.contains("profile") && error.contains("axis"),
-        "failed revolve-mouth chamfer must explain the profile/axis workaround: {error}"
-    );
+    for required in ["kernel's reason", "chamfer 0.50 too big", "larger x", "sketch's +y", "endpoints", "overlapping", "partial turn"] {
+        assert!(error.contains(required), "failed revolve-mouth chamfer must explain {required}: {error}");
+    }
+    assert!(!error.contains("F-067") && !error.contains("negative side"), "{error}");
     assert_close(s.result_bodies()[0].volume, before, 1e-8, "failed chamfer rolls back geometry");
 }

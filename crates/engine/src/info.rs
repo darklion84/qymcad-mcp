@@ -29,6 +29,9 @@ pub struct DocInfo {
 }
 
 impl Session {
+    /// Snapshot the current document for reporting.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
+    /// result-body bbox reporting acquires that non-reentrant mutex.
     pub fn info(&self) -> DocInfo {
         let p = self.project();
         let mut warnings: Vec<String> = p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {e}", self.node_name(*id))).collect();

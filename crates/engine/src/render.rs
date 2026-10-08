@@ -105,6 +105,8 @@ pub(crate) struct Item {
 
 impl Session {
     /// Render `bodies` (default: every result body) from `view` at `width` × `height` pixels.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
+    /// result-body bbox reporting acquires that non-reentrant mutex.
     pub fn render(&self, view: View, width: u32, height: u32, bodies: Option<&[Id]>) -> Result<Rendered> {
         for (what, v) in [("width", width), ("height", height)] {
             if !(RENDER_MIN_SIDE..=RENDER_MAX_SIDE).contains(&v) {

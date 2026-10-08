@@ -54,11 +54,81 @@ where
     A: DeserializeOwned + JsonSchema,
     F: Fn(&mut State, A) -> Result<Content, String> + 'static,
 {
-    let handler: Handler = Box::new(move |st, args| {
+    let schema = input_schema::<A>();
+    let argument_schema = schema.clone();
+    let handler: Handler = Box::new(move |st, mut args| {
+        decode_structured_strings(&mut args, &[&argument_schema], &argument_schema, "arguments")
+            .map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
         let a: A = serde_json::from_value(args).map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
         f(st, a)
     });
-    Tool { name, description, schema: input_schema::<A>(), handler }
+    Tool { name, description, schema, handler }
+}
+
+/// Resolve schema references and alternatives without losing the original `$defs` root.
+fn schema_variants<'a>(schema: &'a Value, root: &'a Value, out: &mut Vec<&'a Value>) {
+    if let Some(reference) = schema["$ref"].as_str().and_then(|r| r.strip_prefix('#')).and_then(|r| root.pointer(r)) {
+        schema_variants(reference, root, out);
+    } else if let Some(alternatives) = ["anyOf", "oneOf", "allOf"].iter().find_map(|key| schema[*key].as_array()) {
+        for alternative in alternatives {
+            schema_variants(alternative, root, out);
+        }
+    } else {
+        out.push(schema);
+    }
+}
+
+fn schema_type(schema: &Value, kind: &str) -> bool {
+    schema["type"] == kind || schema["type"].as_array().is_some_and(|types| types.iter().any(|t| t == kind))
+}
+
+/// Some MCP clients encode structured argument values a second time. Decode only where the schema permits
+/// objects/arrays, preserving string-only names, paths and expressions. Opaque object schemas permit arbitrary
+/// nested JSON; their hand-written deserializers still validate the decoded result.
+fn decode_structured_strings(value: &mut Value, schemas: &[&Value], root: &Value, path: &str) -> Result<(), String> {
+    let mut variants = Vec::new();
+    for schema in schemas {
+        schema_variants(schema, root, &mut variants);
+    }
+    let unrestricted = |schema: &Value| schema == &Value::Bool(true) || schema.as_object().is_some_and(|o| o.is_empty());
+    if variants.iter().any(|s| unrestricted(s) || schema_type(s, "object") || schema_type(s, "array")) {
+        if let Some(encoded) = value.as_str().filter(|s| s.trim_start().starts_with(['{', '['])) {
+            *value = serde_json::from_str(encoded).map_err(|e| format!("invalid JSON object/array string at {path}: {e}"))?;
+        }
+    }
+    let any = Value::Bool(true);
+    match value {
+        Value::Object(object) => {
+            for (key, child) in object {
+                let mut child_schemas: Vec<&Value> = variants.iter().filter_map(|s| s["properties"].get(key)).collect();
+                if child_schemas.is_empty() {
+                    for schema in &variants {
+                        if let Some(additional) = schema.get("additionalProperties") {
+                            child_schemas.push(additional);
+                        } else if unrestricted(schema) || (schema_type(schema, "object") && schema.get("properties").is_none()) {
+                            child_schemas.push(&any);
+                        }
+                    }
+                }
+                decode_structured_strings(child, &child_schemas, root, &format!("{path}.{key}"))?;
+            }
+        }
+        Value::Array(array) => {
+            for (index, child) in array.iter_mut().enumerate() {
+                let mut child_schemas = Vec::new();
+                for schema in &variants {
+                    if let Some(item) = schema["prefixItems"].get(index).or_else(|| schema.get("items")) {
+                        child_schemas.push(item);
+                    } else if unrestricted(schema) || schema_type(schema, "array") {
+                        child_schemas.push(&any);
+                    }
+                }
+                decode_structured_strings(child, &child_schemas, root, &format!("{path}[{index}]"))?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// The JSON schema of an argument struct, trimmed to what MCP clients need.

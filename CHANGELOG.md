@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Round I fixes
+- Unify all JSON bbox coordinates at four decimals with half-away rounding and normalized zero; document display-rounded render captions.
+- Correct small curved-area approximation guidance and singular edge wording.
+- Clarify kernel chamfer reasons and conditional, concrete full-turn revolve axis/profile workarounds; remove internal references from advice.
+- Accept JSON-string object/array arguments centrally, with schema-aware preservation of plain strings and clear malformed-JSON errors.
+- Reject false sphere fits on split conical chamfers; flag duplicated native face ids and refuse ambiguous face selections with a full-turn axis/profile workaround.
+
 ### Added
 - `doc_save` reports `replaced` when the target existed before saving, including explicit-path replacement of another model.
 - Selection `and` accepts two or more operands; kind filters reuse topology's native/mesh classification.

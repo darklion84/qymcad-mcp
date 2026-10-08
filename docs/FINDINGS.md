@@ -946,12 +946,17 @@ Conventions:
 
 - **Version:** v0.1.0-dev.20261001
 - **What:** face areas sum mesh triangle areas; sketch contour areas use the shoelace sum of contour points.
-  These are approximate for curved geometry, commonly about 0.1–0.2% below analytic areas, rather than native
-  B-rep surface integrals. The approximation varies with tessellation and shape.
+  These are approximate for curved geometry, rather than native B-rep surface integrals. Curved areas can
+  lie below analytic by up to about 1% on small curved faces in measured examples; this is an observation,
+  not a guaranteed bound. The approximation varies with tessellation, angular deflection and shape.
 - **Evidence:** source: `qymcad-core/src/geom.rs:675-695` (`meshface_from_triangles`), `:242-252`
   (`Contour::signed_area`); engine `topology.rs` copies `MeshFace.area`, and `sketch.rs` uses `signed_area().abs()`.
   Observed: live final-test report (`tasks/qymcad-tests/final-test-report.md` in the 3d_modeling project)
-  reported roughly 0.1–0.2% discrepancies on curved areas.
+  reported roughly 0.1–0.2% discrepancies on curved areas. Additional accepted H1-H4 live measurements
+  (2026-10-08): Ø8 floor −0.37%, full sphere −0.38%, small sphere patches −0.72..−0.79%.
+  For an n-sided inscribed circle mesh, shoelace area / analytic area is `n*sin(2*pi/n)/(2*pi)`;
+  face triangle areas have additional surface sampling effects, so angular deflection alone is not a
+  universal relative area bound.
 - **How we handle it:** `topology` and `sketch_info` descriptions state the approximation and direct agents
   to analytic dimensions for exact areas. B-rep volume remains the exact geometry check.
 
@@ -1120,7 +1125,9 @@ Conventions:
   coordinate rounding (F-063) and fit arithmetic, rather than a percentage of radius. Rejecting the
   spurious fit lets the existing planar-normal path report the floor, and avoids excluding it from
   corner normals. Sphere precedence remains for actual sphere fits, protecting sparse curved patches.
-  Restoring the native 2% allowance makes the regression fail again; outward shell corner spheres
+  The original residual-only fix failed when restoring the native 2% allowance; F-068 subsequently adds
+  native zero-sphere and degenerate-support checks, so that mutation alone no longer bypasses validation.
+  Outward shell corner spheres
   (`golden_features::shell_open_top`) and the single-triangle native sphere guard remain green.
 
 
@@ -1189,9 +1196,67 @@ Conventions:
   `negative_side_revolve_chamfer_error_suggests_profile_or_axis_workaround` initially failed because
   `chamfer 0.50 too big` omitted advice; disabling the new advice reproduces that failure.
 - **How we handle it (option b):** after a failed chamfer whose source chain contains a revolve, retain the
-  native reason and add conditional advice: for a full-turn negative-side profile try the equivalent positive
-  side or reverse the construction-axis line endpoints. Document the limitation on revolve. Partial-turn
+  native reason explicitly as the kernel's reason (which does not prove an excessive distance), and add
+  conditional advice: for a full turn draw the axis toward sketch +y with the profile at larger x than the
+  line, or reverse its endpoints. Orientation alone does not predict failure; overlapping cones can matter,
+  while clean-block controls pass both ways. User-facing text omits internal finding references. Partial-turn
   endpoint reversal changes the sweep. Preserve recipes/axes; a cone axis sign cannot prove frame handedness,
   and replacing moving line axes by static datums loses their dependency. A future full-turn-only hidden
   reversed line sharing original endpoints could preserve motion, but requires a sketch/recipe policy and
   does not cover opposite-side multi-profiles or generic datum axes. Automatic normalization is deferred.
+
+
+## F-068 Seam repair can duplicate blend face names and hide conical surface identity
+
+- **Version:** v0.1.0-dev.20261001 (OCCT 7.9.3)
+- **Upstream bug candidate / minimal repro:** block 15×15×10; XZ closed profile
+  (0,-1),(-3.375,-1),(-1.875,11),(0,11); construction axis (0,-2)→(0,12);
+  revolve cut 360°, chamfer both mouth circles .5 mm. Stored fixture
+  `tests/fixtures/cone_negative_chamfer.qcad` has 11 faces, ids 1073741836 and 1073741837 twice.
+  Reverse only the axis endpoints (`cone_negative_axis_reversed.qcad`): 9 unique faces.
+- **Naming evidence:** `crates/qymcad-kernel/src/occt_io.cpp:1331-1347` divides closed surfaces for seam
+  repair; `:1459-1460` copies an original edge name to all matching new pieces. `name_blend_faces`
+  (`:922-949`) restarts `piece=0` for every source-edge occurrence and gives its first generated face
+  `names[k]`. Distinct seam pieces can therefore receive the same blend name. Chamfer seam retry and
+  subsequent unification use this path (`:1658-1671,:1508-1516`). Candidate causal mechanism, not a
+  claim that every split surface or every negative-side revolve fails.
+- **Classification evidence:** native OCCT probe on stored QYMB B-reps (format `occt_io.cpp:19,64-79`,
+  `BRepAdaptor_Surface::GetType`) finds six planes, three cones and two B-splines, zero spheres.
+  836 appears Cone then BSpline; 837 appears BSpline then Cone; split metadata is zero on both pairs.
+  Control has six planes/three cones. Native `face_axis` (`occt_io.cpp:680-696`) stops at the first
+  matching persistent id and accepts only Cylinder/Cone. Thus 837's spline hides its later cone;
+  836 incorrectly supplies the first cone's axis to both rows. `Shape::face_kinds` (`lib.rs:888-894`,
+  `occt_helical.cpp:1354-1376`) exposes only aggregate counts; there is no per-face surface-type getter.
+  `Project::face_sphere` remains the mesh fit in F-065. Two coaxial circles fit a common sphere:
+  for radii r1,r2 at heights z1,z2, its center height is
+  `(r1²-r2²+z1²-z2²)/(2*(z1-z2))`; radial residual cannot distinguish a two-ring band.
+- **Server policy:** ADR 0016; native zero-sphere counts disprove fits; coplanar points and points on
+  at most two axial levels about a boundary-plane normal also disprove sufficient sphere support.
+  Circle metadata is absent on the rescued spline rings; native `edges_info` exposes 25 f32 curve samples
+  (`occt_io.cpp:752-762`, `lib.rs:985-1003`) but populates circle metadata only for GeomAbs_Circle
+  (`occt_io.cpp:764-777`). Noncollinear boundary samples supply a candidate unit axis; requiring all
+  sphere-fit vertices on at most two perpendicular planes is the rejection proof, even for spline rings. Keep the
+  f32 radial tolerance. Flag ambiguous topology ids, warn, and refuse selections resolving to them
+  with a full-turn axis/profile workaround, including explicit face ids nested in edges_of/between.
+  The model remains inspectable/renderable/exportable.
+- **Tests:** `golden_round_i` verifies both unchanged fixtures, formula frustum/bevel volume, no false
+  spheres, warning/flags, ambiguous selection refusal and all control face selections. Before fix:
+  `ambiguous face selection must be refused, got Ok((37, [1073741836, 1073741836]))` and
+  `a straight conical bevel cannot be spherical`. Removing sphere guards / selection refusal separately
+  makes their respective regressions red; restored by editing /tmp backups. The mixed-native-sphere
+  regression in sphere_fit_tests defeats the aggregate shortcut and fails without spline-boundary candidate
+  normals, proving the two-ring rejection itself. Rotated-plane and two-/three-ring geometric tests cover
+  support degeneracy independently. Nested explicit face-reference regression fails without name validation.
+
+
+## F-069 The kernel gate is a non-reentrant mutex with no ownership query
+
+- **Version:** v0.1.0-dev.20261001
+- **Evidence:** `crates/qymcad-kernel/src/kernel.rs:68-71` declares a function-local static
+  `std::sync::Mutex<()>` and returns `MutexGuard<'static, ()>` from kernel_gate(). Recursive acquisition
+  cannot be used; the pinned public API exposes neither the mutex nor current-thread ownership.
+- **Server policy:** reporting_bbox always acquires the gate; its callers result_bodies/info/render document
+  that the current thread must not already hold it. No reporting-only debug assertion: a thread-local flag
+  would miss raw/native acquisitions, and a contention probe cannot distinguish other-thread locking from
+  recursion. Centralizing every native acquisition would be a separate cross-module change. Existing
+  reporting isolation/sphere/shelf/render tests exercise calls after the caller's gate has been released.

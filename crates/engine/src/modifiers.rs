@@ -134,7 +134,10 @@ impl Session {
         .map_err(|mut error| {
             if revolve_source {
                 if let Error::Rebuild(lines) = &mut error {
-                    lines.push("if this mouth edge comes from a full-turn revolve with its profile on the negative side of its axis, try the equivalent profile on the positive side or reverse the construction-axis line endpoints; pinned OCCT can refuse cone/plane chamfers because of surface parameterization, even when the distance fits (F-067)".into());
+                    for line in lines.iter_mut() {
+                        *line = format!("kernel's reason: {line}");
+                    }
+                    lines.push("this reason does not prove the distance is too large: cone-mouth chamfers can fail because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full-turn revolve try drawing the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep".into());
                 }
             }
             error

@@ -525,6 +525,9 @@ fn topology_json(t: &Topology, a: &TopologyArgs) -> Result<Value, String> {
     let limit = a.limit.unwrap_or(60);
     let dot = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
     let mut out = json!({ "body": t.body, "faces_total": t.faces.len(), "edges_total": t.edges.len() });
+    if !t.warnings.is_empty() {
+        out["warnings"] = json!(t.warnings);
+    }
     if a.faces {
         let faces: Vec<_> = t
             .faces
@@ -563,11 +566,11 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "topology",
             "List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, \
-             centroid, outward normal for planes, tessellation-based area (typically about 0.1–0.2% below analytic \
-             for curved faces; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
+             centroid, outward normal for planes, tessellation-based area (curved areas can be below analytic by up to about 1% on small curved faces, \
+             as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
              line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE \
              body and are only valid after the latest feature: every feature makes a new body, so call topology \
-             again after each one. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; \
+             again after each one. Rows flagged ambiguous_id share a native name; warnings explain the workaround, and face selections matching these ids are refused. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; \
              prefer descriptive selections (see `select`) over raw ids.",
             |st, a: TopologyArgs| {
                 let s = st.doc()?;

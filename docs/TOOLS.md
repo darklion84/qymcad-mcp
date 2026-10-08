@@ -95,7 +95,7 @@ Save the document as .qcad; the directory must exist. An explicit path permits r
 
 ## doc_info
 
-The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. Bboxes use fresh tessellation with 0.005 mm nominal deflection (larger bodies over 500 mm diagonal use 1e-5 of the diagonal) plus f32 coordinate rounding, including after doc_open and rebuild; they approximate extrema and may slightly under-bound curves (native padded bounds are a fallback if meshing fails). Use volume_mm3 for size checks and topology face positions for placement.
+The whole document: parameters, sketches (world_frame, contours, degrees of freedom), the timeline, result bodies (volume_mm3 at native floating-point precision, bbox), errors and warnings. All JSON bbox coordinates use 4 decimal places in mm, rounded half away from zero; negative zero is normalized to zero. Bboxes use fresh tessellation with 0.005 mm nominal deflection (larger bodies over 500 mm diagonal use 1e-5 of the diagonal) plus f32 coordinate rounding, including after doc_open and rebuild; they approximate extrema and may slightly under-bound curves or over-bound after decimal rounding (native padded bounds are a fallback if meshing fails). Use volume_mm3 for size checks and topology face positions for placement.
 
 ```json
 {
@@ -989,7 +989,7 @@ Delete one entity (with the points only it used and the constraints on them) or 
 
 ## sketch_info
 
-A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Contour areas are tessellation-based, typically about 0.1–0.2% below analytic areas for curved contours; use analytic dimensions for exact areas.
+A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Contour areas are tessellation-based and can be below analytic; errors can reach about 1% on small curved regions, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.
 
 ```json
 {
@@ -1282,7 +1282,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
 
 ## revolve
 
-Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer when a full-turn revolve profile lies on the negative side of its axis; try the equivalent positive-side profile or reverse the construction-axis line endpoints (for a partial turn this changes the sweep). Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full turn try drawing the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -2458,7 +2458,7 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
 
 ## render
 
-Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
+Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -2608,7 +2608,7 @@ Undo the last successful modelling tool call in this document, returning its nam
 
 ## topology
 
-List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, centroid, outward normal for planes, tessellation-based area (typically about 0.1–0.2% below analytic for curved faces; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE body and are only valid after the latest feature: every feature makes a new body, so call topology again after each one. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; prefer descriptive selections (see `select`) over raw ids.
+List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, centroid, outward normal for planes, tessellation-based area (curved areas can be below analytic by up to about 1% on small curved faces, as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE body and are only valid after the latest feature: every feature makes a new body, so call topology again after each one. Rows flagged ambiguous_id share a native name; warnings explain the workaround, and face selections matching these ids are refused. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; prefer descriptive selections (see `select`) over raw ids.
 
 ```json
 {

@@ -130,10 +130,7 @@ fn uncertain_corner_previews_report_omitted_edges() {
     );
     for kind in ["concave", "convex"] {
         let picked = call(&mut r, "select", json!({"edges":{kind:true}}));
-        assert!(
-            picked["note"].as_str().is_some_and(|note| note.starts_with("omitted ") && note.ends_with(" uncertain edges")),
-            "uncertain shallow rim must be reported for {kind}: {picked}"
-        );
+        assert_eq!(picked["note"], "omitted 1 uncertain edge", "uncertain shallow rim must be reported for {kind}: {picked}");
     }
 }
 

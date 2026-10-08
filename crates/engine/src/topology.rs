@@ -16,6 +16,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[cfg(test)]
+#[path = "sphere_fit_tests.rs"]
+mod sphere_fit_tests;
+
 /// The geometric kind of a face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -83,6 +87,9 @@ impl SelectionKind {
 pub struct FaceInfo {
     /// Persistent face id (valid for this body, after the latest rebuild).
     pub id: u32,
+    /// More than one native face shares this persistent name; it cannot be selected unambiguously.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub ambiguous_id: bool,
     /// Plane, cylinder, cone, sphere or other.
     pub kind: FaceKind,
     /// Area-weighted centre of the face, mm.
@@ -147,6 +154,8 @@ pub struct Topology {
     pub faces: Vec<FaceInfo>,
     /// Its edges.
     pub edges: Vec<EdgeInfo>,
+    /// Native naming problems; geometry remains available for inspection and export.
+    pub warnings: Vec<String>,
 }
 
 /// World axis, for `Sel::Extreme` and axis directions.
@@ -480,6 +489,7 @@ impl Session {
         for f in faces {
             let mut fi = FaceInfo {
                 id: f.id,
+                ambiguous_id: faces.iter().filter(|other| other.id == f.id).count() > 1,
                 kind: FaceKind::Other,
                 centroid: [f.centroid.x, f.centroid.y, f.centroid.z],
                 normal: None,
@@ -531,14 +541,61 @@ impl Session {
         }
         out_faces.sort_unstable_by_key(|f| f.id);
         out_edges.sort_unstable_by_key(|e| e.id);
-        Ok(Topology { body, faces: out_faces, edges: out_edges })
+        let mut duplicate_ids: Vec<_> = out_faces.iter().filter(|f| f.ambiguous_id).map(|f| f.id).collect();
+        duplicate_ids.dedup();
+        let warnings = if duplicate_ids.is_empty() {
+            vec![]
+        } else {
+            vec![format!("ambiguous native face ids {duplicate_ids:?}: multiple faces share each name; face selections using them are refused. For a full-turn revolved cone, reverse the construction-axis line endpoints or use an upward axis and a profile at larger sketch x than the line")]
+        };
+        Ok(Topology { body, faces: out_faces, edges: out_edges, warnings })
     }
 
     /// Native face_sphere is a permissive mesh fit (F-065), not a surface-type query.
     /// Validate every vertex of this face at f32 mesh-coordinate accuracy before trusting it.
     fn validated_face_sphere(&self, body: Id, face: &MeshFace) -> Option<([f64; 3], f64)> {
+        let shape = self.shapes.get(&body)?;
+        // The native aggregate can disprove a sphere, even though no per-face type getter exists.
+        if shape.face_kinds().is_some_and(|kinds| kinds[3] == 0) {
+            return None;
+        }
         let (center, radius) = self.p.face_sphere(body, &face_key(face))?;
         let mesh = &self.p.bodies[self.p.mesh_index(body)?].mesh;
+        let points: Vec<_> = face
+            .triangles
+            .iter()
+            .map(|&ti| mesh.tris.get(ti as usize))
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .map(|&vi| mesh.verts.get(vi as usize).map(|v| [v.x, v.y, v.z]))
+            .collect::<Option<_>>()?;
+        let tolerance =
+            16.0 * f32::EPSILON as f64 * points.iter().flatten().chain(center.iter()).map(|v| v.abs()).fold(radius.max(1.0), f64::max);
+        if coplanar_points(&points, tolerance) {
+            return None;
+        }
+        // On a fitted sphere, points in one plane normal to an axis form one circle.
+        // Two coaxial rings therefore fit a sphere exactly without proving a spherical surface.
+        let boundary = shape.face_edge_ids(face.id);
+        // Seam rescue can represent circular boundaries as spline curves, leaving
+        // native circle metadata empty. A noncollinear boundary polyline supplies
+        // a candidate axis too; acceptance still requires every face vertex to
+        // occupy at most two planes perpendicular to that axis.
+        if shape
+            .edges_info()
+            .iter()
+            .filter(|e| boundary.contains(&e.id))
+            .filter_map(|e| {
+                e.circle.map(|(_, axis, _)| axis).or_else(|| {
+                    let poly: Vec<_> = e.poly.iter().map(|p| p.map(f64::from)).collect();
+                    point_plane_normal(&poly)
+                })
+            })
+            .any(|axis| two_axial_levels(&points, axis, tolerance))
+        {
+            return None;
+        }
         let mut scale = radius.max(1.0);
         let mut residual = 0.0_f64;
         for &ti in &face.triangles {
@@ -729,13 +786,15 @@ impl Session {
                 return Ok(None);
             }
             let count = self.resolve_sel(body, Element::Edges, &candidates)?.len();
-            Ok((count > 0).then(|| format!("omitted {count} uncertain edges")))
+            let edges = if count == 1 { "edge" } else { "edges" };
+            Ok((count > 0).then(|| format!("omitted {count} uncertain {edges}")))
         } else {
             let total = uncertain.len();
             let edges = if total == 1 { "edge" } else { "edges" };
+            let pronoun = if total == 1 { "it" } else { "them" };
             Ok((total > 0).then(|| {
                 format!(
-                    "this body has {total} {edges} whose corner side is uncertain; corner filters treat them as neither concave nor convex"
+                    "this body has {total} {edges} whose corner side is uncertain; corner filters treat {pronoun} as neither concave nor convex"
                 )
             }))
         }
@@ -801,6 +860,9 @@ impl Session {
                         el.name()
                     )));
                 }
+                if el == Element::Faces {
+                    self.check_face_names(body, ids)?;
+                }
                 Ok(())
             }
             Sel::EdgesOf(f) => b(f, Element::Faces),
@@ -819,6 +881,14 @@ impl Session {
         }
     }
 
+    fn check_face_names(&self, body: Id, ids: &[u32]) -> Result<()> {
+        let faces = self.p.regen_faces.get(&body).map(Vec::as_slice).unwrap_or_default();
+        if let Some(id) = ids.iter().find(|&&id| faces.iter().filter(|f| f.id == id).count() > 1) {
+            return Err(Error::Invalid(format!("ambiguous face id {id} on body {body}: multiple native faces share this name. For a full-turn revolved cone, reverse the construction-axis line endpoints or use an upward axis with the profile at larger sketch x than the line")));
+        }
+        Ok(())
+    }
+
     /// Resolve `sel` on `body`. Explicit ids that are not on the body are an error (stale or foreign ids).
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
         let lowered = self.lower_edge_filters(body, el, sel, &mut None)?;
@@ -832,6 +902,9 @@ impl Session {
         }
         .map_err(|e| Error::Invalid(format!("selection did not resolve: {e:?}")))?;
         found.sort_unstable();
+        if el == Element::Faces {
+            self.check_face_names(body, &found)?;
+        }
         Ok(found)
     }
 
@@ -1114,7 +1187,35 @@ fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core
     None
 }
 
-/// The unit normal of a face if all its triangles are coplanar (within ~0.25°), else `None`.
+/// A candidate plane normal from the farthest noncollinear point vectors.
+fn point_plane_normal(points: &[[f64; 3]]) -> Option<[f64; 3]> {
+    let &origin = points.first()?;
+    let u = points.iter().map(|&p| sub(p, origin)).max_by(|a, b| norm(*a).total_cmp(&norm(*b)))?;
+    let normal = points.iter().map(|&p| cross(u, sub(p, origin))).max_by(|a, b| norm(*a).total_cmp(&norm(*b))).unwrap_or([0.0; 3]);
+    unit(normal).ok()
+}
+
+/// Whether every point lies within `tolerance` mm of one plane; degenerate sets do.
+fn coplanar_points(points: &[[f64; 3]], tolerance: f64) -> bool {
+    let Some(&origin) = points.first() else { return true };
+    let Some(normal) = point_plane_normal(points) else { return true };
+    points.iter().all(|&p| dot(sub(p, origin), normal).abs() <= tolerance)
+}
+
+fn two_axial_levels(points: &[[f64; 3]], axis: [f64; 3], tolerance: f64) -> bool {
+    let mut levels: Vec<f64> = Vec::new();
+    for &point in points {
+        let height = dot(point, axis);
+        if !levels.iter().any(|z| (height - z).abs() <= tolerance) {
+            levels.push(height);
+            if levels.len() > 2 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn planar_normal(f: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3]> {
     let mut ns: Vec<([f64; 3], f64)> = Vec::with_capacity(f.triangles.len());
     for &ti in &f.triangles {

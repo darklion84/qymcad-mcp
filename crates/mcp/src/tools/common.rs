@@ -63,19 +63,7 @@ pub fn round(v: f64, dp: i32) -> f64 {
 
 /// A rebuild report: full-precision volume, rounded bounds, empty lists omitted.
 pub fn rebuild_json(r: &Rebuild) -> Value {
-    let bodies: Vec<Value> = r
-        .bodies
-        .iter()
-        .map(|b| {
-            json!({
-                "id": b.id,
-                "name": b.name,
-                "volume_mm3": b.volume,
-                "bbox": b.bbox.iter().map(|v| round(*v, 3)).collect::<Vec<_>>(),
-            })
-        })
-        .collect();
-    let mut o = json!({ "bodies": bodies });
+    let mut o = json!({ "bodies": r.bodies });
     if !r.errors.is_empty() {
         o["errors"] = json!(r.errors);
     }

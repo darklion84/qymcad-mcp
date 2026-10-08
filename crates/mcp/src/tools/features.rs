@@ -360,7 +360,7 @@ pub fn tools() -> Vec<Tool> {
             "revolve",
             concat!(
                 "Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the \
-             part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer when a full-turn revolve profile lies on the negative side of its axis; try the equivalent positive-side profile or reverse the construction-axis line endpoints (for a partial turn this changes the sweep).",
+             part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full turn try drawing the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep.",
                 stale!()
             ),
             |st, a: RevolveArgs| {

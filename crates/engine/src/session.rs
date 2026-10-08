@@ -25,7 +25,22 @@ pub struct BodyInfo {
     pub volume: f64,
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm, from fresh nominal-deflection tessellation
     /// (.005 mm, scaled to 1e-5 of diagonals over 500 mm) plus f32 coordinate rounding; native bounds are a fallback if meshing fails (F-066).
+    /// JSON coordinates use four decimals, rounded half away from zero, with negative zero normalized.
+    #[serde(serialize_with = "serialize_bbox")]
     pub bbox: [f64; 6],
+}
+
+fn serialize_bbox<S: serde::Serializer>(bbox: &[f64; 6], serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    bbox.map(|value| {
+        let scaled = value * 10_000.0;
+        let rounded = if scaled.is_finite() { scaled.round() / 10_000.0 } else { value };
+        if rounded == 0.0 {
+            0.0
+        } else {
+            rounded
+        }
+    })
+    .serialize(serializer)
 }
 
 /// What a rebuild produced.
@@ -58,6 +73,8 @@ impl BodyMetrics {
 
 /// Reporting bounds must not depend on the live shape's triangulation state (F-066).
 /// Tessellate an independent copy: the native tessellator cleans/replaces triangulations even via &Shape.
+/// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
+/// This function always acquires that non-reentrant mutex (F-069).
 fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
     let _gate = qymcad_kernel::kernel_gate();
     let measured = || {
@@ -538,6 +555,8 @@ impl Session {
     }
 
     /// Bodies that are current results: built, and not consumed by a later feature.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
+    /// bbox reporting acquires that non-reentrant mutex.
     pub fn result_bodies(&self) -> Vec<BodyInfo> {
         let consumed = self.p.consumed_bodies();
         self.p

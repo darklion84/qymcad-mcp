@@ -142,11 +142,23 @@ round it for presentation. Mesh export reports per-body `mesh_volume_mm3`, also 
 and omits it for exact STEP exports. Bboxes measure a fresh independent B-rep copy tessellated at nominal deflection
 max(0.005 mm, 1e-5 of body diagonal), plus f32 coordinate rounding, consistently after open and rebuild (F-066). Curve extrema may be slightly
 under-bounded; incomplete/failed tessellation falls back to conservative native padded bounds. Use volume and topology positions for accurate size/placement checks.
+All JSON bbox coordinates serialize to four decimal places in mm, rounded half away from zero, with
+negative zero normalized to zero. Internal measurements retain full precision; decimal rounding can slightly
+over-bound or under-bound the actual extent. Render caption bounds are rounded to .01 mm for display.
 Topology coordinates keep their existing presentation rounding; sorting happens before formatting.
 
 Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a
 normal result with `isError: true` and the message (the model must see it). Argument structs use
 `deny_unknown_fields` so typos fail loudly.
+
+Before typed deserialization, `tools/mod.rs` accepts JSON object/array values encoded inside strings by MCP
+clients. The generated argument schema guides decoding, including references, alternatives, nested properties
+and array items: a string whose first non-space character is `{` or `[` is parsed where structured JSON is
+permitted. String-only names, paths and expressions retain their meaning; plain forms such as `largest`, `+z`,
+`XY`, `sketch_y` and `t-2` remain strings. Malformed encoded JSON reports its argument path; the normal
+deserializer still rejects unknown fields and invalid values. The intentionally opaque selection/axis object
+schemas allow arbitrary nested JSON, so their brace/bracket-leading child strings are also decoded; use numeric
+references inside these objects for names that begin with those characters.
 
 ## Testing
 - `tests/smoke.rs` — the kernel links and builds.

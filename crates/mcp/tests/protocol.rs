@@ -73,6 +73,83 @@ impl Drop for Client {
 }
 
 #[test]
+fn json_encoded_structured_arguments_match_native_arguments() {
+    let mut results = Vec::new();
+    for encoded in [false, true] {
+        let argument = |v: Value| if encoded { json!(format!("  {v}")) } else { v };
+        let mut c = Client::start();
+        c.init();
+        c.ok("doc_new", json!({}));
+        c.ok("param_set", json!({ "name": "t", "value": 10 }));
+        c.ok("sketch_create", json!({ "plane": "XY", "name": "{plate" }));
+        c.ok(
+            "sketch_add",
+            json!({ "sketch": "{plate", "entities": argument(json!([
+            { "type": "rect", "w": 20, "h": 16 }
+        ])) }),
+        );
+        let block = c.ok("extrude", json!({ "sketch": "{plate", "height": "t-2", "name": "[block" }));
+        // A 20 × 16 rectangle extruded by t−2 = 8 has volume 2560 mm³.
+        assert!((volume(&block) - 20.0 * 16.0 * 8.0).abs() < 1e-6);
+        let faces = c.ok("select", json!({ "faces": argument(json!({ "facing": "+z" })) }));
+        assert_eq!(faces["count"], 1);
+        let selected = c.ok("select", json!({ "edges": { "edges_of": { "facing": "+z" } } }));
+        let edge_ids = json!(selected["edges"].as_array().unwrap().iter().map(|edge| edge["id"].clone()).collect::<Vec<_>>());
+        assert_eq!(edge_ids.as_array().unwrap().len(), 4, "rectangle outline has four edges");
+        let edges = c.ok("select", json!({ "edges": argument(edge_ids) }));
+        let nested = c.ok("select", json!({ "edges": { "edges_of": argument(json!({ "facing": argument(json!([0, 0, 1])) })) } }));
+        assert_eq!(nested, c.ok("select", json!({ "edges": { "edges_of": { "facing": "+z" } } })));
+        let largest = c.ok("select", json!({ "faces": "largest" }));
+        let plane = c.ok("plane_offset", json!({ "base": "XY", "dist": 8, "name": "[datum" }))["plane"].clone();
+        let sketch = c.ok("sketch_create", json!({ "plane": argument(json!({ "plane": plane })), "name": "on top" }));
+
+        c.ok("doc_new", json!({}));
+        c.ok("sketch_create", json!({ "plane": "XZ", "name": "ring" }));
+        let added = c.ok(
+            "sketch_add",
+            json!({ "sketch": "ring", "entities": [
+            argument(json!({ "type": "polyline", "closed": true,
+                "points": argument(json!([argument(json!([4, 0])), [6, 0], [6, 8], [4, 8]])) })),
+            { "type": "line", "x1": 0, "y1": -1, "x2": 0, "y2": 9, "construction": true }
+        ] }),
+        );
+        let line = added["created"][1]["entities"][0].clone();
+        let revolved = c.ok("revolve", json!({ "sketch": "ring", "axis": argument(json!({ "line": line })) }));
+        // Revolving r∈[4,6], z∈[0,8] makes an annulus: π(6²−4²)·8 mm³.
+        assert!((volume(&revolved) - std::f64::consts::PI * (36.0 - 16.0) * 8.0).abs() < 1e-6);
+        let plain_axis = c.ok("revolve", json!({ "sketch": "ring", "axis": "sketch_y", "op": "new_body" }));
+        results.push(json!([faces, edges, largest, sketch, revolved, plain_axis]));
+    }
+    assert_eq!(results[0], results[1], "encoded objects/arrays must have the same protocol results");
+}
+
+#[test]
+fn malformed_json_encoded_arguments_report_the_argument_path() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    for faces in [json!("  {\"facing\": "), json!({ "edges_of": "[1," })] {
+        let (is_err, message) = c.tool("select", json!({ "faces": faces }));
+        let message = message.as_str().unwrap();
+        assert!(is_err && message.contains("invalid JSON object/array string at arguments.faces"), "{message}");
+    }
+    assert_eq!(c.request("ping", json!({}))["result"], json!({}));
+}
+
+#[test]
+fn json_looking_plain_string_arguments_are_preserved() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({ "plane": "XY", "name": "{\"custom\":[]}" }));
+    let sketch = c.ok("sketch_info", json!({ "sketch": "{\"custom\":[]}" }));
+    assert_eq!(sketch["name"], "{\"custom\":[]}");
+    let (is_err, message) = c.tool("doc_open", json!({ "path": "[missing.qcad" }));
+    assert!(is_err && message.as_str().unwrap().contains("[missing.qcad"), "{message}");
+    assert!(!message.as_str().unwrap().contains("JSON object/array string"), "{message}");
+}
+
+#[test]
 fn initialize_negotiates_the_protocol() {
     let mut c = Client::start();
     let r = c.init();

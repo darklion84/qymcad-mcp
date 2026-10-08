@@ -89,7 +89,7 @@ fn uncertain_note_respects_other_and_conditions() {
         let line = call(&mut r, "select", json!({"edges":{"and":[{kind:true},{"kind":"line"}]}}));
         assert!(line.get("note").is_none(), "line filter excludes the circular uncertain rim: {line}");
         let circle = call(&mut r, "select", json!({"edges":{"and":[{kind:true},{"kind":"circle"}]}}));
-        assert_eq!(circle["note"], "omitted 1 uncertain edges");
+        assert_eq!(circle["note"], "omitted 1 uncertain edge");
     }
 }
 
@@ -97,20 +97,14 @@ fn uncertain_note_respects_other_and_conditions() {
 fn uncertain_note_in_nonmonotone_compositions_is_truthful() {
     let mut r = shallow_hole();
     let minus = call(&mut r, "select", json!({"edges":{"minus":[{"convex":true},{"kind":"circle"}]}}));
-    assert_eq!(
-        minus["note"],
-        "this body has 1 edge whose corner side is uncertain; corner filters treat them as neither concave nor convex"
-    );
+    assert_eq!(minus["note"], "this body has 1 edge whose corner side is uncertain; corner filters treat it as neither concave nor convex");
     let union = call(&mut r, "select", json!({"edges":{"union":[{"convex":true},{"kind":"circle"}]}}));
-    assert_eq!(
-        union["note"],
-        "this body has 1 edge whose corner side is uncertain; corner filters treat them as neither concave nor convex"
-    );
+    assert_eq!(union["note"], "this body has 1 edge whose corner side is uncertain; corner filters treat it as neither concave nor convex");
 }
 
 fn contradictory_corner_intersection(selection: Value) {
     let mut r = shallow_hole();
-    assert_eq!(call(&mut r, "select", json!({"edges":{"convex":true}}))["note"], "omitted 1 uncertain edges");
+    assert_eq!(call(&mut r, "select", json!({"edges":{"convex":true}}))["note"], "omitted 1 uncertain edge");
     let selected = call(&mut r, "select", json!({"edges":selection}));
     assert_eq!(selected["count"], 0, "no edge can have both signs");
     assert!(selected["hint"].as_str().unwrap().contains("(no edge is both)"), "required signs explain the empty result: {selected}");
@@ -130,7 +124,7 @@ fn nested_contradictory_corner_intersection_has_no_omission_note() {
 #[test]
 fn subtracted_corner_filter_note_makes_no_membership_claim() {
     let mut r = shallow_hole();
-    let note = "this body has 1 edge whose corner side is uncertain; corner filters treat them as neither concave nor convex";
+    let note = "this body has 1 edge whose corner side is uncertain; corner filters treat it as neither concave nor convex";
     for kind in ["line", "circle"] {
         let base = call(&mut r, "select", json!({"edges":{"kind":kind}}));
         let selected = call(&mut r, "select", json!({"edges":{"minus":[{"kind":kind},{"convex":true}]}}));
