@@ -33,4 +33,11 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   few-triangle torus/sphere/B-spline face passes `planar_normal` and gets the exact 1e-6 allowance, so a 9-17
   degree junction could flip. Also reject `face_sphere` in `corner_planar_normal`, or give mesh-planar faces a
   small nonzero allowance.
+- **Cone/plane rims are omitted up to ~20-30 degrees of slope** (live test 2026-10-08): a countersink rim at 20 degrees
+  (160 degree dihedral) is in neither concave nor convex, while a plane/plane edge at the same angle is found. The
+  cone normal carries the full tessellation allowance because the pinned kernel has no cone apex/angle getter.
+  State the effective threshold in the select/fillet descriptions, report an "omitted N uncertain edges" count with
+  corner selections, and derive analytic cone normals (e.g. from the cone's axis via face_axis plus the rim/edge
+  geometry) when possible. Also: a 3-item `and` (only 2 allowed today), selection by edge kind (line/circle), and
+  the doc_info bbox padding note (up to ~0.26 mm observed on countersinks, not "about 0.05").
 
