@@ -29,4 +29,8 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   (e.g. a different first feature), unless a path is given.
 - **Minor output consistency** (live test): stable edge order between bodies; `volume_mm3` (rounded) in rebuild
   results vs `volume` (full precision) in doc_info.
+- **Harden corner classification on tiny curved faces that look planar** (MiMo, K1-K5 re-review): a single- or
+  few-triangle torus/sphere/B-spline face passes `planar_normal` and gets the exact 1e-6 allowance, so a 9-17
+  degree junction could flip. Also reject `face_sphere` in `corner_planar_normal`, or give mesh-planar faces a
+  small nonzero allowance.
 
