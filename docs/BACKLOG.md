@@ -55,3 +55,11 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - the half-away rounding test does not use true binary ties;
   - the kernel-gate precondition comment is missing on export/save/rebuild/undo/open;
   - "upward axis" vs "toward the sketch's +y" wording; "kernel's reason" prefix applies to whole lines.
+- **Low items from the round-I live test** (Codex as tester, 187 calls, all items OK, 2026-10-09):
+  - duplicate face ids warn only in topology/select; doc_open/doc_info report `warnings: []` for such a body;
+  - the advice on a failed chamfer should first suggest a smaller distance before the axis/profile workaround;
+  - JSON-string arguments work, but the advertised schemas do not admit a string, so a strict client may refuse;
+  - small curved areas can be ~1.8% low (sketch circle R=0.2), so "about 1%" understates; flat faces with round
+    boundaries are approximate too;
+  - `doc_info.sketches[].world_frame.origin` still shows f64 noise (3.5999999999999996);
+  - undo returns the MCP tool name, not a human label.
