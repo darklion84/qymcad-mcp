@@ -10,8 +10,13 @@ All notable changes to this project are documented here. The format follows
   bound structured argument nesting to 32 levels and document interop without widening tool schemas.
 - Freeze the complete kind-containing face selection in hole/shell/push_face as persistent picks,
   preserving missing-opening checks; selections without kinds retain dynamic queries (ADR 0013).
-- Parameter edits solve only reached sketches and dirty reached expressions, including transitive
-  parameters and imported uppercase dependencies. Reuse corner classification within empty hints.
+- Parameter edits solve only reached sketches, including transitive parameters, imported uppercase
+  dependencies and named reference measurements refreshed by solves. Retain blanket native rebuild
+  dirtying and add scheduling barriers for sketches on face-derived datums, preventing stale placement.
+  Bound reference propagation, reject follow-up expression errors, recheck array limits, and roll back
+  non-stabilizing cycles. Reuse corner classification within empty hints.
+- Failed partial rebuilds restore shape absence for planned bodies without pre-edit live shapes.
+- Cover literal body names inside opaque Axis arguments and document the native named-feature-dimension scope limitation.
 - Undo labels follow the node returned by the tool, preserving action labels for empty feature names.
 - Undo includes a localized feature or action `label` alongside the original tool and arguments.
 - Document lazy sketch reference points and how to inspect asymmetric chamfer setbacks. Torus remains

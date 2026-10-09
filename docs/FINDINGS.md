@@ -39,18 +39,30 @@ Conventions:
   expressions (`solve_sketch(si)` + `mark_sketch_dirty`), mark feature dependents dirty, then regenerate.
 - **Evidence:** source: `crates/qymcad-core/src/model/regen.rs` `regenerate_watched` (~746-765);
   `crates/qymcad-core/src/model/sketch.rs` (~3947).
-- **Reached-sketch policy (J6):** stabilize named-driver scope, then compare old/new lowercase
-  `param_map` values, including transitive parameters and named driving dimensions. Native evaluation
-  seeds named dimensions once before applying sketch expressions (`model.rs:2374,2409`,
-  `model/sketch.rs:2414`); repeat at most `named_dims.len()+1` evaluations, stopping when the scope is
-  unchanged, before taking the changed-name snapshot. With no named drivers this is one evaluation.
-  `parameter_edit_reaches_a_chain_of_imported_named_sketch_dimensions` verifies four explicit solves
-  through w→a→b→c; reverting stabilization omits the fourth solve. Solve only sketches with dimensional
-  expressions mentioning changed values, and dirty only matching `feat_dims`; lowercase imported
-  expressions for matching too (F-001). Source: `model.rs:2123,2363-2444`; tests:
-  `params::tests::parameter_edit_solves_only_reached_sketch_including_transitive_uppercase_expressions`
-  and `unused_parameter_edit_does_not_solve_any_sketch`, with solve-count instrumentation and formula
-  volumes. Shelf timing (median edit 251 → 224 ms, 4 → 0 sketch solves for a blend parameter) and the negligible Project clone cost (~0.15 ms) are summarised in docs/BACKLOG.md; reproduce with the ignored test `parameter_and_project_clone_shelf_timings`.
+- **Reached-sketch policy (J3 correction to J6):** stabilize named-driver scope, then compare old/new
+  lowercase `param_map` values, including transitive parameters and named driving dimensions. Native
+  evaluation seeds named dimensions once before applying sketch expressions (`model.rs:2374,2409`,
+  `model/sketch.rs:2414`); repeat at most `named_dims.len()+1` evaluations, stopping when scope is unchanged.
+  Solve only sketches whose dimensional expressions mention changed values; lowercase imported expressions
+  too (F-001). After solving, recompute the scope: `update_driven_dims` rewrites named reference measurements
+  from geometry (`model/sketch.rs:2542,2641-2673`). Newly changed names reach further sketches in the next
+  round. Bound rounds to `sketches.len()+1`; refuse and restore a non-stabilizing reference cycle.
+  Re-evaluation errors abort with recipe restoration; recheck array limits after reference propagation
+  before rebuilding (F-033). Tests `updated_reference_revalidates_global_expressions_before_rebuild`
+  and `updated_reference_revalidates_array_total_before_rebuild` cover sqrt(11-ra) becoming invalid and
+  round(ra)*100 growing from 1000 to 1200 copies, both with exact rollback.
+  Rebuild scheduling keeps native blanket `mark_param_dependents_dirty()` (`model.rs:2353-2357`), independent
+  of solve reachability. Face-derived datum sketch barriers supply the missing placement dependency (F-017).
+- **Tests:** `params::tests::parameter_edit_reaches_a_chain_of_imported_named_sketch_dimensions` checks
+  w→a→b→c; the transitive/uppercase and unused-edit tests retain targeted solve counts. The named-reference
+  golden uses A's diagonal sqrt(w²+3²) to size B, V=2*sqrt(w²+3²)*4*2. It is red on J6 HEAD, green on the
+  pre-J6 propagation body and the native GUI path. `named_reference_chain_solves_in_rounds_independent_of_sketch_storage_order`
+  checks three reference hops with reverse pool order; `cyclic_named_references_are_bounded_and_restore_the_project`
+  checks exact recipe/B-rep rollback. Removing follow-up rounds fails both acyclic regressions.
+- **Timing:** same shelf blend edits 3.5→4→3.5: J6 HEAD median 221.5 ms, pre-J6-style propagation 253.4 ms,
+  corrected implementation 248.8 ms initially, 256.4 ms after final validation checks. Four→zero explicit
+  sketch solves remains; these small samples establish no reliable total speedup vs pre-J6. Blanket
+  rebuild safety sacrifices J6's earlier speedup. Ignored test: `parameter_and_project_clone_shelf_timings`; full samples in tasks/review-j3.md.
 
 ## F-003 A cut's direction is `Extent.reach`, not `down`
 
@@ -226,6 +238,21 @@ Conventions:
   GUI structural edits (new/reattached sketches or replacement distance expressions) cannot refresh the guards
   in the running app: reopen/save through the server before further GUI parameter edits. This is a persisted
   engine workaround, not an upstream scheduler fix. The old 1 mm³ cut-volume tolerance is removed.
+
+### Face-derived datums (J3)
+
+`OffsetFace` and `OffsetPlane` chains ending at `OffsetFace` also omit scheduler inputs. When F's height
+changes, a constant-distance datum resolves to its moved top face, but its constant/unrelated-dimension
+sketch can be skipped. Blanket dirtying rebuilds a parametric consumer, yet parallel preparation can still
+capture the old frame unless the sketch is dirty. On engine parameter edits, retain blanket dirtying and
+mark all face-derived datum sketches dirty as placement barriers, without explicitly solving them.
+Evidence: `golden_param_propagation::parameter_edit_rebuilds_extrusion_on_face_derived_datums` constructs
+native datums as in GUI-authored files, then edits through Session after reopen. F height=w, datum dist=2,
+optional child dist=5, E2 height=h2=3: caps must be at w+2(+5) and w+2(+5)+3, V=4*2*3. HEAD is red;
+removing blanket dirtying or the added barrier independently is red. The native GUI characterization
+moves unrelated-expression sketches (it solves them all), but leaves constant sketches stale on both datum
+forms. Pre-J6 propagation has the same constant-sketch limitation. This is an engine-only edit barrier;
+no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 
 ## F-018 The app bundle does not carry the release tag in Info.plist
 
@@ -557,6 +584,14 @@ Conventions:
   recipe. The helper comment records this distinction; test:
   `session::tests::failed_rebuild_closure_restores_diagnostics_and_drops_orphan_shapes` injects both before
   a pre-regeneration closure error. Separate warning/shape retention mutations fail the regression.
+
+- **Previously unbuilt planned bodies (J3):** rollback restores absence as well as original handles.
+  Keeping only restored-recipe IDs is insufficient when a planned recipe already existed without a live
+  shape: a partial rebuild can create its shape before a later node fails. Capture pre-edit shape IDs
+  and remove newly present shapes on failure. Test:
+  `session::tests::failed_partial_rebuild_drops_shapes_of_previously_unbuilt_planned_bodies` verifies the
+  partial extrusion V=4*6*5=120, then missing-sketch failure, exact recipe restoration and absent shapes.
+  Restoring the former cleanup by mutation fails the absent-shape assertion.
 
 ## F-035 There is no closed (hollow, unopened) shell
 
@@ -1374,3 +1409,14 @@ rebuild. Stored metrics are compared internally and appear only in mismatch warn
 True scaled binary ties: ±33/32 and ±35/32, multiplied by 10^4, give ±10312.5 and ±10937.5 exactly.
 `golden_round_i::bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_values`
 asserts those exact fractional halves before checking away-from-zero output.
+
+## F-071 Named feature dimensions evaluate against globals only
+
+- **Version:** v0.1.0-dev.20261001.
+- **Evidence:** source: `qymcad-core/src/model/sketch.rs:2434-2443`, `Project::dim_target_value` for
+  `DimTarget::Feature` evaluates its `feat_dims` expression against `self.parameters` only. `param_map`
+  (`model.rs:2123-2133`) inserts a named dimension only when `named_dim_value` returns Some.
+- **What:** a named feature dimension whose expression references another named dimension is omitted from
+  `param_map`, even if that expression can evaluate in the full scope used during regeneration. Global-only
+  formulas and literal feature dimensions remain available. This is a pre-existing native limitation;
+  the engine does not change feature-dimension evaluation or recursively synthesize these missing names.

@@ -59,9 +59,13 @@ plan and error policy (F-034).
   independent B-rep copies and retry only planned nodes. Failure restores the project and those original handles
   without another rebuild, so old bodies remain bit-identical (F-034).
 - `transact(edit)` — sketch geometry (no rebuild needed): restore on error.
-- `param_set` — restore the original project directly when propagation leaves a sketch unsolved (no shapes
-  have changed). Before rebuilding, retain original live shapes of planned bodies and regenerate on B-rep
-  copies, retrying only planned nodes; failure restores the project and original handles without regeneration.
+- `param_set` — solve only sketches reached by changed values, repeating for named reference measurements
+  updated after solves (at most sketches+1 rounds). Rebuild dirtying retains native blanket feature-dimension
+  marking; face-derived datum sketches are dirtied as placement barriers without extra solves (F-017).
+  Reject scope evaluation errors and recheck array limits after reference propagation. Restore the original
+  project directly when propagation fails or leaves a sketch unsolved (no shapes have changed). Before rebuilding, retain original live shapes of planned bodies and regenerate on B-rep
+  copies, retrying only planned nodes; failure restores the project and original handles without regeneration,
+  including shape absence for previously unbuilt planned bodies.
 
 MCP modelling tool calls establish a session history boundary before invoking the typed handler. Independent
 B-rep copies isolate live shapes; failed calls restore the original Project/handles/diagnostics, successful

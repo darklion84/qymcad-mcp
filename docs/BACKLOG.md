@@ -20,3 +20,10 @@ No open items. Items closed without a code change in backlog round J (2026-10-09
   ARCHITECTURE say objects/arrays may also be sent as JSON strings.
 - **Torus face kind / which face takes an asymmetric chamfer's `dist`** — the pinned kernel exposes neither
   per face (F-060, F-036); documented in the topology and chamfer descriptions.
+
+Parameter solve optimization was corrected after J6 review: native blanket rebuild dirtying stays, with
+face-derived datum sketch scheduling barriers (F-017). Four→zero explicit shelf solves remains, but the
+corrected median edits are ~249–256 ms versus ~253 ms with pre-J6 propagation (no reliable total speedup), rather
+than J6 HEAD's ~222 ms. Details and all timing samples: tasks/review-j3.md. Named feature dimensions
+referring to other named dimensions retain the native scope limitation documented in F-071. Non-kind
+composed face queries remain dynamic, with the documented shell missing-opening residual (ADR 0013).

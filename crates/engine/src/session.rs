@@ -522,7 +522,8 @@ impl Session {
     /// This deliberately strengthens the old inline paths: any edit error restores advisory warnings
     /// (the former early sketch error did not), and drops shapes whose bodies are absent from the restored
     /// recipe (the former parameter failure and early sketch error retained them). Neither caller normally
-    /// creates bodies before failing, but a closure must not leak orphan geometry or diagnostics.
+    /// creates bodies before failing, but a closure must not leak orphan geometry or diagnostics. A planned
+    /// body with no pre-edit shape must also remain unbuilt after rollback.
     pub(crate) fn with_rebuild_copies<T>(
         &mut self,
         before: Project,
@@ -531,6 +532,7 @@ impl Session {
         edit: impl FnOnce(&mut Session) -> Result<T>,
     ) -> Result<T> {
         let before_warnings = self.advisory_warnings.clone();
+        let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
         let copies: Result<HashMap<Id, Shape>> = {
             let _gate = qymcad_kernel::kernel_gate();
             self.p
@@ -565,7 +567,7 @@ impl Session {
             self.p = before;
             self.advisory_warnings = before_warnings;
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
-            self.shapes.retain(|id, _| live.contains(id));
+            self.shapes.retain(|id, _| live.contains(id) && before_shape_ids.contains(id));
             self.shapes.extend(saved);
         }
         result
@@ -734,6 +736,33 @@ mod tests {
         let _gate = qymcad_kernel::kernel_gate();
         assert!((s.shapes[&42].volume() - 12.0 * std::f64::consts::PI).abs() < 1e-8);
     }
+    #[test]
+    fn failed_partial_rebuild_drops_shapes_of_previously_unbuilt_planned_bodies() {
+        use crate::{BaseName, PlaneRef};
+
+        let mut s = Session::new_part();
+        let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &4.0.into(), &6.0.into(), false).unwrap();
+        // Native construction represents an opened recipe with pending, never-built bodies.
+        let body = s.p.add_extrude(sketch, 3.0);
+        let failed_body = s.p.add_extrude(Id::MAX, 3.0);
+        let before = s.p.clone();
+        let recipe = serde_json::to_value(&before).unwrap();
+        let nodes = s.p.timeline.iter().filter(|n| n.dirty).map(|n| n.id).collect();
+        assert!(s.shapes.is_empty());
+        let result: Result<()> = s.with_rebuild_copies(before, &nodes, "partial rebuild", |s| {
+            s.p.set_feat_dim(body, "height", "5".into());
+            let report = s.rebuild_retrying(Some(&nodes));
+            assert!(report.errors.iter().any(|e| e.node == failed_body), "the second extrusion must fail: {report:?}");
+            // The first extrusion did build changed geometry: V = width * length * edited height.
+            assert!((s.shapes[&body].volume() - 4.0 * 6.0 * 5.0).abs() < 1e-8);
+            Err(Error::Rebuild(report.errors.iter().map(|e| e.message.clone()).collect()))
+        });
+        assert!(result.is_err());
+        assert_eq!(serde_json::to_value(&s.p).unwrap(), recipe, "the pending native recipe is restored exactly");
+        assert!(s.shapes.is_empty(), "the failed partial rebuild leaked geometry for a previously unbuilt body");
+    }
+
     #[test]
     fn failed_rebuild_closure_restores_diagnostics_and_drops_orphan_shapes() {
         let mut s = Session::new_part();
