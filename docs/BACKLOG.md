@@ -21,8 +21,6 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   faces even for edges; `empty_corner_hint` recomputes `classified_corners` up to three times.
 
 - **Low items from the G1-G6 live tests** (mcp-tester4/5):
-  - unnamed objects show raw localization keys as names: datum planes as "name-plane (plane 24)", bodies as
-    "feat-name-extrude"/"feat-name-hole"…, while unnamed sketches read "Sketch 3";
   - the `between` suggestion appears on any body with two or more features in its chain, even with no named
     junction to offer;
   - the same body's bbox differs by the curved-body padding (~0.02 mm) between the feature result and a later
@@ -40,7 +38,6 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - UPGRADING.md: the pinning test `upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh` must be removed
     when QymCAD fixes the fit.
 - **Low items from the H1-H4 live test** (mcp-tester6, 2026-10-08):
-  - a cut that removes nothing reports the raw key "error-cut-removed-nothing" with no hint (e.g. "cut in reverse").
   - wish: kind "torus" (fillet corner tori are "other", like NURBS); asymmetric chamfer result does not say
     which face took `dist`.
 - **Remaining MiMo client observations** (2026-10-08): client truncated doc_save arguments; typed schemas

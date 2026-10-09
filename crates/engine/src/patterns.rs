@@ -261,7 +261,7 @@ impl Session {
                 FeatureKind::CircularArray { count, .. } => dim(n.id, "count", count)?,
                 _ => continue,
             };
-            check_total(total).map_err(|e| Error::Invalid(format!("array {} `{}`: {e}", n.id, n.name)))?;
+            check_total(total).map_err(|e| Error::Invalid(format!("array {} `{}`: {e}", n.id, crate::localization::name(&n.name))))?;
         }
         Ok(())
     }

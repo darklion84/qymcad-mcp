@@ -109,7 +109,12 @@ impl Session {
         // A failed feature passes its source body through unchanged (FINDINGS F-008): writing or showing the
         // result would silently drop that feature, so refuse until the document rebuilds cleanly.
         if !self.p.regen_errors.is_empty() {
-            let mut lines: Vec<String> = self.p.regen_errors.iter().map(|(id, e)| format!("{} ({id}): {e}", self.node_name(*id))).collect();
+            let mut lines: Vec<String> = self
+                .p
+                .regen_errors
+                .iter()
+                .map(|(id, e)| format!("{} ({id}): {}", self.node_name(*id), crate::localization::error(e)))
+                .collect();
             lines.sort();
             return Err(Error::Invalid(format!(
                 "the document has features that did not build, so the bodies do not show the full recipe: {}. Fix or \

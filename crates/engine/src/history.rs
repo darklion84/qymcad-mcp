@@ -112,10 +112,18 @@ impl Session {
         let call = snapshot.call.clone();
         self.restore_snapshot(snapshot);
         self.prune_retired_sources();
-        let errors =
-            self.p.regen_errors.iter().map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: e.to_string() }).collect();
-        let mut warnings: Vec<_> =
-            self.p.regen_warnings.iter().map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: e.to_string() }).collect();
+        let errors = self
+            .p
+            .regen_errors
+            .iter()
+            .map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: crate::localization::error(e) })
+            .collect();
+        let mut warnings: Vec<_> = self
+            .p
+            .regen_warnings
+            .iter()
+            .map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: crate::localization::error(e) })
+            .collect();
         warnings.extend(self.advisory_warnings.clone());
         Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies() } })
     }
@@ -180,8 +188,13 @@ impl Session {
             return Err(Error::NotFound(format!("no feature {feature}")));
         }
         let gone = self.deletion_closure(feature);
-        let dependents: Vec<_> =
-            self.p.timeline.iter().filter(|n| n.id != feature && gone.contains(&n.id)).map(|n| format!("{} ({})", n.name, n.id)).collect();
+        let dependents: Vec<_> = self
+            .p
+            .timeline
+            .iter()
+            .filter(|n| n.id != feature && gone.contains(&n.id))
+            .map(|n| format!("{} ({})", crate::localization::name(&n.name), n.id))
+            .collect();
         if !cascade && !dependents.is_empty() {
             return Err(Error::Invalid(format!(
                 "feature {} has dependents: {}; use cascade=true to delete them too",

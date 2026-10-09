@@ -577,23 +577,7 @@ impl Session {
         }
         // On a fitted sphere, points in one plane normal to an axis form one circle.
         // Two coaxial rings therefore fit a sphere exactly without proving a spherical surface.
-        let boundary = shape.face_edge_ids(face.id);
-        // Seam rescue can represent circular boundaries as spline curves, leaving
-        // native circle metadata empty. A noncollinear boundary polyline supplies
-        // a candidate axis too; acceptance still requires every face vertex to
-        // occupy at most two planes perpendicular to that axis.
-        if shape
-            .edges_info()
-            .iter()
-            .filter(|e| boundary.contains(&e.id))
-            .filter_map(|e| {
-                e.circle.map(|(_, axis, _)| axis).or_else(|| {
-                    let poly: Vec<_> = e.poly.iter().map(|p| p.map(f64::from)).collect();
-                    point_plane_normal(&poly)
-                })
-            })
-            .any(|axis| two_axial_levels(&points, axis, tolerance))
-        {
+        if two_circle_support(&points, tolerance) {
             return None;
         }
         let mut scale = radius.max(1.0);
@@ -1200,6 +1184,43 @@ fn coplanar_points(points: &[[f64; 3]], tolerance: f64) -> bool {
     let Some(&origin) = points.first() else { return true };
     let Some(normal) = point_plane_normal(points) else { return true };
     points.iter().all(|&p| dot(sub(p, origin), normal).abs() <= tolerance)
+}
+
+/// Reject insufficient sphere support using only mesh vertices, regardless of native edges.
+fn two_circle_support(points: &[[f64; 3]], tolerance: f64) -> bool {
+    let Some(&first) = points.first() else { return true };
+    let mut sample = vec![first];
+    // Five distinct points on two circles include three on one circle, which
+    // define its plane. Farthest-point sampling avoids duplicate triangle corners
+    // and favors well-separated triples; only ten candidate normals are needed.
+    while sample.len() < 5 {
+        let farthest = points
+            .iter()
+            .map(|&p| {
+                let distance = sample.iter().map(|&q| norm(sub(p, q))).fold(f64::INFINITY, f64::min);
+                (p, distance)
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1));
+        let Some((point, distance)) = farthest else { return true };
+        if distance <= tolerance {
+            // At most four distinct points cannot establish a sphere surface:
+            // three define one plane and the fourth a parallel singleton plane.
+            return true;
+        }
+        sample.push(point);
+    }
+    for i in 0..3 {
+        for j in i + 1..4 {
+            for k in j + 1..5 {
+                if let Ok(axis) = unit(cross(sub(sample[j], sample[i]), sub(sample[k], sample[i]))) {
+                    if two_axial_levels(points, axis, tolerance) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 fn two_axial_levels(points: &[[f64; 3]], axis: [f64; 3], tolerance: f64) -> bool {

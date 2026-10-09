@@ -10,6 +10,9 @@ mod history;
 #[cfg(test)]
 mod history_tests;
 mod info;
+mod localization;
+#[cfg(test)]
+mod localization_tests;
 mod modifiers;
 mod params;
 mod patterns;

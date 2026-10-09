@@ -34,7 +34,8 @@ impl Session {
     /// result-body bbox reporting acquires that non-reentrant mutex.
     pub fn info(&self) -> DocInfo {
         let p = self.project();
-        let mut warnings: Vec<String> = p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {e}", self.node_name(*id))).collect();
+        let mut warnings: Vec<String> =
+            p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {}", self.node_name(*id), crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| format!("{} ({}): {}", w.name, w.node, w.message)));
         let upper = self.uppercase_params();
         if !upper.is_empty() {
@@ -51,13 +52,18 @@ impl Session {
             timeline: p
                 .timeline
                 .iter()
-                .map(|n| NodeInfo { id: n.id, name: n.name.clone(), kind: kind_name(&n.kind), suppressed: n.suppressed })
+                .map(|n| NodeInfo {
+                    id: n.id,
+                    name: crate::localization::name(&n.name),
+                    kind: kind_name(&n.kind),
+                    suppressed: n.suppressed,
+                })
                 .collect(),
             bodies: self.result_bodies(),
             errors: p
                 .regen_errors
                 .iter()
-                .map(|(id, e)| NodeIssue { node: *id, name: self.node_name(*id), message: e.to_string() })
+                .map(|(id, e)| NodeIssue { node: *id, name: self.node_name(*id), message: crate::localization::error(e) })
                 .collect(),
             warnings,
         }

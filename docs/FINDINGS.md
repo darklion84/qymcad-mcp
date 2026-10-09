@@ -1260,3 +1260,21 @@ Conventions:
   would miss raw/native acquisitions, and a contention probe cannot distinguish other-thread locking from
   recursion. Centralizing every native acquisition would be a separate cross-module change. Existing
   reporting isolation/sphere/shelf/render tests exercise calls after the caller's gate has been released.
+
+## F-070 Stored names and error texts are Fluent keys; the English words come from `qymcad-i18n`
+
+- **Observation:** QymCAD stores default object names as Fluent keys ("feat-name-extrude", "name-plane") and
+  reports errors such as `CutRemovedNothing` by key ("error-cut-removed-nothing"); the GUI translates them at
+  display time. Agents saw the raw keys.
+- **Source:** `qymcad-i18n/src/lib.rs` (`set_language`, thread-local, ~213; `name` with substitutions, ~315),
+  `qymcad-i18n/src/error_words.rs` (`error_text`, ~11-115), catalogue `i18n/en/main.ftl` and `errors.ftl`
+  (Codex round I report, tasks/qymcad-phase4/codex-evidence-i1).
+- **Server policy:** `crates/engine/src/localization.rs` translates at presentation time only (info, results,
+  errors, undo labels); `Project` keeps the stored keys so files round-trip unchanged. Language selection is
+  thread-local, so every call sets "en".
+- **Evidence:** `crates/engine/tests/localization.rs` (unnamed features/datum planes read "Extrusion"/"Plane";
+  the missing cut reads in English with the direction hint), `localization_tests.rs`. Mutation (returning the
+  stored key) turns both integration tests red (verified 2026-10-09).
+- **Cost:** one more pinned QymCAD crate (bump with the other four, docs/UPGRADING.md) and its Fluent
+  dependencies (about 20 crates in Cargo.lock).
+- **Version:** v0.1.0-dev.20261001.

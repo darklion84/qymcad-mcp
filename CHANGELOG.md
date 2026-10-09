@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 - Correct small curved-area approximation guidance and singular edge wording.
 - Clarify kernel chamfer reasons and conditional, concrete full-turn revolve axis/profile workarounds; remove internal references from advice.
 - Accept JSON-string object/array arguments centrally, with schema-aware preservation of plain strings and clear malformed-JSON errors.
-- Reject false sphere fits on split conical chamfers; flag duplicated native face ids and refuse ambiguous face selections with a full-turn axis/profile workaround.
+- Show QymCAD's own English words instead of internal keys: default feature/plane names ("Extrusion", "Plane"), error texts, warnings and undo labels, via the pinned `qymcad-i18n` crate (stored documents keep the keys). A cut that removes nothing adds a direction/height hint.
+- Reject false sphere fits on split conical chamfers, including meshes whose vertices lie on only two rings without native circle metadata; flag duplicated native face ids and refuse ambiguous face selections with a full-turn axis/profile workaround.
 
 ### Added
 - `doc_save` reports `replaced` when the target existed before saving, including explicit-path replacement of another model.

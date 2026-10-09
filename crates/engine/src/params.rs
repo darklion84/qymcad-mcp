@@ -124,7 +124,7 @@ impl Session {
         }
         for s in &self.p.sketches {
             if s.constraints.iter().any(|c| c.expr().is_some_and(|e| mentions(&e.to_lowercase(), name))) {
-                out.push(format!("sketch {} `{}`", s.id, s.name));
+                out.push(format!("sketch {} `{}`", s.id, crate::localization::name(&s.name)));
             }
         }
         out

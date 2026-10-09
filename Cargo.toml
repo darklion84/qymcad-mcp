@@ -8,13 +8,14 @@ edition = "2021"
 rust-version = "1.88"
 license = "AGPL-3.0-or-later"
 
-# The QymCAD version this server is built against. Bump ALL FOUR together and follow docs/UPGRADING.md.
+# The QymCAD version this server is built against. Bump ALL FIVE together and follow docs/UPGRADING.md.
 # The .qcad format changes between QymCAD builds: the installed QymCAD.app must be the same release.
 [workspace.dependencies]
 qymcad-core = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
 qymcad-io = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
 qymcad-kernel = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
 qymcad-testkit = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
+qymcad-i18n = { git = "https://github.com/QymIs-Tech/QymCAD", tag = "v0.1.0-dev.20261001" }
 qymcad-engine = { path = "crates/engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

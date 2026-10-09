@@ -347,7 +347,7 @@ impl Session {
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         self.shapes = shapes;
         let mut built = report.built;
-        let mut errors: Vec<NodeIssue> = report.errors.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect();
+        let mut errors: Vec<NodeIssue> = report.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         if !errors.is_empty() {
             // A full retry can reach queries absent from the first plan. Check that plan before changing
             // dirty flags or handing shapes to the kernel; callers retain their existing rollback paths.
@@ -363,7 +363,7 @@ impl Session {
                 let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
                 self.shapes = shapes;
                 built.extend(again.built);
-                errors = again.errors.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect();
+                errors = again.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
             } else {
                 errors.extend(blocked);
                 if let Some((project, shapes)) = saved {
@@ -403,7 +403,8 @@ impl Session {
                 }
             }
         }
-        let mut warnings: Vec<NodeIssue> = self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, e.to_string())).collect();
+        let mut warnings: Vec<NodeIssue> =
+            self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.clone());
         Rebuild { errors, warnings, bodies: self.result_bodies() }
     }
@@ -588,7 +589,7 @@ impl Session {
     }
 
     pub(crate) fn node_name(&self, id: Id) -> String {
-        self.p.timeline.iter().find(|n| n.id == id).map(|n| n.name.clone()).unwrap_or_default()
+        self.p.timeline.iter().find(|n| n.id == id).map(|n| crate::localization::name(&n.name)).unwrap_or_default()
     }
 
     pub(crate) fn set_node_name(&mut self, id: Id, name: Option<&str>) {
@@ -606,7 +607,8 @@ impl Session {
             }
             return Err(Error::NotFound(format!("no object with id {id}")));
         }
-        let hits: Vec<Id> = self.p.timeline.iter().filter(|n| n.name == r).map(|n| n.id).collect();
+        let hits: Vec<Id> =
+            self.p.timeline.iter().filter(|n| n.name == r || crate::localization::name(&n.name) == r).map(|n| n.id).collect();
         match hits.as_slice() {
             [id] => Ok(*id),
             [] => Err(Error::NotFound(format!("no object named `{r}`"))),

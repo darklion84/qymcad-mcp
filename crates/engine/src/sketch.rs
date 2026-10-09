@@ -209,7 +209,7 @@ impl Session {
         });
         Ok(SketchInfo {
             id: s.id,
-            name: s.name.clone(),
+            name: crate::localization::name(&s.name),
             plane: plane_desc(self, &s.plane),
             world_frame,
             dof: self.p.sketch_dof(si),
