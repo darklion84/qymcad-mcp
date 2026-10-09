@@ -44,3 +44,14 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   could improve opaque selection/axis discoverability. Unverified claim: 2-3 of 5 render images did not match
   the current body while the caption did (may be the client attaching images). Structured JSON-string
   argument interop is fixed centrally.
+- **Low items from the round-I review** (MiMo, ACCEPT):
+  - the zero-native-sphere shortcut also rejects a real sphere stored as a B-spline (STEP import); skip it when
+    freeform/other faces exist;
+  - descriptive nested face leaves inside edge selections (`edges_of`/`between` with `facing`) are not checked
+    for duplicate names; seam repair may duplicate edge ids too (inferred, not observed);
+  - the JSON-string decoder also decodes `{`/`[`-leading names inside opaque selection/axis objects; no depth cap
+    on nested encoded strings (stack overflow on adversarial input);
+  - "it has 1 convex edges" plural leftover in `empty_corner_hint`;
+  - the half-away rounding test does not use true binary ties;
+  - the kernel-gate precondition comment is missing on export/save/rebuild/undo/open;
+  - "upward axis" vs "toward the sketch's +y" wording; "kernel's reason" prefix applies to whole lines.
