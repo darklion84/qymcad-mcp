@@ -69,7 +69,7 @@ calls retain up to 16 source-free recipe snapshots plus call metadata. Restorati
 by id and preserves the monotonic id allocator (F-056). Native sketch deletion's removed sources are retained
 once in a session archive while undo references them. Deletion reuses an enclosing tool boundary; direct
 engine deletion creates its own. Undo restores a snapshot without regeneration and reports its tool name, original arguments, human label
-(localized created feature name, or action label for edits without a new feature), and
+(localized name of the node returned by the tool, or action label when no named node was created), and
 restored parameters/bodies/diagnostics; eviction is remembered for limit-exhaustion messages. Read/save/export calls do
 not enter modelling history; doc_new/doc_open replace the Session and its history. Opening compares stored
 and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds, compares shell/solid/face
@@ -106,12 +106,14 @@ The angular-deflection allowances and finite samples are engineering
 checks, not a guarantee for arbitrary unsampled surface behavior or variation along one facet side.
 Edge selections are resolved when the feature is created and stored as pick lists:
 stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
-face) are stored as queries and keep following the geometry. Face-kind leaves are lowered at feature creation to fixed persistent face ids because
-QymCAD has no native kind query; these leaves do not rediscover faces created by later edits. Native descriptive
-leaves in the same composition remain queries (ADR 0013). A selection that matches nothing is refused (an
+face) normally store dynamic native queries. If a selection contains a kind leaf, the entire selection is
+resolved to a fixed persistent pick list at creation: QymCAD has no native kind query, and shell's
+asked-versus-opened guard requires pick-list storage. No part of that frozen selection discovers faces
+created later (ADR 0013). A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-025).
 Fillet/chamfer drop seam edges from the resolved picks and report their count in transient `rebuild.notes`;
-seam-only selections are refused. Topology/select retain seam previews. Duplicate face-name warnings also
+seam-only selections are refused. Topology/select retain seam previews. The pinned bridge exposes face
+names rather than native identity; bodies with duplicate face names do not infer or drop seams. Duplicate face-name warnings also
 appear in document open/info and feature results; all face operands, including descriptive leaves nested
 inside edge selections, are checked before native resolution.
 New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
@@ -161,13 +163,15 @@ normal result with `isError: true` and the message (the model must see it). Argu
 `deny_unknown_fields` so typos fail loudly.
 
 Before typed deserialization, `tools/mod.rs` accepts JSON object/array values encoded inside strings by MCP
-clients. The generated argument schema guides decoding, including references, alternatives, nested properties
-and array items: a string whose first non-space character is `{` or `[` is parsed where structured JSON is
-permitted. String-only names, paths and expressions retain their meaning; plain forms such as `largest`, `+z`,
-`XY`, `sketch_y` and `t-2` remain strings. Malformed encoded JSON reports its argument path; the normal
-deserializer still rejects unknown fields and invalid values. The intentionally opaque selection/axis object
-schemas allow arbitrary nested JSON, so their brace/bracket-leading child strings are also decoded; use numeric
-references inside these objects for names that begin with those characters.
+clients. Objects and arrays may also be sent as JSON strings where the argument schema expects structured
+values; advertised schemas retain their native object/array types. The generated schema guides decoding,
+including references, alternatives, nested properties and array items: a string whose first non-space
+character is `{` or `[` is parsed only when an explicit object/array schema applies. String-only names,
+paths and expressions retain their meaning; plain forms such as `largest`, `+z`, `XY`, `sketch_y` and `t-2`
+remain strings. Whole opaque selection/axis arguments may be encoded, but their children have no structural
+schema and retain literal strings (including feature names such as `{x}` or `[1]`). Send nested opaque
+selection/axis values as native JSON. Malformed structured JSON and nesting beyond 32 levels report the
+argument path; the normal deserializer still rejects unknown fields and invalid values.
 
 ## Testing
 - `tests/smoke.rs` — the kernel links and builds.

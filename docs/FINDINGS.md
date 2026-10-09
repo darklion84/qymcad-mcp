@@ -39,6 +39,18 @@ Conventions:
   expressions (`solve_sketch(si)` + `mark_sketch_dirty`), mark feature dependents dirty, then regenerate.
 - **Evidence:** source: `crates/qymcad-core/src/model/regen.rs` `regenerate_watched` (~746-765);
   `crates/qymcad-core/src/model/sketch.rs` (~3947).
+- **Reached-sketch policy (J6):** stabilize named-driver scope, then compare old/new lowercase
+  `param_map` values, including transitive parameters and named driving dimensions. Native evaluation
+  seeds named dimensions once before applying sketch expressions (`model.rs:2374,2409`,
+  `model/sketch.rs:2414`); repeat at most `named_dims.len()+1` evaluations, stopping when the scope is
+  unchanged, before taking the changed-name snapshot. With no named drivers this is one evaluation.
+  `parameter_edit_reaches_a_chain_of_imported_named_sketch_dimensions` verifies four explicit solves
+  through w→a→b→c; reverting stabilization omits the fourth solve. Solve only sketches with dimensional
+  expressions mentioning changed values, and dirty only matching `feat_dims`; lowercase imported
+  expressions for matching too (F-001). Source: `model.rs:2123,2363-2444`; tests:
+  `params::tests::parameter_edit_solves_only_reached_sketch_including_transitive_uppercase_expressions`
+  and `unused_parameter_edit_does_not_solve_any_sketch`, with solve-count instrumentation and formula
+  volumes. Shelf timing (median edit 251 → 224 ms, 4 → 0 sketch solves for a blend parameter) and the negligible Project clone cost (~0.15 ms) are summarised in docs/BACKLOG.md; reproduce with the ignored test `parameter_and_project_clone_shelf_timings`.
 
 ## F-003 A cut's direction is `Extent.reach`, not `down`
 
@@ -438,7 +450,13 @@ Conventions:
   pinned in the test).
 - **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
   them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.
-- **Server selection policy (J2):** drop seam ids before creating fillet/chamfer pick lists, emit transient
+- **Server selection policy (J2/A1):** infer seams from equal adjacent names only on bodies without
+  duplicate face names. The bridge returns names, not native `IsSame` identity (`qymcad-kernel/src/lib.rs:
+  1314-1332`, `occt_bridge.cpp:3091-3115`). On F-068's repaired cone, equal adjacent names falsely
+  classified five edges as seams; keep every blend pick and omit seam flags on ambiguous bodies.
+  Tests: `golden_backlog_j2::duplicate_face_names_do_not_identify_seams` and
+  `modifiers::hint_tests::ambiguous_body_blend_picks_are_not_dropped_as_seams`; both guard mutations fail.
+  Otherwise drop seam ids before creating fillet/chamfer pick lists, emit transient
   `rebuild.notes` with the number dropped, and refuse a seam-only selection. `select` and `topology` retain
   seam edges, marked `seam: true`. Evidence: `golden_backlog_j2::{blend_selections_drop_seams_and_report_note,
   seam_only_blend_selection_is_refused_clearly}` and MCP `backlog_j2::blend_reports_seam_note_and_keeps_preview_seam`.
@@ -534,6 +552,11 @@ Conventions:
   since propagation has not rebuilt shapes. Otherwise it snapshots the planned bodies before regeneration,
   rebuilds on independent B-rep copies, retries only planned nodes, and restores the project and original handles
   on failure. Untouched shapes remain live. `open` and `ensure_topology` keep the full retry.
+  Shared-helper extraction deliberately strengthens the former early sketch failure by restoring advisory
+  diagnostics, and the former parameter/early-sketch paths by dropping shapes absent from the restored
+  recipe. The helper comment records this distinction; test:
+  `session::tests::failed_rebuild_closure_restores_diagnostics_and_drops_orphan_shapes` injects both before
+  a pre-regeneration closure error. Separate warning/shape retention mutations fail the regression.
 
 ## F-035 There is no closed (hollow, unopened) shell
 
@@ -1048,11 +1071,15 @@ Conventions:
   filters to select circles makes both taxonomy and geometry regressions red.
 - **How we handle it:** balance N-operand MCP intersections and retain F-032's size/depth limits. Lower
   kind previews using topology's shared classifier; `curve` matches arc/other edges, excluding full circles.
-  Edge modifiers keep normal pick storage. Face modifiers lower kind leaves to fixed persistent names at
-  creation, preserving native descriptive leaves in surrounding compositions. Frozen kind leaves do not
-  rediscover newly created faces; dynamic kind discovery still needs an upstream Query change (ADR 0013).
-  The three face golden tests inspect stored kind ids plus a native oriented query and derive volumes for a
-  drilled prism, hollow box and pushed top on creation/server/reopened/native-GUI parameter edits.
+  Edge modifiers keep normal pick storage. Face modifiers containing a kind leaf freeze the complete
+  resolved selection as picks at creation; selections without kinds retain dynamic native queries.
+  Frozen selections do not rediscover new faces; dynamic kind discovery needs an upstream Query change.
+  Native `Query::is_pick_list` (`refs.rs:202-208`) excludes `Filter`, so freezing leaves alone would bypass
+  shell's asked-versus-opened check (`model/regen.rs:1442-1449`). ADR 0013 records the full-selection policy.
+  The three face golden tests inspect whole-selection picks and derive prism/hole/shell/push volumes on
+  creation/server/reopened/native-GUI edits. The partial-loss shell unit regression replaces a box source
+  with a cylinder after selecting its top and two sides, proving refusal when two openings vanish.
+  Restoring leaf-only storage makes this regression silently shell only one face.
 
 
 ## F-063 Native mesh rounding depends on world coordinates, including small chamfer cones
@@ -1279,6 +1306,8 @@ Conventions:
   reject the repaired cone fixture. `corner_planar_normal_itself_rejects_a_validated_sphere_fit` supplies
   four exact sphere latitude triangles whose normals all appear planar, proving the direct fitted-sphere
   guard. Removing either guard separately is red. Both regressions follow initial behavioral failures.
+  A3's `face_is_planar_itself_rejects_a_validated_sphere_fit` reuses the formula R2 latitude mesh, proving
+  the same fitted-sphere guard inside `face_is_planar`, rather than relying on callers; removal is red.
 - **Edge-name investigation (J2, closed without a new policy):** the unchanged repaired fixture has 25
   distinct edge names. Rebuilding its chamfer at .25/.5/.75 mm also yields 25 distinct edge names in every
   case, with four ambiguous face rows confirming seam rescue. Test:
@@ -1294,7 +1323,8 @@ Conventions:
   `std::sync::Mutex<()>` and returns `MutexGuard<'static, ()>` from kernel_gate(). Recursive acquisition
   cannot be used; the pinned public API exposes neither the mutex nor current-thread ownership.
 - **Server policy:** reporting_bbox always acquires the gate; its callers result_bodies/info/render document
-  that the current thread must not already hold it. No reporting-only debug assertion: a thread-local flag
+  that the current thread must not already hold it. Public open/save/rebuild/export/undo callers now
+  state the same precondition. No reporting-only debug assertion: a thread-local flag
   would miss raw/native acquisitions, and a contention probe cannot distinguish other-thread locking from
   recursion. Centralizing every native acquisition would be a separate cross-module change. Existing
   reporting isolation/sphere/shelf/render tests exercise calls after the caller's gate has been released.

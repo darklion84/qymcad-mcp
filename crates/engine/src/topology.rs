@@ -141,7 +141,8 @@ pub struct EdgeInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub faces: Option<[u32; 2]>,
     /// A seam: the closing line of a round face, with that face on both sides. Fillet/chamfer selections
-    /// drop these edges with a result note; select/topology previews retain them.
+    /// drop these edges with a result note; select/topology previews retain them. Bodies with ambiguous
+    /// face names cannot prove seams through the pinned bridge and do not set this flag.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub seam: bool,
 }
@@ -282,6 +283,17 @@ impl Sel {
         self.corner_filters() == (true, true) && self.replace_corner_filters(&[]).is_some()
     }
 
+    /// Whether a composition contains an engine-only kind leaf.
+    fn has_kind(&self) -> bool {
+        match self {
+            Self::Kind(_) => true,
+            Self::Union(v) => v.iter().any(Self::has_kind),
+            Self::And(a, b) | Self::Minus(a, b) | Self::Between(a, b) => a.has_kind() || b.has_kind(),
+            Self::EdgesOf(s) | Self::TangentChain { seed: s, .. } => s.has_kind(),
+            _ => false,
+        }
+    }
+
     /// An explicit pick list (`Ids`), as opposed to a description.
     pub fn is_ids(&self) -> bool {
         matches!(self, Sel::Ids(_))
@@ -395,16 +407,21 @@ impl Sel {
     /// The QymCAD query for `el`, within the size and depth budget. Every stored or resolved selection goes
     /// through here.
     pub(crate) fn to_query(&self, el: Element) -> Result<Query> {
-        let parts = self.parts();
-        if parts > MAX_SEL_PARTS {
-            return Err(Error::Invalid(format!("selection has {parts} parts, at most {MAX_SEL_PARTS}: use ids or a broader description")));
-        }
+        self.check_part_budget()?;
         let q = self.query(el)?;
         let depth = query_depth(&q);
         if depth > MAX_QUERY_DEPTH {
             return Err(Error::Invalid(format!("selection nested {depth} levels deep, at most {MAX_QUERY_DEPTH}")));
         }
         Ok(q)
+    }
+
+    fn check_part_budget(&self) -> Result<()> {
+        let parts = self.parts();
+        if parts > MAX_SEL_PARTS {
+            return Err(Error::Invalid(format!("selection has {parts} parts, at most {MAX_SEL_PARTS}: use ids or a broader description")));
+        }
+        Ok(())
     }
 
     fn parts(&self) -> usize {
@@ -526,6 +543,7 @@ impl Session {
             out_faces.push(fi);
         }
 
+        let seams_known = self.ambiguous_face_warning(body).is_none();
         let mut out_edges = Vec::with_capacity(medges.len());
         for e in medges {
             let (kind, length) = edge_kind_length(e, &polylines);
@@ -541,7 +559,7 @@ impl Session {
                 axis: round.then_some(e.axis),
                 radius: round.then_some(e.radius),
                 faces: if adjacency { pairs.get(&e.id).copied() } else { None },
-                seam: pairs.get(&e.id).is_some_and(|[a, b]| a == b),
+                seam: seams_known && pairs.get(&e.id).is_some_and(|[a, b]| a == b),
             });
         }
         out_faces.sort_unstable_by_key(|f| f.id);
@@ -638,8 +656,9 @@ impl Session {
         if !concave && !convex {
             return None;
         }
-        let inward = self.corner_edges(body, true).len();
-        let outward = self.corner_edges(body, false).len();
+        let corners = self.classified_corners(body);
+        let inward = corners.iter().filter(|(_, sign)| *sign == Some(true)).count();
+        let outward = corners.iter().filter(|(_, sign)| *sign == Some(false)).count();
         let single = |count: usize, side: &str, opposite: usize, other: &str| {
             if count == 0 {
                 format!("0 {side} edges; this body has {opposite} {other} {}", edge_word(opposite))
@@ -848,9 +867,13 @@ impl Session {
                 ids.sort_unstable();
                 Sel::Ids(ids)
             }
-            Sel::EdgesOf(f) => Sel::EdgesOf(sub(f, Element::Faces, lengths)?),
+            // Resolve nested face descriptions once, validating ambiguity before native edge resolution.
+            Sel::EdgesOf(f) => Sel::EdgesOf(Box::new(Sel::Ids(self.resolve_sel(body, Element::Faces, f)?))),
             Sel::TangentChain { seed, tol_deg } => Sel::TangentChain { seed: sub(seed, Element::Edges, lengths)?, tol_deg: *tol_deg },
-            Sel::Between(a, b) => Sel::Between(sub(a, Element::Faces, lengths)?, sub(b, Element::Faces, lengths)?),
+            Sel::Between(a, b) => Sel::Between(
+                Box::new(Sel::Ids(self.resolve_sel(body, Element::Faces, a)?)),
+                Box::new(Sel::Ids(self.resolve_sel(body, Element::Faces, b)?)),
+            ),
             Sel::Union(v) => Sel::Union(v.iter().map(|x| self.lower_edge_filters(body, el, x, lengths)).collect::<Result<_>>()?),
             Sel::Minus(a, b) => Sel::Minus(sub(a, el, lengths)?, sub(b, el, lengths)?),
             Sel::And(a, b) => Sel::And(sub(a, el, lengths)?, sub(b, el, lengths)?),
@@ -881,11 +904,9 @@ impl Session {
                 }
                 Ok(())
             }
-            Sel::EdgesOf(f) => self.resolve_sel(body, Element::Faces, f).map(|_| ()),
+            // Face operands were resolved and validated once by lower_edge_filters.
+            Sel::EdgesOf(_) | Sel::Between(_, _) => Ok(()),
             Sel::TangentChain { seed, .. } => b(seed, Element::Edges),
-            Sel::Between(x, y) => {
-                self.resolve_sel(body, Element::Faces, x).and_then(|_| self.resolve_sel(body, Element::Faces, y)).map(|_| ())
-            }
             Sel::Union(v) => v.iter().try_for_each(|x| b(x, el)),
             Sel::Minus(x, y) | Sel::And(x, y) => b(x, el).and(b(y, el)),
             Sel::OfFeature { .. }
@@ -909,6 +930,8 @@ impl Session {
 
     /// Resolve `sel` on `body`. Explicit ids that are not on the body are an error (stale or foreign ids).
     pub(crate) fn resolve_sel(&self, body: Id, el: Element, sel: &Sel) -> Result<Vec<u32>> {
+        // Nested face resolution must not split or erase the overall part budget.
+        sel.check_part_budget()?;
         let lowered = self.lower_edge_filters(body, el, sel, &mut None)?;
         let sel = &lowered;
         let q = sel.to_query(el)?;
@@ -920,16 +943,20 @@ impl Session {
         }
         .map_err(|e| Error::Invalid(format!("selection did not resolve: {e:?}")))?;
         found.sort_unstable();
-        if el == Element::Faces {
+        if el == Element::Faces && !sel.is_ids() {
             self.check_face_names(body, &found)?;
         }
         Ok(found)
     }
 
-    /// Persist native face descriptions, freezing engine-only kind leaves to their current names (ADR 0013).
-    /// Those leaves do not discover faces created by a later edit; native descriptions remain dynamic.
-    pub(crate) fn face_query(&self, body: Id, sel: &Sel) -> Result<Query> {
-        self.lower_edge_filters(body, Element::Faces, sel, &mut None)?.to_query(Element::Faces)
+    /// Freeze the complete resolved selection when it contains a kind leaf (ADR 0013).
+    /// A pick list preserves QymCAD's asked-versus-opened guard if some faces vanish.
+    pub(crate) fn face_query(&self, sel: &Sel, ids: &[u32]) -> Result<Query> {
+        if sel.has_kind() {
+            Ok(Query::Ids(ids.to_vec()))
+        } else {
+            sel.to_query(Element::Faces)
+        }
     }
 
     /// Resolve a selection that must name exactly one face; returns its key (id, centroid, normal).
@@ -989,7 +1016,8 @@ impl Session {
     pub(crate) fn face_is_planar(&self, body: Id, id: u32) -> bool {
         let f = self.p.regen_faces.get(&body).and_then(|fs| fs.iter().find(|f| f.id == id));
         let mesh = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh);
-        matches!((f, mesh), (Some(f), Some(m)) if planar_normal(f, m).is_some())
+        let _gate = qymcad_kernel::kernel_gate();
+        matches!((f, mesh), (Some(f), Some(m)) if self.validated_face_sphere(body, f).is_none() && planar_normal(f, m).is_some())
     }
 
     /// The body to read topology from: the given one (any built body) or the current body of the part.
@@ -1371,7 +1399,7 @@ mod ancestry_tests {
     }
 }
 
-fn edge_word(count: usize) -> &'static str {
+pub(crate) fn edge_word(count: usize) -> &'static str {
     if count == 1 {
         "edge"
     } else {

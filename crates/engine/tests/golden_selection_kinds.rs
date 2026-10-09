@@ -77,7 +77,7 @@ fn kind_face_modifier(tool: &str) {
         name: None,
     })
     .unwrap();
-    let planes = s.select(None, Element::Faces, &Sel::Kind(SelectionKind::Plane)).unwrap().1;
+    let picks = s.select(None, Element::Faces, &kind_top()).unwrap().1;
     let (id, _) = match tool {
         "hole" => s.hole(&Hole {
             body: None,
@@ -100,9 +100,8 @@ fn kind_face_modifier(tool: &str) {
         FeatureKind::Shell { faces, .. } => &faces.query,
         _ => unreachable!(),
     };
-    let Query::Filter(kind, description) = query else { panic!("preserve descriptive composition: {query:?}") };
-    assert_eq!(**kind, Query::Ids(planes), "freeze the kind leaf's current persistent names");
-    assert!(matches!(**description, Query::Oriented { .. }), "ordinary descriptions stay native");
+    assert_eq!(*query, Query::Ids(picks), "freeze the whole kind-containing face selection");
+    assert!(query.is_pick_list(), "retain the native asked-versus-opened guard");
     // Stock V=20*16*h. Hole removes a radius-1 depth-3 cylinder; shell removes an
     // 18*14*(h-1) rectangular cavity; pushing the top by 2 adds 20*16*2.
     let expected = |h: f64| match tool {

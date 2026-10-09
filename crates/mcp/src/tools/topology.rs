@@ -30,8 +30,8 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. \
     {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes \
     full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's \
-    classification. In hole/shell/push_face, kind leaves become fixed persistent face ids at creation and do not \
-    rediscover faces created by later edits; native descriptive leaves stay dynamic. Example, the top outline of a block: \
+    classification. In hole/shell/push_face, any selection containing a kind freezes its whole resolved face set \
+    as persistent picks at creation; it does not rediscover faces after edits. Selections without kinds stay dynamic. Example, the top outline of a block: \
     {\"edges_of\": {\"facing\": \"+z\"}}.";
 
 /// A selection as the agent writes it (names still unresolved).

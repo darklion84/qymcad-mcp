@@ -55,7 +55,7 @@ impl Session {
             return Err(e);
         }
         let unsolved: Vec<String> = self
-            .propagate_params()
+            .propagate_params(&before.param_map())
             .into_iter()
             .filter(|(sid, _)| !broken_before.contains(sid))
             .map(|(sid, res)| format!("sketch {sid} `{}` (residual {res:.3e})", self.node_name(sid)))
@@ -130,14 +130,36 @@ impl Session {
         out
     }
 
-    /// After parameter values changed: re-solve sketches whose dimensions carry expressions and mark every
-    /// node with a feature expression dirty (FINDINGS F-002; `mark_param_dependents_dirty` is case-blind,
-    /// unlike the GUI's per-name path, F-001). Returns the sketches left unsolved, with their residuals.
-    pub(crate) fn propagate_params(&mut self) -> Vec<(Id, f64)> {
-        self.p.eval_parameters();
+    /// Evaluate first (F-002), then solve/dirty only expressions reached by changed values, including
+    /// transitive parameters and named dimensions in param_map. Match lowercase expressions for imported
+    /// documents too: native per-name dirty matching is case-sensitive (F-001).
+    /// Returns the reached sketches left unsolved, with their residuals.
+    pub(crate) fn propagate_params(&mut self, before: &std::collections::HashMap<String, f64>) -> Vec<(Id, f64)> {
+        // Native evaluation fixed-points global parameters, but seeds named dimensions only once before
+        // applying sketch expressions. Settle those drivers too before deciding which sketches to solve:
+        // a chain w -> named width a -> named width b must not hide later dependents from the snapshot.
+        // At most one extra evaluation per named driver; unchanged scopes stop early, and cyclic imported
+        // formulas retain bounded evaluation rather than introducing an unbounded fixed-point loop.
+        let mut previous_values = self.p.param_map();
+        for _ in 0..=self.p.named_dims.len() {
+            self.p.eval_parameters();
+            let values = self.p.param_map();
+            if values == previous_values {
+                break;
+            }
+            previous_values = values;
+        }
+        let changed: Vec<String> =
+            self.p.param_map().into_iter().filter(|(name, value)| before.get(name) != Some(value)).map(|(name, _)| name).collect();
+        let reached = |expr: &str| {
+            let expr = expr.to_lowercase();
+            changed.iter().any(|name| qymcad_core::expr::mentions(&expr, name))
+        };
         let mut unsolved = Vec::new();
         for si in 0..self.p.sketches.len() {
-            if self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some()) {
+            if self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some_and(reached)) {
+                #[cfg(test)]
+                PARAM_SOLVES.with(|solves| solves.borrow_mut().push(self.p.sketches[si].id));
                 let residual = self.solve_settled(si);
                 let sid = self.p.sketches[si].id;
                 self.p.mark_sketch_dirty(sid);
@@ -146,7 +168,11 @@ impl Session {
                 }
             }
         }
-        self.p.mark_param_dependents_dirty();
+        let nodes: Vec<Id> =
+            self.p.feat_dims.iter().filter(|(_, dims)| dims.values().any(|expr| reached(expr))).map(|(id, _)| *id).collect();
+        for node in nodes {
+            self.p.mark_node_dirty(node);
+        }
         unsolved
     }
 
@@ -172,4 +198,159 @@ fn normalize_name(name: &str) -> Result<String> {
         Error::Invalid(format!("`{name}` is not a valid parameter name ({e:?}); use letters, digits and _ starting with a letter"))
     })?;
     Ok(n)
+}
+
+#[cfg(test)]
+thread_local! {
+    static PARAM_SOLVES: std::cell::RefCell<Vec<Id>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BaseName, Direction, Extrude, Op, PlaneRef};
+
+    fn two_sketches() -> (Session, Id, Id) {
+        let mut s = Session::new_part();
+        for (name, value) in [("w", Num::Value(10.0)), ("other", Num::Value(8.0)), ("twice", Num::Expr("w*2".into()))] {
+            s.param_set(name, &value).unwrap();
+        }
+        let mut sketches = Vec::new();
+        for expr in ["twice", "other"] {
+            let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+            s.sketch_rect(sk, &0.0.into(), &0.0.into(), &Num::Expr(expr.into()), &3.0.into(), false).unwrap();
+            s.extrude(&Extrude {
+                sketch: sk,
+                profiles: None,
+                height: 2.0.into(),
+                op: Op::NewBody,
+                direction: Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+            sketches.push(sk);
+        }
+        PARAM_SOLVES.with(|solves| solves.borrow_mut().clear());
+        (s, sketches[0], sketches[1])
+    }
+
+    #[test]
+    fn parameter_edit_solves_only_reached_sketch_including_transitive_uppercase_expressions() {
+        let (mut s, reached, untouched) = two_sketches();
+        // Existing files may carry uppercase expressions; matching must respect F-001.
+        for c in &mut s.p.sketches.iter_mut().find(|sk| sk.id == reached).unwrap().constraints {
+            if let qymcad_core::model::Constraint::Distance { expr, .. } = c {
+                *expr = expr.to_uppercase();
+            }
+        }
+        let untouched_before = format!("{:?}", s.p.sketches.iter().find(|sk| sk.id == untouched).unwrap());
+        let r = s.param_set("W", &12.0.into()).unwrap();
+        PARAM_SOLVES.with(|solves| assert_eq!(*solves.borrow(), vec![reached]));
+        assert_eq!(format!("{:?}", s.p.sketches.iter().find(|sk| sk.id == untouched).unwrap()), untouched_before);
+        // First width follows twice=2*w; second width follows other=8. Both have height 3 and depth 2.
+        for (body, expected) in r.bodies.iter().zip([2.0 * 12.0 * 3.0 * 2.0, 8.0 * 3.0 * 2.0]) {
+            assert!((body.volume - expected).abs() < 1e-6, "{} != {expected}", body.volume);
+        }
+    }
+
+    #[test]
+    fn parameter_edit_reaches_a_chain_of_imported_named_sketch_dimensions() {
+        let mut s = Session::new_part();
+        s.param_set("w", &10.0.into()).unwrap();
+        let mut sketches = Vec::new();
+        for (expr, driver) in [("w", Some("a")), ("a", Some("b")), ("b", Some("c")), ("c", None)] {
+            let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+            s.sketch_rect(sk, &0.0.into(), &0.0.into(), &Num::Expr(expr.into()), &3.0.into(), false).unwrap();
+            if let Some(driver) = driver {
+                // Reproduce a GUI-authored document: expose each width as a named driving dimension.
+                let si = s.p.sketch_index(sk).unwrap();
+                let c = s.p.sketches[si].constraints.iter().find(|c| c.expr() == Some(expr)).unwrap();
+                let refs = qymcad_core::model::Project::dim_refs(c).unwrap();
+                assert!(s.p.add_named_dim(driver.into(), sk, refs));
+            }
+            s.extrude(&Extrude {
+                sketch: sk,
+                profiles: None,
+                height: 2.0.into(),
+                op: Op::NewBody,
+                direction: Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+            sketches.push(sk);
+        }
+        PARAM_SOLVES.with(|solves| solves.borrow_mut().clear());
+        let report = s.param_set("w", &12.0.into()).unwrap();
+        PARAM_SOLVES.with(|solves| assert_eq!(*solves.borrow(), sketches, "all four widths follow w through named dimensions"));
+        // Each prism has width w=12, height 3, and extrusion depth 2, regardless of dependency depth.
+        for body in report.bodies {
+            assert!((body.volume - 12.0 * 3.0 * 2.0).abs() < 1e-6, "named-dimension chain left stale body volume {}", body.volume);
+        }
+    }
+
+    #[test]
+    fn parameter_edit_does_not_blame_a_preexisting_unsolved_unrelated_sketch() {
+        let (mut s, reached, untouched) = two_sketches();
+        let si = s.p.sketch_index(untouched).unwrap();
+        // Simulate an already-unsolved imported sketch without dirtying its current body.
+        s.p.sketches[si].points[0].x += 1.0;
+        assert!(s.unsolved_sketches().contains(&untouched));
+        let report = s.param_set("w", &12.0.into()).unwrap();
+        PARAM_SOLVES.with(|solves| assert_eq!(*solves.borrow(), vec![reached]));
+        // Native regenerate settles any preexisting unsolved sketch independently of propagation.
+        // The edit still succeeds, and the unrelated body retains width=8, height=3, depth=2.
+        assert!(report.errors.is_empty());
+        assert!((report.bodies[1].volume - 8.0 * 3.0 * 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn unused_parameter_edit_does_not_solve_any_sketch() {
+        let (mut s, _, _) = two_sketches();
+        s.param_set("unused", &1.0.into()).unwrap();
+        PARAM_SOLVES.with(|solves| assert!(solves.borrow().is_empty(), "unexpected solves: {:?}", solves.borrow()));
+    }
+    #[test]
+    #[ignore = "manual shelf timing; run with --ignored --nocapture"]
+    fn parameter_and_project_clone_shelf_timings() {
+        use std::{hint::black_box, path::Path, time::Instant};
+        let (mut s, r) = Session::open(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hanging_shelf.qcad"))).unwrap();
+        assert!(r.errors.is_empty());
+        for value in [3.5, 4.0, 3.5] {
+            PARAM_SOLVES.with(|solves| solves.borrow_mut().clear());
+            let start = Instant::now();
+            s.param_set("rim_floor_fillet", &value.into()).unwrap();
+            eprintln!(
+                "shelf param edit {value}: {:?}, {} sketches solved",
+                start.elapsed(),
+                PARAM_SOLVES.with(|solves| solves.borrow().len())
+            );
+        }
+        let mut scaled = s.p.clone();
+        // Stress clone-owned mesh/recipe vectors, not the kernel: eight shelf-sized payloads.
+        // IDs need not be remapped because this synthetic Project is never regenerated.
+        for _ in 1..8 {
+            scaled.bodies.extend(s.p.bodies.clone());
+            scaled.sketches.extend(s.p.sketches.clone());
+            scaled.timeline.extend(s.p.timeline.clone());
+            scaled.parameters.extend(s.p.parameters.clone());
+            scaled.sources.extend(s.p.sources.clone());
+        }
+        for (label, p) in [("shelf", &s.p), ("8x shelf vectors", &scaled)] {
+            let start = Instant::now();
+            for _ in 0..50 {
+                black_box(p.clone());
+            }
+            eprintln!(
+                "Project::clone {label}: {:?} per clone, {} bodies / {} sketches / {} nodes",
+                start.elapsed() / 50,
+                p.bodies.len(),
+                p.sketches.len(),
+                p.timeline.len()
+            );
+        }
+    }
 }

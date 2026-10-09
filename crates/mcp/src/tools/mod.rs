@@ -22,6 +22,7 @@ pub type Content = Vec<Value>;
 #[derive(Default)]
 pub struct State {
     pub session: Option<Session>,
+    created_node: Option<qymcad_engine::Id>,
 }
 
 impl State {
@@ -45,7 +46,14 @@ where
     A: DeserializeOwned + JsonSchema,
     F: Fn(&mut State, A) -> Result<Value, String> + 'static,
 {
-    tool_content(name, description, move |st, a: A| f(st, a).map(|v| vec![json!({ "type": "text", "text": v.to_string() })]))
+    tool_content(name, description, move |st, a: A| {
+        f(st, a).map(|v| {
+            // Creation responses return their node id under body, plane or sketch. Capture it before
+            // serialization so undo labels follow the returned feature rather than auxiliary nodes.
+            st.created_node = ["body", "plane", "sketch"].iter().find_map(|key| v[*key].as_u64());
+            vec![json!({ "type": "text", "text": v.to_string() })]
+        })
+    })
 }
 
 /// A tool that builds its own content items (e.g. images).
@@ -57,7 +65,7 @@ where
     let schema = input_schema::<A>();
     let argument_schema = schema.clone();
     let handler: Handler = Box::new(move |st, mut args| {
-        decode_structured_strings(&mut args, &[&argument_schema], &argument_schema, "arguments")
+        decode_structured_strings(&mut args, &[&argument_schema], &argument_schema, "arguments", 0)
             .map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
         let a: A = serde_json::from_value(args).map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
         f(st, a)
@@ -83,15 +91,18 @@ fn schema_type(schema: &Value, kind: &str) -> bool {
 }
 
 /// Some MCP clients encode structured argument values a second time. Decode only where the schema permits
-/// objects/arrays, preserving string-only names, paths and expressions. Opaque object schemas permit arbitrary
-/// nested JSON; their hand-written deserializers still validate the decoded result.
-fn decode_structured_strings(value: &mut Value, schemas: &[&Value], root: &Value, path: &str) -> Result<(), String> {
+/// objects/arrays, preserving string-only names, paths and expressions. Opaque object children have no
+/// structural schema: retain their strings literally and leave validation to their hand-written parser.
+fn decode_structured_strings(value: &mut Value, schemas: &[&Value], root: &Value, path: &str, depth: usize) -> Result<(), String> {
+    if depth > 32 {
+        return Err(format!("structured argument nesting exceeds 32 at {path}"));
+    }
     let mut variants = Vec::new();
     for schema in schemas {
         schema_variants(schema, root, &mut variants);
     }
     let unrestricted = |schema: &Value| schema == &Value::Bool(true) || schema.as_object().is_some_and(|o| o.is_empty());
-    if variants.iter().any(|s| unrestricted(s) || schema_type(s, "object") || schema_type(s, "array")) {
+    if variants.iter().any(|s| schema_type(s, "object") || schema_type(s, "array")) {
         if let Some(encoded) = value.as_str().filter(|s| s.trim_start().starts_with(['{', '['])) {
             *value = serde_json::from_str(encoded).map_err(|e| format!("invalid JSON object/array string at {path}: {e}"))?;
         }
@@ -110,7 +121,7 @@ fn decode_structured_strings(value: &mut Value, schemas: &[&Value], root: &Value
                         }
                     }
                 }
-                decode_structured_strings(child, &child_schemas, root, &format!("{path}.{key}"))?;
+                decode_structured_strings(child, &child_schemas, root, &format!("{path}.{key}"), depth + 1)?;
             }
         }
         Value::Array(array) => {
@@ -123,7 +134,7 @@ fn decode_structured_strings(value: &mut Value, schemas: &[&Value], root: &Value
                         child_schemas.push(&any);
                     }
                 }
-                decode_structured_strings(child, &child_schemas, root, &format!("{path}[{index}]"))?;
+                decode_structured_strings(child, &child_schemas, root, &format!("{path}[{index}]"), depth + 1)?;
             }
         }
         _ => {}
@@ -206,8 +217,12 @@ impl Registry {
         } else {
             None
         };
+        self.state.created_node = None;
         let result = (t.handler)(&mut self.state, args);
-        if let Some(snapshot) = snapshot {
+        if let Some(mut snapshot) = snapshot {
+            if let Some(id) = self.state.created_node {
+                snapshot.record_created_node(id);
+            }
             if let Some(s) = self.state.session.as_mut() {
                 s.finish_tool_edit(snapshot, result.is_ok());
             }
@@ -227,5 +242,67 @@ impl Registry {
             s.push_str(&format!("\n## {}\n\n{}\n\n```json\n{}\n```\n", t.name, t.description, schema));
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod decoder_tests {
+    use super::*;
+
+    #[test]
+    fn structured_depth_boundary_includes_native_and_encoded_values() {
+        let schema = json!({"type":"array", "items":true});
+        for encoded in [false, true] {
+            for depth in [32, 33] {
+                let mut value = json!(0);
+                for _ in 0..depth {
+                    value = json!([value]);
+                }
+                if encoded {
+                    value = json!(value.to_string());
+                }
+                let result = decode_structured_strings(&mut value, &[&schema], &schema, "arguments", 0);
+                if depth == 32 {
+                    assert!(result.is_ok(), "32 levels allowed: {result:?}");
+                } else {
+                    assert!(result.unwrap_err().contains("structured argument nesting exceeds 32 at arguments[0]"));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod undo_label_tests {
+    use super::*;
+    use qymcad_engine::{BaseName, PlaneRef};
+
+    #[test]
+    fn undo_label_follows_the_returned_node_instead_of_the_last_auxiliary_node() {
+        let mut registry = Registry::new();
+        registry.state.session = Some(Session::new_part());
+        registry.tools = vec![tool("fillet", "Test feature with an auxiliary node", |state, _: Value| {
+            let session = state.doc()?;
+            let created = session.sketch_create(&PlaneRef::Base(BaseName::XY), Some("Requested feature")).unwrap();
+            session.sketch_create(&PlaneRef::Base(BaseName::XY), Some("Auxiliary feature")).unwrap();
+            Ok(json!({"body": created}))
+        })];
+        registry.call("fillet", json!({})).unwrap().unwrap();
+        let call = registry.state.session.as_mut().unwrap().undo().unwrap().call.unwrap();
+        assert_eq!(call.label, "Requested feature", "the result id identifies the tool's created node");
+        assert_eq!(call.tool, "fillet");
+        assert_eq!(call.arguments, json!({}));
+    }
+
+    #[test]
+    fn an_empty_created_node_name_keeps_a_human_action_label() {
+        let mut registry = Registry::new();
+        registry.state.session = Some(Session::new_part());
+        let arguments = json!({"plane":"XY", "name":""});
+        registry.call("sketch_create", arguments.clone()).unwrap().unwrap();
+        let call = registry.state.session.as_mut().unwrap().undo().unwrap().call.unwrap();
+        assert_eq!(call.label, "Create sketch", "empty names must not erase the action label");
+        assert_eq!(call.tool, "sketch_create");
+        assert_eq!(call.arguments, arguments);
     }
 }

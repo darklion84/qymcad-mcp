@@ -71,7 +71,7 @@ pub(crate) const THROUGH_DEPTH: f64 = 10000.0;
 
 fn seam_note((id, mut report): (Id, Rebuild), dropped: usize) -> (Id, Rebuild) {
     if dropped > 0 {
-        report.notes.push(format!("dropped {dropped} seam edges: not blendable"));
+        report.notes.push(format!("dropped {dropped} seam {}: not blendable", crate::topology::edge_word(dropped)));
     }
     (id, report)
 }
@@ -155,9 +155,9 @@ impl Session {
                 Side::Outward => ShellSide::Outward,
                 Side::Centred => ShellSide::Centred,
             };
-            let id = s.p.add_shell_mode(src, t, if open_faces.is_ids() { ids } else { Vec::new() }, qside);
+            let id = s.p.add_shell_mode(src, t, if open_faces.is_ids() { ids.clone() } else { Vec::new() }, qside);
             if !open_faces.is_ids() {
-                let q = s.face_query(src, open_faces)?;
+                let q = s.face_query(open_faces, &ids)?;
                 if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
                     *faces = Ref::many(q);
                 }
@@ -180,7 +180,7 @@ impl Session {
             let key = s.planar_face(src, face)?;
             let id = s.p.add_push_face(src, key, d);
             if !face.is_ids() {
-                let q = s.face_query(src, face)?;
+                let q = s.face_query(face, &[key.id])?;
                 if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {
                     *r = Ref { query: q, expect: Cardinality::One, hint: Fingerprint { centroid: key.centroid, normal: key.normal } };
                 }
@@ -232,7 +232,7 @@ impl Session {
             let at = a.at.unwrap_or(key.centroid);
             let id = s.p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 });
             if !a.face.is_ids() {
-                let q = s.face_query(src, &a.face)?;
+                let q = s.face_query(&a.face, &[key.id])?;
                 if let Some(FeatureKind::Hole { face: r, .. }) = s.node_kind_mut(id) {
                     r.query = q;
                 }
@@ -262,7 +262,13 @@ impl Session {
         }
         let seams: std::collections::HashSet<_> = {
             let _gate = qymcad_kernel::kernel_gate();
-            self.shapes[&src].edge_face_pairs().into_iter().filter_map(|(edge, a, b)| (a == b).then_some(edge)).collect()
+            // The bridge exposes persistent names, not IsSame identity (F-068).
+            // Duplicate names cannot distinguish a real seam from two distinct faces.
+            if self.ambiguous_face_warning(src).is_some() {
+                Default::default()
+            } else {
+                self.shapes[&src].edge_face_pairs().into_iter().filter_map(|(edge, a, b)| (a == b).then_some(edge)).collect()
+            }
         };
         let before = ids.len();
         ids.retain(|id| !seams.contains(id));
@@ -312,6 +318,75 @@ fn chamfer_failure_advice(mut error: Error, revolve_source: bool) -> Error {
 #[cfg(test)]
 mod hint_tests {
     use super::*;
+    #[test]
+    fn kind_shell_refuses_partial_loss_of_frozen_faces() {
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&crate::PlaneRef::Base(crate::BaseName::XY), None).unwrap();
+        s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &16.0.into(), false).unwrap();
+        let (src, _) = s
+            .extrude(&crate::Extrude {
+                sketch: sk,
+                profiles: None,
+                height: 10.0.into(),
+                op: crate::Op::NewBody,
+                direction: crate::Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+        let sel = Sel::And(
+            Box::new(Sel::Kind(crate::SelectionKind::Plane)),
+            Box::new(Sel::Union(vec![
+                Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 5.0 },
+                Sel::Facing { dir: [1.0, 0.0, 0.0], tol_deg: 5.0 },
+                Sel::Facing { dir: [-1.0, 0.0, 0.0], tol_deg: 5.0 },
+            ])),
+        );
+        let picks = s.select(Some(src), Element::Faces, &sel).unwrap().1;
+        assert_eq!(picks.len(), 3, "box top and two opposing sides");
+        let (shell, report) = s.shell(Some(src), &sel, &1.0.into(), Side::Inward, None).unwrap();
+        assert!(report.errors.is_empty());
+        // Three open faces leave a cavity spanning all 20 mm of X, 16-2 mm of Y,
+        // and 10-1 mm of Z. Stock minus cavity gives the shell's exact volume.
+        let expected = 20.0 * 16.0 * 10.0 - 20.0 * 14.0 * 9.0;
+        assert!((report.bodies[0].volume - expected).abs() < 1e-8);
+        // Replace upstream box geometry with a cylinder. The top and bottom cap names
+        // survive, but neither planar side exists anymore: name healing cannot recover
+        // them. The resulting stock has exact V=pi*5²*10, with just one requested opening.
+        let top = s.p.regen_faces[&src].iter().find(|f| f.normal[2] > 0.9).unwrap().id;
+        let bottom = s.p.regen_faces[&src].iter().find(|f| f.normal[2] < -0.9).unwrap().id;
+        {
+            let _gate = qymcad_kernel::kernel_gate();
+            let shape = qymcad_kernel::Shape::cylinder_named(5.0, 10.0, [bottom, top, 9000]).unwrap();
+            let (mesh, faces) = shape.tessellate_merged(0.05).unwrap();
+            assert!((shape.volume() - std::f64::consts::PI * 25.0 * 10.0).abs() < 1e-8);
+            let i = s.p.mesh_index(src).unwrap();
+            s.p.bodies[i].mesh = mesh;
+            s.p.set_body_faces(src, faces.clone());
+            s.p.regen_faces.insert(src, faces);
+            s.shapes.insert(src, shape);
+        }
+        s.p.timeline.iter_mut().find(|n| n.id == shell).unwrap().dirty = true;
+        // Only the shell is scheduled: retry must not recreate the superseded box recipe.
+        let report = s.rebuild_retrying(Some(&std::collections::HashSet::from([shell])));
+        assert!(
+            report.errors.iter().chain(&report.warnings).any(|issue| issue.node == shell),
+            "lost frozen openings must warn or refuse, rather than silently shelling one face: {report:?}"
+        );
+    }
+
+    #[test]
+    fn ambiguous_body_blend_picks_are_not_dropped_as_seams() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cone_negative_chamfer.qcad");
+        let (mut s, _) = Session::open(&path).unwrap();
+        let topo = s.topology(None, true).unwrap();
+        let ids: Vec<_> = topo.edges.iter().map(|e| e.id).collect();
+        let (picks, dropped) = s.edges_now(topo.body, &Sel::Ids(ids.clone())).unwrap();
+        assert_eq!(dropped, 0, "duplicate face names must not drop blend picks");
+        assert_eq!(picks, ids);
+    }
+
     #[test]
     fn chamfer_advice_only_wraps_too_big_native_message() {
         let error = chamfer_failure_advice(Error::Rebuild(vec!["Bevel (42): chamfer 0.50 too big".into()]), true).to_string();

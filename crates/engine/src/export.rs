@@ -150,6 +150,7 @@ impl Session {
 
     /// Write `bodies` (default: every result body) to `path` in `format`. The caller has validated the path; the
     /// extension is checked again here. `quality` applies to mesh formats only.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn export(&self, format: ExportFormat, path: &Path, quality: Quality, bodies: Option<&[Id]>) -> Result<ExportReport> {
         let ext = path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
         if !format.extensions().contains(&ext.as_str()) {

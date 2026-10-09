@@ -1,21 +1,22 @@
 # Backlog
 
-Remaining evaluated follow-ups; implementation plan and settled evidence: tasks/review-j1.md.
+Known follow-ups that were consciously deferred. Each item says where it came from.
 
-## J5 — interop and robustness
-- Preserve brace/bracket-leading literal names inside opaque selection/axis objects; schema-aware structured decoding.
-- Cap nested encoded-string/structure decoding at 32 with clear error and test.
-- Keep schemas unchanged; document object/array JSON-string interop in instructions and ARCHITECTURE.
-- Reproduce repeated changed-document renders through protocol and compare image bytes/caption; close client observations with evidence.
+No open items. Items closed without a code change in backlog round J (2026-10-09), with the reason:
 
-## J6 — engine internals and performance
-- Solve only parameter-reached sketches, including transitive/lowercase dependencies; solve-count tests and shelf timings.
-- Measure rebuild guard Project clone on shelf/scaled case; close if negligible or optimize if needed.
-- Verify no Patch creation; close and comment future unrestorable-edge guard requirement.
-- Document or align shared rollback helper semantic differences and test distinguishing case.
-- Classify empty-corner hints once.
-- Add kernel-gate precondition comments to export/save/rebuild/undo/open public callers.
-- List all upstream-defect pinning tests in UPGRADING for review/removal upon fixes.
-
-## J7 — closed by decision
-- Close native 0.001 mm internal cut clearance: no geometry compensation; exact-floor recipe is F-061.
+- **0.001 mm entry clearance of one-sided cuts on internal planes** — native QymCAD behaviour; compensating
+  geometry would change native recipes, and the pinned `Extent` has no flag to disable it. The exact-floor
+  recipe (sketch at the top, cut in reverse) is documented in the extrude/plane_offset descriptions (F-061).
+- **Project clone in the rebuild guard** — measured on the shelf: ~0.15 ms per clone (~0.07% of a parameter
+  edit); ~0.9 ms for an 8× scaled payload. Negligible; the safety snapshot stays.
+- **`Patch` edge queries and the unrestorable-edge guard** — the engine never creates Patch features. The guard
+  carries a comment saying what to add if it ever does.
+- **Duplicate EDGE ids after seam repair** — not reproduced (the F-068 fixture and rebuilds at 0.25/0.5/0.75 mm
+  have unique edge ids). A reproducing fixture would justify mirroring the face policy.
+- **MiMo client observations (stale render images, truncated doc_save arguments)** — not reproducible through
+  the protocol: repeated renders after parameter edits return identical image bytes and matching captions
+  (`repeated_renders_after_parameter_edits_match_image_bytes_and_captions`). Client-side.
+- **Advertised schemas do not admit JSON strings** — schemas stay typed; the server instructions and
+  ARCHITECTURE say objects/arrays may also be sent as JSON strings.
+- **Torus face kind / which face takes an asymmetric chamfer's `dist`** — the pinned kernel exposes neither
+  per face (F-060, F-036); documented in the topology and chamfer descriptions.

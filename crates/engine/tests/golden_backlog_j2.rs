@@ -73,7 +73,7 @@ fn blend_selections_drop_seams_and_report_note() {
         let (_, report) =
             if fillet { s.fillet(None, &sel, &0.5.into(), None) } else { s.chamfer(None, &sel, &0.5.into(), None, None) }.unwrap();
         let json = serde_json::to_value(&report).unwrap();
-        assert_eq!(json["notes"], serde_json::json!(["dropped 1 seam edges: not blendable"]), "successful blend omitted seam note");
+        assert_eq!(json["notes"], serde_json::json!(["dropped 1 seam edge: not blendable"]), "successful blend omitted seam note");
         if !fillet {
             // At each rim, removed cross section integrates pi*(R²-(R-c+z)²),
             // z=0..c: pi*c²*(R-c/3). There are two rims, R=5,c=.5,h=10.
@@ -141,4 +141,37 @@ fn seam_repaired_chamfers_keep_unique_edge_names_in_investigated_cases() {
         assert!((report.bodies[0].volume - expected).abs() < 2e-5);
     }
     assert!(repaired_cases >= 2, "investigation must include several positively identified seam-rescue results");
+}
+
+#[test]
+fn duplicate_face_names_do_not_identify_seams() {
+    let (mut s, _) = cone();
+    let topo = s.topology(None, true).unwrap();
+    assert!(topo.faces.iter().any(|f| f.ambiguous_id));
+    assert!(
+        topo.edges.iter().any(|e| e.faces.is_some_and(|[a, b]| a == b)),
+        "fixture has equal adjacent names, without proving native identity"
+    );
+    assert!(topo.edges.iter().all(|e| !e.seam), "ambiguous adjacent face names cannot prove a seam");
+}
+
+#[test]
+fn canceled_ambiguous_face_ids_still_refuse() {
+    let (mut s, _) = cone();
+    let topo = s.topology(None, false).unwrap();
+    let id = topo.faces.iter().find(|f| f.ambiguous_id).unwrap().id;
+    let faces = Sel::Minus(Box::new(Sel::Ids(vec![id])), Box::new(Sel::Ids(vec![id])));
+    for (el, sel) in [(Element::Faces, faces.clone()), (Element::Edges, Sel::EdgesOf(Box::new(faces)))] {
+        let error = s.select(None, el, &sel).expect_err("every explicit face operand must be unambiguous");
+        assert!(error.to_string().contains("ambiguous face id"));
+    }
+}
+
+#[test]
+fn nested_face_operands_share_the_overall_selection_budget() {
+    let mut s = cylinder();
+    let faces = || Sel::Union(vec![Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 5.0 }; 300]);
+    let sel = Sel::Union(vec![Sel::EdgesOf(Box::new(faces())), Sel::EdgesOf(Box::new(faces()))]);
+    let error = s.select(None, Element::Edges, &sel).expect_err("605 parts (1+2*(1+1+300)) exceed the overall 512-part budget");
+    assert!(error.to_string().contains("at most 512"));
 }

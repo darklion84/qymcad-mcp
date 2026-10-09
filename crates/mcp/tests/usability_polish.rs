@@ -94,7 +94,7 @@ fn empty_save_requires_override_to_replace_a_body_containing_file() {
 
 #[test]
 fn undo_keeps_tool_and_arguments_with_a_localized_feature_label() {
-    for name in [None, Some("soft corners")] {
+    for name in [None, Some("soft corners"), Some(""), Some("   ")] {
         let mut r = Registry::new();
         stock(&mut r);
         let mut args = json!({"edges":{"along":"z"}, "radius":1.23456789});
@@ -103,7 +103,11 @@ fn undo_keeps_tool_and_arguments_with_a_localized_feature_label() {
         }
         call(&mut r, "fillet", args.clone());
         let undone = call(&mut r, "undo", json!({}));
-        assert_eq!(undone["undone"]["label"], name.unwrap_or("Fillet"), "undo needs a localized feature label");
+        assert_eq!(
+            undone["undone"]["label"],
+            name.filter(|name| !name.trim().is_empty()).unwrap_or("Fillet"),
+            "undo needs a localized feature label"
+        );
         assert_eq!(undone["undone"]["tool"], "fillet");
         assert_eq!(undone["undone"]["arguments"], args);
     }

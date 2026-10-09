@@ -154,6 +154,7 @@ impl Session {
 
     /// Open a `.qcad`, restoring live bodies from the file as the app does (FINDINGS F-007), and rebuilding
     /// whatever has no stored geometry.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn open(path: &Path) -> Result<(Session, Rebuild)> {
         qymcad_core::model::set_producer(&format!("qymcad-mcp {}", env!("CARGO_PKG_VERSION")));
         let s = path.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", path.display())))?;
@@ -246,17 +247,20 @@ impl Session {
     }
 
     /// Save to `path`, or to the path the document was opened from / last saved to.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn save(&mut self, path: Option<&Path>) -> Result<PathBuf> {
         self.save_with_options(path, false)
     }
 
     /// Save, explicitly allowing replacement of a body-containing file by an empty document when requested.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn save_with_options(&mut self, path: Option<&Path>, allow_empty: bool) -> Result<PathBuf> {
         self.save_with_overwrite(path, allow_empty, false)
     }
 
     /// Save with explicit permission to reuse the associated path for a different model.
     /// `allow_empty` independently controls replacing stored bodies with an empty document.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn save_with_overwrite(&mut self, path: Option<&Path>, allow_empty: bool, overwrite: bool) -> Result<PathBuf> {
         let target = match path {
             Some(p) => p.to_path_buf(),
@@ -311,6 +315,7 @@ impl Session {
     /// Rebuild what is dirty. Errors are retried once with the whole timeline dirty: a datum plane created in
     /// the same edit is resolved only during regenerate (FINDINGS F-005), and `retryable()` errors need a pass
     /// after their source exists.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn rebuild(&mut self) -> Rebuild {
         self.rebuild_retrying(None)
     }
@@ -319,6 +324,7 @@ impl Session {
     /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
     /// need not be bit-identical — a refused edit must retain the exact old representation (F-034).
     /// F-005 still holds: a datum created by the edit is one of its nodes.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {
@@ -425,6 +431,8 @@ impl Session {
 
     /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.
     /// Pick lists use live kernel edges; queries require the restored pool (F-023/F-024).
+    /// The engine never creates Patch features. If Patch is added, include its boundary edge queries in
+    /// this guard before exposing the feature; checking only Fillet/Chamfer would leave them unrestorable.
     fn edge_query_rebuild_errors(&self, p: &Project) -> Vec<NodeIssue> {
         use qymcad_core::feature::FeatureKind;
         let mut planned: HashSet<Id> = p.regen_plan().nodes.into_iter().collect();
@@ -511,6 +519,10 @@ impl Session {
 
     /// Rebuild edits on independent copies of planned live shapes, restoring the original project, handles
     /// and diagnostics on failure (F-034). Callers retain their own retry plan and existing-error policy.
+    /// This deliberately strengthens the old inline paths: any edit error restores advisory warnings
+    /// (the former early sketch error did not), and drops shapes whose bodies are absent from the restored
+    /// recipe (the former parameter failure and early sketch error retained them). Neither caller normally
+    /// creates bodies before failing, but a closure must not leak orphan geometry or diagnostics.
     pub(crate) fn with_rebuild_copies<T>(
         &mut self,
         before: Project,
@@ -721,5 +733,24 @@ mod tests {
         // A cylinder r=2, h=3 has volume pi*r²*h = 12*pi.
         let _gate = qymcad_kernel::kernel_gate();
         assert!((s.shapes[&42].volume() - 12.0 * std::f64::consts::PI).abs() < 1e-8);
+    }
+    #[test]
+    fn failed_rebuild_closure_restores_diagnostics_and_drops_orphan_shapes() {
+        let mut s = Session::new_part();
+        let baseline = NodeIssue { node: 1, name: "baseline".into(), message: "retained warning".into() };
+        s.advisory_warnings.push(baseline.clone());
+        let before = s.p.clone();
+        let result: Result<()> = s.with_rebuild_copies(before, &HashSet::new(), "failed closure", |s| {
+            let shape = {
+                let _gate = qymcad_kernel::kernel_gate();
+                Shape::sphere_named(2.0, [1, 2, 3]).unwrap()
+            };
+            s.shapes.insert(99, shape); // No recipe node owns this newly introduced body.
+            s.advisory_warnings.push(NodeIssue { node: 99, name: "orphan".into(), message: "must disappear".into() });
+            Err(Error::Invalid("stop before regeneration".into()))
+        });
+        assert!(result.is_err());
+        assert_eq!(s.advisory_warnings, vec![baseline]);
+        assert!(s.shapes.is_empty(), "the failed closure leaked a body absent from the restored recipe");
     }
 }

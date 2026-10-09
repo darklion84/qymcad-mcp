@@ -97,7 +97,7 @@ fn json_encoded_structured_arguments_match_native_arguments() {
         let edge_ids = json!(selected["edges"].as_array().unwrap().iter().map(|edge| edge["id"].clone()).collect::<Vec<_>>());
         assert_eq!(edge_ids.as_array().unwrap().len(), 4, "rectangle outline has four edges");
         let edges = c.ok("select", json!({ "edges": argument(edge_ids) }));
-        let nested = c.ok("select", json!({ "edges": { "edges_of": argument(json!({ "facing": argument(json!([0, 0, 1])) })) } }));
+        let nested = c.ok("select", json!({ "edges": argument(json!({ "edges_of": { "facing": [0, 0, 1] } })) }));
         assert_eq!(nested, c.ok("select", json!({ "edges": { "edges_of": { "facing": "+z" } } })));
         let largest = c.ok("select", json!({ "faces": "largest" }));
         let plane = c.ok("plane_offset", json!({ "base": "XY", "dist": 8, "name": "[datum" }))["plane"].clone();
@@ -128,7 +128,7 @@ fn malformed_json_encoded_arguments_report_the_argument_path() {
     let mut c = Client::start();
     c.init();
     c.ok("doc_new", json!({}));
-    for faces in [json!("  {\"facing\": "), json!({ "edges_of": "[1," })] {
+    for faces in [json!("  {\"facing\": "), json!("[1,")] {
         let (is_err, message) = c.tool("select", json!({ "faces": faces }));
         let message = message.as_str().unwrap();
         assert!(is_err && message.contains("invalid JSON object/array string at arguments.faces"), "{message}");
@@ -147,6 +147,81 @@ fn json_looking_plain_string_arguments_are_preserved() {
     let (is_err, message) = c.tool("doc_open", json!({ "path": "[missing.qcad" }));
     assert!(is_err && message.as_str().unwrap().contains("[missing.qcad"), "{message}");
     assert!(!message.as_str().unwrap().contains("JSON object/array string"), "{message}");
+}
+
+#[test]
+fn opaque_selection_names_are_literal_in_native_and_encoded_arguments() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({"plane":"XY", "name":"profile"}));
+    c.ok("sketch_add", json!({"sketch":"profile", "entities":[{"type":"rect","w":20,"h":16}]}));
+    // Include malformed and valid object/array JSON names: all remain object references.
+    for name in ["{x}", "[x]", "{\"x\":1}", "[1]"] {
+        c.ok("extrude", json!({"sketch":"profile", "height":8, "name":name, "op":"new_body"}));
+        for encoded in [false, true] {
+            let selection = json!({"of_feature":name, "role":"cap_end"});
+            let selection = if encoded { json!(selection.to_string()) } else { selection };
+            let picked = c.ok("select", json!({"body":name, "faces":selection}));
+            assert_eq!(picked["count"], 1, "one extrude end cap for {name}");
+        }
+    }
+}
+
+#[test]
+fn decoder_depth_cap_reports_the_path_and_keeps_the_server_alive() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let mut selection = json!({"facing":"+z"});
+    for _ in 0..40 {
+        selection = json!({"union":[selection]});
+    }
+    let (is_err, message) = c.tool("select", json!({"faces":selection.to_string()}));
+    assert!(is_err, "deep encoded argument must be refused");
+    let message = message.as_str().unwrap();
+    assert!(message.contains("structured argument nesting exceeds 32 at arguments.faces"), "{message}");
+    assert_eq!(c.request("ping", json!({}))["result"], json!({}));
+}
+
+#[test]
+fn initialize_documents_encoded_structured_arguments_without_widening_schemas() {
+    let mut c = Client::start();
+    let initialized = c.init();
+    assert!(initialized["result"]["instructions"].as_str().unwrap().contains("Objects and arrays may also be sent as JSON strings"));
+    let tools = c.request("tools/list", json!({}));
+    let add = tools["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "sketch_add").unwrap();
+    assert_eq!(add["inputSchema"]["properties"]["entities"]["type"], "array", "keep the advertised structured schema");
+}
+
+#[test]
+fn repeated_renders_after_parameter_edits_match_image_bytes_and_captions() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("param_set", json!({"name":"w", "value":20}));
+    c.ok("sketch_create", json!({"plane":"XY", "name":"profile"}));
+    c.ok("sketch_add", json!({"sketch":"profile", "entities":[{"type":"rect","w":"w","h":16}]}));
+    c.ok("extrude", json!({"sketch":"profile", "height":8}));
+    let mut frames = Vec::new();
+    for width in [20, 32, 20] {
+        c.ok("param_set", json!({"name":"w", "value":width}));
+        let args = json!({"name":"render", "arguments":{"view":"top", "width":200, "height":160}});
+        let first = c.request("tools/call", args.clone());
+        let second = c.request("tools/call", args);
+        assert_ne!(first["result"]["isError"], true, "{first}");
+        assert_eq!(first["result"], second["result"], "same current document must render identically twice");
+        let content = first["result"]["content"].as_array().unwrap();
+        let image = unbase64(content[0]["data"].as_str().unwrap());
+        assert_eq!(&image[..8], b"\x89PNG\r\n\x1a\n");
+        let caption = content[1]["text"].as_str().unwrap();
+        // Centered rectangle: x=±w/2, y=±16/2; extrusion z=[0,8].
+        assert!(caption.contains(&format!("bbox x {}..{} y -8..8 z 0..8 mm", -width / 2, width / 2)), "{caption}");
+        frames.push((image, caption.to_string()));
+    }
+    assert_ne!(frames[0].0, frames[1].0, "changing rectangle aspect changes pixels as well as the caption");
+    assert_ne!(frames[0].1, frames[1].1);
+    assert_eq!(frames[0], frames[2], "returning to the original width restores both PNG bytes and caption");
 }
 
 #[test]

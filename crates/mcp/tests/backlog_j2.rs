@@ -23,7 +23,7 @@ fn blend_reports_seam_note_and_keeps_preview_seam() {
         let mut args = json!({"edges":sel});
         args[dimension] = json!(0.5);
         let result = call(&mut r, tool, args);
-        assert_eq!(result["rebuild"]["notes"], json!(["dropped 1 seam edges: not blendable"]));
+        assert_eq!(result["rebuild"]["notes"], json!(["dropped 1 seam edge: not blendable"]));
         assert!(
             !call(&mut r, "doc_info", json!({}))["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("dropped")),
             "selection note is transient"

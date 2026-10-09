@@ -21,19 +21,27 @@ cylinder/cone/sphere detection precedes mesh planarity. Preview kind filters by 
 persistent ids; edge modifiers use their usual pick-list storage. Kind filters can compose with other
 descriptions, including inside `edges_of` and `between` for edge modifiers.
 
-For `hole`, `shell` and `push_face`, lower each face-kind leaf to fixed persistent face ids at feature
-creation, just as edge modifiers already resolve their picks (F-024). Retain surrounding native descriptive
-queries, such as `facing` and `of_feature`, in the stored composition. The frozen kind leaves do not rediscover
-faces created by later edits. This explicit limitation avoids an upstream file-format/API change while making
-kind-selected modifiers usable; truly dynamic kind discovery still requires upstream native query support.
+For `hole`, `shell` and `push_face`, resolve the complete face selection to a fixed persistent pick list
+at feature creation whenever it contains a kind leaf, just as edge modifiers resolve their picks (F-024).
+This freezes surrounding descriptions too: no part of that selection rediscovers faces after an edit.
+Selections without kinds retain native dynamic queries.
+
+Freezing only the kind leaves inside `Filter` is insufficient: QymCAD recognizes only `Id`, `Ids`, and
+pick-only unions as pick lists (`refs.rs:202-208`). Its shell asked-versus-opened guard runs only for a pick
+list (`model/regen.rs:1442-1449`). A mixed frozen/dynamic filter can silently lose openings; storing the
+whole resolved list preserves the guard and refuses missing faces. Dynamic kind discovery still needs
+upstream native query support.
 
 ## Consequences
 
 MCP tests verify three- and 200-operand intersections, the retained size budget, exact taxonomy agreement,
 incompatible/unknown kind refusal, and successful calls to all three face modifiers.
-The three face golden tests inspect fixed kind ids plus a native oriented leaf, then check formula-derived
+The three face golden tests inspect whole-selection picks, then check formula-derived
 volumes on creation, parameter edits, reopening and native GUI edits: hole `20*16*h−3π`, inward shell
 `20*16*h−18*14*(h−1)`, and pushed top `20*16*(h+2)`.
+`modifiers::hint_tests::kind_shell_refuses_partial_loss_of_frozen_faces` replaces a box source with a
+cylinder after selecting its top and two sides: only the top survives, and shell regeneration refuses
+rather than opening just one face. Removing whole-selection pick storage makes the test fail.
 `golden_selection_kinds::kind_selected_fillet_survives_server_and_gui_parameter_edits` checks a kind-selected
 four-corner fillet, its eight quarter-circle cap edges, and parameter edits through both saved/opened server
 and native GUI paths. The formula is `V=(20*16−4*(1−π/4)*r²)*h`, and each cap arc has length `πr/2`.

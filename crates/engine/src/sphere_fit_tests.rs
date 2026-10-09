@@ -195,3 +195,14 @@ fn axial_levels_follow_rotated_axis_and_reject_a_third_circle() {
     points.extend(ring(0.5, 2.5));
     assert!(!two_axial_levels(&points, axis, 1e-6), "third distinct axial circle establishes more than two levels");
 }
+
+#[test]
+fn face_is_planar_itself_rejects_a_validated_sphere_fit() {
+    let _gate = qymcad_kernel::kernel_gate();
+    let shape = Shape::sphere_named(2.0, [9001, 9002, 9003]).unwrap();
+    let (s, face) = session_with_fit_mesh(shape);
+    assert!(planar_normal(&face, &s.p.bodies[0].mesh).is_some());
+    assert!(s.validated_face_sphere(42, &face).is_some(), "formula R2 vertices establish a fitted sphere");
+    drop(_gate);
+    assert!(!s.face_is_planar(42, face.id), "face_is_planar must reject a fitted sphere itself");
+}

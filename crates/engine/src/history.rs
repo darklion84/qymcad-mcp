@@ -17,6 +17,7 @@ pub struct Snapshot {
     shapes: HashMap<Id, Shape>,
     warnings: Vec<NodeIssue>,
     call: Option<ToolCall>,
+    created_node: Option<Id>,
 }
 
 /// The successful modelling call represented by a history entry.
@@ -40,13 +41,23 @@ impl Snapshot {
         let label = match tool {
             "param_set" => "Set parameter".into(),
             "param_delete" => "Delete parameter".into(),
+            "sketch_create" => "Create sketch".into(),
             "sketch_add" => "Add sketch geometry".into(),
             "sketch_constrain" => "Constrain sketch".into(),
             "sketch_remove" => "Remove sketch geometry".into(),
             "feature_delete" => "Delete feature".into(),
-            _ => tool.replace('_', " "),
+            _ => {
+                let action = tool.replace('_', " ");
+                let mut chars = action.chars();
+                chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+            }
         };
         self.call = Some(ToolCall { tool: tool.into(), label, arguments });
+    }
+
+    /// Identify the feature returned by the tool, excluding auxiliary nodes created in the same call.
+    pub fn record_created_node(&mut self, node: Id) {
+        self.created_node = Some(node);
     }
 }
 
@@ -71,6 +82,7 @@ impl Session {
             shapes: std::mem::replace(&mut self.shapes, copies),
             warnings: self.advisory_warnings.clone(),
             call: None,
+            created_node: None,
         })
     }
 
@@ -79,9 +91,10 @@ impl Session {
         self.tool_edit_active = false;
         if success {
             if let Some(call) = &mut snapshot.call {
-                let old_nodes: HashSet<_> = snapshot.project.timeline.iter().map(|n| n.id).collect();
-                if let Some(node) = self.p.timeline.iter().rev().find(|n| !old_nodes.contains(&n.id)) {
-                    call.label = crate::localization::name(&node.name);
+                if let Some(node) = snapshot.created_node.and_then(|id| self.p.timeline.iter().find(|node| node.id == id)) {
+                    if !node.name.trim().is_empty() {
+                        call.label = crate::localization::name(&node.name);
+                    }
                 }
             }
             if self.undo.len() == UNDO_LIMIT {
@@ -118,6 +131,8 @@ impl Session {
     }
 
     /// Restore the last successful modelling tool call, without regenerating the retained geometry.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
+    /// restored body metrics acquire the gate internally.
     pub fn undo(&mut self) -> Result<Undone> {
         let snapshot = self.undo.pop_back().ok_or_else(|| {
             Error::Invalid(if self.undo_limit_reached {
