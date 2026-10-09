@@ -62,7 +62,7 @@ Conventions:
 - **Timing:** same shelf blend edits 3.5→4→3.5: J6 HEAD median 221.5 ms, pre-J6-style propagation 253.4 ms,
   corrected implementation 248.8 ms initially, 256.4 ms after final validation checks. Four→zero explicit
   sketch solves remains; these small samples establish no reliable total speedup vs pre-J6. Blanket
-  rebuild safety sacrifices J6's earlier speedup. Ignored test: `parameter_and_project_clone_shelf_timings`; full samples in tasks/review-j3.md.
+  rebuild safety sacrifices J6's earlier speedup. Ignored test: `parameter_and_project_clone_shelf_timings`; rerun it to reproduce the samples.
 
 ## F-003 A cut's direction is `Extent.reach`, not `down`
 

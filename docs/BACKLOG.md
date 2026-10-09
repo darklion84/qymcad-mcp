@@ -24,6 +24,6 @@ No open items. Items closed without a code change in backlog round J (2026-10-09
 Parameter solve optimization was corrected after J6 review: native blanket rebuild dirtying stays, with
 face-derived datum sketch scheduling barriers (F-017). Four→zero explicit shelf solves remains, but the
 corrected median edits are ~249–256 ms versus ~253 ms with pre-J6 propagation (no reliable total speedup), rather
-than J6 HEAD's ~222 ms. Details and all timing samples: tasks/review-j3.md. Named feature dimensions
+than J6 HEAD's ~222 ms. Reproduce with the ignored test `parameter_and_project_clone_shelf_timings`. Named feature dimensions
 referring to other named dimensions retain the native scope limitation documented in F-071. Non-kind
 composed face queries remain dynamic, with the documented shell missing-opening residual (ADR 0013).
