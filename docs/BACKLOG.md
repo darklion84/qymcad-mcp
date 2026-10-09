@@ -2,7 +2,17 @@
 
 Known follow-ups that were consciously deferred. Each item says where it came from.
 
-No open items. Items closed without a code change in backlog round J (2026-10-09), with the reason:
+Open (low, from the round-J live test by Codex, 236 calls, all items OK, 2026-10-09):
+
+- The `between` suggestion in empty-corner hints was never offered in the tester's joined-extrusion and
+  plate+boss cases, although a manual `between` works; check the ancestry rule (≥2 extrude/revolve) on add-joined
+  extrusions, or drop the suggestion.
+- `topology` rounds radii and lengths to 4 decimals (radius 1.2346 for q=1.23456789…); say so in its description,
+  or report input-ready values at full precision like sketch_info.
+- `plane_offset.base` schema admits a face reference, but the call refuses ("offset from a face is not supported
+  yet"); narrow the schema or the description. Wish: a `{"seam": true}` selection filter.
+
+Items closed without a code change in backlog round J (2026-10-09), with the reason:
 
 - **0.001 mm entry clearance of one-sided cuts on internal planes** — native QymCAD behaviour; compensating
   geometry would change native recipes, and the pinned `Extent` has no flag to disable it. The exact-floor
