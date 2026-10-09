@@ -1,65 +1,21 @@
 # Backlog
 
-Known follow-ups that were consciously deferred. Each item says where it came from.
+Remaining evaluated follow-ups; implementation plan and settled evidence: tasks/review-j1.md.
 
-- **Re-solve only the sketches a parameter edit reaches.** `Session::propagate_params` (crates/engine/src/params.rs)
-  re-solves every sketch that has any expression on every parameter edit. Solving only the sketches whose
-  expressions mention the changed name (directly or through other parameters) is a performance optimisation for
-  large documents; it must keep F-001 (case-insensitive matching) and F-002 in mind. Raised in the phase 3A review.
-- **`Patch` edge queries are not gated by the unrestorable-edge guard** (MiMo, final review): the guard in
-  `Session::rebuild_retrying` covers fillet/chamfer stored queries; extend it if the engine ever creates Patch
-  features with edge queries.
-- **The rebuild guard clones the `Project` on every public rebuild** (MiMo, final review): fine for small parts;
-  make the retry-plan check incremental if large documents get slow.
-- **Persist face-kind selections in modifiers** (C1/E7 native-capability gate): previews support kind filters,
-  but `refs::Query` has no native kind variant. Choose between lowering to fixed persistent face ids (does not
-  discover newly created faces) and adding upstream native query support. Until a decision, face modifiers
-  refuse kind filters; edge modifiers already store resolved ids. Evidence/options: ADR 0013 and tasks/review-c1.md.
-- **Low items from the E1-E9 review** (MiMo): `corner_planar_normal` should reject `face_sphere` itself (today only
-  its caller does, so the unit test cannot prove the guard); the shared rollback helper is not byte-for-byte the
-  former semantics of both callers (document the difference or align); the `to_query` kind error is worded for
-  faces even for edges; `empty_corner_hint` recomputes `classified_corners` up to three times.
+## J5 — interop and robustness
+- Preserve brace/bracket-leading literal names inside opaque selection/axis objects; schema-aware structured decoding.
+- Cap nested encoded-string/structure decoding at 32 with clear error and test.
+- Keep schemas unchanged; document object/array JSON-string interop in instructions and ARCHITECTURE.
+- Reproduce repeated changed-document renders through protocol and compare image bytes/caption; close client observations with evidence.
 
-- **Low items from the G1-G6 live tests** (mcp-tester4/5):
-  - the `between` suggestion appears on any body with two or more features in its chain, even with no named
-    junction to offer;
-  - the same body's bbox differs by the curved-body padding (~0.02 mm) between the feature result and a later
-    rebuild;
-  - `fillet R0.50 failed on 1 edges` gives no reason or suggestion;
-  - the `along` error lists the axis strings but not the accepted [x, y, z] vector;
-  - `doc_open` returns stored and rebuilt bboxes without saying which is which;
-  - origin/frame points appear in `sketch_info` only after the first `sketch_add`;
-  - the 0.001 mm cut entry clearance on internal planes cannot be turned off.
-- **Phase 4 acceptance findings** (Sonnet subagent building collet_test/hanging_shelf from the build123d scripts, 2026-10-08):
-  - Mouth-circle chamfer via of_feature also returns the seam line; the agent fell back to explicit ids.
-- **Low items from the H1-H4 review** (MiMo):
-  - the revolve-chamfer advice fires on any chamfer rebuild failure with revolve ancestry (also a genuinely
-    oversized chamfer); the ancestry walk follows only boolean operand `a`.
-  - UPGRADING.md: the pinning test `upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh` must be removed
-    when QymCAD fixes the fit.
-- **Low items from the H1-H4 live test** (mcp-tester6, 2026-10-08):
-  - wish: kind "torus" (fillet corner tori are "other", like NURBS); asymmetric chamfer result does not say
-    which face took `dist`.
-- **Remaining MiMo client observations** (2026-10-08): client truncated doc_save arguments; typed schemas
-  could improve opaque selection/axis discoverability. Unverified claim: 2-3 of 5 render images did not match
-  the current body while the caption did (may be the client attaching images). Structured JSON-string
-  argument interop is fixed centrally.
-- **Low items from the round-I review** (MiMo, ACCEPT):
-  - the zero-native-sphere shortcut also rejects a real sphere stored as a B-spline (STEP import); skip it when
-    freeform/other faces exist;
-  - descriptive nested face leaves inside edge selections (`edges_of`/`between` with `facing`) are not checked
-    for duplicate names; seam repair may duplicate edge ids too (inferred, not observed);
-  - the JSON-string decoder also decodes `{`/`[`-leading names inside opaque selection/axis objects; no depth cap
-    on nested encoded strings (stack overflow on adversarial input);
-  - "it has 1 convex edges" plural leftover in `empty_corner_hint`;
-  - the half-away rounding test does not use true binary ties;
-  - the kernel-gate precondition comment is missing on export/save/rebuild/undo/open;
-  - "upward axis" vs "toward the sketch's +y" wording; "kernel's reason" prefix applies to whole lines.
-- **Low items from the round-I live test** (Codex as tester, 187 calls, all items OK, 2026-10-09):
-  - duplicate face ids warn only in topology/select; doc_open/doc_info report `warnings: []` for such a body;
-  - the advice on a failed chamfer should first suggest a smaller distance before the axis/profile workaround;
-  - JSON-string arguments work, but the advertised schemas do not admit a string, so a strict client may refuse;
-  - small curved areas can be ~1.8% low (sketch circle R=0.2), so "about 1%" understates; flat faces with round
-    boundaries are approximate too;
-  - `doc_info.sketches[].world_frame.origin` still shows f64 noise (3.5999999999999996);
-  - undo returns the MCP tool name, not a human label.
+## J6 — engine internals and performance
+- Solve only parameter-reached sketches, including transitive/lowercase dependencies; solve-count tests and shelf timings.
+- Measure rebuild guard Project clone on shelf/scaled case; close if negligible or optimize if needed.
+- Verify no Patch creation; close and comment future unrestorable-edge guard requirement.
+- Document or align shared rollback helper semantic differences and test distinguishing case.
+- Classify empty-corner hints once.
+- Add kernel-gate precondition comments to export/save/rebuild/undo/open public callers.
+- List all upstream-defect pinning tests in UPGRADING for review/removal upon fixes.
+
+## J7 — closed by decision
+- Close native 0.001 mm internal cut clearance: no geometry compensation; exact-floor recipe is F-061.

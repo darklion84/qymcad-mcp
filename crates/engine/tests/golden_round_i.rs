@@ -53,19 +53,27 @@ fn duplicate_face_selection_is_refused_with_workaround() {
 
 #[test]
 fn bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_values() {
-    let body = BodyInfo {
-        id: 1,
-        name: String::new(),
-        volume: 1.23456789,
-        // Half of one reporting unit is .00005 mm. Ties round away from zero;
-        // ±.00001 mm are closer to zero. 10^305 cannot be scaled by 10^4 in f64.
-        bbox: [-1.00005, -0.00001, -0.0, 1.00005, 0.00001, 1e305],
-    };
-    let json = serde_json::to_value(&body).unwrap();
-    assert_eq!(json["bbox"], serde_json::json!([-1.0001, 0.0, 0.0, 1.0001, 0.0, 1e305]));
-    assert_eq!(json["volume_mm3"], serde_json::json!(1.23456789));
-    for i in [1, 2, 4] {
-        assert_eq!(json["bbox"][i].as_f64().unwrap().to_bits(), 0.0_f64.to_bits());
+    // Odd numerators over 32 are exactly representable binary values. Scaling by
+    // 10^4 gives n*625/2, an exact half-integer: 10312.5 and 10937.5. Half-away
+    // rounds these to 10313 and 10938 units, hence 1.0313 and 1.0938 mm.
+    for (numerator, expected) in [(33.0, 1.0313), (35.0, 1.0938)] {
+        let tie = numerator / 32.0;
+        for signed in [tie, -tie] {
+            assert_eq!((signed * 10_000.0_f64).abs().fract(), 0.5, "scaled value must be a true binary tie");
+        }
+        let body = BodyInfo {
+            id: 1,
+            name: String::new(),
+            volume: 1.23456789,
+            // ±.00001 mm are closer to zero; 10^305 cannot be scaled by 10^4 in f64.
+            bbox: [-tie, -0.00001, -0.0, tie, 0.00001, 1e305],
+        };
+        let json = serde_json::to_value(&body).unwrap();
+        assert_eq!(json["bbox"], serde_json::json!([-expected, 0.0, 0.0, expected, 0.0, 1e305]));
+        assert_eq!(json["volume_mm3"], serde_json::json!(1.23456789));
+        for i in [1, 2, 4] {
+            assert_eq!(json["bbox"][i].as_f64().unwrap().to_bits(), 0.0_f64.to_bits());
+        }
     }
 }
 

@@ -34,9 +34,13 @@ impl Session {
     /// result-body bbox reporting acquires that non-reentrant mutex.
     pub fn info(&self) -> DocInfo {
         let p = self.project();
+        let bodies = self.result_bodies();
         let mut warnings: Vec<String> =
             p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {}", self.node_name(*id), crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| format!("{} ({}): {}", w.name, w.node, w.message)));
+        warnings.extend(
+            bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| format!("{} ({}): {message}", b.name, b.id))),
+        );
         let upper = self.uppercase_params();
         if !upper.is_empty() {
             warnings.push(format!(
@@ -59,7 +63,7 @@ impl Session {
                     suppressed: n.suppressed,
                 })
                 .collect(),
-            bodies: self.result_bodies(),
+            bodies,
             errors: p
                 .regen_errors
                 .iter()

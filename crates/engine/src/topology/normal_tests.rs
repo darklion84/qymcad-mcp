@@ -42,7 +42,7 @@ fn narrow_native_cylinders_and_cones_keep_their_curved_normal_path() {
         assert_eq!(curved.len(), 1);
         let face = curved[0];
         assert!(planar_normal(face, mesh).is_some(), "fixture must appear planar to the mesh heuristic");
-        assert!(corner_planar_normal(shape, face, mesh).is_none(), "native cylinder/cone must not receive a plane normal");
+        assert!(mesh_corner_planar_normal(shape, face, mesh).is_none(), "native cylinder/cone must not receive a plane normal");
     }
 }
 
@@ -102,7 +102,10 @@ fn single_triangle_native_sphere_must_not_receive_a_plane_normal() {
     let mut face = faces[0].clone();
     face.triangles.truncate(1);
     assert!(planar_normal(&face, &mesh).is_some(), "one curved facet appears planar");
-    assert!(corner_planar_normal(&shape, &face, &mesh).is_none(), "native sphere must not receive a plane normal even with one triangle");
+    assert!(
+        mesh_corner_planar_normal(&shape, &face, &mesh).is_none(),
+        "native sphere must not receive a plane normal even with one triangle"
+    );
 }
 
 #[test]

@@ -55,3 +55,85 @@ fn kind_selected_fillet_survives_server_and_gui_parameter_edits() {
         }
     }
 }
+
+fn kind_top() -> Sel {
+    Sel::And(Box::new(Sel::Kind(SelectionKind::Plane)), Box::new(Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 5.0 }))
+}
+
+fn kind_face_modifier(tool: &str) {
+    use qymcad_core::{feature::FeatureKind, refs::Query};
+    let mut s = Session::new_part();
+    s.param_set("h", &10.0.into()).unwrap();
+    let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &20.0.into(), &16.0.into(), false).unwrap();
+    s.extrude(&Extrude {
+        sketch,
+        profiles: None,
+        height: "h".into(),
+        op: Op::NewBody,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    })
+    .unwrap();
+    let planes = s.select(None, Element::Faces, &Sel::Kind(SelectionKind::Plane)).unwrap().1;
+    let (id, _) = match tool {
+        "hole" => s.hole(&Hole {
+            body: None,
+            face: kind_top(),
+            at: None,
+            diameter: 2.0.into(),
+            depth: Some(3.0.into()),
+            kind: HoleKind::Plain,
+            dia2: None,
+            depth2: None,
+            name: None,
+        }),
+        "shell" => s.shell(None, &kind_top(), &1.0.into(), Side::Inward, None),
+        "push_face" => s.push_face(None, &kind_top(), &2.0.into(), None),
+        _ => unreachable!(),
+    }
+    .unwrap_or_else(|e| panic!("{tool} must persist kind-selected faces: {e}"));
+    let query = match &s.project().timeline.iter().find(|n| n.id == id).unwrap().kind {
+        FeatureKind::Hole { face, .. } | FeatureKind::PushFace { face, .. } => &face.query,
+        FeatureKind::Shell { faces, .. } => &faces.query,
+        _ => unreachable!(),
+    };
+    let Query::Filter(kind, description) = query else { panic!("preserve descriptive composition: {query:?}") };
+    assert_eq!(**kind, Query::Ids(planes), "freeze the kind leaf's current persistent names");
+    assert!(matches!(**description, Query::Oriented { .. }), "ordinary descriptions stay native");
+    // Stock V=20*16*h. Hole removes a radius-1 depth-3 cylinder; shell removes an
+    // 18*14*(h-1) rectangular cavity; pushing the top by 2 adds 20*16*2.
+    let expected = |h: f64| match tool {
+        "hole" => 20.0 * 16.0 * h - PI * 3.0,
+        "shell" => 20.0 * 16.0 * h - 18.0 * 14.0 * (h - 1.0),
+        "push_face" => 20.0 * 16.0 * (h + 2.0),
+        _ => unreachable!(),
+    };
+    assert_close(s.result_bodies()[0].volume, expected(10.0), 1e-6, "kind face modifier creation");
+    let path = scratch(&format!("kind_selected_{tool}.qcad"));
+    s.save(Some(&path)).unwrap();
+    let rebuilt = s.param_set("h", &14.0.into()).unwrap();
+    assert!(rebuilt.errors.is_empty(), "{tool}: {:?}", rebuilt.errors);
+    assert_close(s.result_bodies()[0].volume, expected(14.0), 1e-6, "kind face modifier parameter edit");
+    let (mut reopened, _) = Session::open(&path).unwrap();
+    reopened.param_set("h", &14.0.into()).unwrap();
+    assert_close(reopened.result_bodies()[0].volume, expected(14.0), 1e-6, "reopened kind face modifier edit");
+    assert_close(gui_edit_param(&path, "h", "14"), expected(14.0), 1e-6, "GUI kind face modifier edit");
+}
+
+#[test]
+fn kind_selected_hole_survives_server_and_gui_parameter_edits() {
+    kind_face_modifier("hole");
+}
+
+#[test]
+fn kind_selected_shell_survives_server_and_gui_parameter_edits() {
+    kind_face_modifier("shell");
+}
+
+#[test]
+fn kind_selected_push_face_survives_server_and_gui_parameter_edits() {
+    kind_face_modifier("push_face");
+}

@@ -150,29 +150,24 @@ fn corner_hint_is_reused_and_between_requires_multiple_body_features() {
         let message = r.call(tool, args).unwrap().unwrap_err();
         assert!(message.contains(empty["hint"].as_str().unwrap()), "preview hint repeated in {tool}: {message}");
     }
-    // One extrusion followed by one bevel is a two-feature body.
+    // A bevel adds no solid-creating feature, so it cannot establish a feature junction.
     call(&mut r, "chamfer", json!({"edges":{"and":[{"convex":true}, {"extreme":"+z"}]}, "dist":1}));
     let empty = call(&mut r, "select", json!({"edges":{"concave":true}}));
-    assert!(empty["hint"].as_str().unwrap().contains("between"), "two-feature body offers a between example: {empty}");
+    assert!(!empty["hint"].as_str().unwrap().contains("between"), "modifier-only chain must not offer a junction: {empty}");
 }
 
 #[test]
-fn face_kind_modifiers_refuse_unsupported_persistent_kind_queries() {
-    let (mut r, _) = cylinder();
-    let before = call(&mut r, "doc_info", json!({}));
+fn face_kind_modifiers_accept_kind_filters() {
     let face = json!({"and":[{"kind":"plane"}, {"facing":"+z"}]});
-    assert_eq!(call(&mut r, "select", json!({"faces":face}))["count"], 1);
     for (tool, args) in [
         ("hole", json!({"face":face, "diameter":2, "depth":3})),
         ("shell", json!({"open_faces":face, "thickness":1})),
         ("push_face", json!({"face":face, "dist":1})),
     ] {
-        let message = r.call(tool, args).unwrap().unwrap_err();
-        assert!(
-            message.contains("preview-only") && message.contains("no persistent kind query"),
-            "unsupported face kind persistence: {tool}: {message}"
-        );
-        assert_eq!(call(&mut r, "doc_info", json!({})), before, "{tool} refusal preserves the document");
+        let (mut r, _) = cylinder();
+        assert_eq!(call(&mut r, "select", json!({"faces":face}))["count"], 1);
+        let result = call(&mut r, tool, args);
+        assert!(result["rebuild"]["errors"].is_null(), "{tool}: {result}");
     }
 }
 

@@ -1,5 +1,68 @@
 use super::*;
 
+fn four_latitude_sphere_mesh() -> (qymcad_core::geom::Mesh, MeshFace) {
+    use qymcad_core::geom::{Mesh, Point3};
+    let mut mesh = Mesh::default();
+    // Four independent horizontal triangles have normals +Z but twelve distinct
+    // vertices on R=2: r(z)=sqrt(4-z²). Four latitudes establish noncoplanar,
+    // more-than-two-ring support. This sparse synthetic mesh isolates the fit guard.
+    for z in [1.90_f64, 1.92, 1.94, 1.96] {
+        let r = (4.0 - z * z).sqrt();
+        let start = mesh.verts.len() as u32;
+        for i in 0..3 {
+            let a = i as f64 * std::f64::consts::TAU / 3.0;
+            mesh.verts.push(Point3::new(r * a.cos(), r * a.sin(), z));
+        }
+        mesh.tris.push([start, start + 1, start + 2]);
+    }
+    let face =
+        MeshFace { id: 9001, triangles: (0..4).collect(), normal: [0.0, 0.0, 1.0], centroid: Point3::new(0.0, 0.0, 1.93), area: 1.0 };
+    (mesh, face)
+}
+
+fn session_with_fit_mesh(shape: Shape) -> (Session, MeshFace) {
+    let (mesh, face) = four_latitude_sphere_mesh();
+    let mut s = Session::new_part();
+    s.p.bodies.push(qymcad_core::model::Body { id: 42, mesh, faces: vec![face.clone()], ..Default::default() });
+    s.p.regen_faces.insert(42, vec![face.clone()]);
+    s.shapes.insert(42, shape);
+    (s, face)
+}
+
+#[test]
+fn freeform_native_faces_do_not_disprove_a_geometrically_valid_sphere_fit() {
+    let _gate = qymcad_kernel::kernel_gate();
+    // Aggregate-type unit fixture: the native B-rep is a Bezier sheet (freeform),
+    // while the injected mesh is exactly spherical. The pinned Rust API exposes
+    // no sphere-to-NURBS conversion, so this exercises the decision independently
+    // of an unavailable real B-spline sphere construction.
+    let patch = std::array::from_fn(|i| std::array::from_fn(|j| [i as f64 / 3.0, j as f64 / 3.0, 0.0]));
+    let (shape, _) = Shape::from_bezier_patches(&[patch], 1e-6, false).unwrap();
+    let kinds = shape.face_kinds().unwrap();
+    assert_eq!(kinds[3], 0);
+    assert!(kinds[5] + kinds[6] > 0, "native fixture must contain an unidentified curved surface type");
+    let (s, face) = session_with_fit_mesh(shape);
+    assert!(s.p.face_sphere(42, &face_key(&face)).is_some(), "exact spherical vertices admit the upstream fit");
+    let (_, radius) = s.validated_face_sphere(42, &face).expect("freeform surfaces may encode a genuine sphere; run geometric guards");
+    assert!((radius - 2.0).abs() < 1e-8, "R=2 follows the coordinate construction");
+}
+
+#[test]
+fn corner_planar_normal_itself_rejects_a_validated_sphere_fit() {
+    let _gate = qymcad_kernel::kernel_gate();
+    let sphere = Shape::sphere_named(2.0, [9001, 9002, 9003]).unwrap();
+    let cylinder = Shape::cylinder_named(1.0, 2.0, [9101, 9102, 9103])
+        .unwrap()
+        .transformed(&[1.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+        .unwrap();
+    let shape = Shape::fuse_many(&[&sphere, &cylinder]).unwrap();
+    let (s, face) = session_with_fit_mesh(shape);
+    let mesh = &s.p.bodies[0].mesh;
+    assert!(planar_normal(&face, mesh).is_some(), "parallel sparse facet normals alone would claim a plane");
+    assert!(s.validated_face_sphere(42, &face).is_some(), "vertices establish an R2 sphere");
+    assert!(s.corner_planar_normal(42, &face).is_none(), "corner_planar_normal must itself refuse a fitted sphere");
+}
+
 #[test]
 fn sparse_two_latitude_sphere_mesh_is_rejected_without_ring_boundary_metadata() {
     use qymcad_core::geom::{Mesh, Point3};

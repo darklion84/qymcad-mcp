@@ -1,6 +1,6 @@
 # ADR 0013: Kind previews and balanced intersections
 
-- Status: accepted (2026-10-08); persistent face-kind queries deferred.
+- Status: accepted (2026-10-08); face-kind persistence decision updated 2026-10-09.
 
 ## Context
 
@@ -21,16 +21,19 @@ cylinder/cone/sphere detection precedes mesh planarity. Preview kind filters by 
 persistent ids; edge modifiers use their usual pick-list storage. Kind filters can compose with other
 descriptions, including inside `edges_of` and `between` for edge modifiers.
 
-Stop persistent face-kind modifiers at the native capability boundary. Refuse kind-filtered `hole`, `shell`
-and `push_face` selections with a preview-only explanation; retain explicit face ids and existing native
-descriptions as alternatives. The options for future work are to freeze just the kind leaves to face ids
-at creation (loses discovery of later faces), or extend upstream `Query` with a genuine kind filter. This
-decision does not silently substitute fixed face picks for a descriptive persistent kind query.
+For `hole`, `shell` and `push_face`, lower each face-kind leaf to fixed persistent face ids at feature
+creation, just as edge modifiers already resolve their picks (F-024). Retain surrounding native descriptive
+queries, such as `facing` and `of_feature`, in the stored composition. The frozen kind leaves do not rediscover
+faces created by later edits. This explicit limitation avoids an upstream file-format/API change while making
+kind-selected modifiers usable; truly dynamic kind discovery still requires upstream native query support.
 
 ## Consequences
 
 MCP tests verify three- and 200-operand intersections, the retained size budget, exact taxonomy agreement,
-incompatible/unknown kind refusal, and unchanged documents after refusing all three face modifiers.
+incompatible/unknown kind refusal, and successful calls to all three face modifiers.
+The three face golden tests inspect fixed kind ids plus a native oriented leaf, then check formula-derived
+volumes on creation, parameter edits, reopening and native GUI edits: hole `20*16*h−3π`, inward shell
+`20*16*h−18*14*(h−1)`, and pushed top `20*16*(h+2)`.
 `golden_selection_kinds::kind_selected_fillet_survives_server_and_gui_parameter_edits` checks a kind-selected
 four-corner fillet, its eight quarter-circle cap edges, and parameter edits through both saved/opened server
 and native GUI paths. The formula is `V=(20*16−4*(1−π/4)*r²)*h`, and each cap arc has length `πr/2`.
@@ -38,6 +41,6 @@ Changing the line-kind filter to match circles makes both the taxonomy test and 
 
 Corner previews and modifier empty-selection errors share one engine hint. It names the selected inward or
 outward sign, counts the opposite sign across the body, and offers a `between` example only when the body's
-consumed-source chain has more than one modelling feature. Topology and resolved selections sort ids for
+consumed-source chain has at least two solid-creating extrude/revolve features. Topology and resolved selections sort ids for
 stable output. Public body volume uses `volume_mm3` at native floating-point precision, while existing bounds
 and topology display rounding remain independent presentation choices.

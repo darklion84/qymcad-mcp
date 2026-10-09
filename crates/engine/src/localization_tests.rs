@@ -29,3 +29,15 @@ fn names_errors_warnings_and_undo_use_english_catalogue_words() {
     assert_eq!(session.project().timeline.iter().find(|n| n.id == sketch).unwrap().name, "feat-name-combine-cut");
     assert_eq!(session.project().sketches[0].name, "name-part-n#3");
 }
+
+#[test]
+fn failed_fillet_explains_fit_and_suggests_smaller_radius() {
+    let message = crate::localization::error(&CoreError::FilletRadiusTooBig {
+        radius: 0.5,
+        issues: vec![qymcad_core::errors::FilletEdgeIssue { edge: 1, takes_up_to: None }],
+        smooth_skipped: 0,
+    });
+    for expected in ["thin wall", "short edge", "small adjacent fillet", "smaller radius", "fewer edges"] {
+        assert!(message.contains(expected), "missing {expected}: {message}");
+    }
+}

@@ -88,8 +88,8 @@ pub struct FilletArgs {
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// The edges to round: ids from `topology` (current body only) or a description, e.g.
-    /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seams are not blendable:
-    /// the kernel may drop smooth edges, move a seam before blending a neighbouring edge, or refuse the blend.
+    /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seam edges are
+    /// automatically dropped with a result note; a selection containing only seams is refused.
     pub edges: SelArg,
     /// Radius, mm (number or expression).
     pub radius: Num,
@@ -105,11 +105,14 @@ pub struct ChamferArgs {
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.
+    /// Seam edges are automatically dropped with a result note; a selection containing only seams is refused.
     pub edges: SelArg,
     /// Setback, mm (number or expression). Alone: a symmetric 45° chamfer.
     pub dist: Num,
     /// Second setback on the other face, mm: an asymmetric chamfer. QymCAD chooses which adjacent face takes
-    /// `dist` for each edge; the side cannot be selected.
+    /// `dist` for each edge by its native traversal order; the side cannot be selected or reported. Inspect
+    /// adjacent face setbacks before/after chamfer; for straight rectangular faces, lost area / edge length
+    /// gives the setback. Topology's sorted face ids do not indicate this order.
     #[serde(default)]
     pub d2: Option<Num>,
     /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
@@ -360,7 +363,7 @@ pub fn tools() -> Vec<Tool> {
             "revolve",
             concat!(
                 "Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the \
-             part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full turn try drawing the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep.",
+             part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full turn draw the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep.",
                 stale!()
             ),
             |st, a: RevolveArgs| {
@@ -390,7 +393,7 @@ pub fn tools() -> Vec<Tool> {
              0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals \
              can require about 20–30 degrees. The edges \
              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
-             for the geometry is an error and nothing changes. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges.",
+             for the geometry is an error and nothing changes. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
                 stale!()
             ),
             |st, a: FilletArgs| {
@@ -403,7 +406,7 @@ pub fn tools() -> Vec<Tool> {
             "chamfer",
             concat!(
                 "Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks differ. `edges` as for \
-             fillet. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges.",
+             fillet. QymCAD places `dist` on its first adjacent face in native traversal order, which is not reported. Inspect adjacent face setbacks before/after; on straight rectangular faces, lost area / edge length gives the setback. Topology's sorted face ids do not indicate this order. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
                 stale!()
             ),
             |st, a: ChamferArgs| {
@@ -417,7 +420,7 @@ pub fn tools() -> Vec<Tool> {
             concat!(
                 "Drill a hole into a planar face: plain, counterbore or countersink; blind (`depth`) or `through`. \
              The face may be described ({\"facing\": \"+z\"}, {\"of_feature\": \"plate\", \"role\": \"cap_end\"}): \
-             such a description is stored and keeps working after upstream edits. `at` is a world point. \
+             such a description is stored and keeps working after upstream edits. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. `at` is a world point. \
              `through` stores a fixed 10000 mm depth; creation is refused when the body's bbox diagonal exceeds \
              10000 mm. Later stock growth beyond that depth can make the hole blind.",
                 stale!()
@@ -446,7 +449,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "shell",
             concat!(
-                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box).",
+                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces.",
                 stale!()
             ),
             |st, a: ShellArgs| {
@@ -458,7 +461,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "push_face",
-            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. raise the top.", stale!()),
+            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. raise the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces.", stale!()),
             |st, a: PushFaceArgs| {
                 let s = st.doc()?;
                 let (body, face) = (opt_body(s, &a.body)?, a.face.resolve(s)?);

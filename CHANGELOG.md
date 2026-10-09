@@ -5,6 +5,25 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Backlog J
+- Persist face-kind filters in hole/shell/push_face as fixed persistent ids at creation; keep native
+  descriptive leaves dynamic and document that kind leaves do not rediscover new faces (ADR 0013).
+- Undo includes a localized feature or action `label` alongside the original tool and arguments.
+- Document lazy sketch reference points and how to inspect asymmetric chamfer setbacks. Torus remains
+  `other`: the pinned kernel reports only aggregate torus counts, without a per-face getter.
+- Apply four-decimal coordinate presentation to sketch frames/points while retaining full-precision
+  reusable dimensions, parameters and undo arguments. Clarify post-open bounds and measured area errors
+  up to ~2% on very small curved regions, including planar faces with curved boundaries.
+- Carry ambiguous face-name warnings in document open/info and feature results; reject descriptive face
+  operands inside edge selections when they resolve to ambiguous names. Preserve sphere-fit fallback for
+  freeform surfaces, and guard fitted spheres directly when assigning corner plane normals.
+- Drop seam edges automatically from fillet/chamfer picks, count them in `rebuild.notes`, and clearly
+  refuse selections containing only seams. Topology/selection previews retain seams.
+- Give failed fillets geometric fit hints and smaller-radius/fewer-edge advice. Chamfer revolve advice
+  applies only to native too-big failures, suggests a smaller distance first, and follows all consumed bodies.
+- Correct corner singular/plural hints, require two solid-creating features for junction advice, and list
+  vector directions in argument errors; kind-query errors identify faces versus edges.
+
 ### Round I fixes
 - Unify all JSON bbox coordinates at four decimals with half-away rounding and normalized zero; document display-rounded render captions.
 - Correct small curved-area approximation guidance and singular edge wording.
@@ -16,7 +35,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `doc_save` reports `replaced` when the target existed before saving, including explicit-path replacement of another model.
 - Selection `and` accepts two or more operands; kind filters reuse topology's native/mesh classification.
-  `curve` matches arc/other edges; face-kind filters are preview-only pending a native persistence decision (ADR 0013).
+  `curve` matches arc/other edges; face-kind modifier leaves store fixed persistent ids (ADR 0013).
 - `feature_delete` refuses dependent nodes unless `cascade=true`; deletion is atomic and restores consumed
   source bodies. Session `undo` retains 16 successful modelling calls and restores exact Project/B-rep state;
   document replacement resets history, and saving/exporting files is outside modelling undo (ADR 0008).

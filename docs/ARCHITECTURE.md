@@ -68,7 +68,8 @@ B-rep copies isolate live shapes; failed calls restore the original Project/hand
 calls retain up to 16 source-free recipe snapshots plus call metadata. Restoration moves embedded source bytes
 by id and preserves the monotonic id allocator (F-056). Native sketch deletion's removed sources are retained
 once in a session archive while undo references them. Deletion reuses an enclosing tool boundary; direct
-engine deletion creates its own. Undo restores a snapshot without regeneration and reports its call and
+engine deletion creates its own. Undo restores a snapshot without regeneration and reports its tool name, original arguments, human label
+(localized created feature name, or action label for edits without a new feature), and
 restored parameters/bodies/diagnostics; eviction is remembered for limit-exhaustion messages. Read/save/export calls do
 not enter modelling history; doc_new/doc_open replace the Session and its history. Opening compares stored
 and rebuilt metrics using separate bbox-padding and volume-roundoff thresholds, compares shell/solid/face
@@ -105,9 +106,14 @@ The angular-deflection allowances and finite samples are engineering
 checks, not a guarantee for arbitrary unsampled surface behavior or variation along one facet side.
 Edge selections are resolved when the feature is created and stored as pick lists:
 stored edge queries break after the document is reopened in the app (F-024). Face selections (hole, shell, push
-face) are stored as queries and keep following the geometry. Face-kind filters are preview-only because
-QymCAD has no native kind query; modifiers refuse them pending a persistence decision (ADR 0013). A selection that matches nothing is refused (an
+face) are stored as queries and keep following the geometry. Face-kind leaves are lowered at feature creation to fixed persistent face ids because
+QymCAD has no native kind query; these leaves do not rediscover faces created by later edits. Native descriptive
+leaves in the same composition remain queries (ADR 0013). A selection that matches nothing is refused (an
 empty edge list would mean "every edge", F-025).
+Fillet/chamfer drop seam edges from the resolved picks and report their count in transient `rebuild.notes`;
+seam-only selections are refused. Topology/select retain seam previews. Duplicate face-name warnings also
+appear in document open/info and feature results; all face operands, including descriptive leaves nested
+inside edge selections, are checked before native resolution.
 New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
 radius, angles — and add each only if it removes a degree of freedom (`add_constraint_if_independent`): a point
 shared with earlier geometry is not dimensioned twice, so the result is (0, 0) without redundancy (rect and circle
@@ -142,10 +148,13 @@ round it for presentation. Mesh export reports per-body `mesh_volume_mm3`, also 
 and omits it for exact STEP exports. Bboxes measure a fresh independent B-rep copy tessellated at nominal deflection
 max(0.005 mm, 1e-5 of body diagonal), plus f32 coordinate rounding, consistently after open and rebuild (F-066). Curve extrema may be slightly
 under-bounded; incomplete/failed tessellation falls back to conservative native padded bounds. Use volume and topology positions for accurate size/placement checks.
-All JSON bbox coordinates serialize to four decimal places in mm, rounded half away from zero, with
+JSON bbox, sketch point x/y and world_frame coordinates/directions serialize to four decimal places
+for presentation, rounded half away from zero, with
 negative zero normalized to zero. Internal measurements retain full precision; decimal rounding can slightly
 over-bound or under-bound the actual extent. Render caption bounds are rounded to .01 mm for display.
 Topology coordinates keep their existing presentation rounding; sorting happens before formatting.
+Sketch radii, constraint dimension values, parameter values and undo arguments retain full precision for reuse
+as inputs. Both doc_open body lists report post-open geometry; stored metrics appear in mismatch warnings.
 
 Error contract: an unknown tool or malformed request is a JSON-RPC error; a tool that runs and fails returns a
 normal result with `isError: true` and the message (the model must see it). Argument structs use

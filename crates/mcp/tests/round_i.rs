@@ -71,7 +71,7 @@ fn curved_area_descriptions_do_not_understate_small_face_error() {
     let tools = Registry::new().list();
     for name in ["topology", "sketch_info"] {
         let description = tools.iter().find(|t| t["name"] == name).unwrap()["description"].as_str().unwrap();
-        for text in ["tessellation", "about 1%", "small curved", "not a guaranteed bound"] {
+        for text in ["tessellation", "up to ~2%", "small curved", "flat faces with curved boundaries", "not a guaranteed bound"] {
             assert!(description.contains(text), "{name} {text}: {description}");
         }
         assert!(!description.contains("0.1–0.2%"), "{description}");

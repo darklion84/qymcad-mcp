@@ -20,12 +20,12 @@ fn undo_reports_the_call_arguments_and_restored_bodies() {
     let args = json!({"feature":"stock"});
     call(&mut r, "feature_delete", args.clone());
     let undone = call(&mut r, "undo", json!({}));
-    assert_eq!(undone["undone"], json!({"tool":"feature_delete", "arguments":args}));
+    assert_eq!(undone["undone"], json!({"tool":"feature_delete", "label":"Delete feature", "arguments":args}));
     assert_eq!(undone["bodies"][0]["name"], "stock");
     assert!((undone["bodies"][0]["volume_mm3"].as_f64().unwrap() - 20.0_f64.powi(3)).abs() < 1e-9);
     let args = json!({"name":"n", "value":7});
     call(&mut r, "param_set", args.clone());
-    assert_eq!(call(&mut r, "undo", json!({}))["undone"], json!({"tool":"param_set", "arguments":args}));
+    assert_eq!(call(&mut r, "undo", json!({}))["undone"], json!({"tool":"param_set", "label":"Set parameter", "arguments":args}));
 }
 
 #[test]
@@ -89,5 +89,22 @@ fn empty_save_requires_override_to_replace_a_body_containing_file() {
         assert!(call(&mut r, "doc_info", json!({}))["bodies"].as_array().unwrap().is_empty());
         call(&mut r, "doc_save", json!({})); // Replacing an already empty file needs no override.
         call(&mut r, "doc_save", json!({"path":dir.join("new-empty.qcad")}));
+    }
+}
+
+#[test]
+fn undo_keeps_tool_and_arguments_with_a_localized_feature_label() {
+    for name in [None, Some("soft corners")] {
+        let mut r = Registry::new();
+        stock(&mut r);
+        let mut args = json!({"edges":{"along":"z"}, "radius":1.23456789});
+        if let Some(name) = name {
+            args["name"] = json!(name);
+        }
+        call(&mut r, "fillet", args.clone());
+        let undone = call(&mut r, "undo", json!({}));
+        assert_eq!(undone["undone"]["label"], name.unwrap_or("Fillet"), "undo needs a localized feature label");
+        assert_eq!(undone["undone"]["tool"], "fillet");
+        assert_eq!(undone["undone"]["arguments"], args);
     }
 }

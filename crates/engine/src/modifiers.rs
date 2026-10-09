@@ -69,6 +69,13 @@ pub struct Hole {
 /// stock growth beyond it can make the hole blind.
 pub(crate) const THROUGH_DEPTH: f64 = 10000.0;
 
+fn seam_note((id, mut report): (Id, Rebuild), dropped: usize) -> (Id, Rebuild) {
+    if dropped > 0 {
+        report.notes.push(format!("dropped {dropped} seam edges: not blendable"));
+    }
+    (id, report)
+}
+
 /// Evaluate a dimension; positive values only.
 fn positive(s: &Session, n: &Num, what: &str) -> Result<f64> {
     let v = n.eval(&s.p.param_map())?;
@@ -92,15 +99,18 @@ impl Session {
     /// re-evaluates against an empty edge pool and rounds every edge (F-024).
     pub fn fillet(&mut self, body: Option<Id>, edges: &Sel, radius: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
+        let mut dropped_seams = 0;
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let r = positive(s, radius, "fillet radius")?;
-            let ids = s.edges_now(src, edges)?;
+            let (ids, dropped) = s.edges_now(src, edges)?;
+            dropped_seams = dropped;
             let id = s.p.add_fillet(src, r, ids);
             dim(s, id, "radius", radius);
             s.set_node_name(id, name);
             Ok(id)
         })
+        .map(|result| seam_note(result, dropped_seams))
     }
 
     /// Bevel edges of a body: symmetric (`dist`), or two distances (`dist` on one face, `d2` on the other).
@@ -108,20 +118,14 @@ impl Session {
     pub fn chamfer(&mut self, body: Option<Id>, edges: &Sel, dist: &Num, d2: Option<&Num>, name: Option<&str>) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
         let mut revolve_source = false;
+        let mut dropped_seams = 0;
         self.atomic(|s| {
             let src = s.source_body(body)?;
-            let mut ancestor = Some(src);
-            while let Some(id) = ancestor {
-                let Some(node) = s.p.timeline.iter().find(|n| n.id == id) else { break };
-                if matches!(node.kind, FeatureKind::Revolve { .. }) {
-                    revolve_source = true;
-                    break;
-                }
-                ancestor = node.kind.consumed_body();
-            }
+            revolve_source = s.body_ancestors(src).iter().any(|n| matches!(n.kind, FeatureKind::Revolve { .. }));
             let d = positive(s, dist, "chamfer distance")?;
             let d2v = d2.map(|n| positive(s, n, "chamfer d2")).transpose()?;
-            let ids = s.edges_now(src, edges)?;
+            let (ids, dropped) = s.edges_now(src, edges)?;
+            dropped_seams = dropped;
             let mode = if d2v.is_some() { ChamferMode::TwoDist } else { ChamferMode::Symmetric };
             let id = s.p.add_chamfer_ex(src, d, ChamferShape { mode, d2: d2v.unwrap_or(0.0), flip: false, ref_face: 0 }, ids);
             dim(s, id, "dist", dist);
@@ -131,17 +135,8 @@ impl Session {
             s.set_node_name(id, name);
             Ok(id)
         })
-        .map_err(|mut error| {
-            if revolve_source {
-                if let Error::Rebuild(lines) = &mut error {
-                    for line in lines.iter_mut() {
-                        *line = format!("kernel's reason: {line}");
-                    }
-                    lines.push("this reason does not prove the distance is too large: cone-mouth chamfers can fail because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full-turn revolve try drawing the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep".into());
-                }
-            }
-            error
-        })
+        .map(|result| seam_note(result, dropped_seams))
+        .map_err(|error| chamfer_failure_advice(error, revolve_source))
     }
 
     /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
@@ -162,7 +157,7 @@ impl Session {
             };
             let id = s.p.add_shell_mode(src, t, if open_faces.is_ids() { ids } else { Vec::new() }, qside);
             if !open_faces.is_ids() {
-                let q = open_faces.to_query(Element::Faces)?;
+                let q = s.face_query(src, open_faces)?;
                 if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
                     *faces = Ref::many(q);
                 }
@@ -185,7 +180,7 @@ impl Session {
             let key = s.planar_face(src, face)?;
             let id = s.p.add_push_face(src, key, d);
             if !face.is_ids() {
-                let q = face.to_query(Element::Faces)?;
+                let q = s.face_query(src, face)?;
                 if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {
                     *r = Ref { query: q, expect: Cardinality::One, hint: Fingerprint { centroid: key.centroid, normal: key.normal } };
                 }
@@ -237,7 +232,7 @@ impl Session {
             let at = a.at.unwrap_or(key.centroid);
             let id = s.p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 });
             if !a.face.is_ids() {
-                let q = a.face.to_query(Element::Faces)?;
+                let q = s.face_query(src, &a.face)?;
                 if let Some(FeatureKind::Hole { face: r, .. }) = s.node_kind_mut(id) {
                     r.query = q;
                 }
@@ -259,13 +254,25 @@ impl Session {
 
     /// The edges `sel` resolves to on `src` now; an empty result is refused (QymCAD treats an empty edge list
     /// as "every edge", FINDINGS F-025).
-    fn edges_now(&self, src: Id, sel: &Sel) -> Result<Vec<u32>> {
-        let ids = self.resolve_sel(src, Element::Edges, sel)?;
+    fn edges_now(&self, src: Id, sel: &Sel) -> Result<(Vec<u32>, usize)> {
+        let mut ids = self.resolve_sel(src, Element::Edges, sel)?;
         if ids.is_empty() {
             let hint = self.empty_corner_hint(src, sel).map(|h| format!("; {h}")).unwrap_or_default();
             return Err(Error::Invalid(format!("the edge selection matched no edge of body {src}{hint}")));
         }
-        Ok(ids)
+        let seams: std::collections::HashSet<_> = {
+            let _gate = qymcad_kernel::kernel_gate();
+            self.shapes[&src].edge_face_pairs().into_iter().filter_map(|(edge, a, b)| (a == b).then_some(edge)).collect()
+        };
+        let before = ids.len();
+        ids.retain(|id| !seams.contains(id));
+        let dropped = before - ids.len();
+        if ids.is_empty() {
+            return Err(Error::Invalid(format!(
+                "the edge selection matched only seam edges of body {src}: not blendable; select a rim or another corner edge"
+            )));
+        }
+        Ok((ids, dropped))
     }
 
     fn planar_face(&self, src: Id, sel: &Sel) -> Result<qymcad_core::feature::FaceKey> {
@@ -278,5 +285,41 @@ impl Session {
 
     pub(crate) fn node_kind_mut(&mut self, id: Id) -> Option<&mut FeatureKind> {
         self.p.timeline.iter_mut().find(|n| n.id == id).map(|n| &mut n.kind)
+    }
+}
+
+fn chamfer_failure_advice(mut error: Error, revolve_source: bool) -> Error {
+    if revolve_source {
+        if let Error::Rebuild(lines) = &mut error {
+            let mut too_big = false;
+            for line in lines.iter_mut() {
+                // Atomic errors are "name (id): native message". Annotate the native reason only.
+                if let Some((label, native)) = line.rsplit_once(": ") {
+                    if native.starts_with("chamfer ") && native.ends_with(" too big") {
+                        *line = format!("{label}: kernel's reason: {native}");
+                        too_big = true;
+                    }
+                }
+            }
+            if too_big {
+                lines.push("try a smaller distance first. This reason does not prove the distance is too large: cone-mouth chamfers can fail because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full-turn revolve draw the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep".into());
+            }
+        }
+    }
+    error
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+    #[test]
+    fn chamfer_advice_only_wraps_too_big_native_message() {
+        let error = chamfer_failure_advice(Error::Rebuild(vec!["Bevel (42): chamfer 0.50 too big".into()]), true).to_string();
+        assert!(error.contains("Bevel (42): kernel's reason: chamfer 0.50 too big"), "{error}");
+        assert!(error.find("smaller distance").unwrap() < error.find("axis line").unwrap(), "{error}");
+        let other = chamfer_failure_advice(Error::Rebuild(vec!["Bevel (42): all edges smooth".into()]), true).to_string();
+        assert!(!other.contains("axis") && !other.contains("kernel's reason"), "{other}");
+        let no_revolve = chamfer_failure_advice(Error::Rebuild(vec!["Bevel (42): chamfer 0.50 too big".into()]), false).to_string();
+        assert!(!no_revolve.contains("axis"), "{no_revolve}");
     }
 }

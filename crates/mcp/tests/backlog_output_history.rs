@@ -60,7 +60,7 @@ fn undo_reports_restored_parameter_expressions_values_and_bodies() {
     let result = call(&mut r, "undo", json!({}));
     assert_eq!(result["params"], before["params"], "undo must report restored parameter expressions and values");
     assert_eq!(result["params"], json!([{"name":"t", "expr":"5", "value":5.0}, {"name":"h", "expr":"t+1", "value":6.0}]));
-    assert_eq!(result["undone"], json!({"tool":"param_set", "arguments":args}));
+    assert_eq!(result["undone"], json!({"tool":"param_set", "label":"Set parameter", "arguments":args}));
     // Restored prism height is h=t+1: V=20*30*(5+1).
     assert!((result["bodies"][0]["volume_mm3"].as_f64().unwrap() - 20.0 * 30.0 * (5.0 + 1.0)).abs() < 1e-9);
     call(&mut r, "param_set", json!({"name":"spare", "value":7}));

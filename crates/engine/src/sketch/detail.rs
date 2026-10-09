@@ -10,7 +10,9 @@ use serde::Serialize;
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct PointInfo {
     pub id: Id,
+    #[serde(serialize_with = "crate::session::serialize_coordinate")]
     pub x: f64,
+    #[serde(serialize_with = "crate::session::serialize_coordinate")]
     pub y: f64,
     /// Frame points: `origin` (0,0), `frame` (the axes' anchor at 0,0), `x_axis` (1,0), `y_axis` (0,1);
     /// `angle_reference`: a construction point on the +x side of a centre, the zero of its direction dimensions.

@@ -70,6 +70,9 @@ pub fn rebuild_json(r: &Rebuild) -> Value {
     if !r.warnings.is_empty() {
         o["warnings"] = json!(r.warnings);
     }
+    if !r.notes.is_empty() {
+        o["notes"] = json!(r.notes);
+    }
     o
 }
 

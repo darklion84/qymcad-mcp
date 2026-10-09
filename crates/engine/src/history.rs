@@ -23,6 +23,8 @@ pub struct Snapshot {
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct ToolCall {
     pub tool: String,
+    /// Localized created feature name, or a human action label when no feature was created.
+    pub label: String,
     pub arguments: serde_json::Value,
 }
 
@@ -35,7 +37,16 @@ pub struct Undone {
 impl Snapshot {
     /// Attach the caller's tool name and arguments for undo reporting.
     pub fn record_call(&mut self, tool: &str, arguments: serde_json::Value) {
-        self.call = Some(ToolCall { tool: tool.into(), arguments });
+        let label = match tool {
+            "param_set" => "Set parameter".into(),
+            "param_delete" => "Delete parameter".into(),
+            "sketch_add" => "Add sketch geometry".into(),
+            "sketch_constrain" => "Constrain sketch".into(),
+            "sketch_remove" => "Remove sketch geometry".into(),
+            "feature_delete" => "Delete feature".into(),
+            _ => tool.replace('_', " "),
+        };
+        self.call = Some(ToolCall { tool: tool.into(), label, arguments });
     }
 }
 
@@ -64,9 +75,15 @@ impl Session {
     }
 
     /// End a tool call. Failures restore exact state and never consume an undo entry.
-    pub fn finish_tool_edit(&mut self, snapshot: Snapshot, success: bool) {
+    pub fn finish_tool_edit(&mut self, mut snapshot: Snapshot, success: bool) {
         self.tool_edit_active = false;
         if success {
+            if let Some(call) = &mut snapshot.call {
+                let old_nodes: HashSet<_> = snapshot.project.timeline.iter().map(|n| n.id).collect();
+                if let Some(node) = self.p.timeline.iter().rev().find(|n| !old_nodes.contains(&n.id)) {
+                    call.label = crate::localization::name(&node.name);
+                }
+            }
             if self.undo.len() == UNDO_LIMIT {
                 self.undo.pop_front();
                 self.undo_limit_reached = true;
@@ -125,7 +142,7 @@ impl Session {
             .map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: crate::localization::error(e) })
             .collect();
         warnings.extend(self.advisory_warnings.clone());
-        Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies() } })
+        Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies(), ..Default::default() } })
     }
 
     // Native inputs omit datum placement dependencies (F-017). Extend native graph traversal with

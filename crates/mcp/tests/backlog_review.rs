@@ -430,3 +430,35 @@ fn uncertain_union_note_reports_body_total_without_membership_claims() {
         "body total stays two even when a pick branch includes one uncertain rim"
     );
 }
+
+#[test]
+fn modifier_only_chain_does_not_suggest_between() {
+    let mut r = block();
+    call(&mut r, "fillet", json!({"edges":{"along":"z"},"radius":1}));
+    let preview = call(&mut r, "select", json!({"edges":{"concave":true}}));
+    assert!(!preview["hint"].as_str().unwrap().contains("between"), "{preview}");
+    // A joined cone gives a second solid-creating feature and a genuine stock/cone junction.
+    call(&mut r, "sketch_create", json!({"plane":"XZ","name":"cone"}));
+    call(&mut r, "sketch_add", json!({"sketch":"cone","entities":[{"type":"polyline","points":[[0,10],[4,10],[0,14]],"closed":true}]}));
+    call(&mut r, "revolve", json!({"sketch":"cone","axis":"sketch_y","op":"add"}));
+    let preview = call(&mut r, "select", json!({"edges":{"and":[{"concave":true},{"kind":"line"}]}}));
+    assert!(preview["hint"].as_str().unwrap().contains("between"), "{preview}");
+}
+
+#[test]
+fn opposite_single_corner_uses_singular_edge() {
+    let mut r = block();
+    call(&mut r, "sketch_create", json!({"plane":"XZ","name":"cone"}));
+    call(&mut r, "sketch_add", json!({"sketch":"cone","entities":[{"type":"polyline","points":[[0,10],[4,10],[0,14]],"closed":true}]}));
+    call(&mut r, "revolve", json!({"sketch":"cone","axis":"sketch_y","op":"add"}));
+    // One cone base joins the prism: exactly one concave edge, no apex edge.
+    let preview = call(&mut r, "select", json!({"edges":{"and":[{"convex":true},{"kind":"arc"}]}}));
+    assert!(preview["hint"].as_str().unwrap().contains("it has 1 concave edge;"), "{preview}");
+}
+
+#[test]
+fn along_error_includes_vector_form() {
+    let mut r = block();
+    let error = r.call("select", json!({"edges":{"along":"sideways"}})).unwrap().unwrap_err();
+    assert!(error.contains("[x, y, z]"), "{error}");
+}

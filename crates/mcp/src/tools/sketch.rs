@@ -1,6 +1,6 @@
 //! Sketch tools.
 
-use super::common::{err, rebuild_json, round, ObjRef, PlaneArg};
+use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::{tool, Tool};
 use qymcad_engine::{ArcSpec, ConstrainSpec, ConstraintKind, DistAxis, Id, LineSpec, Num, PolygonSpec, PolylineSpec, SketchRef, SlotSpec};
 use schemars::JsonSchema;
@@ -127,24 +127,10 @@ pub struct RemoveArgs {
     pub constraint: Option<usize>,
 }
 
-/// Round every non-integer number in a JSON value (coordinates, radii, values) for a compact result.
-fn rounded(v: Value) -> Value {
-    match v {
-        // A non-finite number has no JSON form: null, never a panic or a bogus value.
-        Value::Number(n) if n.is_f64() => match n.as_f64() {
-            Some(x) if x.is_finite() => json!(round(x, 6)),
-            _ => Value::Null,
-        },
-        Value::Array(a) => Value::Array(a.into_iter().map(rounded).collect()),
-        Value::Object(o) => Value::Object(o.into_iter().map(|(k, v)| (k, rounded(v))).collect()),
-        other => other,
-    }
-}
-
 /// The sketch detail as compact JSON, plus the rebuild of dependent features when there was one.
 fn sketch_result(s: &qymcad_engine::Session, sketch: Id, rebuild: Option<&qymcad_engine::Rebuild>) -> Result<Value, String> {
     let detail = s.sketch_detail(sketch).map_err(err)?;
-    let mut o = json!({ "sketch": rounded(serde_json::to_value(detail).unwrap_or(Value::Null)) });
+    let mut o = json!({ "sketch": serde_json::to_value(detail).unwrap_or(Value::Null) });
     if let Some(r) = rebuild {
         o["rebuild"] = rebuild_json(r);
     }
@@ -212,7 +198,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "sketch_constrain",
             "Add a geometric constraint or a driving dimension between existing points/entities of a sketch (ids from \
-             sketch_info, or \"origin\", \"x_axis\", \"y_axis\"). Use it to dimension geometry added with \
+             sketch_info, or \"origin\", \"x_axis\", \"y_axis\"). Origin/frame/axis points are materialized only when geometry or constraints need them, usually after the first sketch_add; named aliases materialize their reference points. Use it to dimension geometry added with \
              `dimensioned: false`, or to relate entities (tangent, equal, symmetric, ...). Refused, with nothing changed, \
              when it would over-constrain the sketch (the message names the constraints it duplicates or contradicts; \
              remove one with sketch_remove, or add a dimension as `reference: true`) or cannot be solved. A geometric \
@@ -251,12 +237,11 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_info",
-            "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
+            "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
              entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); \
-             points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference); constraints \
+             points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
-             take. Contour areas are tessellation-based and can be below analytic; errors can reach about 1% on small curved \
-             regions, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",
+             take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",
             |st, a: InfoArgs| {
                 let s = st.doc()?;
                 let id: Id = a.sketch.resolve(s)?;

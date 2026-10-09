@@ -60,12 +60,16 @@ pub struct ContourInfo {
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct SketchWorldFrame {
     /// World origin in mm (including component placement and any GUI origin shift).
+    #[serde(serialize_with = "crate::session::serialize_coordinates")]
     pub origin: [f64; 3],
     /// World unit direction of positive sketch x.
+    #[serde(serialize_with = "crate::session::serialize_coordinates")]
     pub x_axis: [f64; 3],
     /// World unit direction of positive sketch y.
+    #[serde(serialize_with = "crate::session::serialize_coordinates")]
     pub y_axis: [f64; 3],
     /// World unit normal, x cross y.
+    #[serde(serialize_with = "crate::session::serialize_coordinates")]
     pub normal: [f64; 3],
 }
 

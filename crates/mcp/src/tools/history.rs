@@ -30,7 +30,7 @@ pub fn tools() -> Vec<Tool> {
             result["deleted"] = json!(deleted);
             Ok(result)
         }),
-        tool("undo", "Undo the last successful modelling tool call in this document, returning its name/arguments and the restored parameter expressions/values, bodies and rebuild diagnostics. The params list shows what is now in effect, including parameter removal after undoing creation. Restores the recipe and exact live B-reps. Retains at most 16 calls; reports when older calls were dropped at this limit. Failed calls and read/save/export tools do not consume history. doc_new/doc_open start fresh history. This session undo does not revert files written to disk; no redo.", |st, _: NoArgs| {
+        tool("undo", "Undo the last successful modelling tool call in this document, returning undone.tool, original undone.arguments and undone.label (localized created feature name, or a human action label), plus the restored parameter expressions/values, bodies and rebuild diagnostics. The params list shows what is now in effect, including parameter removal after undoing creation. Restores the recipe and exact live B-reps. Retains at most 16 calls; reports when older calls were dropped at this limit. Failed calls and read/save/export tools do not consume history. doc_new/doc_open start fresh history. This session undo does not revert files written to disk; no redo.", |st, _: NoArgs| {
             let s = st.doc()?;
             let restored = s.undo().map_err(err)?;
             let mut result = rebuild_json(&restored.rebuild);

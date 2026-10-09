@@ -30,8 +30,8 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. \
     {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes \
     full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's \
-    classification. Face-kind filters are preview-only for hole/shell/push_face because QymCAD has no persistent \
-    kind query; use explicit face ids or facing/of_feature there. Example, the top outline of a block: \
+    classification. In hole/shell/push_face, kind leaves become fixed persistent face ids at creation and do not \
+    rediscover faces created by later edits; native descriptive leaves stay dynamic. Example, the top outline of a block: \
     {\"edges_of\": {\"facing\": \"+z\"}}.";
 
 /// A selection as the agent writes it (names still unresolved).
@@ -284,7 +284,7 @@ fn dir(v: &Value) -> Result<[f64; 3], String> {
     if v.is_array() {
         return vec3(v);
     }
-    let (axis, max) = signed_axis(v)?;
+    let (axis, max) = signed_axis(v).map_err(|error| format!("{error}; alternatively give [x, y, z] (three finite numbers)"))?;
     let s = if max { 1.0 } else { -1.0 };
     Ok(match axis {
         Axis::X => [s, 0.0, 0.0],
@@ -566,7 +566,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "topology",
             "List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, \
-             centroid, outward normal for planes, tessellation-based area (curved areas can be below analytic by up to about 1% on small curved faces, \
+             centroid, outward normal for planes, tessellation-based area (areas can be below analytic by up to ~2% on very small curved regions, including flat faces with curved boundaries, \
              as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
              line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE \
              body and are only valid after the latest feature: every feature makes a new body, so call topology \

@@ -12,13 +12,16 @@ at the first matching name. The affected recipe succeeds and has the correct vol
 ## Decision
 
 Keep all topology rows, flag each duplicated name with `ambiguous_id`, and report a topology warning.
+Repeat the warning in document open/info and feature results for affected result bodies.
 Refuse face selections whose resolved ids include a duplicated name, including descriptive selections
-and modifier selections. Suggest reversing construction-axis endpoints for a full turn, or using an
-upward sketch axis with the profile at larger x than the line. Keep unique face selections, rendering,
+and modifier selections, also when nested inside `edges_of`/`between`. Suggest reversing construction-axis
+endpoints for a full turn, or draw the axis line toward the sketch's +y with the profile at larger x than
+the line. Keep unique face selections, rendering,
 export, and the original editable recipe available. Do not invent server-only persistent names.
 
-Disprove sphere fits when the native aggregate reports zero spherical surfaces. Where native spheres
-exist, also reject coplanar vertex sets and two axial levels about a circular boundary's axis (or the plane normal of its spline polyline): they
+Disprove sphere fits when the native aggregate reports zero spherical surfaces and zero freeform/other
+surfaces: a freeform representation may itself be spherical. Otherwise, reject coplanar vertex sets
+and two axial levels about a circular boundary's axis (or the plane normal of its spline polyline): they
 cannot distinguish a sphere from a conical band. Preserve the strict radial-residual validation.
 The pinned kernel has no per-face surface-type getter; unrecognized spline patches stay `other`.
 
@@ -27,4 +30,6 @@ The pinned kernel has no per-face surface-type getter; unrecognized spline patch
 Some face operations require the axis/profile workaround. This is safer than allowing a name to
 silently target multiple native faces. Sparse spherical patches with insufficient distinct support
 may remain unclassified; a vertex fit is evidence of geometry only when it excludes these degeneracies.
-Tests: `golden_round_i`; source and native probe evidence: F-068.
+Tests: `golden_round_i`, `golden_backlog_j2`, `sphere_fit_tests`; source and native probe evidence: F-068.
+The J2 investigation found unique edge names on the existing rescued fixture and on three rebuilt chamfer
+distances; mirrored edge ambiguity handling remains contingent on a reproducible duplicated-edge case.

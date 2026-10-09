@@ -438,6 +438,10 @@ Conventions:
   pinned in the test).
 - **Evidence:** test: `golden_features.rs` `holes_plain_blind_and_through` (seams, exact corner fillet next to
   them), `topology_of_a_block` (normals), `too_big_fillet_is_rolled_back_with_the_reason`.
+- **Server selection policy (J2):** drop seam ids before creating fillet/chamfer pick lists, emit transient
+  `rebuild.notes` with the number dropped, and refuse a seam-only selection. `select` and `topology` retain
+  seam edges, marked `seam: true`. Evidence: `golden_backlog_j2::{blend_selections_drop_seams_and_report_note,
+  seam_only_blend_selection_is_refused_clearly}` and MCP `backlog_j2::blend_reports_seam_note_and_keeps_preview_seam`.
 
 ## F-030 `Largest` ranks edges by chord, not length
 
@@ -548,7 +552,12 @@ Conventions:
   the other three vertical edges put it on the y face. The engine does not expose `flip` / `ref_face`, so an
   agent cannot choose the side.
 - **Evidence:** observed with a probe (face areas after a 2/4 chamfer at each corner), 2026-10-05; test:
-  `golden_features.rs` `chamfer_vertical_edges` pins the (+x, +y) case.
+  `golden_features.rs` `chamfer_vertical_edges` pins the (+x, +y) case. Source:
+  `crates/qymcad-kernel/src/occt_io.cpp:1680-1684,1706-1727` chooses the first native adjacent-face traversal
+  entry when flip=false/ref_face=0; the API returns only a Shape, with no chosen-reference-face report.
+- **Inspection:** compare adjacent face setbacks before/after chamfer; for straight rectangular faces the
+  removed face area divided by the selected edge length gives its setback, as that golden test proves.
+  Sorted topology adjacency ids do not expose the kernel traversal order.
 
 ## F-037 A hole has no through-all; the app's dialog caps the depth at 10000 mm
 
@@ -881,7 +890,7 @@ Conventions:
   Five samples and mesh-error allowances remain engineering checks, not a formal bound on arbitrary unsampled
   surface behavior. Empty previews state body-level requested/opposite corner counts, distinguishing corners eliminated by
   other composition conditions (MCP `backlog_review` box and cone/plane tests), adding a `between` example
-  only for multi-feature source chains; fillet/chamfer repeat the hint on empty matches. Corner previews
+  only for source ancestry with at least two solid-creating extrude/revolve features (modifiers do not count); fillet/chamfer repeat the hint on empty matches. Corner previews
   also report "omitted N uncertain edges" (MCP `backlog_selection`, `edge_corners`; ADR 0010).
 
 ## F-054 Native face sketch origins are projected coordinate origins
@@ -894,6 +903,12 @@ Conventions:
   `model/assembly.rs:1566`; `usability_info` face-frame, server/GUI height-following and component-placement tests.
 - **How we handle it:** multiply the native frame by its owner's world transform for `sketch_info`/`doc_info`;
   unresolved frames report null. Describe the origin/axes in tool docs (ADR [0011](adr/0011-report-native-sketch-frames.md)).
+- **Sketch point materialization:** the GUI creates the origin when entering sketch edit (`qymcad/src/gui.rs:
+  1442-1450,1389-1401`), but frame and axis guides remain lazy (`qymcad-core/src/model/sketch.rs:2875-2892,
+  2954-2993`). The server keeps its existing lazy origin/frame/guide policy: special points appear when geometry
+  or constraints need them, usually after the first sketch_add. The named origin/x_axis/y_axis constraint
+  aliases materialize their needed reference points (`engine/sketch/constrain.rs::geo`). Tool descriptions
+  document this; no speculative eager creation of all points or change to existing id allocation.
 
 ## F-055 A cylinder's underlying axis origin is not centred on its trimmed face
 
@@ -947,13 +962,15 @@ Conventions:
 - **Version:** v0.1.0-dev.20261001
 - **What:** face areas sum mesh triangle areas; sketch contour areas use the shoelace sum of contour points.
   These are approximate for curved geometry, rather than native B-rep surface integrals. Curved areas can
-  lie below analytic by up to about 1% on small curved faces in measured examples; this is an observation,
+  lie below analytic by up to ~2% on very small curved regions, including planar faces with curved
+  boundaries, in measured examples; this is an observation,
   not a guaranteed bound. The approximation varies with tessellation, angular deflection and shape.
 - **Evidence:** source: `qymcad-core/src/geom.rs:675-695` (`meshface_from_triangles`), `:242-252`
   (`Contour::signed_area`); engine `topology.rs` copies `MeshFace.area`, and `sketch.rs` uses `signed_area().abs()`.
   Observed: live final-test report (`tasks/qymcad-tests/final-test-report.md` in the 3d_modeling project)
   reported roughly 0.1–0.2% discrepancies on curved areas. Additional accepted H1-H4 live measurements
   (2026-10-08): Ø8 floor −0.37%, full sphere −0.38%, small sphere patches −0.72..−0.79%.
+  Additional round-I live observation (2026-10-09): R=.2 sketch circle area was ~1.8% low.
   For an n-sided inscribed circle mesh, shoelace area / analytic area is `n*sin(2*pi/n)/(2*pi)`;
   face triangle areas have additional surface sampling effects, so angular deflection alone is not a
   universal relative area bound.
@@ -999,6 +1016,9 @@ Conventions:
   In mixed bodies, mesh-planar faces use delta(max(0.3/sqrt(n),acos(0.99999))), n=triangle count, instead of
   exact allowance; even dense patches retain nonzero uncertainty. Native torus/freeform identity cannot be
   assigned per face from aggregate counts, so uncertain mixed patches remain conservative rather than guessed.
+  The pinned bridge has no per-face torus-type getter: `face_kinds` counts tori only in slot 4
+  (`lib.rs:888-894`, `occt_helical.cpp:1350-1376`). Torus faces therefore remain `other` in topology and kind
+  selections; aggregate counts cannot justify assigning an individual face kind.
 
 ## F-061 One-sided native cuts include a 0.001 mm entry seam
 
@@ -1022,15 +1042,17 @@ Conventions:
 - **What:** `refs::Query::Filter` is a binary intersection; no native geometric-kind variant exists.
   Existing edge modifiers store resolved persistent ids (F-024), while face modifiers persist native queries.
 - **Evidence:** source: `qymcad-core/src/refs.rs:69-115`; MCP `backlog_selection` checks 3/200-operand
-  intersections, 0/1 refusal, the existing 512-part budget, taxonomy equality and refusal of all three face
+  intersections, 0/1 refusal, the existing 512-part budget, taxonomy equality and acceptance of all three face
   modifiers. `golden_selection_kinds::kind_selected_fillet_survives_server_and_gui_parameter_edits` checks
   V=(20*16-4*(1-pi/4)*r²)*h and eight cap arcs of length pi*r/2 on server/native GUI edits; mutating line
   filters to select circles makes both taxonomy and geometry regressions red.
 - **How we handle it:** balance N-operand MCP intersections and retain F-032's size/depth limits. Lower
   kind previews using topology's shared classifier; `curve` matches arc/other edges, excluding full circles.
-  Edge modifiers keep normal pick storage. Stop face-kind persistence: freezing kind leaves to face ids would
-  not discover new faces, whereas true dynamic persistence needs an upstream Query change. Pending that choice,
-  face modifiers return a clear preview-only error with existing alternatives (ADR 0013, tasks/review-c1.md).
+  Edge modifiers keep normal pick storage. Face modifiers lower kind leaves to fixed persistent names at
+  creation, preserving native descriptive leaves in surrounding compositions. Frozen kind leaves do not
+  rediscover newly created faces; dynamic kind discovery still needs an upstream Query change (ADR 0013).
+  The three face golden tests inspect stored kind ids plus a native oriented query and derive volumes for a
+  drilled prism, hollow box and pushed top on creation/server/reopened/native-GUI parameter edits.
 
 
 ## F-063 Native mesh rounding depends on world coordinates, including small chamfer cones
@@ -1195,9 +1217,9 @@ Conventions:
   of the eight native mouth-circle chamfers fails, and reversing the construction-axis endpoints recovers.
   `negative_side_revolve_chamfer_error_suggests_profile_or_axis_workaround` initially failed because
   `chamfer 0.50 too big` omitted advice; disabling the new advice reproduces that failure.
-- **How we handle it (option b):** after a failed chamfer whose source chain contains a revolve, retain the
+- **How we handle it (option b):** only after a native ChamferTooBig failure whose complete consumed-body ancestry contains a revolve, retain the
   native reason explicitly as the kernel's reason (which does not prove an excessive distance), and add
-  conditional advice: for a full turn draw the axis toward sketch +y with the profile at larger x than the
+  conditional advice: first try a smaller distance; for a full turn draw the axis line toward the sketch's +y with the profile at larger x than the
   line, or reverse its endpoints. Orientation alone does not predict failure; overlapping cones can matter,
   while clean-block controls pass both ways. User-facing text omits internal finding references. Partial-turn
   endpoint reversal changes the sweep. Preserve recipes/axes; a cone axis sign cannot prove frame handedness,
@@ -1230,14 +1252,16 @@ Conventions:
   `Project::face_sphere` remains the mesh fit in F-065. Two coaxial circles fit a common sphere:
   for radii r1,r2 at heights z1,z2, its center height is
   `(r1²-r2²+z1²-z2²)/(2*(z1-z2))`; radial residual cannot distinguish a two-ring band.
-- **Server policy:** ADR 0016; native zero-sphere counts disprove fits; coplanar points and points on
+- **Server policy:** ADR 0016; native zero-sphere counts disprove fits only when freeform/other counts are
+  also zero: those surface representations can describe a sphere. Coplanar points and points on
   at most two axial levels about a boundary-plane normal also disprove sufficient sphere support.
   Circle metadata is absent on the rescued spline rings; native `edges_info` exposes 25 f32 curve samples
   (`occt_io.cpp:752-762`, `lib.rs:985-1003`) but populates circle metadata only for GeomAbs_Circle
   (`occt_io.cpp:764-777`). Noncollinear boundary samples supply a candidate unit axis; requiring all
   sphere-fit vertices on at most two perpendicular planes is the rejection proof, even for spline rings. Keep the
   f32 radial tolerance. Flag ambiguous topology ids, warn, and refuse selections resolving to them
-  with a full-turn axis/profile workaround, including explicit face ids nested in edges_of/between.
+  with a full-turn axis/profile workaround, including explicit ids and descriptive face operands nested
+  in edges_of/between. Document open/info and feature results repeat the naming warning for result bodies.
   The model remains inspectable/renderable/exportable.
 - **Tests:** `golden_round_i` verifies both unchanged fixtures, formula frustum/bevel volume, no false
   spheres, warning/flags, ambiguous selection refusal and all control face selections. Before fix:
@@ -1247,6 +1271,20 @@ Conventions:
   regression in sphere_fit_tests defeats the aggregate shortcut and fails without spline-boundary candidate
   normals, proving the two-ring rejection itself. Rotated-plane and two-/three-ring geometric tests cover
   support degeneracy independently. Nested explicit face-reference regression fails without name validation.
+- **J2 guard evidence:** `sphere_fit_tests::freeform_native_faces_do_not_disprove_a_geometrically_valid_sphere_fit`
+  injects exact R2 spherical vertices over a native Bezier/freeform B-rep to unit-test the aggregate decision;
+  it does not claim that the B-rep itself is spherical. The pinned Rust API exposes Bezier patches but no
+  sphere-to-NURBS conversion. Native aggregate slots are documented in `qymcad-kernel/src/lib.rs:888-894`;
+  `occt_helical.cpp:1354-1376` classifies Bezier/B-spline as freeform. Geometric support/residual guards still
+  reject the repaired cone fixture. `corner_planar_normal_itself_rejects_a_validated_sphere_fit` supplies
+  four exact sphere latitude triangles whose normals all appear planar, proving the direct fitted-sphere
+  guard. Removing either guard separately is red. Both regressions follow initial behavioral failures.
+- **Edge-name investigation (J2, closed without a new policy):** the unchanged repaired fixture has 25
+  distinct edge names. Rebuilding its chamfer at .25/.5/.75 mm also yields 25 distinct edge names in every
+  case, with four ambiguous face rows confirming seam rescue. Test:
+  `golden_backlog_j2::seam_repaired_chamfers_keep_unique_edge_names_in_investigated_cases`, including
+  formula-derived volume checks. No duplicate edge name reproduced; inferred edge ambiguity alone does not
+  justify an untested policy. A reproduced fixture would unblock adding mirrored edge checks.
 
 
 ## F-069 The kernel gate is a non-reentrant mutex with no ownership query
@@ -1273,8 +1311,36 @@ Conventions:
   errors, undo labels); `Project` keeps the stored keys so files round-trip unchanged. Language selection is
   thread-local, so every call sets "en".
 - **Evidence:** `crates/engine/tests/localization.rs` (unnamed features/datum planes read "Extrusion"/"Plane";
-  the missing cut reads in English with the direction hint), `localization_tests.rs`. Mutation (returning the
+  the missing cut reads in English with the direction hint), `localization_tests.rs`. `usability_polish::undo_keeps_tool_and_arguments_with_a_localized_feature_label`
+  verifies undo `undone.label` for default Fillet and custom names while retaining the tool and exact arguments;
+  calls without a created node use a human action label. Mutation (returning the
   stored key) turns both integration tests red (verified 2026-10-09).
 - **Cost:** one more pinned QymCAD crate (bump with the other four, docs/UPGRADING.md) and its Fluent
   dependencies (about 20 crates in Cargo.lock).
 - **Version:** v0.1.0-dev.20261001.
+
+### J1 diagnostics follow-up
+
+FilletRadiusTooBig's native Display only gives radius/edge count (`qymcad-core/src/errors.rs:551`). The
+server adds conditional geometric fit advice (thin wall, short edge, small adjacent fillet), without claiming
+an exact kernel cause. Tests: localization_tests::failed_fillet_explains_fit_and_suggests_smaller_radius;
+modifiers::hint_tests::chamfer_advice_only_wraps_too_big_native_message; topology::ancestry_tests;
+MCP backlog_review modifier-only/junction/singular/direction regressions. Full ancestry uses
+FeatureKind::consumed (`feature.rs:2961`), not primary lineage alone. Kernel reason annotation wraps
+only the native message after the localized name/id. Eight separate mutation regressions verified red.
+
+### J3 presentation and open-result clarification
+
+Sketch world_frame origins/directions and point x/y serialize with the bbox four-decimal half-away policy;
+internal values remain unrounded. Radius/constraint values and parameter/undo argument values retain full
+precision because clients can reuse them as inputs. This replaces blanket six-decimal sketch formatting.
+Evidence: MCP backlog_j3 tests for frame/point presentation, a 45° frame, input-ready values, and curved
+feature bounds after height edits 10→12→10. Cylinder bounds use r=3.6 and V=pi*r²*h; the returned feature
+bbox equals later doc_info after rebuilding, confirming H1/F-066 fixed the old padding discrepancy.
+
+Both doc_open.doc.bodies and doc_open.rebuild.bodies are post-open geometry, not separate stored/rebuilt
+snapshots: `crates/mcp/src/tools/doc.rs` calls info on the Session returned by Session::open, after its
+rebuild. Stored metrics are compared internally and appear only in mismatch warnings (F-052).
+True scaled binary ties: ±33/32 and ±35/32, multiplied by 10^4, give ±10312.5 and ±10937.5 exactly.
+`golden_round_i::bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_values`
+asserts those exact fractional halves before checking away-from-zero output.

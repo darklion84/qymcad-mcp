@@ -26,21 +26,30 @@ pub struct BodyInfo {
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm, from fresh nominal-deflection tessellation
     /// (.005 mm, scaled to 1e-5 of diagonals over 500 mm) plus f32 coordinate rounding; native bounds are a fallback if meshing fails (F-066).
     /// JSON coordinates use four decimals, rounded half away from zero, with negative zero normalized.
-    #[serde(serialize_with = "serialize_bbox")]
+    #[serde(serialize_with = "serialize_coordinates")]
     pub bbox: [f64; 6],
 }
 
-fn serialize_bbox<S: serde::Serializer>(bbox: &[f64; 6], serializer: S) -> std::result::Result<S::Ok, S::Error> {
-    bbox.map(|value| {
-        let scaled = value * 10_000.0;
-        let rounded = if scaled.is_finite() { scaled.round() / 10_000.0 } else { value };
-        if rounded == 0.0 {
-            0.0
-        } else {
-            rounded
-        }
-    })
-    .serialize(serializer)
+/// Four-decimal presentation only; internal model values retain full precision.
+fn round_coordinate(value: f64) -> f64 {
+    let scaled = value * 10_000.0;
+    let rounded = if scaled.is_finite() { scaled.round() / 10_000.0 } else { value };
+    if rounded == 0.0 {
+        0.0
+    } else {
+        rounded
+    }
+}
+
+pub(crate) fn serialize_coordinates<const N: usize, S: serde::Serializer>(
+    values: &[f64; N],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    values.map(round_coordinate).serialize(serializer)
+}
+
+pub(crate) fn serialize_coordinate<S: serde::Serializer>(value: &f64, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    round_coordinate(*value).serialize(serializer)
 }
 
 /// What a rebuild produced.
@@ -48,6 +57,9 @@ fn serialize_bbox<S: serde::Serializer>(bbox: &[f64; 6], serializer: S) -> std::
 pub struct Rebuild {
     pub errors: Vec<NodeIssue>,
     pub warnings: Vec<NodeIssue>,
+    /// Information about this call's resolved selection; not a persistent document warning.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     pub bodies: Vec<BodyInfo>,
 }
 
@@ -406,7 +418,9 @@ impl Session {
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.clone());
-        Rebuild { errors, warnings, bodies: self.result_bodies() }
+        let bodies = self.result_bodies();
+        warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
+        Rebuild { errors, warnings, bodies, ..Default::default() }
     }
 
     /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.

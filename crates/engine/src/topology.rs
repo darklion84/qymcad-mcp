@@ -140,8 +140,8 @@ pub struct EdgeInfo {
     /// The two faces meeting at the edge (with `adjacency`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub faces: Option<[u32; 2]>,
-    /// A seam: the closing line of a round face, with that face on both sides. Not a real corner; fillets and
-    /// chamfers ignore it.
+    /// A seam: the closing line of a round face, with that face on both sides. Fillet/chamfer selections
+    /// drop these edges with a result note; select/topology previews retain them.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub seam: bool,
 }
@@ -296,7 +296,12 @@ impl Sel {
                 [one] => Query::Id(*one),
                 _ => Query::Ids(ids.clone()),
             },
-            Sel::Kind(_) => return Err(Error::Invalid("face kind selections are preview-only: QymCAD has no persistent kind query; use explicit face ids or a facing/of_feature description for modifiers".into())),
+            Sel::Kind(_) => {
+                return Err(Error::Invalid(format!(
+                    "{} kind selections need body-specific lowering to persistent ids: QymCAD has no native kind query",
+                    el.name().trim_end_matches('s')
+                )))
+            }
             Sel::OfFeature { feature, role } => {
                 if el == Element::Edges {
                     return bad("of_feature", "it names faces; use {\"edges_of\": {\"of_feature\": ...}}");
@@ -541,22 +546,29 @@ impl Session {
         }
         out_faces.sort_unstable_by_key(|f| f.id);
         out_edges.sort_unstable_by_key(|e| e.id);
-        let mut duplicate_ids: Vec<_> = out_faces.iter().filter(|f| f.ambiguous_id).map(|f| f.id).collect();
-        duplicate_ids.dedup();
-        let warnings = if duplicate_ids.is_empty() {
-            vec![]
-        } else {
-            vec![format!("ambiguous native face ids {duplicate_ids:?}: multiple faces share each name; face selections using them are refused. For a full-turn revolved cone, reverse the construction-axis line endpoints or use an upward axis and a profile at larger sketch x than the line")]
-        };
+        let warnings = self.ambiguous_face_warning(body).into_iter().collect();
         Ok(Topology { body, faces: out_faces, edges: out_edges, warnings })
+    }
+
+    /// Native naming diagnostics require only the restored face pool, never tessellation or a kernel gate.
+    pub(crate) fn ambiguous_face_warning(&self, body: Id) -> Option<String> {
+        let faces = self.p.regen_faces.get(&body)?;
+        let mut counts = HashMap::new();
+        for face in faces {
+            *counts.entry(face.id).or_insert(0usize) += 1;
+        }
+        let mut duplicate_ids: Vec<_> = counts.into_iter().filter_map(|(id, count)| (count > 1).then_some(id)).collect();
+        duplicate_ids.sort_unstable();
+        (!duplicate_ids.is_empty()).then(|| format!("ambiguous native face ids {duplicate_ids:?}: multiple faces share each name; face selections using them are refused. For a full-turn revolved cone, reverse the construction-axis line endpoints or draw the axis line toward the sketch's +y and use a profile at larger sketch x than the line"))
     }
 
     /// Native face_sphere is a permissive mesh fit (F-065), not a surface-type query.
     /// Validate every vertex of this face at f32 mesh-coordinate accuracy before trusting it.
     fn validated_face_sphere(&self, body: Id, face: &MeshFace) -> Option<([f64; 3], f64)> {
         let shape = self.shapes.get(&body)?;
-        // The native aggregate can disprove a sphere, even though no per-face type getter exists.
-        if shape.face_kinds().is_some_and(|kinds| kinds[3] == 0) {
+        // A B-spline/freeform or unidentified surface can still describe a sphere.
+        // Only fully identified native kinds can disprove the mesh fit (F-068).
+        if shape.face_kinds().is_some_and(|kinds| kinds[3] == 0 && kinds[5] == 0 && kinds[6] == 0) {
             return None;
         }
         let (center, radius) = self.p.face_sphere(body, &face_key(face))?;
@@ -604,6 +616,22 @@ impl Session {
         Ok((body, self.resolve_sel(body, el, sel)?))
     }
 
+    /// Body nodes in the source lineage, each visited once.
+    pub(crate) fn body_ancestors(&self, body: Id) -> Vec<&qymcad_core::feature::FeatureNode> {
+        let mut result = Vec::new();
+        let mut pending = vec![body];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(id) = pending.pop() {
+            if !visited.insert(id) {
+                continue;
+            }
+            let Some(node) = self.p.timeline.iter().find(|n| n.id == id) else { continue };
+            result.push(node);
+            pending.extend(node.kind.consumed());
+        }
+        result
+    }
+
     /// Explain an empty corner selection, including the body's opposite corner count.
     pub fn empty_corner_hint(&self, body: Id, sel: &Sel) -> Option<String> {
         let (concave, convex) = sel.corner_filters();
@@ -614,11 +642,12 @@ impl Session {
         let outward = self.corner_edges(body, false).len();
         let single = |count: usize, side: &str, opposite: usize, other: &str| {
             if count == 0 {
-                format!("0 {side} edges; this body has {opposite} {other} edges")
+                format!("0 {side} edges; this body has {opposite} {other} {}", edge_word(opposite))
             } else {
-                let plural = if count == 1 { "edge" } else { "edges" };
+                let plural = edge_word(count);
                 format!(
-                    "this body has {count} {side} {plural}, but none survives the rest of the selection; it has {opposite} {other} edges"
+                    "this body has {count} {side} {plural}, but none survives the rest of the selection; it has {opposite} {other} {}",
+                    edge_word(opposite)
                 )
             }
         };
@@ -631,13 +660,14 @@ impl Session {
             }
             _ => return None,
         };
-        let mut current = Some(body);
-        let mut features = 0;
-        while let Some(id) = current {
-            let Some(node) = self.p.timeline.iter().find(|n| n.id == id) else { break };
-            features += 1;
-            current = node.kind.consumed_body();
-        }
+        // Conservative hint: modifiers do not create a second feature junction.
+        let features = self
+            .body_ancestors(body)
+            .iter()
+            .filter(|n| {
+                matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. } | qymcad_core::feature::FeatureKind::Revolve { .. })
+            })
+            .count();
         if features > 1 {
             hint.push_str("; for a junction between named features use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}");
         }
@@ -655,21 +685,23 @@ impl Session {
         medges.iter().map(|e| (e.id, edge_kind_length(e, &polylines).1)).collect()
     }
 
+    /// Fitted spheres never receive a mesh-plane normal, even when sparse facets appear parallel.
+    fn corner_planar_normal(&self, body: Id, face: &MeshFace) -> Option<LocalNormal> {
+        if self.validated_face_sphere(body, face).is_some() {
+            return None;
+        }
+        let shape = self.shapes.get(&body)?;
+        let mesh = &self.p.bodies[self.p.mesh_index(body)?].mesh;
+        mesh_corner_planar_normal(shape, face, mesh)
+    }
+
     /// Corner candidates exclude seams and proven sampled G1 junctions. Uncertain candidates have no sign.
     fn classified_corners(&self, body: Id) -> Vec<(u32, Option<bool>)> {
         let Some(shape) = self.shapes.get(&body) else { return Vec::new() };
         let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Vec::new() };
         let faces: HashMap<_, _> = self.p.regen_faces.get(&body).into_iter().flatten().map(|f| (f.id, f)).collect();
         let _gate = qymcad_kernel::kernel_gate();
-        let planes: HashMap<_, _> = faces
-            .iter()
-            .filter_map(|(&id, f)| {
-                if self.validated_face_sphere(body, f).is_some() {
-                    return None;
-                }
-                corner_planar_normal(shape, f, mesh).map(|n| (id, n))
-            })
-            .collect();
+        let planes: HashMap<_, _> = faces.iter().filter_map(|(&id, f)| self.corner_planar_normal(body, f).map(|n| (id, n))).collect();
         let cones: HashMap<_, _> = faces
             .iter()
             .filter_map(|(&id, f)| {
@@ -770,11 +802,11 @@ impl Session {
                 return Ok(None);
             }
             let count = self.resolve_sel(body, Element::Edges, &candidates)?.len();
-            let edges = if count == 1 { "edge" } else { "edges" };
+            let edges = edge_word(count);
             Ok((count > 0).then(|| format!("omitted {count} uncertain {edges}")))
         } else {
             let total = uncertain.len();
-            let edges = if total == 1 { "edge" } else { "edges" };
+            let edges = edge_word(total);
             let pronoun = if total == 1 { "it" } else { "them" };
             Ok((total > 0).then(|| {
                 format!(
@@ -849,9 +881,11 @@ impl Session {
                 }
                 Ok(())
             }
-            Sel::EdgesOf(f) => b(f, Element::Faces),
+            Sel::EdgesOf(f) => self.resolve_sel(body, Element::Faces, f).map(|_| ()),
             Sel::TangentChain { seed, .. } => b(seed, Element::Edges),
-            Sel::Between(x, y) => b(x, Element::Faces).and(b(y, Element::Faces)),
+            Sel::Between(x, y) => {
+                self.resolve_sel(body, Element::Faces, x).and_then(|_| self.resolve_sel(body, Element::Faces, y)).map(|_| ())
+            }
             Sel::Union(v) => v.iter().try_for_each(|x| b(x, el)),
             Sel::Minus(x, y) | Sel::And(x, y) => b(x, el).and(b(y, el)),
             Sel::OfFeature { .. }
@@ -868,7 +902,7 @@ impl Session {
     fn check_face_names(&self, body: Id, ids: &[u32]) -> Result<()> {
         let faces = self.p.regen_faces.get(&body).map(Vec::as_slice).unwrap_or_default();
         if let Some(id) = ids.iter().find(|&&id| faces.iter().filter(|f| f.id == id).count() > 1) {
-            return Err(Error::Invalid(format!("ambiguous face id {id} on body {body}: multiple native faces share this name. For a full-turn revolved cone, reverse the construction-axis line endpoints or use an upward axis with the profile at larger sketch x than the line")));
+            return Err(Error::Invalid(format!("ambiguous face id {id} on body {body}: multiple native faces share this name. For a full-turn revolved cone, reverse the construction-axis line endpoints or draw the axis line toward the sketch's +y with the profile at larger sketch x than the line")));
         }
         Ok(())
     }
@@ -890,6 +924,12 @@ impl Session {
             self.check_face_names(body, &found)?;
         }
         Ok(found)
+    }
+
+    /// Persist native face descriptions, freezing engine-only kind leaves to their current names (ADR 0013).
+    /// Those leaves do not discover faces created by a later edit; native descriptions remain dynamic.
+    pub(crate) fn face_query(&self, body: Id, sel: &Sel) -> Result<Query> {
+        self.lower_edge_filters(body, Element::Faces, sel, &mut None)?.to_query(Element::Faces)
     }
 
     /// Resolve a selection that must name exactly one face; returns its key (id, centroid, normal).
@@ -1000,9 +1040,9 @@ fn angular_error(angle: f64) -> f64 {
 
 type LocalNormal = ([f64; 3], f64);
 
-/// Native cylinders/cones and fitted spheres never receive a mesh-plane normal. The kernel
+/// Native cylinders/cones never receive a mesh-plane normal. The kernel
 /// exposes aggregate surface kinds, allowing native plane proof only when no unidentified curved kinds exist.
-fn corner_planar_normal(shape: &Shape, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<LocalNormal> {
+fn mesh_corner_planar_normal(shape: &Shape, face: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<LocalNormal> {
     if shape.face_axis(face.id).is_some() {
         return None;
     }
@@ -1300,3 +1340,41 @@ mod normal_tests;
 
 #[cfg(test)]
 mod corner_tests;
+
+#[cfg(test)]
+mod backlog_j1_tests {
+    use super::*;
+    #[test]
+    fn kind_query_error_names_the_element() {
+        for element in [Element::Faces, Element::Edges] {
+            let error = Sel::Kind(SelectionKind::Other).to_query(element).unwrap_err().to_string();
+            assert!(error.contains(&format!("{} kind", element.name().trim_end_matches('s'))), "{error}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod ancestry_tests {
+    use super::*;
+    #[test]
+    fn junction_hint_follows_both_boolean_operands() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cone_negative_chamfer.qcad");
+        let (mut s, _) = Session::open(&path).unwrap();
+        let stock = s.p.timeline.iter().find(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })).unwrap().id;
+        let revolve = s.p.timeline.iter().find(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Revolve { .. })).unwrap().id;
+        // Synthetic ancestry only: two separate solid-producing nodes meet at a boolean.
+        // No geometry claim is made for this unbuilt test node.
+        let boolean = s.p.add_body_boolean(stock, revolve, 1);
+        assert!(s.body_ancestors(boolean).iter().any(|n| n.id == revolve), "secondary boolean operand was not visited");
+        let hint = s.empty_corner_hint(boolean, &Sel::Concave).unwrap();
+        assert!(hint.contains("between"), "secondary consumed body must contribute its revolve: {hint}");
+    }
+}
+
+fn edge_word(count: usize) -> &'static str {
+    if count == 1 {
+        "edge"
+    } else {
+        "edges"
+    }
+}
