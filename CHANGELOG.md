@@ -45,9 +45,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - Persistent local JSONL call logs on by default for stdio servers, recording received tool arguments before
-  execution, timed results without image data, protocol errors, panics and shutdown; configurable directory,
+  execution, timed results with image MIME type and `base64_bytes` instead of image data, protocol errors,
+  panics and shutdown; configurable directory,
   opt-out, bounded records/files and startup retention (ADR 0018). Initialize instructions advertise the
-  opened log's path; unavailable cwd metadata is recorded as null without disabling logging.
+  active log's path only after its startup record is written; unavailable cwd metadata is recorded as null
+  without disabling logging. Truncation caches unchanged field sizes and caps work at 32 iterations.
 - `doc_save` reports `replaced` when the target existed before saving, including explicit-path replacement of another model.
 - Selection `and` accepts two or more operands; kind filters reuse topology's native/mesh classification.
   `curve` matches arc/other edges; kind-containing face modifiers store the whole resolved selection as persistent picks (ADR 0013).

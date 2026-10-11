@@ -61,7 +61,7 @@ Read the records in order: `call` saves received arguments before a tool runs, a
 and elapsed milliseconds with the same `seq`. The last `call` without a matching `result` identifies the call
 that crashed or hung, provided logging had not stopped because of an I/O failure or the size limit. Records also
 include startup, initialization, JSON-RPC errors, Rust panics and transport shutdown. Image results contain
-MIME type and `bytes` (the original base64 string's UTF-8 byte length), with image data omitted.
+MIME type and `base64_bytes` (the original base64 string's UTF-8 byte length), with image data omitted.
 
 Logs contain tool arguments and results, including file paths, parameter values and error texts. They stay on
 local disk; nothing is sent anywhere. Each record is limited to 256 KiB and each file to 64 MiB. Oversized

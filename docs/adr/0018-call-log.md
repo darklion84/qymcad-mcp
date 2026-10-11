@@ -23,7 +23,7 @@ behavior or adding dependencies to the synchronous transport (ADR 0002).
   with client info and requested/answered protocol versions. Assign sequence numbers only to recognized
   tool calls; write `call` with the received arguments **before** invoking the tool, then `result` with the
   same sequence/tool, elapsed milliseconds, error flag and result content. Keep text content; replace every
-  image with its MIME type and `bytes`, meaning the original base64 string's UTF-8 byte length, never its data.
+  image with its MIME type and `base64_bytes`, meaning the original base64 string's UTF-8 byte length, never its data.
 - Record `rpc_error` with code, message, request id and method when known, including parse failures of
   non-JSON input. A panic hook installed by `main` shares the logger with the transport and records message,
   source location and thread before chaining the previous hook. Handle a poisoned mutex without panicking.
@@ -37,21 +37,23 @@ behavior or adding dependencies to the synchronous transport (ADR 0002).
   UTF-8 boundaries with `…[truncated N bytes]` markers, preserving valid JSON. If numeric arrays, huge object
   keys or other structural data cannot be bounded by cutting string values, replace the largest field with
   a marked prefix of its serialized JSON text. The strict line-size bound takes priority over retaining that
-  field's original type. Bound each file to 64 MiB,
+  field's original type. Cache unchanged field sizes and cap truncation at 32 iterations; if the record
+  still cannot fit, return a marked envelope retaining a bounded kind and timestamp. Bound each file to 64 MiB,
   reserving room for one final timestamped `log_limit` record before disabling further writes. Report the
   limit once on stderr.
 - Before opening the new file, remove matching regular `qymcad-mcp-*.jsonl` files whose mtime is older than
   30 days, then delete the oldest above a cap of 200 previous files. The new file is not counted. Never
   remove foreign files, directories or symlinks. Ignore deletion errors and report them at most once.
 - Directory/file creation or write failure reports `qymcad-mcp: call log disabled: <reason>` once on stderr
-  and disables logging for the process while serving continues. Print the active path (or `off`) on startup
-  stderr. In `main`, use `instructions_with_log` with the opened log's path to append exactly
+  and disables logging for the process while serving continues. Print `off` on stderr when explicitly disabled;
+  print the active path only after successfully writing the `start` record. A startup write failure returns
+  no logger and emits only the disable note, with no advertised path. In `main`, use `instructions_with_log`
+  with the active log's path to append exactly
   `"\nCall log of this server process (JSONL, for diagnosing problems): <path>."` to
   `initialize.result.instructions`; append nothing when logging is off. This sentence is the only permitted
   protocol-output difference between logging on and off: all other initialize fields match, and every
   response after initialize is byte-identical (compare raw lines without normalization). The original
-  instruction helper stays usable from tests; generated tool schemas and docs remain unaffected. See
-  [the implementation review](../../tasks/review-calllog.md).
+  instruction helper stays usable from tests; generated tool schemas and docs remain unaffected.
 - Logs contain tool arguments/results (file paths, parameter values, error texts) and process/client metadata.
   They stay on local disk; nothing is sent anywhere. Document the default and opt-out in README and SECURITY.
   Tests spawning the server disable logging, except call-log tests with fresh temporary directories.

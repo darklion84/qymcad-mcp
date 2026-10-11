@@ -184,12 +184,12 @@ fn logs_session_in_order_with_errors_and_redacted_images() {
             assert_eq!(image["type"], "image");
             assert_eq!(image["mimeType"], "image/png");
             assert_eq!(
-                image["bytes"],
+                image["base64_bytes"],
                 reply["result"]["content"][0]["data"].as_str().unwrap().len(),
-                "bytes counts the original base64 string"
+                "base64_bytes counts the original base64 string"
             );
             assert!(image.get("data").is_none(), "image base64 must never enter call log");
-            assert_eq!(image.as_object().unwrap().len(), 3, "image contains type, mimeType and bytes only");
+            assert_eq!(image.as_object().unwrap().len(), 3, "image contains type, mimeType and base64_bytes only");
             assert_eq!(result["content"][1], reply["result"]["content"][1], "render caption preserved");
         }
     }
