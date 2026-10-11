@@ -6,7 +6,7 @@ talks only to the MCP client that spawned it. It opens no network ports.
 ## Call-log privacy
 Stdio serving writes a local call log by default (locations and configuration: [README](../README.md#call-log)).
 It contains the arguments actually received and tool results, including file paths, parameter values and error
-texts, plus client/server metadata, working directory and timings. Image data is omitted; image `bytes` counts
+texts, plus client/server metadata, working directory and timings. Image data is omitted; image `base64_bytes` counts
 the original base64 string's UTF-8 bytes. Nothing is uploaded or sent anywhere by the logger. Consider the log's
 contents when sharing it. Set `QYMCAD_MCP_LOG=off` to disable logging, or choose another directory with that
 variable. CAD-path confinement through `QYMCAD_MCP_ROOT` does not select or confine the log directory.
