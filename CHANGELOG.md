@@ -97,6 +97,10 @@ All notable changes to this project are documented here. The format follows
 - Export body result `mesh_volume` is renamed to `mesh_volume_mm3` (mm³), with no compatibility alias.
 
 ### Fixed
+- Restore imported STEP/IGES bodies from embedded sources when their saved B-reps are absent, before
+  deciding whether opening requires a rebuild. Warn with the import body name/id for unavailable
+  sources even when stored exact geometry exists; retain those warnings across retessellation and
+  preserve the timeline, display geometry and source data through save (ADR 0019).
 - Extrude and offset-plane descriptions explain why a reverse cut from the stock top gives an exact pocket floor.
 - Failed chamfers on revolve-derived bodies include a conditional cone-mouth profile/axis workaround for the pinned OCCT parameterization issue.
 - Report tight mesh-derived body bounds after open and rebuild, fixing inflated shelf rim bounds in doc_info, doc_open and render captions.

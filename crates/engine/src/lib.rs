@@ -9,6 +9,7 @@ mod features;
 mod history;
 #[cfg(test)]
 mod history_tests;
+mod imports;
 mod info;
 mod localization;
 #[cfg(test)]

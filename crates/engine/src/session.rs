@@ -153,7 +153,8 @@ impl Session {
     }
 
     /// Open a `.qcad`, restoring live bodies from the file as the app does (FINDINGS F-007), and rebuilding
-    /// whatever has no stored geometry.
+    /// whatever has no stored geometry. Imports without stored B-reps are restored from embedded originals
+    /// first; unavailable originals produce persistent warnings while retaining the document data.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn open(path: &Path) -> Result<(Session, Rebuild)> {
         qymcad_core::model::set_producer(&format!("qymcad-mcp {}", env!("CARGO_PKG_VERSION")));
@@ -162,10 +163,11 @@ impl Session {
             qymcad_io::load_project_with_brep(s).map_err(|e| Error::Io(format!("cannot open {s}: {e}")))?;
         project.ensure_document();
         restore_faces(&mut project);
-        let shapes: HashMap<Id, Shape> = {
+        let mut shapes: HashMap<Id, Shape> = {
             let _gate = qymcad_kernel::kernel_gate();
             breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
         };
+        let import_warnings = crate::imports::restore_missing(&project, &mut shapes);
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let saved_lineage = first_body_feature(&project);
         let mut sess = Session {
@@ -173,7 +175,7 @@ impl Session {
             shapes,
             path: Some(path.to_path_buf()),
             saved_lineage,
-            advisory_warnings: Vec::new(),
+            advisory_warnings: import_warnings,
             undo: Default::default(),
             undo_limit_reached: false,
             tool_edit_active: false,
@@ -396,10 +398,19 @@ impl Session {
         for (id, faces) in built {
             self.p.set_body_faces(id, faces);
         }
-        // Keep diagnostics until their node rebuilds or disappears. Rebuilding unchanged cavity geometry
-        // retains its warning; inherited inner shells do not warn again on every later operation.
+        // Import source warnings outlive retessellation: a live B-rep cannot repair an unavailable original.
+        // Other diagnostics last until their node rebuilds or disappears; inherited inner shells do not warn again.
         let live: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.advisory_warnings.retain(|w| live.contains(&w.node) && !rebuilt.contains(&w.node));
+        let imports: HashSet<Id> = self
+            .p
+            .timeline
+            .iter()
+            .filter_map(|n| match n.kind {
+                qymcad_core::feature::FeatureKind::Import { body, .. } => Some(body),
+                _ => None,
+            })
+            .collect();
+        self.advisory_warnings.retain(|w| live.contains(&w.node) && (!rebuilt.contains(&w.node) || imports.contains(&w.node)));
         for node in self.p.timeline.iter().filter(|n| rebuilt.contains(&n.id)) {
             if errors.iter().any(|e| e.node == node.id) {
                 continue;

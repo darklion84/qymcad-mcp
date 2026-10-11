@@ -1420,3 +1420,61 @@ asserts those exact fractional halves before checking away-from-zero output.
   `param_map`, even if that expression can evaluate in the full scope used during regeneration. Global-only
   formulas and literal feature dimensions remain available. This is a pre-existing native limitation;
   the engine does not change feature-dimension evaluation or recursively synthesize these missing names.
+
+## F-072 Missing import B-reps need source restoration; unavailable embedded sources must warn
+
+- **Version:** v0.1.0-dev.20261001, pinned checkout `d2949f0`.
+- **What:** an imported STEP/IGES body has no modelling recipe. Native regeneration only re-tessellates
+  its existing kernel shape; without one it keeps the loaded display mesh and returns success. Thus an
+  error-free rebuild does not establish that an import has live exact geometry. Our previous open path
+  supplied only stored B-reps, so an import whose B-rep was omitted opened without its live shape and
+  without an error. Documents containing stored import B-reps already survived open, parameter edits,
+  save and modelling undo. An unavailable embedded original also needs a warning when the stored B-rep
+  remains usable; retessellating that live shape does not repair the original.
+- **Upstream evidence:** `qymcad-core/src/model/regen.rs:1805-1816` implements the mesh-preserving,
+  success-returning import branch; `qymcad-kernel/src/kernel.rs:1111-1113` tessellates the cached shape
+  without replacing it. `qymcad-testkit/src/lib.rs:54-84,89-91` restores embedded sources before an
+  app-style rebuild. The actual GUI restores the source format, solid index and import scale in
+  `qymcad/src/gui.rs:374-409`; the testkit helper ignores scale and uses shared source-id temporary
+  paths (`lib.rs:58,69`). GUI save includes all live B-reps (`qymcad/src/gui/io_jobs.rs:963-980`);
+  the bundle embeds B-reps and originals (`qymcad-io/src/project_file.rs:75-106`), and loading tolerates
+  absent embedded-source entries (`:206-211`). All upstream paths refer to checkout `d2949f0`.
+- **Engine policy:** `crates/engine/src/session.rs:166-178` restores missing imports before computing
+  `missing`, while retaining valid stored B-reps as authoritative. `imports.rs:13-63` groups import
+  bodies by source and parses each source once to validate availability and solid indices. It restores
+  only absent shapes, applies the GUI's uniform import scale, and reports failures with body name/id
+  and source id, distinguishing retained stored geometry from unavailable exact geometry.
+  `imports.rs:66-95` stages embedded bytes in exclusively created process/counter temporary files,
+  reads the exact format under the native gate,
+  and removes the staged file. We use this equivalent helper although testkit is a runtime dependency:
+  it avoids the testkit helper's shared temporary names, supplies the gate, preserves scale and reports
+  errors. Import advisories survive retessellation while their nodes remain (`session.rs:401-413`),
+  because a live shape cannot repair an unavailable original. Existing regeneration already seeds all
+  live shapes (`session.rs:366-368,382-384`), so regeneration scheduling, dirty marking, save and history
+  are unchanged (ADR 0019).
+- **Tests / reproduced before fix:** `crates/engine/tests/imports.rs:141-147` separately verifies STEP
+  and IGES imports saved without their B-reps, failing before the fix with
+  `import body 4 has no live B-rep`. `:262-272` independently verifies missing, empty and unreadable
+  embedded sources, failing before the fix with
+  `{missing/empty/unreadable} source silently lost import body 4: []`; each now warns and retains the
+  import timeline/display body and available source metadata/bytes through save and reopen.
+  `damaged_sources_warn_even_when_the_import_has_a_stored_brep` (`:275`) reproduced
+  `missing source has no warning for import body 4: []` with a stored live shape. It also reproduced
+  that failure after adding source validation, because a dirty import's retessellation cleared its
+  new advisory; retaining import advisories fixes that lifecycle failure.
+  S1 (`:118`) checks the 1000 mm³ cube, doc_info bounds and exact STEP export; S3 (`:150`) changes a
+  separate parametric prism beside the import from 500 to 800 mm³ while retaining the import B-rep
+  bytes, with stored STEP and omitted STEP/IGES B-reps; S4 (`:168`) checks server save followed by both
+  app-testkit and server reopen with stored and omitted STEP/IGES B-reps; S5 (`:192`) checks deletion
+  and undo of a later datum through the MCP's modelling boundaries. Stored-B-rep variants of these
+  controls pass with the unchanged engine. Fixtures use fresh temporary directories, remove the
+  original exchange file before opening, and spawn no binary. The scaled-import regression (`:282`)
+  checks a 2× source import against 8000 mm³ and 20 mm bounds. All 11 tests pass. Independently
+  disabling restoration, diagnostics, stored-source validation, warning retention and scale handling
+  makes the corresponding tests red (restored by editing). The scale mutation gives
+  `scaled source cube volume: got 999.9999999999998, expected 8000 ± 1`. See
+  `tasks/review-imports.md` for exact mutation failures and the full-check result.
+- **Scope:** S3 covers an independent parametric body in another part, rather than a modifier consuming
+  the import. The pinned generic fillet constructor accepts imported body ids without a kind restriction
+  (`qymcad-core/src/model/timeline.rs:1007-1013`), but that is not a tested modifier-on-import result.
+  App reopen evidence uses the specified testkit path; no installed QymCAD.app GUI check was available.
