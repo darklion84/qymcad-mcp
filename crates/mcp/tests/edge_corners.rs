@@ -14,6 +14,7 @@ struct Client {
 impl Client {
     fn start() -> Client {
         let mut child = Command::new(env!("CARGO_BIN_EXE_qymcad-mcp"))
+            .env("QYMCAD_MCP_LOG", "off")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

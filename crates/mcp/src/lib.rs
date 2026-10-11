@@ -1,5 +1,6 @@
 //! qymcad-mcp: the MCP stdio server. Protocol and tool definitions only; all modelling is in `qymcad-engine`.
 
+pub mod calllog;
 pub mod tools;
 pub mod transport;
 
@@ -31,6 +32,15 @@ pub fn instructions(app_note: &str) -> String {
          The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}",
         ver = qymcad_engine::QYMCAD_VERSION,
     )
+}
+
+/// Guidance with an optional local call-log path, leaving the original helper usable without logging.
+pub fn instructions_with_log(app_note: &str, log_path: Option<&std::path::Path>) -> String {
+    let mut text = instructions(app_note);
+    if let Some(path) = log_path {
+        text.push_str(&format!("\nCall log of this server process (JSONL, for diagnosing problems): {}.", path.display()));
+    }
+    text
 }
 
 /// Compare the installed QymCAD.app with the pinned release (ADR 0003). Returns a note for the agent.
@@ -100,5 +110,14 @@ mod tests {
         let bin = b"\x00junk-dev.x\x00assertion failed: lenv0.1.0-dev.20261001d2949f0a72026-10-01macos";
         assert_eq!(super::embedded_release(bin).as_deref(), Some("0.1.0-dev.20261001"));
         assert_eq!(super::embedded_release(b"nothing here"), None);
+    }
+
+    #[test]
+    fn optional_log_instructions_keep_original_helper_usable() {
+        let note = "app note";
+        assert_eq!(super::instructions_with_log(note, None), super::instructions(note));
+        let path = std::path::Path::new("/tmp/test.jsonl");
+        let sentence = "Call log of this server process (JSONL, for diagnosing problems): /tmp/test.jsonl.";
+        assert_eq!(super::instructions_with_log(note, Some(path)), format!("{}\n{sentence}", super::instructions(note)));
     }
 }

@@ -181,6 +181,11 @@ impl Registry {
         self.tools.iter().map(|t| json!({ "name": t.name, "description": t.description, "inputSchema": t.schema })).collect()
     }
 
+    /// Whether a tool exists, checked before recording an executable call.
+    pub fn contains(&self, name: &str) -> bool {
+        self.tools.iter().any(|tool| tool.name == name)
+    }
+
     /// `Err` = no such tool (a protocol error). `Ok(Err)` = the tool ran and failed (a tool error for the model).
     pub fn call(&mut self, name: &str, args: Value) -> Result<Result<Content, String>, String> {
         let t = self.tools.iter().find(|t| t.name == name).ok_or_else(|| format!("unknown tool: {name}"))?;

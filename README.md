@@ -46,6 +46,29 @@ installed QymCAD.app matches to stderr at startup.
 Paths: the tools read and write only `.qcad` (and export formats); set `QYMCAD_MCP_ROOT` to confine them to one
 directory. See [docs/SECURITY.md](docs/SECURITY.md).
 
+## Call log
+Every stdio server process writes a local JSONL call log by default: `~/Library/Logs/qymcad-mcp/` on macOS,
+or `$XDG_STATE_HOME/qymcad-mcp/` elsewhere (fallback: `~/.local/state/qymcad-mcp/`). Set `QYMCAD_MCP_LOG`
+to another directory, or to `off` to disable it (`0`, `false`, and `no` also work, case-insensitively).
+An unset or empty value uses the default. Startup stderr shows this process's file, named
+`qymcad-mcp-YYYYMMDDTHHMMSSZ-pid.jsonl`; `--version` and `--dump-tools` create no log. When logging is on,
+`initialize.result.instructions` appends exactly
+`"\nCall log of this server process (JSONL, for diagnosing problems): <path>."` with that file's path.
+Nothing is added when off. This sentence is the only protocol-output difference: all other initialize fields
+match, and every response after initialize is byte-identical with logging on or off.
+
+Read the records in order: `call` saves received arguments before a tool runs, and `result` saves its answer
+and elapsed milliseconds with the same `seq`. The last `call` without a matching `result` identifies the call
+that crashed or hung, provided logging had not stopped because of an I/O failure or the size limit. Records also
+include startup, initialization, JSON-RPC errors, Rust panics and transport shutdown. Image results contain
+MIME type and `bytes` (the original base64 string's UTF-8 byte length), with image data omitted.
+
+Logs contain tool arguments and results, including file paths, parameter values and error texts. They stay on
+local disk; nothing is sent anywhere. Each record is limited to 256 KiB and each file to 64 MiB. Oversized
+strings are cut with a truncation marker; oversized structured fields can become marked JSON-text prefixes.
+Startup removes matching logs older than 30 days, then keeps at most 200 previous logs.
+See [ADR 0018](docs/adr/0018-call-log.md).
+
 ## Development
 See [AGENTS.md](AGENTS.md) (rules, build, test), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/FINDINGS.md](docs/FINDINGS.md) (QymCAD behaviour we rely on), [docs/adr/](docs/adr/) (decisions),

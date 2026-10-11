@@ -140,13 +140,35 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 ## MCP layer (`crates/mcp/src`)
 | File | Owns |
 |---|---|
-| `transport.rs` | newline-delimited JSON-RPC: `initialize` (version negotiation, `instructions`), `ping`, `tools/list`, `tools/call`; notifications ignored |
+| `transport.rs` | newline-delimited JSON-RPC: `initialize` (version negotiation, `instructions`), `ping`, `tools/list`, `tools/call`; notifications ignored; optional shared call log records requests, results, errors and shutdown |
+| `calllog.rs` | per-process local JSONL log; environment/default-directory selection, UTC timestamps, image redaction, record/file limits, retention and thin unbuffered file I/O (ADR 0018) |
 | `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema from the argument type), `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
 | `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
 | `tools/{doc,params,sketch,features,history,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
 | `tools/topology.rs` | `topology`, `select`; JSON forms of selections, axes and directions (hand-parsed for precise errors), shared with `tools/features.rs` |
-| `lib.rs` | agent instructions; installed-app release check (F-018) |
-| `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-019) |
+| `lib.rs` | agent instructions and optional call-log-path helper; installed-app release check (F-018) |
+| `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-019); opens the call log and installs its chained panic hook only when serving |
+
+`main` shares the optional logger with `Server` and its panic hook through `Arc<Mutex<…>>`; lock poisoning is
+handled without panicking. `Server::new` remains usable without logging. A `call` is written before the
+registry invokes a tool, then `result` records the same sequence number, elapsed milliseconds and redacted
+content. Arguments are logged before registry decoding, preserving what the server received. JSON-RPC errors
+and initialization are logged separately; notifications, `ping` and `tools/list` add no records or sequence
+numbers. The transport records EOF or I/O shutdown; the panic hook records Rust panic details and chains the
+previous hook so normal stderr diagnostics remain. Abrupt termination may leave only the unmatched `call`.
+
+Each complete JSON line, including its newline, uses one `write_all` on an unbuffered append-mode `File`.
+There is no per-line fsync: completed writes survive a server-process crash, without promising durability
+through power loss. Logging I/O failures or the file limit disable further records and report once on stderr;
+serving continues. An unavailable working directory is recorded as `cwd: null` without disabling logging.
+Startup stderr exposes the active path; `main` also uses `instructions_with_log` with the opened log's path
+to append exactly `"\nCall log of this server process (JSONL, for diagnosing problems): <path>."` to
+`initialize.result.instructions`, with nothing added when off. This sentence is the only protocol-output
+difference: all other initialize fields match, and every response after initialize is byte-identical between
+logging on and off (raw lines, no normalization). Oversized string values are
+marked and truncated; if structural data alone exceeds the record budget, the largest field becomes a marked
+JSON-text prefix. See [ADR 0018](adr/0018-call-log.md) and
+[call-log privacy](SECURITY.md#call-log-privacy).
 
 Output policy: every body-volume field in rebuild results, `doc_info` and undo is `volume_mm3`, at native
 floating-point precision without decimal rounding. Volume is a B-rep integral in mm³. Display clients may
@@ -191,6 +213,9 @@ argument path; the normal deserializer still rejects unknown fields and invalid 
 - `crates/mcp/tests/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
   edits the golden plate purely through tool calls.
 - `crates/mcp/tests/docs_fresh.rs` — docs/TOOLS.md equals the generated registry docs.
+- Call-log unit tests cover UTC conversion, truncation, image redaction, retention and write/file-limit behavior;
+  real-binary protocol tests use isolated temporary log directories. Other binary-spawning tests set
+  `QYMCAD_MCP_LOG=off` so tests do not write to the developer's default log directory.
 
 ## Roadmap
 | Phase | Scope | Status |

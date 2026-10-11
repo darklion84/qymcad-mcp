@@ -30,6 +30,7 @@ parts (`.qcad`) headlessly, so an agent can model and a person can then edit the
 - MCP layer rules: argument structs `deny_unknown_fields`; doc comments on every field (they become the schema
   descriptions the model reads); a tool failure is `Err(String)` (→ `isError: true`), never a panic.
 - Keep CHANGELOG.md updated under `Unreleased`.
+- Diagnose broken sessions with the per-process JSONL call log (README); binary-spawning tests must set `QYMCAD_MCP_LOG=off`, except isolated call-log tests.
 
 ## Upgrading QymCAD
 Follow [docs/UPGRADING.md](docs/UPGRADING.md). Never bump the tag without running the golden tests and the

@@ -3,6 +3,19 @@
 qymcad-mcp is a **local stdio server**: it runs as the user who started it, with that user's file access, and
 talks only to the MCP client that spawned it. It opens no network ports.
 
+## Call-log privacy
+Stdio serving writes a local call log by default (locations and configuration: [README](../README.md#call-log)).
+It contains the arguments actually received and tool results, including file paths, parameter values and error
+texts, plus client/server metadata, working directory and timings. Image data is omitted; image `bytes` counts
+the original base64 string's UTF-8 bytes. Nothing is uploaded or sent anywhere by the logger. Consider the log's
+contents when sharing it. Set `QYMCAD_MCP_LOG=off` to disable logging, or choose another directory with that
+variable. CAD-path confinement through `QYMCAD_MCP_ROOT` does not select or confine the log directory.
+
+Records are bounded to 256 KiB and files to 64 MiB; truncation is marked. Oversized structured fields can be
+replaced by marked JSON-text prefixes when cutting string values cannot meet the record limit.
+Retention runs on startup and removes only matching regular `qymcad-mcp-*.jsonl` files older than 30 days,
+then the oldest files above 200 previous logs. Logging failures disable logging while serving continues. See [ADR 0018](adr/0018-call-log.md).
+
 ## Threats we guard against
 - **A confused or prompt-injected agent writing outside CAD files.** Tools that take paths accept only their
   own file types (`doc_open` / `doc_save`: `.qcad`; `export`: only the chosen format's extensions — `.step`/`.stp`,

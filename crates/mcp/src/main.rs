@@ -1,4 +1,4 @@
-use qymcad_mcp::{app_version_note, instructions, tools::Registry, transport::Server};
+use qymcad_mcp::{app_version_note, calllog::CallLog, instructions_with_log, tools::Registry, transport::Server};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -12,10 +12,18 @@ fn main() {
         None => {
             let note = app_version_note();
             eprintln!("qymcad-mcp {} (QymCAD {}): {note}", env!("CARGO_PKG_VERSION"), qymcad_engine::QYMCAD_VERSION);
-            let mut server = Server::new(Registry::new(), instructions(&note));
+            let log = CallLog::start(&note);
+            if let Some(log) = &log {
+                log.install_panic_hook();
+            }
+            let instructions = instructions_with_log(&note, log.as_ref().map(CallLog::path));
+            let mut server = Server::with_log(Registry::new(), instructions, log.clone());
             let out = match protocol_stdout() {
                 Ok(f) => std::io::BufWriter::new(f),
                 Err(e) => {
+                    if let Some(log) = &log {
+                        log.record(serde_json::json!({"kind":"stop", "reason":"io_error", "error":e.to_string()}));
+                    }
                     eprintln!("qymcad-mcp: cannot set up stdout: {e}");
                     std::process::exit(1);
                 }
