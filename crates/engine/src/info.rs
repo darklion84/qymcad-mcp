@@ -37,7 +37,10 @@ impl Session {
         let bodies = self.result_bodies();
         let mut warnings: Vec<String> =
             p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {}", self.node_name(*id), crate::localization::error(e))).collect();
-        warnings.extend(self.advisory_warnings.iter().map(|w| format!("{} ({}): {}", w.name, w.node, w.message)));
+        warnings.extend(self.advisory_warnings.iter().map(|w| {
+            let w = w.issue();
+            format!("{} ({}): {}", w.name, w.node, w.message)
+        }));
         warnings.extend(
             bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| format!("{} ({}): {message}", b.name, b.id))),
         );

@@ -1,4 +1,5 @@
 //! Session history and guarded native timeline deletion.
+use crate::session::AdvisoryWarning;
 use crate::{Error, Id, NodeIssue, Rebuild, Result, Session};
 use qymcad_core::{
     feature::{FeatureKind, SketchPlane},
@@ -15,7 +16,7 @@ pub const UNDO_LIMIT: usize = 16;
 pub struct Snapshot {
     project: Project,
     shapes: HashMap<Id, Shape>,
-    warnings: Vec<NodeIssue>,
+    warnings: Vec<AdvisoryWarning>,
     call: Option<ToolCall>,
     created_node: Option<Id>,
 }
@@ -156,7 +157,7 @@ impl Session {
             .iter()
             .map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: crate::localization::error(e) })
             .collect();
-        warnings.extend(self.advisory_warnings.clone());
+        warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
         Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies(), ..Default::default() } })
     }
 

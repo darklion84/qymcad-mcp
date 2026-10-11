@@ -97,6 +97,8 @@ All notable changes to this project are documented here. The format follows
 - Export body result `mesh_volume` is renamed to `mesh_volume_mm3` (mm³), with no compatibility alias.
 
 ### Fixed
+- Retain only unavailable-source advisories across import retessellation, preventing duplicate sealed-void
+  warnings. Stored import B-reps with readable sources no longer require a matching source solid index.
 - Restore imported STEP/IGES bodies from embedded sources when their saved B-reps are absent, before
   deciding whether opening requires a rebuild. Warn with the import body name/id for unavailable
   sources even when stored exact geometry exists; retain those warnings across retessellation and

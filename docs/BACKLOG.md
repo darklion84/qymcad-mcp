@@ -2,6 +2,9 @@
 
 Known follow-ups that were consciously deferred. Each item says where it came from.
 
+- MiMo import review nit 3 (2026-10-11): keep `imports.rs`'s scale matrix synchronized with GUI-private `import_scale::scale_matrix` (currently identical, `qymcad/src/gui/import_scale.rs:25-26`); retain the scaled-import golden.
+- MiMo import review nit 4 (2026-10-11): add panic-safe cleanup for the staged source file in `imports.rs`; the current closure removes files on success/error but leaves one if unwinding skips cleanup.
+
 Open (low, from the round-J live test by Codex, 236 calls, all items OK, 2026-10-09):
 
 - The `between` suggestion in empty-corner hints was never offered in the tester's joined-extrusion and

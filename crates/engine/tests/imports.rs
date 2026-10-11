@@ -278,6 +278,54 @@ fn damaged_sources_warn_even_when_the_import_has_a_stored_brep() {
     }
 }
 
+fn stored_import_with_readable_source(stored_solid: u32) {
+    let f = fixture(ExactFormat::Step, true, false);
+    let loaded = qymcad_io::load_project_with_brep(f.path.to_str().unwrap()).unwrap();
+    let mut p = loaded.project;
+    let earlier = p.add_mesh(p.bodies[p.mesh_index(f.body).unwrap()].mesh.clone());
+    let index = p.timeline.iter().position(|n| n.id == f.body).unwrap();
+    let mut node = p.timeline[index].clone();
+    node.id = earlier;
+    node.name = "earlier import without a B-rep".into();
+    if let qymcad_core::feature::FeatureKind::Import { body, solid, .. } = &mut node.kind {
+        *body = earlier;
+        *solid = 0;
+    }
+    p.timeline.insert(index, node);
+    if let qymcad_core::feature::FeatureKind::Import { solid, .. } = &mut p.timeline[index + 1].kind {
+        *solid = stored_solid;
+    }
+    qymcad_io::save_project_guarded_with_brep(&p, f.path.to_str().unwrap(), &loaded.breps).unwrap();
+    let (s, report) = Session::open(&f.path).unwrap();
+    assert!(report.errors.is_empty(), "open: {:?}", report.errors);
+    assert!(report.warnings.is_empty(), "readable source with stored B-rep: {:?}", report.warnings);
+    assert_close(s.shape(earlier).unwrap().volume(), 1000.0, 1.0, "earlier restored import volume");
+    check_import(&s, &f);
+}
+
+#[test]
+fn stored_import_sharing_an_already_restored_solid_has_no_source_warning() {
+    stored_import_with_readable_source(0);
+}
+
+#[test]
+fn stored_import_with_readable_source_does_not_require_a_matching_solid_index() {
+    stored_import_with_readable_source(1);
+}
+
+#[test]
+fn empty_source_extension_is_step_and_restores_an_import_without_a_brep() {
+    assert_eq!(ExactFormat::of_extension(""), ExactFormat::Step);
+    let f = fixture(ExactFormat::Step, false, false);
+    let mut p = qymcad_io::load_project(f.path.to_str().unwrap()).unwrap();
+    p.sources.iter_mut().find(|sf| sf.id == f.source).unwrap().ext.clear();
+    qymcad_io::save_project_guarded_with_brep(&p, f.path.to_str().unwrap(), &[]).unwrap();
+    let (s, report) = Session::open(&f.path).unwrap();
+    assert!(report.errors.is_empty(), "open: {:?}", report.errors);
+    assert!(report.warnings.is_empty(), "empty-extension STEP source: {:?}", report.warnings);
+    check_import(&s, &f);
+}
+
 #[test]
 fn s2_scaled_import_restores_the_app_import_scale() {
     let f = scaled_fixture(ExactFormat::Step, false, false, 2.0);

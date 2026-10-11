@@ -17,8 +17,8 @@ open/edit/save/undo controls (F-072).
 ## Decision
 - Keep valid stored B-reps authoritative. After deserializing them, restore only Import bodies absent
   from the live shape map, before computing whether any body still requires regeneration.
-- Group imports by embedded source and parse every source once to validate availability and solid indices,
-  including imports with stored live shapes. Restore only absent shapes by the stored solid index and
+- Group imports by embedded source and parse every source once to validate availability,
+  including imports with stored live shapes. Validate the solid index only when restoring absent shapes and
   apply the stored uniform import scale. Follow the pinned app's source/solid/scale behavior
   (`qymcad/src/gui.rs:374-409`). All calls and restoration code stay in `crates/engine`.
 - Implement the equivalent of `qymcad_testkit::restore_import_shapes` in a focused engine module.
@@ -29,8 +29,9 @@ open/edit/save/undo controls (F-072).
 - Report missing, empty, unreadable sources, absent solid indices and failed scale transforms as advisory
   warnings naming the import body and embedded source. Distinguish a retained stored B-rep from unavailable
   exact geometry. Keep the timeline, display body and available source data intact so saving cannot discard
-  them merely because a source is unavailable. Preserve import advisories across retessellation while their
-  nodes remain: a live shape cannot repair its unavailable embedded original.
+  them merely because a source is unavailable. Preserve source warnings across retessellation while their
+  nodes remain: a live shape cannot repair its unavailable embedded original. Mark these structurally with
+  a private advisory variant; geometry advisories on imports retain the usual clear-on-rebuild behavior.
 - Keep regeneration scheduling, dirty marking, save and history behavior unchanged. Existing rebuilds pass
   the live shape map to the kernel; the native Import branch re-tessellates a seeded shape without replacing it
   (`qymcad-kernel/src/kernel.rs:1111-1113`). No demonstrated failure justifies excluding imports from

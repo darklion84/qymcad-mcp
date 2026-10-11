@@ -15,6 +15,21 @@ pub struct NodeIssue {
     pub message: String,
 }
 
+/// Source availability cannot be repaired by retessellating an import's live shape.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum AdvisoryWarning {
+    Geometry(NodeIssue),
+    ImportSource(NodeIssue),
+}
+
+impl AdvisoryWarning {
+    pub(crate) fn issue(&self) -> &NodeIssue {
+        match self {
+            Self::Geometry(issue) | Self::ImportSource(issue) => issue,
+        }
+    }
+}
+
 /// A body that is a current result of the model (not consumed by a later feature).
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct BodyInfo {
@@ -121,7 +136,7 @@ pub struct Session {
     path: Option<PathBuf>,
     // Saved model's first body-producing node. History restores recipes, never this association.
     saved_lineage: Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)>,
-    pub(crate) advisory_warnings: Vec<NodeIssue>,
+    pub(crate) advisory_warnings: Vec<AdvisoryWarning>,
     pub(crate) undo: std::collections::VecDeque<crate::history::Snapshot>,
     pub(crate) undo_limit_reached: bool,
     pub(crate) tool_edit_active: bool,
@@ -241,7 +256,7 @@ impl Session {
             };
             if let Some(message) = message {
                 let warning = sess.issue(id, message);
-                sess.advisory_warnings.push(warning.clone());
+                sess.advisory_warnings.push(AdvisoryWarning::Geometry(warning.clone()));
                 r.warnings.push(warning);
             }
         }
@@ -401,16 +416,9 @@ impl Session {
         // Import source warnings outlive retessellation: a live B-rep cannot repair an unavailable original.
         // Other diagnostics last until their node rebuilds or disappears; inherited inner shells do not warn again.
         let live: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let imports: HashSet<Id> = self
-            .p
-            .timeline
-            .iter()
-            .filter_map(|n| match n.kind {
-                qymcad_core::feature::FeatureKind::Import { body, .. } => Some(body),
-                _ => None,
-            })
-            .collect();
-        self.advisory_warnings.retain(|w| live.contains(&w.node) && (!rebuilt.contains(&w.node) || imports.contains(&w.node)));
+        self.advisory_warnings.retain(|w| {
+            live.contains(&w.issue().node) && (!rebuilt.contains(&w.issue().node) || matches!(w, AdvisoryWarning::ImportSource(_)))
+        });
         for node in self.p.timeline.iter().filter(|n| rebuilt.contains(&n.id)) {
             if errors.iter().any(|e| e.node == node.id) {
                 continue;
@@ -425,16 +433,16 @@ impl Session {
                 // Each disconnected solid contributes one outer shell; only excess shells indicate cavities.
                 let excess = shells.saturating_sub(solids);
                 if excess > old.0.saturating_sub(old.1) || excess > source.0.saturating_sub(source.1) {
-                    self.advisory_warnings.push(self.issue(
+                    self.advisory_warnings.push(AdvisoryWarning::Geometry(self.issue(
                         node.id,
                         format!("result body has {shells} shells and {solids} solids; may contain a sealed internal void"),
-                    ));
+                    )));
                 }
             }
         }
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
-        warnings.extend(self.advisory_warnings.clone());
+        warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
         Rebuild { errors, warnings, bodies, ..Default::default() }
@@ -710,6 +718,65 @@ mod tests {
     use super::*;
 
     #[test]
+    fn import_retessellation_replaces_void_advisories_but_retains_source_warning() {
+        use qymcad_core::model::ImportNode;
+
+        let mut s = Session::new_part();
+        let (solid, hollow, mesh) = {
+            let _gate = qymcad_kernel::kernel_gate();
+            let solid = Shape::extrude(&[0.0, 0.0, 20.0, 0.0, 20.0, 20.0, 0.0, 20.0], 20.0).unwrap();
+            let tool = Shape::extrude(&[8.0, 7.0, 12.0, 7.0, 12.0, 13.0, 8.0, 13.0], 3.0)
+                .unwrap()
+                .transformed(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 7.0])
+                .unwrap();
+            let hollow = solid.boolean(&tool, 0).unwrap();
+            assert_eq!((hollow.shell_count(), hollow.solid_count()), (2, 1));
+            // Fully enclosed rectangular cavity: 20³ - 4*6*3 mm³.
+            assert!((hollow.volume() - (8000.0 - 4.0 * 6.0 * 3.0)).abs() < 1e-8);
+            let mesh = hollow.tessellate_merged(0.5).unwrap().0;
+            (solid, hollow, mesh)
+        };
+        let source = s.p.add_source("sealed.step", Vec::new());
+        let body = s.p.add_mesh(mesh);
+        s.p.import_tree_as_parts(
+            vec![ImportNode { name: "sealed import".into(), body: Some(body), ..Default::default() }],
+            source,
+            "sealed",
+        )
+        .unwrap();
+        s.shapes.insert(body, hollow);
+        s.advisory_warnings = crate::imports::restore_missing(&s.p, &mut s.shapes);
+
+        for rebuild in 1..=2 {
+            s.p.mark_all_dirty();
+            let report = s.rebuild();
+            assert!(report.errors.is_empty(), "rebuild {rebuild}: {:?}", report.errors);
+            assert_eq!(
+                report.warnings.iter().filter(|w| w.node == body && w.message.contains("sealed internal void")).count(),
+                1,
+                "rebuild {rebuild} must replace the prior void advisory: {:?}",
+                report.warnings
+            );
+            assert_eq!(
+                report.warnings.iter().filter(|w| w.node == body && w.message.contains("unavailable embedded source")).count(),
+                1,
+                "rebuild {rebuild} must preserve the source warning: {:?}",
+                report.warnings
+            );
+        }
+        // Retessellating repaired geometry clears its void advisory, while the original is still unavailable.
+        s.shapes.insert(body, solid);
+        s.p.mark_all_dirty();
+        let report = s.rebuild();
+        assert!(report.errors.is_empty(), "repaired rebuild: {:?}", report.errors);
+        assert_eq!(report.warnings.len(), 1, "only the source warning should remain: {:?}", report.warnings);
+        assert!(report.warnings[0].message.contains("unavailable embedded source"));
+        s.p.timeline.retain(|n| n.id != body);
+        s.shapes.remove(&body);
+        assert!(s.rebuild().warnings.is_empty(), "deleting the import also retires its source warning");
+    }
+
+    #[test]
     fn reporting_sphere_bounds_follow_nominal_accuracy_at_part_and_large_import_scales() {
         for radius in [2.0, 1000.0] {
             let shape = {
@@ -778,7 +845,7 @@ mod tests {
     fn failed_rebuild_closure_restores_diagnostics_and_drops_orphan_shapes() {
         let mut s = Session::new_part();
         let baseline = NodeIssue { node: 1, name: "baseline".into(), message: "retained warning".into() };
-        s.advisory_warnings.push(baseline.clone());
+        s.advisory_warnings.push(AdvisoryWarning::Geometry(baseline.clone()));
         let before = s.p.clone();
         let result: Result<()> = s.with_rebuild_copies(before, &HashSet::new(), "failed closure", |s| {
             let shape = {
@@ -786,11 +853,15 @@ mod tests {
                 Shape::sphere_named(2.0, [1, 2, 3]).unwrap()
             };
             s.shapes.insert(99, shape); // No recipe node owns this newly introduced body.
-            s.advisory_warnings.push(NodeIssue { node: 99, name: "orphan".into(), message: "must disappear".into() });
+            s.advisory_warnings.push(AdvisoryWarning::Geometry(NodeIssue {
+                node: 99,
+                name: "orphan".into(),
+                message: "must disappear".into(),
+            }));
             Err(Error::Invalid("stop before regeneration".into()))
         });
         assert!(result.is_err());
-        assert_eq!(s.advisory_warnings, vec![baseline]);
+        assert_eq!(s.advisory_warnings, vec![AdvisoryWarning::Geometry(baseline)]);
         assert!(s.shapes.is_empty(), "the failed closure leaked a body absent from the restored recipe");
     }
 }

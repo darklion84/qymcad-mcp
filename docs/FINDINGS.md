@@ -1441,14 +1441,16 @@ asserts those exact fractional halves before checking away-from-zero output.
   absent embedded-source entries (`:206-211`). All upstream paths refer to checkout `d2949f0`.
 - **Engine policy:** `crates/engine/src/session.rs:166-178` restores missing imports before computing
   `missing`, while retaining valid stored B-reps as authoritative. `imports.rs:13-63` groups import
-  bodies by source and parses each source once to validate availability and solid indices. It restores
+  bodies by source and parses each source once to validate availability. Only absent shapes require a
+  matching source solid index; readable sources never cause index warnings on stored live shapes. It restores
   only absent shapes, applies the GUI's uniform import scale, and reports failures with body name/id
   and source id, distinguishing retained stored geometry from unavailable exact geometry.
   `imports.rs:66-95` stages embedded bytes in exclusively created process/counter temporary files,
   reads the exact format under the native gate,
   and removes the staged file. We use this equivalent helper although testkit is a runtime dependency:
   it avoids the testkit helper's shared temporary names, supplies the gate, preserves scale and reports
-  errors. Import advisories survive retessellation while their nodes remain (`session.rs:401-413`),
+  errors. Source warnings, structurally marked by the private `AdvisoryWarning::ImportSource` variant,
+  survive retessellation while their nodes remain (`Session::rebuild_retrying`),
   because a live shape cannot repair an unavailable original. Existing regeneration already seeds all
   live shapes (`session.rs:366-368,382-384`), so regeneration scheduling, dirty marking, save and history
   are unchanged (ADR 0019).
@@ -1474,6 +1476,18 @@ asserts those exact fractional halves before checking away-from-zero output.
   makes the corresponding tests red (restored by editing). The scale mutation gives
   `scaled source cube volume: got 999.9999999999998, expected 8000 ± 1`. See
   `tasks/review-imports.md` for exact mutation failures and the full-check result.
+- **Round 2 evidence:** `session::tests::import_retessellation_replaces_void_advisories_but_retains_source_warning`
+  builds a fully enclosed rectangular cavity (20³ − 4*6*3 mm³, two shells/one solid). Two dirty import
+  rebuilds yield one void advisory and one persistent source warning; repairing the geometry clears the
+  void advisory, and removing the node clears its source warning. Retaining all import advisories reproduces
+  the duplicate on rebuild two. `imports::stored_import_sharing_an_already_restored_solid_has_no_source_warning`
+  pins the shared-index case, which already passed: `Vec<Option<Shape>>::get` still returns `Some(None)`
+  after `take`. `stored_import_with_readable_source_does_not_require_a_matching_solid_index` reproduces
+  the actual stored-body index warning with an out-of-range index, fixed by skipping readable-source stored
+  bodies before indexing. The pinned `ExactFormat::of_extension` maps every extension except `igs`/`iges`
+  to STEP, including an empty extension (`qymcad-kernel/src/lib.rs:1762-1767`), matching the GUI's empty
+  extension default (`qymcad/src/gui.rs:396`). `empty_source_extension_is_step_and_restores_an_import_without_a_brep`
+  pins that dispatch and restores legacy embedded STEP bytes; no production format change was needed.
 - **Scope:** S3 covers an independent parametric body in another part, rather than a modifier consuming
   the import. The pinned generic fillet constructor accepts imported body ids without a kind restriction
   (`qymcad-core/src/model/timeline.rs:1007-1013`), but that is not a tested modifier-on-import result.

@@ -1,5 +1,5 @@
 //! Restore recipe-less imports whose saved B-rep is absent, using their embedded originals.
-use crate::session::NodeIssue;
+use crate::session::{AdvisoryWarning, NodeIssue};
 use qymcad_core::feature::FeatureKind;
 use qymcad_core::model::{Id, Project, SourceFile};
 use qymcad_kernel::Shape;
@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Equivalent to pinned qymcad-testkit/src/lib.rs:54-84, limited to absent shapes. Unlike that
 /// helper, isolate temporary files between sessions and hold the native gate. Apply the import
 /// scale as the actual app does (qymcad/src/gui.rs:374-409). Stored B-reps remain authoritative.
-pub(crate) fn restore_missing(project: &Project, shapes: &mut HashMap<Id, Shape>) -> Vec<NodeIssue> {
+pub(crate) fn restore_missing(project: &Project, shapes: &mut HashMap<Id, Shape>) -> Vec<AdvisoryWarning> {
     let mut by_source: HashMap<Id, Vec<(Id, u32, f64)>> = HashMap::new();
     for n in &project.timeline {
         if let FeatureKind::Import { body, source, solid, scale } = n.kind {
@@ -25,7 +25,7 @@ pub(crate) fn restore_missing(project: &Project, shapes: &mut HashMap<Id, Shape>
             Err(error) => (Vec::new(), Some(error)),
         };
         for (body, solid, scale) in bodies {
-            if shapes.contains_key(&body) && error.is_none() && solids.get(solid as usize).is_some() {
+            if shapes.contains_key(&body) && error.is_none() {
                 continue;
             }
             let restored = solids
@@ -50,16 +50,16 @@ pub(crate) fn restore_missing(project: &Project, shapes: &mut HashMap<Id, Shape>
                         project.timeline.iter().find(|n| n.id == body).map(|n| crate::localization::name(&n.name)).unwrap_or_default();
                     let geometry =
                         if shapes.contains_key(&body) { "stored exact geometry is retained" } else { "exact geometry is unavailable" };
-                    warnings.push(NodeIssue {
+                    warnings.push(AdvisoryWarning::ImportSource(NodeIssue {
                         node: body,
                         message: format!("import body {body} `{name}` has an unavailable embedded source {source}: {error}; {geometry}; document data is retained"),
                         name,
-                    });
+                    }));
                 }
             }
         }
     }
-    warnings.sort_by_key(|w| w.node);
+    warnings.sort_by_key(|w| w.issue().node);
     warnings
 }
 
