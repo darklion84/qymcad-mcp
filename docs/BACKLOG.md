@@ -4,6 +4,15 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
 
 - MiMo import review nit 3 (2026-10-11): keep `imports.rs`'s scale matrix synchronized with GUI-private `import_scale::scale_matrix` (currently identical, `qymcad/src/gui/import_scale.rs:25-26`); retain the scaled-import golden.
 - MiMo import review nit 4 (2026-10-11): add panic-safe cleanup for the staged source file in `imports.rs`; the current closure removes files on success/error but leaves one if unwinding skips cleanup.
+- MiMo batch review (2026-10-12), deferred, none reachable as a defect today:
+  - minor: `batch.rs` reaches `finish_tool_edit` through `state.doc()?`; if a step could ever clear the session, the
+    snapshot would be dropped without restore. No allowed step can (doc_new/doc_open are refused). Hold the
+    session across execute/finish, or use a guard that finishes on drop.
+  - the batch envelope itself does not get the JSON-string leniency of other tools (step args do); a client that
+    double-encodes the whole `{"steps": …}` object is refused.
+  - the 1..=200 limit lives only in `run`, not in the (unused) batch validator.
+  - `tests/batch.rs` failure-test temp dirs are not removed when the test panics; `contains('1')` assertion is weak.
+  - compact step entries prefer `rebuild.notes` over a tool's top-level `notes` when both exist.
 
 Open (low, from the round-J live test by Codex, 236 calls, all items OK, 2026-10-09):
 
