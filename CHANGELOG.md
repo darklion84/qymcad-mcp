@@ -44,6 +44,9 @@ All notable changes to this project are documented here. The format follows
 - Reject false sphere fits on split conical chamfers, including meshes whose vertices lie on only two rings without native circle metadata; flag duplicated native face ids and refuse ambiguous face selections with a full-turn axis/profile workaround.
 
 ### Added
+- `batch` runs 1–200 modelling steps in order with upfront argument validation, whole-batch rollback and
+  one undo entry. Reuses individual tool handlers and rebuild checks; compact results include created
+  nodes and final bodies/diagnostics, with full per-step results available through `verbose=true` (ADR 0020).
 - Persistent local JSONL call logs on by default for stdio servers, recording received tool arguments before
   execution, timed results with image MIME type and `base64_bytes` instead of image data, protocol errors,
   panics and shutdown; configurable directory,

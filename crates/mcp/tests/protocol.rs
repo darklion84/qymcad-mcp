@@ -272,6 +272,7 @@ fn lists_tools_with_object_schemas() {
         "mirror",
         "feature_delete",
         "undo",
+        "batch",
     ];
     for want in expected {
         assert!(names.contains(&want), "missing {want} in {names:?}");

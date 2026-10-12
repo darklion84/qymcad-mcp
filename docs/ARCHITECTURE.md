@@ -82,6 +82,18 @@ Empty-document saves inspect existing targets and require `allow_empty` to repla
 Pathless saves also require the first body-producing node id/kind from the last load/save to remain in the
 recipe; an explicit path or `overwrite=true` permits another model (ADR 0014). `doc_new` needs a path. Save results report pre-save target existence as `replaced`.
 
+`batch` extends this boundary to 1–200 modelling steps (ADR 0020). The registry first validates every
+allowed tool name and deserializes its arguments through the registered tool's normal JSON-string decoder
+and argument type, before opening a history boundary. It then invokes the existing handlers in order,
+without recursively calling `Registry::call`: the enclosing batch supplies the only tool-edit snapshot
+and undo entry. Every step retains its normal engine atomicity, rebuild and error checks, so later steps
+can use earlier parameters and named/id-referenced sketches and features. A failure restores the enclosing
+snapshot, adds no undo entry and reports the 1-based step index, tool and original error. Success records
+tool `batch` and label `Batch (N steps)`; individual calls and batches interleave in the same 16-entry history.
+Compact results report step/tool, created-node id/name where applicable and minimal operation details,
+followed by current bodies/warnings/errors without an extra rebuild. `verbose=true` also includes every
+step's normal result. Inspection, document replacement, disk output, undo and nested batches are excluded.
+
 ## Sketch dimensions
 Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along
 x/y between corners) + a centre point (`Midpoint` of the diagonal) pinned from the origin; circle = `Diameter`
@@ -142,7 +154,7 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 |---|---|
 | `transport.rs` | newline-delimited JSON-RPC: `initialize` (version negotiation, `instructions`), `ping`, `tools/list`, `tools/call`; notifications ignored; optional shared call log records requests, results, errors and shutdown |
 | `calllog.rs` | per-process local JSONL log; environment/default-directory selection, UTC timestamps, image redaction, record/file limits, retention and thin unbuffered file I/O (ADR 0018) |
-| `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema from the argument type), `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
+| `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema and validation from the argument type), batch dispatch/history boundary, `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
 | `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
 | `tools/{doc,params,sketch,features,history,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
 | `tools/topology.rs` | `topology`, `select`; JSON forms of selections, axes and directions (hand-parsed for precise errors), shared with `tools/features.rs` |
@@ -157,6 +169,8 @@ Arguments are logged before registry decoding, preserving what the server receiv
 and initialization are logged separately; notifications, `ping` and `tools/list` add no records or sequence
 numbers. The transport records EOF or I/O shutdown; the panic hook records Rust panic details and chains the
 previous hook so normal stderr diagnostics remain. Abrupt termination may leave only the unmatched `call`.
+Batch steps run below transport dispatch, so a batch produces one call/result pair; the existing record
+and file limits also bound 200-step arguments and verbose results.
 
 Each complete JSON line, including its newline, uses one `write_all` on an unbuffered append-mode `File`.
 There is no per-line fsync: completed writes survive a server-process crash, without promising durability

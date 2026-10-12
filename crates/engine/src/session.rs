@@ -635,8 +635,20 @@ impl Session {
         tips.last().copied()
     }
 
-    pub(crate) fn node_name(&self, id: Id) -> String {
+    /// Localized timeline node name for creation results and diagnostics.
+    pub fn node_name(&self, id: Id) -> String {
         self.p.timeline.iter().find(|n| n.id == id).map(|n| crate::localization::name(&n.name)).unwrap_or_default()
+    }
+
+    /// Current bodies and regeneration diagnostics, including live topology naming warnings, without
+    /// another rebuild. The current thread must not hold the native kernel gate (metrics acquire it).
+    pub fn current_rebuild(&self) -> Rebuild {
+        let errors = self.p.regen_errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
+        let mut warnings: Vec<_> = self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
+        warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
+        let bodies = self.result_bodies();
+        warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
+        Rebuild { errors, warnings, bodies, ..Default::default() }
     }
 
     pub(crate) fn set_node_name(&mut self, id: Id, name: Option<&str>) {

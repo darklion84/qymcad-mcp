@@ -1,6 +1,7 @@
 //! Tool registry. Each group lives in its own module and exposes `fn tools() -> Vec<Tool>`; adding a group
 //! means adding a module and one line in `Registry::new` (keeps parallel work conflict-free).
 
+mod batch;
 mod common;
 mod doc;
 mod features;
@@ -31,13 +32,15 @@ impl State {
     }
 }
 
-type Handler = Box<dyn Fn(&mut State, Value) -> Result<Content, String>>;
+type Handler = Box<dyn Fn(&[Tool], &mut State, Value) -> Result<Content, String>>;
+type Validator = Box<dyn Fn(Value) -> Result<(), String>>;
 
 pub struct Tool {
     pub name: &'static str,
     pub description: &'static str,
     pub schema: Value,
     handler: Handler,
+    validate: Validator,
 }
 
 /// A tool whose result is a JSON value, returned to the model as compact JSON text.
@@ -64,13 +67,44 @@ where
 {
     let schema = input_schema::<A>();
     let argument_schema = schema.clone();
-    let handler: Handler = Box::new(move |st, mut args| {
-        decode_structured_strings(&mut args, &[&argument_schema], &argument_schema, "arguments", 0)
-            .map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
-        let a: A = serde_json::from_value(args).map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
+    let validation_schema = schema.clone();
+    let validate: Validator = Box::new(move |args| decode_arguments::<A>(name, &validation_schema, args).map(|_| ()));
+    let handler: Handler = Box::new(move |_, st, args| {
+        let a = decode_arguments::<A>(name, &argument_schema, args)?;
         f(st, a)
     });
-    Tool { name, description, schema, handler }
+    Tool { name, description, schema, handler, validate }
+}
+
+/// The validator and standalone handler use precisely the same decoding and typed deserialization.
+fn decode_arguments<A: DeserializeOwned>(name: &str, schema: &Value, mut args: Value) -> Result<A, String> {
+    decode_structured_strings(&mut args, &[schema], schema, "arguments", 0).map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
+    serde_json::from_value(args).map_err(|e| format!("bad arguments for `{name}`: {e}"))
+}
+
+/// Single source of truth for standalone history boundaries and the batch allowlist.
+fn modelling_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "param_set"
+            | "param_delete"
+            | "sketch_create"
+            | "sketch_add"
+            | "sketch_constrain"
+            | "sketch_remove"
+            | "plane_offset"
+            | "extrude"
+            | "revolve"
+            | "fillet"
+            | "chamfer"
+            | "hole"
+            | "shell"
+            | "push_face"
+            | "linear_array"
+            | "circular_array"
+            | "mirror"
+            | "feature_delete"
+    )
 }
 
 /// Resolve schema references and alternatives without losing the original `$defs` root.
@@ -174,6 +208,7 @@ impl Registry {
         tools.extend(output::tools());
         tools.extend(history::tools());
         tools.extend(topology::tools());
+        tools.push(batch::tool());
         Registry { tools, state: State::default() }
     }
 
@@ -190,27 +225,7 @@ impl Registry {
     pub fn call(&mut self, name: &str, args: Value) -> Result<Result<Content, String>, String> {
         let t = self.tools.iter().find(|t| t.name == name).ok_or_else(|| format!("unknown tool: {name}"))?;
         // All modelling mutations share one undo/rollback boundary, including multi-entity sketch_add.
-        let mutating = matches!(
-            name,
-            "param_set"
-                | "param_delete"
-                | "sketch_create"
-                | "sketch_add"
-                | "sketch_constrain"
-                | "sketch_remove"
-                | "plane_offset"
-                | "extrude"
-                | "revolve"
-                | "fillet"
-                | "chamfer"
-                | "hole"
-                | "shell"
-                | "push_face"
-                | "linear_array"
-                | "circular_array"
-                | "mirror"
-                | "feature_delete"
-        );
+        let mutating = modelling_tool(name);
         let snapshot = if mutating {
             match self.state.doc().and_then(|s| s.begin_tool_edit().map_err(|e| e.to_string())) {
                 Ok(mut snapshot) => {
@@ -223,7 +238,7 @@ impl Registry {
             None
         };
         self.state.created_node = None;
-        let result = (t.handler)(&mut self.state, args);
+        let result = (t.handler)(&self.tools, &mut self.state, args);
         if let Some(mut snapshot) = snapshot {
             if let Some(id) = self.state.created_node {
                 snapshot.record_created_node(id);

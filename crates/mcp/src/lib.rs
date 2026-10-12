@@ -16,6 +16,7 @@ pub fn instructions(app_note: &str) -> String {
          polygon/slot using expressions like \"w\" or \"-hx\" (fully dimensioned; sketch_constrain adds constraints \
          and dimensions between ids from sketch_info) -> extrude (op add/cut/intersect; direction relative to the sketch normal: XY +Z, \
          XZ -Y, YZ +X) -> doc_info to check bodies (volume, bbox), errors, warnings -> doc_save to a .qcad path.\n\
+         Use batch for 1-200 predictable modelling steps with one undo entry and whole-batch rollback; use single calls when topology ids, sketch_info, selections or a render must be inspected between steps.\n\
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\

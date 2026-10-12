@@ -4,10 +4,11 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent build **n
 [QymCAD](https://github.com/QymIs-Tech/QymCAD) parts** — sketches, extrusions, cuts, fillets, holes, driven by
 named parameters — and save them as `.qcad` files you open and edit in the QymCAD app.
 
-> Status: **pre-release (0.1.0 in progress).** 26 tools: documents and parameters; sketches (rectangle, circle,
+> Status: **pre-release (0.1.0 in progress).** 29 tools: documents and parameters; sketches (rectangle, circle,
 > line, polyline, arc, polygon, slot) fully dimensioned with expressions, plus constraints; datum planes;
 > extrude / cut / revolve; fillet, chamfer, hole, shell, push face; linear / circular arrays and mirror;
-> topology and descriptive selections; export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
+> topology and descriptive selections; atomic modelling batches, feature deletion and undo;
+> export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
 > See [docs/TOOLS.md](docs/TOOLS.md) and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
 > quirks are in [docs/FINDINGS.md](docs/FINDINGS.md).
 
@@ -16,6 +17,28 @@ The server links the QymCAD geometry crates (OpenCASCADE kernel) directly and ru
 is driven. The agent calls tools (`doc_new`, `param_set`, `sketch_create`, `extrude`, `fillet`, `doc_save`, ...);
 each call rebuilds the model and reports errors, volume and bounding box. You open the saved file in QymCAD
 (File > Open) and change parameters there; the part rebuilds.
+
+Use `batch` for predictable sequences of 1–200 modelling operations on the open document:
+
+```json
+{
+  "steps": [
+    { "tool": "param_set", "args": { "name": "w", "value": 30 } },
+    { "tool": "param_set", "args": { "name": "t", "value": 4 } },
+    { "tool": "sketch_create", "args": { "plane": "XY", "name": "outline" } },
+    { "tool": "sketch_add", "args": { "sketch": "outline", "entities": [{ "type": "rect", "w": "w", "h": 20 }] } },
+    { "tool": "extrude", "args": { "sketch": "outline", "height": "t", "name": "plate" } }
+  ]
+}
+```
+
+Every step's tool name and argument type are checked before anything runs. Steps use the same arguments,
+JSON-string compatibility and handlers as individual calls, and can refer to earlier objects by name or id.
+Each step retains its normal rebuild and checks. A failed step rolls back the whole batch; a successful
+batch is one undo entry, labelled `Batch (N steps)`, among the 16 retained calls. Results are compact by
+default, with created-node ids/names and final bodies/warnings/errors; `"verbose": true` adds each tool's
+full result. Use individual calls when you need to inspect `topology`, `sketch_info`, `select` or a `render`
+between operations. Document tools, undo, output, inspection and nested batches are refused inside `batch`.
 
 ## Compatibility
 | qymcad-mcp | QymCAD release | OpenCASCADE |

@@ -40,6 +40,7 @@ impl Snapshot {
     /// Attach the caller's tool name and arguments for undo reporting.
     pub fn record_call(&mut self, tool: &str, arguments: serde_json::Value) {
         let label = match tool {
+            "batch" => format!("Batch ({} steps)", arguments["steps"].as_array().map_or(0, Vec::len)),
             "param_set" => "Set parameter".into(),
             "param_delete" => "Delete parameter".into(),
             "sketch_create" => "Create sketch".into(),
