@@ -366,7 +366,9 @@ pub(crate) fn fillet_acceptance(
             (len > 1e-9).then(|| r.map(|c| c / len))
         };
         let (na, nb) = (normal(fa)?, normal(fb)?);
-        Some((na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2]).clamp(-1.0, 1.0).acos().to_degrees())
+        // Radial directions, not oriented normals: a convex blend beside a concave one has its axis on the other
+        // side, so tangent faces give 180° here. The angle between the surfaces is the angle between the lines.
+        Some((na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2]).abs().min(1.0).acos().to_degrees())
     };
     let cusps = pairs
         .into_iter()

@@ -1577,8 +1577,13 @@ asserts those exact fractional halves before checking away-from-zero output.
   Accepted: the top rim at R2 and at the limiting R10 (sides eaten, corner mitres), rim with vertical edges, every
   edge. Refused: R15 on the cube (also saved clean, also with a `Union` pick list rebuilt natively), R15 at the
   block end, R10.13 at the block end, R6 across the 10 mm top, R0.6 on a 0.8 mm end at y = 10⁷.
-  Not judged (known gaps): overlaps with blends of an earlier fillet node, unnamed join edges, non-cylindrical blends
-  within the kernel's 1.5° flag, and picks renamed since they were stored (their source edge is not found).
+  Accepted too: a convex and a concave blend meeting tangentially in an S at their limit (radial directions are
+  compared as lines, since their axes lie on opposite sides). Not judged (known gaps): overlaps with blends of an
+  earlier fillet node, unnamed join edges, non-cylindrical blends within the kernel's 1.5° flag, and picks renamed
+  since they were stored (their source edge is not found). Far from the origin (Codex: about 10⁷ mm) f32 display
+  coordinates collapse: vertex names are attached through them upstream (`name_edge_ends`), so tiny parts there can
+  be refused wrongly (an R0.2 rim on a 0.8 x 0.2 block), and the f32 sample point of the angle check can let a shallow
+  overlap pass. Parts for a printer are far inside that range.
   Two earlier rules failed review: "no tangent edge" refused the quarter round, and "fewer than two tangent rails at
   a sharp join" refused the limiting rim. Each check copies the source and result B-reps once; not measured on large
   imports. Not reported upstream yet.

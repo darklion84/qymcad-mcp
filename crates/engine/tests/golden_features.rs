@@ -1077,6 +1077,27 @@ fn a_shallow_overlap_past_the_limit_is_refused() {
     assert!(e.to_string().contains("fillet R10.13 does not fit these edges together"), "{e}");
 }
 
+/// A convex and a concave blend side by side at their exact limit meet tangentially in an S (Codex review): an
+/// L-shaped plate, R5 on the inner corner at (10, 0) and the outer corner at (10, 10), 10 mm apart. Their axes lie on
+/// opposite sides of the join, so radial directions are opposite while the surfaces are tangent; it must pass. The
+/// convex round removes (1 − π/4)·25·20 and the concave one adds the same, so V stays 50·30·20 − 30·10·20.
+#[test]
+fn a_convex_and_a_concave_blend_meeting_tangentially_pass() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let pts = [(-20.0, -20.0), (30.0, -20.0), (30.0, 10.0), (10.0, 10.0), (10.0, 0.0), (-20.0, 0.0)];
+    let points = pts.iter().map(|&(x, y)| Xy(x.into(), y.into())).collect();
+    s.sketch_polyline(sk, &PolylineSpec { points, closed: true, construction: false, dimensioned: true }).unwrap();
+    s.extrude(&extrude(sk, 20.0.into(), Op::Add)).unwrap();
+    let topo = s.topology(None, false).unwrap();
+    let at = |x: f64, y: f64| {
+        topo.edges.iter().find(|e| (e.mid[0] - x).abs() < 1e-6 && (e.mid[1] - y).abs() < 1e-6 && (e.mid[2] - 10.0).abs() < 1e-6).unwrap().id
+    };
+    let both = Sel::Ids(vec![at(10.0, 0.0), at(10.0, 10.0)]);
+    s.fillet(None, &both, &5.0.into(), None).unwrap();
+    assert_close(volume(&s), 50.0 * 30.0 * 20.0 - 30.0 * 10.0 * 20.0, 1e-4, "S-blend keeps the volume");
+}
+
 /// The same overlap far from the origin, where f32 coordinates of the two ends 0.8 mm apart coincide: vertices are
 /// compared by their native names, so R0.6 on the two vertical end edges of a 100 x 0.8 x 20 block at y = 10⁷ is
 /// still refused (Codex review).
