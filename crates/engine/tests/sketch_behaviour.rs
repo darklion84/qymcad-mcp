@@ -91,6 +91,24 @@ fn a_dimension_moves_free_geometry() {
     assert_close(p2.y, 40.0 * 30f64.to_radians().tan(), 1e-6, "height from the 30° angle");
 }
 
+/// F-040: an angle whose arm must change length. QymCAD 0.1.0 needed several solves (the server repeated them;
+/// the app solved once and landed short). 0.1.1 settles in one solve (c899ea7), so the server solves once and the
+/// app's own edit is exact: base 40, angle `ang` at the origin, height 40·tan(ang), V = ½·40·40·tan(ang)·2.
+#[test]
+fn an_angle_driven_by_a_parameter_settles_in_one_solve_in_the_app() {
+    let (mut s, sk, l, _) = anchored();
+    s.param_set("ang", &v(30.0)).unwrap();
+    s.sketch_constrain(sk, &c(ConstraintKind::Distance, &[id(l[0])], Some(v(40.0)))).unwrap();
+    let r = s.sketch_constrain(sk, &c(ConstraintKind::Angle, &[id(l[0]), id(l[1])], Some(n("ang")))).unwrap();
+    assert_eq!(r.dof, (0, 0));
+    let prism = |deg: f64| 0.5 * 40.0 * 40.0 * deg.to_radians().tan() * 2.0;
+    assert_close(extrude(&mut s, sk), prism(30.0), 1e-6, "ang=30");
+    assert_close(s.param_set("ang", &v(50.0)).unwrap().bodies[0].volume, prism(50.0), 1e-6, "server edit ang=50");
+    let path = scratch("angle_one_solve_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    assert_close(gui_edit_param(&path, "ang", "60"), prism(60.0), 1e-6, "app edit ang=60");
+}
+
 #[test]
 fn a_conflicting_dimension_is_refused_and_rolled_back() {
     let (mut s, sk, l, p) = anchored();
@@ -180,6 +198,9 @@ fn a_line_ending_on_an_arc_can_be_made_tangent() {
     let dof = s.sketch_info(sk).unwrap().dof;
     let r = s.sketch_constrain(sk, &c(ConstraintKind::Tangent, &[id(line.entities[0]), id(arc.entities[0])], None)).unwrap();
     assert!(r.index.is_some());
+    // Stored as QymCAD's own tangency (F-041 is fixed in 0.1.1), and it removes one degree of freedom.
+    let stored = s.sketch_detail(sk).unwrap().constraints.into_iter().find(|k| Some(k.index) == r.index).unwrap();
+    assert_eq!(stored.kind, "tangent");
     assert_eq!(r.dof.0, dof.0 - 1);
     let d = s.sketch_detail(sk).unwrap();
     let end = d.points.iter().find(|p| p.id == line.points[1]).unwrap();

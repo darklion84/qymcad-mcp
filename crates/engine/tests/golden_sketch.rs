@@ -141,10 +141,15 @@ fn slot() -> (Session, Id) {
     (s, sk)
 }
 
+/// QymCAD 0.1.1 counts a slot's own tangencies correctly (4767faf, our #168), so the slot keeps QymCAD's four
+/// `Tangent` constraints and is fully defined; 0.1.0 needed them rewritten as perpendiculars (F-041).
 #[test]
 fn slot_is_fully_defined_and_extrudes() {
     let (mut s, sk) = slot();
     assert_eq!(dof(&s, sk), (0, 0));
+    let kinds: Vec<String> = s.sketch_detail(sk).unwrap().constraints.into_iter().map(|c| c.kind).collect();
+    assert_eq!(kinds.iter().filter(|k| *k == "tangent").count(), 4, "native slot tangencies kept: {kinds:?}");
+    assert!(!kinds.iter().any(|k| k == "perpendicular"), "{kinds:?}");
     let vol = extrude(&mut s, sk, n("h"));
     assert_close(vol, slot_area(30.0, 10.0) * 4.0, 1e-3, "slot volume");
 }

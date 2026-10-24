@@ -142,8 +142,10 @@ fn native_gui_face_datum_parameter_edit_characterization() {
             s.save(Some(&path)).unwrap();
             let (v, _, faces) = gui_edit_param_faces(&path, "w", "20");
             let bottom = faces.iter().find(|f| f.normal[2] < -0.99).unwrap();
-            // GUI re-solves every expression-bearing sketch; constant sketches miss the datum barrier.
-            let native_w = if unrelated { 20.0 } else { 10.0 };
+            // QymCAD 0.1.1's app marks only what mentions a changed name (apply_param_edit no longer dirties every
+            // expression-bearing sketch), so a constant sketch on a face-derived datum keeps its old placement
+            // whether or not an unrelated sketch reads `w` (F-017). The server's own edits place it (above).
+            let native_w = 10.0;
             let z = native_w + 2.0 + if chained { 5.0 } else { 0.0 };
             assert_close(bottom.centroid.z, z, 1e-6, "native GUI datum placement characterization");
             assert_close(v, 4.0 * 2.0 * 3.0, 1e-6, "native GUI invariant volume");

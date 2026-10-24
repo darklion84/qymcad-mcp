@@ -350,23 +350,10 @@ impl Session {
         })
     }
 
-    /// Solve sketch `si` until it settles. One `solve_sketch` call can stop at a compromise: QymCAD holds the arms
-    /// of angle dimensions softly at their pre-solve lengths, so an edit that must change an arm's length gains
-    /// only a fraction per call (FINDINGS F-040). Repeats while the residual keeps dropping (at most 200
-    /// calls); returns the final residual.
+    /// Solve sketch `si` once and return the residual. QymCAD 0.1.1 settles angle-dimension arms itself
+    /// (c899ea7; the repeated calls of F-040 are gone), but a solve can still land on a wrong branch, checked below.
     pub(crate) fn solve_settled(&mut self, si: usize) -> f64 {
-        let mut residual = self.p.solve_sketch(si);
-        for _ in 0..199 {
-            if residual < 1e-10 {
-                break;
-            }
-            let next = self.p.solve_sketch(si);
-            let stalled = next > residual * 0.99;
-            residual = next;
-            if stalled {
-                break;
-            }
-        }
+        let residual = self.p.solve_sketch(si);
         // Horizontal + PointOnCircle also admit a reference on the -x side. That alternate branch
         // satisfies ArcLength while rotating every direction by 180°, so reject it through the same
         // residual/rollback path as a failed solve.

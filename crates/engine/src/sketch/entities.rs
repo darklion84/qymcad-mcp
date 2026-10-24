@@ -405,7 +405,6 @@ impl Session {
             return Err(Error::Invalid("the slot centres coincide; use a circle".into()));
         }
         let before = self.p.sketches[si].entities.len();
-        let cons_before = self.p.sketches[si].constraints.len();
         self.p.add_slot_entity(si, pt(c1), pt(c2), w / 2.0, purpose(sl.construction));
         let entities = new_entities(self, si, before);
         // add_slot_entity pushes: side, arc around c2, side, arc around c1.
@@ -414,7 +413,6 @@ impl Session {
             _ => Err(Error::Invalid("the slot was not created".into())),
         };
         let (p1, p2) = (center_of(self, 3)?, center_of(self, 1)?);
-        tangency_as_perpendicular(&mut self.p.sketches[si], cons_before);
         if sl.dimensioned {
             let mut dims: Vec<Constraint> = self.pin_dims(si, p1, &sl.x1, c1.0, &sl.y1, c1.1)?.into();
             dims.extend(self.pin_dims(si, p2, &sl.x2, c2.0, &sl.y2, c2.1)?);
@@ -510,38 +508,6 @@ fn half(e: &str) -> Result<String> {
     let expr = if e.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') { format!("{e}/2") } else { format!("({e})/2") };
     check_expr(&expr)?;
     Ok(expr)
-}
-
-/// Rewrite the slot's `Tangent { a, b, c }` constraints (line a-b touches the circle around c) as
-/// `Perpendicular` between the side and the radius to its contact point (the endpoint on that circle).
-///
-/// The geometry is the same — the contact point already lies on the circle (arc intrinsic) — but a tangency at
-/// its own contact point is a second-order condition: its Jacobian row is parallel to the intrinsic's, so
-/// `sketch_dof` counts a fully dimensioned QymCAD slot as 4 free + 4 redundant (FINDINGS F-041). The
-/// perpendicular is first-order, so the slot reports (0, 0) and the rank-based over-constraint check of
-/// `sketch_constrain` stays meaningful.
-fn tangency_as_perpendicular(sk: &mut qymcad_core::model::Sketch, from: usize) {
-    let arc_ends: Vec<(Id, Id, Id)> = sk
-        .entities
-        .iter()
-        .filter_map(|e| match e.kind {
-            EntityKind::Arc { center, a, b, .. } => Some((center, a, b)),
-            _ => None,
-        })
-        .collect();
-    let touches = |p: Id, c: Id| arc_ends.iter().any(|&(cc, a, b)| cc == c && (a == p || b == p));
-    for k in from..sk.constraints.len() {
-        if let Constraint::Tangent { a, b, c, .. } = sk.constraints[k] {
-            let contact = if touches(a, c) {
-                a
-            } else if touches(b, c) {
-                b
-            } else {
-                continue;
-            };
-            sk.constraints[k] = Constraint::Perpendicular { a, b, c, d: contact };
-        }
-    }
 }
 
 fn radius_dim(c: Id, r: f64, expr: String) -> Constraint {

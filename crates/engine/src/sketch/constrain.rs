@@ -422,19 +422,7 @@ impl Session {
             (K::Equal, [G::Line(a, b), G::Line(c, d)]) => Constraint::Equal { a: *a, b: *b, c: *c, d: *d },
             (K::Equal, [G::Curve { center: a, .. }, G::Curve { center: b, .. }]) => Constraint::EqualRadius { c1: *a, c2: *b },
             (K::Tangent, [G::Line(a, b), G::Curve { center, r }] | [G::Curve { center, r }, G::Line(a, b)]) => {
-                // A line that ends on the arc touches it at that end: a perpendicular to the radius there is the
-                // same condition, but first-order (a Tangent at its own contact point is rank-deficient and would
-                // be refused as redundant; FINDINGS F-041).
-                let ends_on_arc = |p: Id| {
-                    self.p.sketches[si]
-                        .entities
-                        .iter()
-                        .any(|e| matches!(e.kind, EntityKind::Arc { center: c, a: ea, b: eb, .. } if c == *center && (ea == p || eb == p)))
-                };
-                match [*a, *b].into_iter().find(|p| ends_on_arc(*p)) {
-                    Some(contact) => Constraint::Perpendicular { a: *a, b: *b, c: *center, d: contact },
-                    None => Constraint::Tangent { a: *a, b: *b, c: *center, r: *r },
-                }
+                Constraint::Tangent { a: *a, b: *b, c: *center, r: *r }
             }
             (K::Tangent, [G::Curve { center: c1, r: r1 }, G::Curve { center: c2, r: r2 }]) => {
                 let d = self.distance(si, *c1, *c2);
