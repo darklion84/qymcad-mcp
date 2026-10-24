@@ -337,6 +337,13 @@ impl Session {
                 r.warnings.push(warning);
             }
         }
+        // Fillets kept from the file were not rebuilt, so the rebuild did not check them: a file saved by the app
+        // can hold overlapping blends (F-074).
+        let checked: HashSet<Id> = r.errors.iter().map(|e| e.node).chain(sess.p.regen_errors.keys().copied()).collect();
+        for (node, message) in sess.fillet_refusals(|n| !checked.contains(&n)) {
+            sess.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            r.errors.push(sess.issue(node, message));
+        }
         Ok((sess, r))
     }
 
@@ -514,25 +521,7 @@ impl Session {
                 }
             }
         }
-        let refused: Vec<(Id, String)> = self
-            .p
-            .timeline
-            .iter()
-            .filter(|n| rebuilt.contains(&n.id) && !errors.iter().any(|e| e.node == n.id))
-            .filter_map(|n| match n.kind {
-                qymcad_core::feature::FeatureKind::Fillet { src, radius, body, .. } => {
-                    // The node keeps the number typed last; a formula's value is what was built.
-                    let radius = self.p.feat_dim_value(n.id, "radius", radius, &self.p.param_map());
-                    let result = self.shapes.get(&body)?;
-                    let message = match self.shapes.get(&src) {
-                        Some(source) => crate::modifiers::fillet_acceptance(source, result, radius)?,
-                        None => format!("fillet R{radius:.2}: its source body is not built, so the result cannot be checked"),
-                    };
-                    Some((n.id, message))
-                }
-                _ => None,
-            })
-            .collect();
+        let refused = self.fillet_refusals(|n| rebuilt.contains(&n) && !errors.iter().any(|e| e.node == n));
         for (node, message) in refused {
             // Kept like a native failure (F-074), in the check's own words: doc_info and export see it, and the
             // node rebuilds next time.
@@ -545,6 +534,29 @@ impl Session {
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
         Rebuild { errors, warnings, bodies, ..Default::default() }
+    }
+
+    /// Fillet nodes picked by `check` whose built result fails `modifiers::fillet_acceptance` (F-074), with the reason.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
+    fn fillet_refusals(&self, check: impl Fn(Id) -> bool) -> Vec<(Id, String)> {
+        self.p
+            .timeline
+            .iter()
+            .filter(|n| !n.suppressed && check(n.id))
+            .filter_map(|n| match n.kind {
+                qymcad_core::feature::FeatureKind::Fillet { src, radius, body, .. } => {
+                    // The node keeps the number typed last; a formula's value is what was built.
+                    let radius = self.p.feat_dim_value(n.id, "radius", radius, &self.p.param_map());
+                    let result = self.shapes.get(&body)?;
+                    let message = match self.shapes.get(&src) {
+                        Some(source) => crate::modifiers::fillet_acceptance(&self.p, n.id, source, result, radius)?,
+                        None => format!("fillet R{radius:.2}: its source body is not built, so the result cannot be checked"),
+                    };
+                    Some((n.id, message))
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.

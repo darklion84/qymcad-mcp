@@ -296,59 +296,68 @@ impl Session {
     }
 }
 
-/// Why a fillet that QymCAD built must still be refused, or `None` when it is acceptable (F-074).
+/// Why fillet `node` that QymCAD built must still be refused, or `None` when it is acceptable (F-074).
 ///
-/// A blend face rolls between two rails: it is tangent to two neighbours (its supports, the next blend of a chain,
-/// a corner patch, or the neighbouring blend in a limiting case). At a corner of a rim two blends may also meet at
-/// a sharp mitre, and in a limiting case one or both supports may be eaten whole, leaving rails sharp against old
-/// faces (a quarter round of a square bar touches nothing tangentially and is still right). QymCAD 0.1.1 builds a
-/// radius too big for neighbouring edges as overlapping prisms (`blend_limit`) without an error; its blend faces
-/// then cross another new blend at a sharp cusp with at most one tangent rail. A new face (an id the source body
-/// does not have) is refused when it meets another new face at a sharp named non-seam edge and has fewer than two
-/// tangent neighbours. Smoothness is the kernel's own per-edge flag. A source or result whose adjacency cannot be
-/// read is refused, not waved through.
+/// QymCAD 0.1.1 builds a radius too big for neighbouring edges as overlapping prisms (`blend_limit`) without an
+/// error: the blends of two edges that do not meet cross each other at a sharp cusp. Blends of edges that share a
+/// vertex may legitimately meet at a sharp mitre (a rim corner), and blends of separate edges may meet smoothly in
+/// a limiting case (two R5 roundings across a 10 mm face). So a sharp named non-seam edge between two blend faces of
+/// this node (`Role::Blend`, named after the edge they round: its 1-based place in the pick, or its own name) whose
+/// source edges share no end point is refused. Smoothness is the kernel's own per-edge flag (about 1.5°), so an
+/// overlap within about that angle of the limit passes. A blend whose source edge cannot be found is not judged.
+/// A source or result whose adjacency cannot be read is refused, not waved through.
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
-pub(crate) fn fillet_acceptance(source: &qymcad_kernel::Shape, result: &qymcad_kernel::Shape, radius: f64) -> Option<String> {
-    use std::collections::{BTreeMap, HashMap, HashSet};
-    let (Ok(old), Ok(new)) = (crate::session::edge_face_pairs(source), crate::session::edge_face_pairs(result)) else {
+pub(crate) fn fillet_acceptance(
+    p: &qymcad_core::model::Project,
+    node: Id,
+    source: &qymcad_kernel::Shape,
+    result: &qymcad_kernel::Shape,
+    radius: f64,
+) -> Option<String> {
+    use qymcad_core::names::Role;
+    use std::collections::HashMap;
+    let Ok(pairs) = crate::session::edge_face_pairs(result) else {
         return Some(format!("fillet R{radius:.2}: cannot read the faces of the result to check it"));
     };
-    let old_faces: HashSet<u32> = old.iter().flat_map(|&(_, a, b)| [a, b]).collect();
-    let smooth: HashMap<u32, bool> = {
-        let _gate = qymcad_kernel::kernel_gate();
-        result.edges_info().into_iter().map(|e| (e.id, e.smooth)).collect()
+    let picks: Vec<u32> = match p.timeline.iter().find(|n| n.id == node).map(|n| &n.kind) {
+        Some(FeatureKind::Fillet { edges, .. }) => match &edges.query {
+            qymcad_core::refs::Query::Ids(ids) => ids.clone(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
     };
-    #[derive(Default)]
-    struct Blend {
-        tangent_to: HashSet<u32>,
-        sharp_to_new: bool,
-    }
-    let mut faces: BTreeMap<u32, Blend> = BTreeMap::new();
-    for (edge, a, b) in new {
-        if a == b || a == 0 || b == 0 || edge == 0 {
-            continue;
-        }
-        let Some(&tangent) = smooth.get(&edge) else { continue };
-        for (face, other) in [(a, b), (b, a)] {
-            if old_faces.contains(&face) {
-                continue;
-            }
-            let blend = faces.entry(face).or_default();
-            if tangent {
-                blend.tangent_to.insert(other);
-            } else if !old_faces.contains(&other) {
-                blend.sharp_to_new = true;
-            }
-        }
-    }
-    let bad = faces.values().filter(|f| f.sharp_to_new && f.tangent_to.len() < 2).count();
-    (bad > 0).then(|| {
+    type Ends = [[f64; 3]; 2];
+    let (smooth, ends): (HashMap<u32, bool>, HashMap<u32, Ends>) = {
+        let _gate = qymcad_kernel::kernel_gate();
+        let smooth = result.edges_info().into_iter().map(|e| (e.id, e.smooth)).collect();
+        let ends = source
+            .edges_info()
+            .into_iter()
+            .filter_map(|e| {
+                let point = |q: &[f32; 3]| q.map(f64::from);
+                Some((e.id, [point(e.poly.first()?), point(e.poly.last()?)]))
+            })
+            .collect();
+        (smooth, ends)
+    };
+    // The source edge a blend face of this node rounds.
+    let rounds = |face: u32| -> Option<Ends> {
+        let name = p.names.get(face).filter(|n| n.feature == node && n.role == Role::Blend)?;
+        let place = usize::try_from(name.src).ok()?;
+        let edge = if (1..=picks.len()).contains(&place) { picks[place - 1] } else { u32::try_from(name.src).ok()? };
+        ends.get(&edge).copied()
+    };
+    let meet = |a: Ends, b: Ends| a.iter().any(|x| b.iter().any(|y| (0..3).map(|k| (x[k] - y[k]).powi(2)).sum::<f64>().sqrt() <= 1e-4));
+    let cusps = pairs
+        .into_iter()
+        .filter(|&(edge, a, b)| a != b && a != 0 && b != 0 && edge != 0 && smooth.get(&edge) == Some(&false))
+        .filter(|&(_, a, b)| matches!((rounds(a), rounds(b)), (Some(ea), Some(eb)) if !meet(ea, eb)))
+        .count();
+    (cusps > 0).then(|| {
         format!(
-            "fillet R{radius:.2} does not fit these edges together: {bad} rounded {} it built {} into a neighbouring \
-             rounding instead of rolling between two faces (QymCAD returned it without an error); try a smaller radius \
-             or fewer edges",
-            if bad == 1 { "face" } else { "faces" },
-            if bad == 1 { "cuts" } else { "cut" },
+            "fillet R{radius:.2} does not fit these edges together: the roundings of edges that do not meet cut into \
+             each other ({cusps} sharp {}; QymCAD returned it without an error); try a smaller radius or fewer edges",
+            if cusps == 1 { "join" } else { "joins" },
         )
     })
 }

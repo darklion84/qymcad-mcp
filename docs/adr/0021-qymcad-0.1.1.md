@@ -21,12 +21,12 @@ workarounds whose cause still exists.
   scheduling bug, now fixed.
 - **Through-all follows QymCAD** (5ea7514): it goes to the stock boundary on the chosen side; the symmetric
   direction spans both sides. Schema text and instructions say so.
-- **A fillet must be a fillet** (F-074): a new face of a fillet that meets another new face at a sharp edge must
-  still roll between two tangent rails; otherwise it is the cusp of overlapping blends. QymCAD 0.1.1 can return overlapping
-  blends with sharp cusps and no error; the server turns that into a rebuild error, so creation and parameter edits
-  roll back. Found outside an edit (on open), it is kept in `regen_errors` in the same words, so doc_info shows it
-  and export refuses, while unrelated parameter edits still go through. Chamfers past their faces are left to
-  QymCAD (predictable plane intersection).
+- **A fillet must be a fillet** (F-074): a sharp join between the blends of two edges that do not meet is the cusp
+  of overlapping blends, which QymCAD 0.1.1 can return without an error; the server refuses it. Mitres between
+  blends of edges sharing a vertex and smooth limiting joins are accepted. The check runs after a fillet rebuilds
+  and on open for fillets kept from the file. Creation and parameter edits roll back; found outside an edit, the
+  refusal is kept in `regen_errors` in the same words, so doc_info shows it and export refuses, while unrelated
+  parameter edits still go through. Chamfers past their faces are left to QymCAD (predictable plane intersection).
 - **Workarounds removed** where a test proves the native fix: lowercasing (F-001), repeated sketch solves
   (F-040), slot and line-on-arc tangency rewrites (F-041), entity-removal markers (F-046), the arc reference
   radius refusal (F-047). Tests that pinned fixed upstream defects now assert the fixes (F-024, F-065, F-068).
@@ -42,8 +42,11 @@ workarounds whose cause still exists.
 ## Consequences
 - Files saved by 0.2.x need QymCAD 0.1.1; the app 0.1.0 refuses them (`Unexpected variant named Orientation`)
   or cannot read their B-reps. The startup check already warns when the installed app differs.
-- Files saved by the server on 0.1.0 open in 0.1.1 unchanged: the user's seven parts open with identical
-  volumes, bboxes and face/edge ids, and a full rebuild reproduces their volumes to 1e-11. A full rebuild may add
-  QymCAD's warning "a reference was found by place, not by name" on old picks; geometry is unchanged.
+- The user's seven parts saved by the server on 0.1.0 open in 0.1.1 with identical volumes, bboxes and face/edge
+  ids, and a full rebuild reproduces their volumes to 1e-11; QymCAD may add "a reference was found by place, not by
+  name" or "n of the m edges could not be taken" (the old app dropped the same edges silently; volumes match the old
+  server). This is evidence for those parts, not a guarantee: recipes whose semantics changed (a one-sided
+  through-all from an interior plane, names in the wrong case, 0.1.0 splines, fillets/chamfers/planes that the release
+  notes say may lie differently) can rebuild differently.
 - A formula that relied on case-insensitive names (`T` read as `t`) now fails with an explanation.
 - A forward or reverse through cut on an interior plane removes less than before (one side only).

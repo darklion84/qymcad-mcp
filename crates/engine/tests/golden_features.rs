@@ -1063,6 +1063,43 @@ fn limiting_fillets_pass_the_check() {
     assert_close(volume(&s), PI * 100.0 / 4.0 * 20.0, 1e-6, "quarter round");
 }
 
+/// The whole top rim of a 40 x 30 x 10 block at R10 eats the side faces: the blends keep one tangent rail each and
+/// meet at sharp mitres at the corners, which is right (Codex review). It builds, also when an upstream height
+/// parameter comes down from 11 to 10 to reach the limit.
+#[test]
+fn a_limiting_rim_fillet_with_corner_mitres_is_accepted() {
+    let mut s = Session::new_part();
+    s.param_set("h", &n("11")).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+    s.extrude(&extrude(sk, n("h"), Op::Add)).unwrap();
+    s.fillet(None, &Sel::EdgesOf(Box::new(top())), &10.0.into(), None).unwrap();
+    assert!(volume(&s) < 40.0 * 30.0 * 11.0 - 1.0, "material removed");
+    s.param_set("h", &n("10")).unwrap();
+    // At the exact limit QymCAD may step a hair back (its own warning); bounds within 1e-6.
+    for (got, want) in bbox(&s).into_iter().zip([-20.0, -15.0, 0.0, 20.0, 15.0, 10.0]) {
+        assert_close(got, want, 1e-6, "rim R10 bounds at h = 10");
+    }
+    let (mut s, _) = block(40.0, 30.0, 10.0);
+    s.fillet(None, &Sel::EdgesOf(Box::new(top())), &10.0.into(), None).unwrap();
+    assert!(s.info().errors.is_empty());
+}
+
+/// A file saved by the app with overlapping blends and nothing dirty is checked on open, though nothing rebuilds:
+/// R15 on the four vertical edges of a 20 mm cube, written by the stage A server (no check yet). doc_info keeps the
+/// refusal and export is refused (F-074, Codex review).
+#[test]
+fn overlapping_blends_saved_clean_are_refused_on_open() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cube_r15_overlapping_0.1.1.qcad");
+    let path = scratch("cube_r15_overlapping.qcad");
+    std::fs::copy(&fixture, &path).unwrap();
+    let (s, report) = Session::open(&path).unwrap();
+    assert!(report.errors.iter().any(|e| e.message.contains("fillet R15.00 does not fit these edges together")), "{:?}", report.errors);
+    assert!(s.info().errors.iter().any(|e| e.message.contains("does not fit")), "{:?}", s.info().errors);
+    let e = s.export(ExportFormat::Stl, &scratch("cube_r15_overlapping.stl"), Quality::Standard, None).unwrap_err();
+    assert!(e.to_string().contains("did not build"), "{e}");
+}
+
 /// Overlapping blends are refused also when a support face survives (F-074): R15 on the two vertical edges of
 /// one end of a 100 x 20 x 20 block (15 + 15 > 20) keeps the long faces but crosses the two cylinders at a cusp;
 /// R6 on both top long edges of a 10 mm wide block does the same. R9 at that end fits.

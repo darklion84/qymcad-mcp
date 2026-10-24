@@ -18,7 +18,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | Module | Owns |
 |---|---|
 | `session.rs` | `Session` (one `Project` + live `Shape`s + path); `rebuild()`; `atomic()` / `transact()`; result bodies; name/id resolution |
-| `params.rs` | parameters: lowercase names (F-001), evaluation, propagation to sketches and features (F-002), usage lookup |
+| `params.rs` | parameters: case-sensitive names with case-twin refusal (ADR 0021), evaluation, propagation to sketches and features (F-002), usage lookup |
 | `sketch.rs` | sketches on base/datum planes or faces; persisted datum-distance dependencies (F-017, ADR 0007); rect/circle; pinning; `sketch_edit` (rebuild dependents); settled solve |
 | `sketch/entities.rs` | line, polyline, arc, polygon, slot: QymCAD adders + independent driving dimensions |
 | `sketch/constrain.rs` | `sketch_constrain` (constraints, dimensions, over-constraint refusal), entity/constraint removal |
@@ -42,7 +42,8 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
    regenerate; `retryable()` errors).
 3. Copy `report.built` faces into the bodies (F-007), so saved files have faces like GUI-saved ones.
 4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
-   Check every rebuilt fillet: a new face that meets nothing smoothly makes it a rebuild error (F-074, ADR 0021).
+   Check every rebuilt fillet: a sharp join between the blends of two edges that do not meet (overlapping blends)
+   is a rebuild error, kept in `regen_errors`; `Session::open` checks fillets kept from the file too (F-074, ADR 0021).
 5. Report errors, warnings (`regen_warnings` plus session advisories) and the result bodies (unconsumed, with volume and bbox).
 
 ## Edits are atomic
@@ -136,10 +137,10 @@ inside edge selections, are checked before native resolution.
 New entities (line, polyline, arc, polygon, slot) collect candidate dimensions — vertex pins from the origin,
 radius, angles — and add each only if it removes a degree of freedom (`add_constraint_if_independent`): a point
 shared with earlier geometry is not dimensioned twice, so the result is (0, 0) without redundancy (rect and circle
-too). Exceptions, because QymCAD's solver/rank analysis needs them (FINDINGS F-040, F-041, F-045): a parametric
-direction (arc end, polygon rotation) is an `ArcLength` from an `angle_reference` construction point on the +x side
-of the centre — QymCAD's only directed dimension, and one without the slow angle arms — and the slot's tangencies
-are first-order perpendiculars. Every sketch edit is solved until it settles and must reach residual ≤ 1e-6;
+too). One exception (FINDINGS F-045): a parametric direction (arc end, polygon rotation) is an `ArcLength` from an
+`angle_reference` construction point on the +x side of the centre, QymCAD's only directed dimension. Slots keep
+QymCAD's own `Tangent` constraints (F-041 is fixed in 0.1.1). Every sketch edit is solved once (again only if the
+first solve stops between 1e-6 and QymCAD's 1e-4) and must reach residual ≤ 1e-6;
 `param_set` rolls back an edit that leaves any sketch unsolved. Linear coordinate expressions cannot change sign
 (QymCAD dimensions keep their side); such an edit is refused.
 

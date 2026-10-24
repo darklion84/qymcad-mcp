@@ -42,12 +42,11 @@ Conventions:
   expressions (`solve_sketch(si)` + `mark_sketch_dirty`), mark feature dependents dirty, then regenerate.
 - **Evidence:** source: `crates/qymcad-core/src/model/regen.rs` `regenerate_watched` (~746-765);
   `crates/qymcad-core/src/model/sketch.rs` (~3947).
-- **Reached-sketch policy (J3 correction to J6):** stabilize named-driver scope, then compare old/new
-  lowercase `param_map` values, including transitive parameters and named driving dimensions. Native
+- **Reached-sketch policy (J3 correction to J6; since 0.1.1 names are exact, not lowercased, ADR 0021):** stabilize
+  named-driver scope, then compare old/new `param_map` values, including transitive parameters and named driving dimensions. Native
   evaluation seeds named dimensions once before applying sketch expressions (`model.rs:2374,2409`,
   `model/sketch.rs:2414`); repeat at most `named_dims.len()+1` evaluations, stopping when scope is unchanged.
-  Solve only sketches whose dimensional expressions mention changed values; lowercase imported expressions
-  too (F-001). After solving, recompute the scope: `update_driven_dims` rewrites named reference measurements
+  Solve only sketches whose dimensional expressions mention changed values. After solving, recompute the scope: `update_driven_dims` rewrites named reference measurements
   from geometry (`model/sketch.rs:2542,2641-2673`). Newly changed names reach further sketches in the next
   round. Bound rounds to `sketches.len()+1`; refuse and restore a non-stabilizing reference cycle.
   Re-evaluation errors abort with recipe restoration; recheck array limits after reference propagation
@@ -1562,21 +1561,22 @@ asserts those exact fractional halves before checking away-from-zero output.
   `occt_limits.cpp:160-265`; test: `golden_features.rs` `too_big_fillet_is_rolled_back_with_the_reason`,
   `growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back`, `fillets_that_roll_off_a_neighbour_are_accepted`,
   `chamfer_wider_than_its_faces_keeps_the_intersection_of_its_planes`.
-- **How we handle it:** after every rebuild of a fillet node, `modifiers::fillet_acceptance` looks at each new face
-  (an id the source body does not have) with named non-seam edges. A real blend rolls between two tangent rails
-  (supports, a chain neighbour, a corner patch, or the neighbouring blend in a limiting case); blends may also meet
-  at a sharp mitre at a rim corner, and a limiting case may leave rails sharp against old faces (a quarter round
-  of a square bar touches nothing tangentially). A face is refused when it meets another new face at a sharp edge
-  with fewer than two tangent neighbours: the cusp of overlapping blends (also MiMo's case, R15 on the two vertical
-  edges of one end of a 100 x 20 x 20 block, where the long faces survive as single rails). Smoothness is the kernel's flag (about 1.5°). A
-  failure is a rebuild error: a new fillet and a parameter edit roll back; found outside an edit (on open) it is
-  kept in `regen_errors` as `CoreError::Kernel` with the same words, so doc_info shows it, export refuses, and
-  unrelated parameter edits still work. Controls that pass: R9.9 and R10 on the cube, R9 at the block end, R10 as
-  high as a 10 mm block (front face eaten, exact volume), two R5 meeting across a 10 mm top, a quarter round (R10 on
-  a 10 x 10 bar, V = π·10²/4·20), the top rim, rim with vertical edges, every edge. Refused: R15 on the cube, R15 at
-  the block end, R6 across the 10 mm top. An earlier "no tangent edge at all" rule refused the quarter round and
-  was dropped. Disabling the check turns the refusal tests red. Each check copies the source and result B-reps once for
-  adjacency; not measured on large imports. Not reported upstream yet.
+- **How we handle it:** `modifiers::fillet_acceptance` looks at the result's sharp named non-seam edges between two
+  blend faces of the fillet (`Role::Blend`, named after the edge they round: its 1-based place in the pick, or its
+  own name). If the two source edges share no end point, their blends overlap and cut into each other: refused.
+  Blends of edges that share a vertex may meet at a sharp mitre (a rim corner), and blends of separate edges may
+  meet smoothly at an exact limit, so neither is refused. Smoothness is the kernel's flag (about 1.5° at the edge
+  midpoint), so an overlap within about that angle of the limit passes (Codex: R10.13 at the end of a 100 x 20 x 20
+  block passes, R10.14 is refused). Runs after every rebuild of a fillet and, in `Session::open`, on fillets kept
+  from the file without a rebuild. A refusal is a rebuild error: a new fillet and a parameter edit roll back; found
+  outside an edit it is kept in `regen_errors` as `CoreError::Kernel` with the same words, so doc_info shows it,
+  export refuses, and unrelated parameter edits still work. Accepted with exact volumes: R9.9 and R10 on the cube,
+  R9 at the block end, R10 as high as a 10 mm block, two R5 meeting across a 10 mm top, a quarter round (R10 on a
+  10 x 10 bar). Accepted: the top rim at R2 and at the limiting R10 (sides eaten, corner mitres), rim with vertical
+  edges, every edge. Refused: R15 on the cube (also from a clean file saved without the check), R15 at the block
+  end, R6 across the 10 mm top. Two earlier rules failed review: "no tangent edge" refused the quarter round, and
+  "fewer than two tangent rails at a sharp join" refused the limiting rim (Codex). Each check copies the result
+  B-rep once for adjacency; not measured on large imports. Not reported upstream yet.
 ## F-075 QymCAD 0.1.1 drops the splines of a 0.1.0 document on load
 
 - **Version:** v0.1.1-dev.20261026
