@@ -243,9 +243,16 @@ impl Session {
 
 fn normalize_name(name: &str) -> Result<String> {
     let n = name.trim().to_lowercase();
-    qymcad_core::drivers::check_ident(&n).map_err(|e| {
-        Error::Invalid(format!("`{name}` is not a valid parameter name ({e:?}); use letters, digits and _ starting with a letter"))
-    })?;
+    // The release validator also rejects constants. Keep assignment's existing explanation above,
+    // while permitting deletion of constant-named parameters from legacy documents (F-039).
+    match qymcad_core::drivers::check_ident(&n) {
+        Ok(()) | Err(qymcad_core::drivers::IdentError::Constant) => {}
+        Err(e) => {
+            return Err(Error::Invalid(format!(
+                "`{name}` is not a valid parameter name ({e:?}); use letters, digits and _ starting with a letter"
+            )))
+        }
+    }
     Ok(n)
 }
 

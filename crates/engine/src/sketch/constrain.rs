@@ -9,7 +9,7 @@ use super::dist;
 use crate::error::{Error, Result};
 use crate::session::Session;
 use crate::value::Num;
-use qymcad_core::model::{Constraint, EntityKind, Id};
+use qymcad_core::model::{entity_points, Constraint, EntityKind, Id};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -222,10 +222,15 @@ impl Session {
             // Upstream drops free helpers and spline controls (FINDINGS F-046). Protect only those tied to
             // surviving geometry: endpoints owned exclusively by the removed entity must lose their dimensions.
             let sk = &s.p.sketches[si];
-            let owned: HashSet<Id> = sk.entities.iter().flat_map(|e| entity_points(&e.kind)).collect();
-            let mut surviving: HashSet<Id> = sk.entities.iter().filter(|e| e.id != entity).flat_map(|e| entity_points(&e.kind)).collect();
-            let mut protected: HashSet<Id> = sk.splines.iter().flat_map(|sp| sp.points.iter().copied()).collect();
-            surviving.extend(protected.iter().copied());
+            let owned: HashSet<Id> = sk.entities.iter().flat_map(entity_points).collect();
+            let surviving: HashSet<Id> = sk.entities.iter().filter(|e| e.id != entity).flat_map(entity_points).collect();
+            let mut protected: HashSet<Id> = sk
+                .entities
+                .iter()
+                .filter(|e| e.id != entity)
+                .filter_map(|e| e.kind.as_spline())
+                .flat_map(|sp| sp.nodes.iter().copied())
+                .collect();
             protected.extend(
                 sk.constraints
                     .iter()
@@ -263,13 +268,7 @@ impl Session {
             }
             // Free ArcLength starts are engine-created angle references. Support constraints alone do not
             // give a helper a purpose after its last dimension has gone.
-            let used: HashSet<Id> = sk
-                .entities
-                .iter()
-                .flat_map(|e| entity_points(&e.kind))
-                .chain(sk.splines.iter().flat_map(|sp| sp.points.iter().copied()))
-                .chain(sk.system_ids())
-                .collect();
+            let used: HashSet<Id> = sk.entities.iter().flat_map(entity_points).chain(sk.system_ids()).collect();
             let helpers: HashSet<Id> = sk
                 .constraints
                 .iter()
@@ -315,8 +314,7 @@ impl Session {
     fn prune_debris(&mut self, si: usize) {
         let s = &mut self.p.sketches[si];
         let sys: HashSet<Id> = s.system_ids().into_iter().collect();
-        let mut used: HashSet<Id> = s.entities.iter().flat_map(|e| entity_points(&e.kind)).collect();
-        used.extend(s.splines.iter().flat_map(|sp| sp.points.iter().copied()));
+        let used: HashSet<Id> = s.entities.iter().flat_map(entity_points).collect();
         let orphan: HashSet<Id> = s.points.iter().map(|p| p.id).filter(|id| !used.contains(id) && !sys.contains(id)).collect();
         let tied: HashSet<Id> = s
             .constraints
@@ -360,6 +358,7 @@ impl Session {
                     Ok(G::Curve { center, r })
                 }
                 EntityKind::Ellipse { .. } => Err(Error::Invalid(format!("entity {id} is an ellipse; constrain its points instead"))),
+                EntityKind::Spline { .. } => Err(Error::Invalid(format!("entity {id} is a spline; constrain its points instead"))),
             };
         }
         if s.points.iter().any(|p| p.id == id) {
@@ -549,15 +548,6 @@ impl Session {
     fn distance(&self, si: usize, a: Id, b: Id) -> f64 {
         let (pa, pb) = (self.xy_or0(si, a), self.xy_or0(si, b));
         (pa.0 - pb.0).hypot(pa.1 - pb.1)
-    }
-}
-
-fn entity_points(k: &EntityKind) -> Vec<Id> {
-    match *k {
-        EntityKind::Line { a, b } => vec![a, b],
-        EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
-        EntityKind::Circle { center, .. } => vec![center],
-        EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
     }
 }
 

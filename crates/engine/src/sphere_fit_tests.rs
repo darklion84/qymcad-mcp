@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support as native;
 
 fn four_latitude_sphere_mesh() -> (qymcad_core::geom::Mesh, MeshFace) {
     use qymcad_core::geom::{Mesh, Point3};
@@ -31,13 +32,12 @@ fn session_with_fit_mesh(shape: Shape) -> (Session, MeshFace) {
 
 #[test]
 fn freeform_native_faces_do_not_disprove_a_geometrically_valid_sphere_fit() {
-    let _gate = qymcad_kernel::kernel_gate();
     // Aggregate-type unit fixture: the native B-rep is a Bezier sheet (freeform),
     // while the injected mesh is exactly spherical. The pinned Rust API exposes
     // no sphere-to-NURBS conversion, so this exercises the decision independently
     // of an unavailable real B-spline sphere construction.
-    let patch = std::array::from_fn(|i| std::array::from_fn(|j| [i as f64 / 3.0, j as f64 / 3.0, 0.0]));
-    let (shape, _) = Shape::from_bezier_patches(&[patch], 1e-6, false).unwrap();
+    let shape = native::fixture("freeform-sheet");
+    let _gate = qymcad_kernel::kernel_gate();
     let kinds = shape.face_kinds().unwrap();
     assert_eq!(kinds[3], 0);
     assert!(kinds[5] + kinds[6] > 0, "native fixture must contain an unidentified curved surface type");
@@ -49,13 +49,8 @@ fn freeform_native_faces_do_not_disprove_a_geometrically_valid_sphere_fit() {
 
 #[test]
 fn corner_planar_normal_itself_rejects_a_validated_sphere_fit() {
+    let shape = native::fixture("sphere-and-cylinder");
     let _gate = qymcad_kernel::kernel_gate();
-    let sphere = Shape::sphere_named(2.0, [9001, 9002, 9003]).unwrap();
-    let cylinder = Shape::cylinder_named(1.0, 2.0, [9101, 9102, 9103])
-        .unwrap()
-        .transformed(&[1.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-        .unwrap();
-    let shape = Shape::fuse_many(&[&sphere, &cylinder]).unwrap();
     let (s, face) = session_with_fit_mesh(shape);
     let mesh = &s.p.bodies[0].mesh;
     assert!(planar_normal(&face, mesh).is_some(), "parallel sparse facet normals alone would claim a plane");
@@ -71,9 +66,9 @@ fn sparse_two_latitude_sphere_mesh_is_rejected_without_ring_boundary_metadata() 
     let (mut s, report) = Session::open(&path).unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
     let body = report.bodies[0].id;
+    let sphere = native::sphere_named(2.0, [9001, 9002, 9003]);
+    let faces = qymcad_kernel::ask::export_mesh(&sphere, 0.1).unwrap().faces;
     let _gate = qymcad_kernel::kernel_gate();
-    let sphere = Shape::sphere_named(2.0, [9001, 9002, 9003]).unwrap();
-    let (_, faces) = sphere.tessellate_merged(0.1).unwrap();
     let mut face = faces[0].clone();
     let axis = unit([1.0, 0.0, 1.0]).unwrap();
     let u = [0.0, 1.0, 0.0];
@@ -141,11 +136,9 @@ fn two_ring_cone_bevel_is_rejected_even_when_another_native_face_is_spherical() 
     // The stock spans x=±7.5 mm. A radius-1 sphere centered at x=100 is disjoint;
     // its presence defeats the aggregate zero-spheres shortcut without changing
     // the original bevel's mesh or boundary geometry.
-    let sphere = Shape::sphere_named(1.0, [2_000_000_000, 2_000_000_001, 2_000_000_002])
-        .unwrap()
-        .transformed(&[1.0, 0.0, 0.0, 100.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-        .unwrap();
-    let aggregate = Shape::fuse_many(&[&s.shapes[&body], &sphere]).unwrap();
+    drop(_gate);
+    let aggregate = native::fixture("cone-and-sphere");
+    let _gate = qymcad_kernel::kernel_gate();
     assert!(aggregate.face_kinds().unwrap()[3] > 0, "the aggregate must contain a genuine native sphere");
     s.shapes.insert(body, aggregate);
     assert!(s.p.face_sphere(body, &face_key(&face)).is_some(), "the retained bevel mesh still admits the false sphere");
@@ -198,8 +191,8 @@ fn axial_levels_follow_rotated_axis_and_reject_a_third_circle() {
 
 #[test]
 fn face_is_planar_itself_rejects_a_validated_sphere_fit() {
+    let shape = native::sphere_named(2.0, [9001, 9002, 9003]);
     let _gate = qymcad_kernel::kernel_gate();
-    let shape = Shape::sphere_named(2.0, [9001, 9002, 9003]).unwrap();
     let (s, face) = session_with_fit_mesh(shape);
     assert!(planar_normal(&face, &s.p.bodies[0].mesh).is_some());
     assert!(s.validated_face_sphere(42, &face).is_some(), "formula R2 vertices establish a fitted sphere");

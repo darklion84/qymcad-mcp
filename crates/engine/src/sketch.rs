@@ -14,7 +14,7 @@ use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::value::Num;
 use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane};
-use qymcad_core::model::{Constraint, EntityKind, Id, PlaneDef, SketchPoint};
+use qymcad_core::model::{entity_points, Constraint, EntityKind, Id, PlaneDef, SketchPoint};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -372,14 +372,7 @@ impl Session {
         // residual/rollback path as a failed solve.
         let sketch = &self.p.sketches[si];
         if sketch.constraints.iter().any(|constraint| match *constraint {
-            Constraint::ArcLength { c, a, .. }
-                if !sketch.entities.iter().any(|e| match e.kind {
-                    EntityKind::Line { a: p, b } => p == a || b == a,
-                    EntityKind::Arc { center, a: p, b, .. } => center == a || p == a || b == a,
-                    EntityKind::Circle { center, .. } => center == a,
-                    EntityKind::Ellipse { c, ma, mi } => c == a || ma == a || mi == a,
-                }) =>
-            {
+            Constraint::ArcLength { c, a, .. } if !sketch.entities.iter().any(|e| entity_points(e).contains(&a)) => {
                 let center = sketch.points.iter().find(|p| p.id == c);
                 let reference = sketch.points.iter().find(|p| p.id == a);
                 center.zip(reference).is_some_and(|(c, a)| a.x < c.x)

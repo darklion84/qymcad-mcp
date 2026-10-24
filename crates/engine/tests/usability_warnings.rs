@@ -171,10 +171,7 @@ fn opening_legacy_sealed_plate_reports_the_stored_shell_difference() {
     project.parameters.iter_mut().find(|p| p.name == "t").unwrap().expr = "10".into();
     project.eval_parameters();
     project.mark_param_dependents_dirty_for("t");
-    let shapes = {
-        let _gate = qymcad_kernel::kernel_gate();
-        breps.into_iter().map(|(id, bytes)| (id, qymcad_kernel::Shape::from_brep_bytes(&bytes).unwrap())).collect()
-    };
+    let shapes = common::restore_shapes(breps);
     let (legacy, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
     assert!(legacy.errors.is_empty(), "legacy rebuild errors: {:?}", legacy.errors);
     let stored = &shapes[&body];
@@ -243,8 +240,13 @@ fn opening_detects_a_face_count_difference_with_equal_volume_and_bounds() {
     // A plane at mid-height splits each of four walls into two faces, while preserving V=20³
     // and all six bounds. The cube recipe rebuilds to six faces, instead of 4*2+2=10.
     {
+        use qymcad_core::feature::Kernel;
+        let kernel =
+            qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(common::restore_shapes(breps.clone())), ..Default::default() };
         let _gate = qymcad_kernel::kernel_gate();
-        let stored = s.shape(body).unwrap().split_faces([0.0, 0.0, 10.0], [0.0, 0.0, 1.0]).unwrap();
+        kernel.split_faces(body + 1, body, [0.0, 0.0, 10.0], [0.0, 0.0, 1.0]).unwrap();
+        let shapes = kernel.shapes.borrow();
+        let stored = &shapes[&(body + 1)];
         assert_close(stored.volume(), 20.0_f64.powi(3), 1e-6, "split-face cube volume");
         assert_eq!(stored.face_kinds().unwrap().into_iter().sum::<u32>(), 4 * 2 + 2);
         assert_eq!((stored.shell_count(), stored.solid_count()), (1, 1));

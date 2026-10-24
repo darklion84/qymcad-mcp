@@ -22,6 +22,8 @@ mod render;
 mod revolve;
 mod session;
 mod sketch;
+#[cfg(test)]
+mod test_support;
 mod topology;
 mod value;
 
@@ -45,4 +47,4 @@ pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, 
 pub use value::Num;
 
 /// The QymCAD release this engine is built against. Must match the tag in the workspace Cargo.toml.
-pub const QYMCAD_VERSION: &str = "0.1.0-dev.20261001";
+pub const QYMCAD_VERSION: &str = "0.1.1-dev.20261026";

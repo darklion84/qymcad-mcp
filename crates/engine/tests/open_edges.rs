@@ -43,10 +43,10 @@ fn edge_query_box_with_array(path: &std::path::Path, dirty: bool, missing: bool,
     *edges = Ref::many(Query::Oriented { dir: [0.0, 0.0, 1.0], tol_deg: 1.0 });
     node.dirty = dirty;
     if !named {
-        let _gate = qymcad_kernel::kernel_gate();
         let bytes = &mut breps.iter_mut().find(|(id, _)| *id == body).unwrap().1;
-        let shape = qymcad_kernel::Shape::from_brep_bytes(bytes).unwrap();
-        shape.rename_edges(&shape.edges_info().iter().map(|e| (e.id, 0)).collect::<Vec<_>>());
+        native::rename_names(bytes, &[], true);
+        let shape = native::restore(bytes.clone());
+        let _gate = qymcad_kernel::kernel_gate();
         assert!(shape.edges_info().iter().all(|e| e.id == 0));
         *bytes = shape.to_brep_bytes().unwrap();
     }

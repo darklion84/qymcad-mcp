@@ -261,13 +261,15 @@ impl Session {
             return Err(Error::Invalid(format!("the edge selection matched no edge of body {src}{hint}")));
         }
         let seams: std::collections::HashSet<_> = {
-            let _gate = qymcad_kernel::kernel_gate();
             // The bridge exposes persistent names, not IsSame identity (F-068).
             // Duplicate names cannot distinguish a real seam from two distinct faces.
             if self.ambiguous_face_warning(src).is_some() {
                 Default::default()
             } else {
-                self.shapes[&src].edge_face_pairs().into_iter().filter_map(|(edge, a, b)| (a == b).then_some(edge)).collect()
+                crate::session::edge_face_pairs(&self.shapes[&src])?
+                    .into_iter()
+                    .filter_map(|(edge, a, b)| (a == b).then_some(edge))
+                    .collect()
             }
         };
         let before = ids.len();
@@ -357,9 +359,10 @@ mod hint_tests {
         let top = s.p.regen_faces[&src].iter().find(|f| f.normal[2] > 0.9).unwrap().id;
         let bottom = s.p.regen_faces[&src].iter().find(|f| f.normal[2] < -0.9).unwrap().id;
         {
+            let shape = crate::test_support::cylinder_named(5.0, 10.0, [bottom, top, 9000]);
+            let built = qymcad_kernel::ask::export_mesh(&shape, 0.05).unwrap();
+            let (mesh, faces) = (built.mesh, built.faces);
             let _gate = qymcad_kernel::kernel_gate();
-            let shape = qymcad_kernel::Shape::cylinder_named(5.0, 10.0, [bottom, top, 9000]).unwrap();
-            let (mesh, faces) = shape.tessellate_merged(0.05).unwrap();
             assert!((shape.volume() - std::f64::consts::PI * 25.0 * 10.0).abs() < 1e-8);
             let i = s.p.mesh_index(src).unwrap();
             s.p.bodies[i].mesh = mesh;

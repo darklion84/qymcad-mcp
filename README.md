@@ -43,9 +43,11 @@ between operations. Document tools, undo, output, inspection and nested batches 
 ## Compatibility
 | qymcad-mcp | QymCAD release | OpenCASCADE |
 |---|---|---|
-| 0.1.x | v0.1.0-dev.20261001 | 7.9.3 (Homebrew) |
+| 0.1.x (stage A port; acceptance pending) | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 
 The `.qcad` format changes between QymCAD releases: **use the QymCAD app release listed above.**
+The stage A port preserves existing server policies and test expectations; see
+[the upgrade report](tasks/review-upgrade-a.md) for upstream behavior differences and outstanding GUI acceptance.
 
 ## Build (macOS)
 ```sh

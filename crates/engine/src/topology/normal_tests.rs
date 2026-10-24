@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support as native;
 
 #[test]
 fn narrow_native_cylinders_and_cones_keep_their_curved_normal_path() {
@@ -48,8 +49,8 @@ fn narrow_native_cylinders_and_cones_keep_their_curved_normal_path() {
 
 #[test]
 fn cylinder_normal_corrects_a_facet_that_reverses_a_shallow_sign() {
+    let shape = native::cylinder_named(1.0, 2.0, [1, 2, 3]);
     let _gate = qymcad_kernel::kernel_gate();
-    let shape = Shape::cylinder_named(1.0, 2.0, [1, 2, 3]).unwrap();
     // At x=1 the exact outward normal is +X. A facet rotated 8 degrees (within F-021's
     // 0.3 rad allowance) reverses its dot with an inward vector 4 degrees from tangency.
     let error = 8.0_f64.to_radians();
@@ -68,8 +69,8 @@ fn cylinder_normal_corrects_a_facet_that_reverses_a_shallow_sign() {
 
 #[test]
 fn nearly_perpendicular_cylinder_orientation_preserves_the_mesh_normal() {
+    let shape = native::cylinder_named(1.0, 2.0, [1, 2, 3]);
     let _gate = qymcad_kernel::kernel_gate();
-    let shape = Shape::cylinder_named(1.0, 2.0, [1, 2, 3]).unwrap();
     for x in [-1e-12, 0.0, 1e-12] {
         let facet = [x, 1.0, 0.0];
         assert_eq!(local_normal(&shape, 3, [1.0, 0.0, 1.0], facet).1, angular_error(MESH_ANGLE), "fallback retains mesh uncertainty");
@@ -95,10 +96,11 @@ fn shallow_wrong_facet_sign_is_omitted_by_the_uncertainty_margin() {
 
 #[test]
 fn single_triangle_native_sphere_must_not_receive_a_plane_normal() {
+    let shape = native::sphere_named(2.0, [1, 2, 3]);
+    let built = qymcad_kernel::ask::export_mesh(&shape, 0.05).unwrap();
+    let (mesh, faces) = (built.mesh, built.faces);
     let _gate = qymcad_kernel::kernel_gate();
-    let shape = Shape::sphere_named(2.0, [1, 2, 3]).unwrap();
     assert!((shape.volume() - 4.0 * std::f64::consts::PI * 8.0 / 3.0).abs() < 1e-8);
-    let (mesh, faces) = shape.tessellate_merged(0.05).unwrap();
     let mut face = faces[0].clone();
     face.triangles.truncate(1);
     assert!(planar_normal(&face, &mesh).is_some(), "one curved facet appears planar");
@@ -110,14 +112,15 @@ fn single_triangle_native_sphere_must_not_receive_a_plane_normal() {
 
 #[test]
 fn native_cone_meridian_normals_match_formula_and_outward_winding() {
-    let _gate = qymcad_kernel::kernel_gate();
     for slope_deg in [0.9_f64, 3.0, 5.0, 10.0, 20.0, 45.0] {
         let angle = slope_deg.to_radians();
         let height = 5.0 * angle.tan();
-        let shape = Shape::cone_named(10.0, 5.0, height, [1, 2, 3]).unwrap();
+        let shape = native::cone_named(10.0, 5.0, height, [1, 2, 3]);
         let expected_volume = std::f64::consts::PI * height * (100.0 + 50.0 + 25.0) / 3.0;
+        let built = qymcad_kernel::ask::export_mesh(&shape, 0.05).unwrap();
+        let (mesh, faces) = (built.mesh, built.faces);
+        let _gate = qymcad_kernel::kernel_gate();
         assert!((shape.volume() - expected_volume).abs() < 1e-8);
-        let (mesh, faces) = shape.tessellate_merged(0.05).unwrap();
         let face = faces.iter().find(|f| shape.face_axis(f.id).is_some()).unwrap();
         let (origin, axis) = shape.face_axis(face.id).unwrap();
         let slope = cone_slope(face, &mesh, origin, axis).expect("native cone vertices determine its generator");
@@ -184,6 +187,7 @@ fn cone_meridian_fit_at_large_coordinates_accepts_f32_rounding_but_rejects_nonco
             .map(|z| Point3::new((1001.0 + 0.37 * z) as f32 as f64, 1000.0, (1000.0 + z) as f32 as f64))
             .collect(),
         tris: vec![[0, 1, 2], [2, 3, 4]],
+        ..Default::default()
     };
     let face = MeshFace { triangles: vec![0, 1], normal: [0.0; 3], centroid: Point3::new(1000.0, 1000.0, 1000.0), area: 0.0, id: 1 };
     let slope = cone_slope(&face, &mesh, origin, axis).expect("true translated cone survives native coordinate rounding");

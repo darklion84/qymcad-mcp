@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### QymCAD release port (stage A)
+- Pin QymCAD v0.1.1-dev.20261026 (f25f27d); adapt engine restoration, independent
+  copies, mesh export and named adjacency to public APIs with non-recursive kernel-gate scopes.
+- Preserve server policies, workarounds, MCP schemas and behavioral test expectations.
+  Replace private test constructors with exact checked-in B-rep fixtures. Upstream
+  behavior differences and remaining acceptance work are recorded in tasks/review-upgrade-a.md.
+
 ### Backlog J
 - Preserve literal feature names inside opaque selection/axis objects when decoding JSON-string arguments;
   bound structured argument nesting to 32 levels and document interop without widening tool schemas.

@@ -1492,3 +1492,43 @@ asserts those exact fractional halves before checking away-from-zero output.
   the import. The pinned generic fillet constructor accepts imported body ids without a kind restriction
   (`qymcad-core/src/model/timeline.rs:1007-1013`), but that is not a tested modifier-on-import result.
   App reopen evidence uses the specified testkit path; no installed QymCAD.app GUI check was available.
+
+## F-073 Release public doors own different kernel-gate scopes
+
+- **Version:** v0.1.1-dev.20261026, f25f27d409418448a4968cfd5698759ee6633f2f.
+- **Evidence:** release `crates/qymcad-kernel/src/imports.rs:21-31` self-gates
+  `restore` and `scaled`; `ask.rs:46-49` self-gates `export_mesh` and returns `Built`.
+  `crates/qymcad-testkit/src/lib.rs:19-39,53-62` gates regeneration and transitively
+  gates import/app-open helpers. `kernel.rs:83-145` now returns `KernelHeld` and
+  offers diagnostic `gate_now`, but the static mutex remains non-reentrant; thread
+  names in its holder record are not reliable ownership tokens. F-069's old return
+  type is historical; the no-nested-lock precondition still applies.
+- **Port:** serialize under a short caller gate, release it, restore through the
+  public door, and verify every requested snapshot id. Reporting tessellates an
+  independent copy without holding an outer gate, retaining separate guards for
+  diagonal/native-face/fallback reads. STEP/native exchange retain caller gates.
+- **Adjacency:** `Shape::edge_face_pairs` is private (`shape/ops.rs:301`); the public
+  `Kernel::edge_face_pairs` needs an owning kernel (`kernel.rs:366-368`). A checked
+  named-B-rep copy is the smallest compatible adapter. QYMB v3 preserves names,
+  split maps and sheet neighbors (`occt_io.cpp:19-49,66-115`); serialization omits
+  triangulations, preserving reporting/rollback isolation. `bbox_exact` is still
+  private (`shape/asks.rs:184`). Copying large bodies has a cost; no caching or
+  Session ownership redesign is introduced in stage A.
+- **Test setup:** the old public primitive/Bezier/renaming APIs are private in normal
+  release builds. Exact old-release B-reps in `tests/fixtures/brep` preserve setup
+  geometry, with provenance in their README; test-only header edits preserve chosen
+  persistent names. No specimens or raw FFI is used.
+- **Sketch API:** splines now live in `EntityKind`, which is no longer Copy;
+  ellipses can carry arc spans (`qymcad-core/src/model/curve/kinds.rs:5-39`).
+  Public `entity_points` (`:470-479`) supplies ownership ids, including spline nodes
+  and ellipse endpoints. Existing spline-detail omission and helper-protection
+  policies remain; `tasks/upgrade-evidence/release-sketch-port.md` records the port.
+- **Identifier API:** `drivers::check_ident` now rejects `IdentError::Constant`
+  (`qymcad-core/src/drivers.rs:80,86-99`). Normalization accepts that specific code
+  so assignment retains the existing built-in-constant explanation and deletion
+  still removes constant-named legacy parameters (F-039). All other validation,
+  lowercasing and assignment refusals remain. Existing `sketch_behaviour` constant
+  tests caught the initial port gap and verify this adaptation.
+- **Audit:** `tasks/release-api-audit.md` records the full release call inventory,
+  caller scopes and source evidence. Historical findings above are deliberately
+  retained for stage B policy review; they are not blanket revalidated by this port.

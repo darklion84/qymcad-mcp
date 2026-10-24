@@ -66,18 +66,8 @@ impl Snapshot {
 impl Session {
     /// Start a modelling tool call on independent shapes, retaining the original handles for rollback/undo.
     pub fn begin_tool_edit(&mut self) -> Result<Snapshot> {
-        let copies = {
-            let _gate = qymcad_kernel::kernel_gate();
-            self.shapes
-                .iter()
-                .map(|(&id, sh)| {
-                    sh.to_brep_bytes()
-                        .and_then(|bytes| Shape::from_brep_bytes(&bytes))
-                        .map(|copy| (id, copy))
-                        .ok_or_else(|| Error::Invalid(format!("cannot snapshot body {id} for undo")))
-                })
-                .collect::<Result<HashMap<Id, Shape>>>()?
-        };
+        let copies = crate::session::copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh)))
+            .map_err(|id| Error::Invalid(format!("cannot snapshot body {id} for undo")))?;
         self.tool_edit_active = true;
         Ok(Snapshot {
             project: self.p.clone_without_source_data(),

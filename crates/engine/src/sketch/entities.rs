@@ -13,7 +13,7 @@ use crate::session::Session;
 use crate::value::{check_expr, Num};
 use qymcad_core::feature::Winding;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{Constraint, EntityKind, Id};
+use qymcad_core::model::{entity_points, Constraint, EntityKind, Id};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -281,8 +281,8 @@ impl Session {
         let before = self.p.sketches[si].entities.len();
         self.p.add_arc_entity(si, pt(c), pt(sp), pt(ep), winding, purpose(a.construction));
         let entities = new_entities(self, si, before);
-        let (center, ps, pe) = match self.p.sketches[si].entities.get(before).map(|e| e.kind) {
-            Some(EntityKind::Arc { center, a, b, .. }) => (center, a, b),
+        let (center, ps, pe) = match self.p.sketches[si].entities.get(before).map(|e| &e.kind) {
+            Some(EntityKind::Arc { center, a, b, .. }) => (*center, *a, *b),
             _ => return Err(Error::Invalid("the arc was not created".into())),
         };
         if a.dimensioned {
@@ -409,8 +409,8 @@ impl Session {
         self.p.add_slot_entity(si, pt(c1), pt(c2), w / 2.0, purpose(sl.construction));
         let entities = new_entities(self, si, before);
         // add_slot_entity pushes: side, arc around c2, side, arc around c1.
-        let center_of = |s: &Session, k: usize| match s.p.sketches[si].entities.get(before + k).map(|e| e.kind) {
-            Some(EntityKind::Arc { center, .. }) => Ok(center),
+        let center_of = |s: &Session, k: usize| match s.p.sketches[si].entities.get(before + k).map(|e| &e.kind) {
+            Some(EntityKind::Arc { center, .. }) => Ok(*center),
             _ => Err(Error::Invalid("the slot was not created".into())),
         };
         let (p1, p2) = (center_of(self, 3)?, center_of(self, 1)?);
@@ -475,14 +475,7 @@ impl Session {
     /// the zero of the arc-length dimensions that give directions from that centre. One per centre.
     fn angle_reference(&mut self, si: usize, center: Id, r: f64) -> Id {
         let s = &self.p.sketches[si];
-        let on_entity = |p: Id| {
-            s.entities.iter().any(|e| match e.kind {
-                EntityKind::Line { a, b } => a == p || b == p,
-                EntityKind::Arc { center, a, b, .. } => center == p || a == p || b == p,
-                EntityKind::Circle { center, .. } => center == p,
-                EntityKind::Ellipse { c, ma, mi } => c == p || ma == p || mi == p,
-            })
-        };
+        let on_entity = |p: Id| s.entities.iter().any(|e| entity_points(e).contains(&p));
         let existing = s.constraints.iter().find_map(|c| match *c {
             Constraint::Horizontal { a, b } if a == center && !on_entity(b) => {
                 s.constraints.iter().any(|k| matches!(*k, Constraint::PointOnCircle { p, c } if p == b && c == center)).then_some(b)
@@ -560,8 +553,8 @@ fn eval_points(pts: &[Xy], vars: &HashMap<String, f64>) -> Result<Vec<(f64, f64)
 }
 
 fn line_ends(ents: &[qymcad_core::model::SketchEntity], id: Id) -> Result<(Id, Id)> {
-    match ents.iter().find(|e| e.id == id).map(|e| e.kind) {
-        Some(EntityKind::Line { a, b }) => Ok((a, b)),
+    match ents.iter().find(|e| e.id == id).map(|e| &e.kind) {
+        Some(EntityKind::Line { a, b }) => Ok((*a, *b)),
         _ => Err(Error::Invalid(format!("line {id} was not created"))),
     }
 }

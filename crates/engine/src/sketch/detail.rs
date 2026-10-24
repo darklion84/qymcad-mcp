@@ -4,7 +4,7 @@
 use super::SketchInfo;
 use crate::error::Result;
 use crate::session::Session;
-use qymcad_core::model::{Constraint, EntityKind, Id};
+use qymcad_core::model::{entity_points, Constraint, EntityKind, Id};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -77,24 +77,26 @@ impl Session {
         let entities = s
             .entities
             .iter()
-            .map(|e| {
-                let (kind, points, r, ccw) = match e.kind {
-                    EntityKind::Line { a, b } => ("line", vec![a, b], None, None),
-                    EntityKind::Arc { center, a, b, ccw } => {
-                        let r = xy(center).zip(xy(a)).map(|(c, p)| (p.0 - c.0).hypot(p.1 - c.1));
-                        ("arc", vec![center, a, b], r, Some(ccw))
+            .filter_map(|e| {
+                let (kind, r, ccw) = match &e.kind {
+                    EntityKind::Line { .. } => ("line", None, None),
+                    EntityKind::Arc { center, a, ccw, .. } => {
+                        let r = xy(*center).zip(xy(*a)).map(|(c, p)| (p.0 - c.0).hypot(p.1 - c.1));
+                        ("arc", r, Some(*ccw))
                     }
-                    EntityKind::Circle { center, r } => ("circle", vec![center], Some(r), None),
-                    EntityKind::Ellipse { c, ma, mi } => ("ellipse", vec![c, ma, mi], None, None),
+                    EntityKind::Circle { r, .. } => ("circle", Some(*r), None),
+                    EntityKind::Ellipse { .. } => ("ellipse", None, None),
+                    // Splines lived outside the entity list in the old release and were omitted here.
+                    EntityKind::Spline { .. } => return None,
                 };
-                EntityInfo { id: e.id, kind, points, r, ccw, construction: e.construction }
+                Some(EntityInfo { id: e.id, kind, points: entity_points(e), r, ccw, construction: e.construction })
             })
             .collect();
         let angle_refs: Vec<Id> = s
             .constraints
             .iter()
             .filter_map(|c| match *c {
-                Constraint::ArcLength { a, .. } if !s.entities.iter().any(|e| entity_uses(&e.kind, a)) => Some(a),
+                Constraint::ArcLength { a, .. } if !s.entities.iter().any(|e| entity_points(e).contains(&a)) => Some(a),
                 _ => None,
             })
             .collect();
@@ -149,13 +151,4 @@ fn snake(s: &str) -> String {
         out.extend(ch.to_lowercase());
     }
     out
-}
-
-fn entity_uses(k: &EntityKind, p: Id) -> bool {
-    match *k {
-        EntityKind::Line { a, b } => a == p || b == p,
-        EntityKind::Arc { center, a, b, .. } => center == p || a == p || b == p,
-        EntityKind::Circle { center, .. } => center == p,
-        EntityKind::Ellipse { c, ma, mi } => c == p || ma == p || mi == p,
-    }
 }

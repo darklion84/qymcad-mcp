@@ -181,14 +181,12 @@ impl Session {
         let s = tmp.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", tmp.display())))?;
         let mut report =
             ExportReport { format, path: final_path.to_string(), bodies: Vec::new(), deflection_mm: None, triangles: None, bytes: 0 };
-        let _gate = qymcad_kernel::kernel_gate();
         if format.is_mesh() {
             let deflection = quality.deflection();
             let mut meshes: Vec<Mesh> = Vec::with_capacity(ids.len());
             for &id in ids {
                 let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
-                let (mut mesh, _faces) = shape
-                    .tessellate_merged(deflection)
+                let qymcad_core::geom::Built { mut mesh, .. } = qymcad_kernel::ask::export_mesh(shape, deflection)
                     .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?;
                 mesh.transform(&self.p.body_world_transform(id));
                 report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: Some(mesh.volume()) });
@@ -211,6 +209,7 @@ impl Session {
                 pairs.push((shape, self.p.body_world_transform(id)));
                 report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: None });
             }
+            let _gate = qymcad_kernel::kernel_gate();
             qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
         }
         Ok(report)

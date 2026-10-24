@@ -851,10 +851,7 @@ fn face_axis_default_body_is_the_current_body_of_the_active_part() {
     {
         let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
         let part_a = project.active_component;
-        let shapes = {
-            let _g = qymcad_kernel::kernel_gate();
-            breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
-        };
+        let shapes = common::restore_shapes(breps);
         project.set_active_component(Some(project.root));
         let part_b = project.add_part("B");
         project.set_active_component(Some(part_b));

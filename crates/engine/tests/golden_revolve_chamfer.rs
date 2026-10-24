@@ -109,7 +109,7 @@ fn shelf_without_mouth_chamfer(reflect: bool, reverse_axis: bool) -> Session {
         }
     }
     project.mark_all_dirty();
-    let shapes = breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect();
+    let shapes = common::restore_shapes(breps);
     let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
     assert!(report.errors.is_empty(), "upstream recipe regeneration: {:?}", report.errors);
     for (id, faces) in &report.built {
@@ -154,10 +154,19 @@ fn upstream_negative_side_shelf_refuses_each_mouth_but_axis_reversal_recovers() 
     let ids = mouth_circles(&negative);
     assert_eq!(ids.len(), 8);
     // This bypasses the engine error wording and proves the pinned upstream failure.
-    let shape = negative.shape(122).unwrap();
-    assert!(shape.chamfer_edges(0.5, &ids, &[], &[], &[]).is_none());
-    for &id in &ids {
-        assert!(shape.chamfer_edges(0.5, &[id], &[], &[], &[]).is_none(), "native bevel of mouth {id}");
+    use qymcad_core::feature::{BlendRoles, Kernel};
+    let bytes = {
+        let _gate = qymcad_kernel::kernel_gate();
+        negative.shape(122).unwrap().to_brep_bytes().unwrap()
+    };
+    let kernel =
+        qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(common::restore_shapes(vec![(122, bytes)])), ..Default::default() };
+    {
+        let _gate = qymcad_kernel::kernel_gate();
+        assert!(kernel.chamfer(123, 122, 0.5, &ids, BlendRoles::Unnamed).is_err());
+        for &id in &ids {
+            assert!(kernel.chamfer(123, 122, 0.5, &[id], BlendRoles::Unnamed).is_err(), "native bevel of mouth {id}");
+        }
     }
     let ids = mouth_circles(&recovered);
     recovered.chamfer(None, &Sel::Ids(ids), &0.5.into(), None, None).unwrap();

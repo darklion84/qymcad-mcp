@@ -42,10 +42,7 @@ pub fn gui_edit_param_faces(path: &std::path::Path, name: &str, expr: &str) -> (
             project.regen_faces.insert(body, faces);
         }
     }
-    let shapes: HashMap<Id, qymcad_kernel::Shape> = {
-        let _g = qymcad_kernel::kernel_gate();
-        breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect()
-    };
+    let shapes = restore_shapes(breps);
     let seen = project.param_map();
     project.parameters.iter_mut().find(|q| q.name == name).expect("parameter").expr = expr.into();
     // apply_param_edit
@@ -116,3 +113,15 @@ pub fn assert_pocket_faces(
         top.2
     );
 }
+
+/// Restore saved test geometry without holding the non-reentrant kernel gate.
+pub fn restore_shapes(breps: Vec<(Id, Vec<u8>)>) -> HashMap<Id, qymcad_kernel::Shape> {
+    qymcad_kernel::imports::restore(breps.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect())
+        .into_iter()
+        .map(|read| (read.body, read.shape))
+        .collect()
+}
+
+#[path = "../../src/test_support.rs"]
+/// Exact native fixtures shared by engine integration tests.
+pub mod native;

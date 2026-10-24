@@ -8,7 +8,7 @@ format version (FINDINGS F-012). A file written by one build may fail to open, o
 
 ## Decision
 - Depend on the QymCAD crates by git **tag** of a published release (the app is distributed only as release
-  builds), never on `main`. Currently `v0.1.0-dev.20261001`.
+  builds), never on `main`. Currently `v0.1.1-dev.20261026` (stage A port; GUI acceptance pending).
 - Record the version in `qymcad_engine::QYMCAD_VERSION`, report it in `initialize.serverInfo` and in
   `doc_info`, and warn at startup if the installed QymCAD.app reports a different version.
 - Upgrades follow docs/UPGRADING.md and are gated by the golden tests.

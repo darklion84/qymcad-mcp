@@ -36,10 +36,7 @@ pub(crate) fn restore_missing(project: &Project, shapes: &mut HashMap<Id, Shape>
                     if (scale - 1.0).abs() <= 1e-12 {
                         return Ok(shape);
                     }
-                    let _gate = qymcad_kernel::kernel_gate();
-                    shape
-                        .transformed(&[scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0])
-                        .ok_or_else(|| format!("cannot apply import scale {scale}"))
+                    qymcad_kernel::imports::scaled(&shape, scale).ok_or_else(|| format!("cannot apply import scale {scale}"))
                 });
             match restored {
                 Ok(shape) => {

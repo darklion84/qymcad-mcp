@@ -503,9 +503,10 @@ impl Session {
         let medges = self.p.regen_edges.get(&body).map(Vec::as_slice).unwrap_or_default();
         let mesh = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh);
 
+        let native_pairs = crate::session::edge_face_pairs(shape)?;
         let _gate = qymcad_kernel::kernel_gate();
         let polylines: HashMap<u32, Vec<[f32; 3]>> = shape.edges_info().into_iter().map(|e| (e.id, e.poly)).rev().collect();
-        let pairs: HashMap<u32, [u32; 2]> = shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect();
+        let pairs: HashMap<u32, [u32; 2]> = native_pairs.into_iter().map(|(e, a, b)| (e, [a, b])).collect();
 
         let mut out_faces = Vec::with_capacity(faces.len());
         for f in faces {
@@ -656,7 +657,7 @@ impl Session {
         if !concave && !convex {
             return None;
         }
-        let corners = self.classified_corners(body);
+        let corners = self.classified_corners(body).ok()?;
         let inward = corners.iter().filter(|(_, sign)| *sign == Some(true)).count();
         let outward = corners.iter().filter(|(_, sign)| *sign == Some(false)).count();
         let single = |count: usize, side: &str, opposite: usize, other: &str| {
@@ -715,10 +716,11 @@ impl Session {
     }
 
     /// Corner candidates exclude seams and proven sampled G1 junctions. Uncertain candidates have no sign.
-    fn classified_corners(&self, body: Id) -> Vec<(u32, Option<bool>)> {
-        let Some(shape) = self.shapes.get(&body) else { return Vec::new() };
-        let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Vec::new() };
+    fn classified_corners(&self, body: Id) -> Result<Vec<(u32, Option<bool>)>> {
+        let Some(shape) = self.shapes.get(&body) else { return Ok(Vec::new()) };
+        let Some(mesh) = self.p.mesh_index(body).map(|i| &self.p.bodies[i].mesh) else { return Ok(Vec::new()) };
         let faces: HashMap<_, _> = self.p.regen_faces.get(&body).into_iter().flatten().map(|f| (f.id, f)).collect();
+        let native_pairs = crate::session::edge_face_pairs(shape)?;
         let _gate = qymcad_kernel::kernel_gate();
         let planes: HashMap<_, _> = faces.iter().filter_map(|(&id, f)| self.corner_planar_normal(body, f).map(|n| (id, n))).collect();
         let cones: HashMap<_, _> = faces
@@ -732,8 +734,9 @@ impl Session {
             })
             .collect();
         let edges: HashMap<_, _> = shape.edges_info().into_iter().map(|e| (e.id, e)).collect();
-        let pairs: HashMap<_, _> = shape.edge_face_pairs().into_iter().map(|(e, a, b)| (e, [a, b])).collect();
-        self.p
+        let pairs: HashMap<_, _> = native_pairs.into_iter().map(|(e, a, b)| (e, [a, b])).collect();
+        Ok(self
+            .p
             .regen_edges
             .get(&body)
             .into_iter()
@@ -797,24 +800,24 @@ impl Session {
                 };
                 Some((e.id, classify()))
             })
-            .collect()
+            .collect())
     }
 
     /// Signed local dihedral, with five samples agreeing beyond their uncertainty.
-    fn corner_edges(&self, body: Id, concave: bool) -> Vec<u32> {
-        self.classified_corners(body).into_iter().filter_map(|(id, sign)| (sign == Some(concave)).then_some(id)).collect()
+    fn corner_edges(&self, body: Id, concave: bool) -> Result<Vec<u32>> {
+        Ok(self.classified_corners(body)?.into_iter().filter_map(|(id, sign)| (sign == Some(concave)).then_some(id)).collect())
     }
 
     /// Number of nonseam corner candidates omitted by uncertainty or native shallow-angle smoothness.
-    pub fn corner_omitted_count(&self, body: Id) -> usize {
-        self.classified_corners(body).iter().filter(|(_, sign)| sign.is_none()).count()
+    pub fn corner_omitted_count(&self, body: Id) -> Result<usize> {
+        Ok(self.classified_corners(body)?.iter().filter(|(_, sign)| sign.is_none()).count())
     }
 
     /// For bare corners and positive intersections, count only uncertain edges satisfying all
     /// other conditions; contradictory corner signs omit nothing. Other compositions report only
     /// the uncertain body total, without implying causation or membership in the result.
     pub fn corner_omission_note(&self, body: Id, sel: &Sel) -> Result<Option<String>> {
-        let uncertain: Vec<_> = self.classified_corners(body).into_iter().filter_map(|(id, sign)| sign.is_none().then_some(id)).collect();
+        let uncertain: Vec<_> = self.classified_corners(body)?.into_iter().filter_map(|(id, sign)| sign.is_none().then_some(id)).collect();
         if let Some(candidates) = sel.replace_corner_filters(&uncertain) {
             // Positive intersections cannot match an edge of both signs, even if its sign is uncertain.
             if sel.requires_both_signs() {
@@ -858,7 +861,7 @@ impl Session {
                 };
                 Sel::Ids(ids)
             }
-            Sel::Concave | Sel::Convex if el == Element::Edges => Sel::Ids(self.corner_edges(body, matches!(sel, Sel::Concave))),
+            Sel::Concave | Sel::Convex if el == Element::Edges => Sel::Ids(self.corner_edges(body, matches!(sel, Sel::Concave))?),
             Sel::Largest if el == Element::Edges => {
                 let l = lengths.get_or_insert_with(|| self.edge_lengths(body));
                 let best = l.values().copied().fold(f64::MIN, f64::max);
@@ -1003,10 +1006,7 @@ impl Session {
         }
         self.p = before;
         self.advisory_warnings = before_warnings;
-        self.shapes = {
-            let _gate = qymcad_kernel::kernel_gate();
-            saved.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
-        };
+        self.shapes = crate::session::restore_shapes(saved);
         let mut lines = vec!["the document has no stored faces and needs a full rebuild to read its topology; it failed".to_string()];
         lines.extend(r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)));
         Err(Error::Rebuild(lines))

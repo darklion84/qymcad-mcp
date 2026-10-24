@@ -59,7 +59,7 @@ fn shelf_bounds_are_tight_on_open_rebuild_and_save_round_trip() {
     // B-rep bytes omit triangles, so byte equality alone cannot detect live remeshing.
     // Independently load the unmeshed reference to detect reporting mutation even during open.
     let loaded = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
-    let reference = qymcad_kernel::Shape::from_brep_bytes(&loaded.breps.into_iter().find(|(id, _)| *id == b).unwrap().1).unwrap();
+    let reference = common::restore_shapes(loaded.breps).remove(&b).unwrap();
     let native_bounds = reference.bbox().unwrap();
     assert_eq!(s.shape(b).unwrap().bbox().unwrap(), native_bounds, "opening preserves the native triangulation state");
     assert_shelf_bounds(s.info().bodies[0].bbox);

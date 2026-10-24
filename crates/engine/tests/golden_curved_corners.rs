@@ -310,7 +310,7 @@ fn shallow_conical_spotface_rim_is_omitted_when_its_sign_is_uncertain() {
     let rim = circle_at(&topo, 10.0, 6.0);
     assert!(!corners(&mut s, &Sel::Concave).contains(&rim), "shallow spotface rim must not be concave");
     assert!(!corners(&mut s, &Sel::Convex).contains(&rim), "uncertain shallow spotface rim must be omitted");
-    assert_eq!(s.corner_omitted_count(topo.body), 1, "only the uncertain 0.9 degree rim is omitted; seams are not counted");
+    assert_eq!(s.corner_omitted_count(topo.body).unwrap(), 1, "only the uncertain 0.9 degree rim is omitted; seams are not counted");
 }
 
 #[test]

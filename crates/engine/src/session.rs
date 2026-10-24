@@ -98,18 +98,54 @@ impl BodyMetrics {
     }
 }
 
+/// Restore saved bodies through the public door; this function acquires the kernel gate.
+pub(crate) fn restore_shapes(saved: Vec<(Id, Vec<u8>)>) -> HashMap<Id, Shape> {
+    qymcad_kernel::imports::restore(saved.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect())
+        .into_iter()
+        .map(|b| (b.body, b.shape))
+        .collect()
+}
+
+/// Independent copies for rollback. Serialization holds the gate, restoration takes it itself.
+/// Refuse a missing copy rather than silently losing a rollback body.
+pub(crate) fn copy_shapes<'a>(shapes: impl IntoIterator<Item = (Id, &'a Shape)>) -> std::result::Result<HashMap<Id, Shape>, Id> {
+    let saved: Vec<(Id, Vec<u8>)> = {
+        let _gate = qymcad_kernel::kernel_gate();
+        shapes.into_iter().map(|(id, sh)| sh.to_brep_bytes().map(|b| (id, b)).ok_or(id)).collect::<std::result::Result<_, _>>()?
+    };
+    let ids: Vec<Id> = saved.iter().map(|(id, _)| *id).collect();
+    let copies = restore_shapes(saved);
+    if let Some(id) = ids.into_iter().find(|id| !copies.contains_key(id)) {
+        return Err(id);
+    }
+    Ok(copies)
+}
+
+/// The public adjacency API owns its shapes. Use a named B-rep copy while Session retains its live handle.
+/// A failed copy is an error, never an empty adjacency answer. Must be called without the gate held.
+pub(crate) fn edge_face_pairs(shape: &Shape) -> Result<Vec<(u32, u32, u32)>> {
+    use qymcad_core::feature::Kernel;
+    let kernel = qymcad_kernel::OcctKernel::default();
+    *kernel.shapes.borrow_mut() = copy_shapes([(0, shape)]).map_err(|_| Error::Io("cannot copy body for adjacency".into()))?;
+    let _gate = qymcad_kernel::kernel_gate();
+    Ok(kernel.edge_face_pairs(0).into_iter().map(|p| (p.edge, p.faces[0], p.faces[1])).collect())
+}
+
 /// Reporting bounds must not depend on the live shape's triangulation state (F-066).
 /// Tessellate an independent copy: the native tessellator cleans/replaces triangulations even via &Shape.
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
 /// This function always acquires that non-reentrant mutex (F-069).
 fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
-    let _gate = qymcad_kernel::kernel_gate();
     let measured = || {
-        let copy = Shape::from_brep_bytes(&shape.to_brep_bytes()?)?;
+        let copy = copy_shapes([(0, shape)]).ok()?.remove(&0)?;
         // Keep .005 mm accuracy for ordinary parts, but avoid unbounded mesh growth on huge imports.
         // F-066: upstream also scales deflection with size to bound curved-body mesh costs.
-        let deflection = 0.005_f64.max(copy.bbox_diag() * 1e-5);
-        let (mesh, faces) = copy.tessellate_merged(deflection)?;
+        let deflection = {
+            let _gate = qymcad_kernel::kernel_gate();
+            0.005_f64.max(copy.bbox_diag() * 1e-5)
+        };
+        let qymcad_core::geom::Built { mesh, faces, .. } = qymcad_kernel::ask::export_mesh(&copy, deflection)?;
+        let _gate = qymcad_kernel::kernel_gate();
         // A partial mesh cannot establish the body's extrema. Retain conservative native bounds instead.
         let face_count: u32 = copy.face_kinds()?.into_iter().sum();
         if faces.len() != face_count as usize || mesh.verts.is_empty() {
@@ -127,7 +163,10 @@ fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
         }
         Some(bbox)
     };
-    measured().or_else(|| shape.bbox())
+    measured().or_else(|| {
+        let _gate = qymcad_kernel::kernel_gate();
+        shape.bbox()
+    })
 }
 
 pub struct Session {
@@ -178,10 +217,7 @@ impl Session {
             qymcad_io::load_project_with_brep(s).map_err(|e| Error::Io(format!("cannot open {s}: {e}")))?;
         project.ensure_document();
         restore_faces(&mut project);
-        let mut shapes: HashMap<Id, Shape> = {
-            let _gate = qymcad_kernel::kernel_gate();
-            breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|sh| (id, sh))).collect()
-        };
+        let mut shapes = restore_shapes(breps);
         let import_warnings = crate::imports::restore_missing(&project, &mut shapes);
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let saved_lineage = first_body_feature(&project);
@@ -355,13 +391,7 @@ impl Session {
             if self.edge_query_rebuild_errors(&retry).is_empty() {
                 None
             } else {
-                let copies: std::result::Result<HashMap<Id, Shape>, Id> = {
-                    let _gate = qymcad_kernel::kernel_gate();
-                    self.shapes
-                        .iter()
-                        .map(|(&id, sh)| sh.to_brep_bytes().and_then(|b| Shape::from_brep_bytes(&b)).map(|copy| (id, copy)).ok_or(id))
-                        .collect()
-                };
+                let copies = copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh)));
                 match copies {
                     Ok(copies) => Some((self.p.clone(), std::mem::replace(&mut self.shapes, copies))),
                     Err(body) => {
@@ -552,23 +582,15 @@ impl Session {
     ) -> Result<T> {
         let before_warnings = self.advisory_warnings.clone();
         let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
-        let copies: Result<HashMap<Id, Shape>> = {
-            let _gate = qymcad_kernel::kernel_gate();
+        let copies = copy_shapes(
             self.p
                 .timeline
                 .iter()
                 .filter(|n| nodes.contains(&n.id))
                 .flat_map(|n| n.kind.bodies())
-                .filter_map(|id| {
-                    self.shapes.get(&id).map(|sh| {
-                        sh.to_brep_bytes()
-                            .and_then(|b| Shape::from_brep_bytes(&b))
-                            .map(|copy| (id, copy))
-                            .ok_or_else(|| Error::Io(format!("cannot snapshot body {id} before {context}")))
-                    })
-                })
-                .collect()
-        };
+                .filter_map(|id| self.shapes.get(&id).map(|sh| (id, sh))),
+        )
+        .map_err(|id| Error::Io(format!("cannot snapshot body {id} before {context}")));
         let mut saved = match copies {
             Ok(copies) => copies,
             Err(e) => {
@@ -728,26 +750,22 @@ pub(crate) fn restore_faces(p: &mut Project) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support as native;
 
     #[test]
     fn import_retessellation_replaces_void_advisories_but_retains_source_warning() {
         use qymcad_core::model::ImportNode;
 
         let mut s = Session::new_part();
-        let (solid, hollow, mesh) = {
+        let solid = native::fixture("cube-20");
+        let hollow = native::fixture("hollow");
+        let mesh = qymcad_kernel::ask::export_mesh(&hollow, 0.5).unwrap().mesh;
+        {
             let _gate = qymcad_kernel::kernel_gate();
-            let solid = Shape::extrude(&[0.0, 0.0, 20.0, 0.0, 20.0, 20.0, 0.0, 20.0], 20.0).unwrap();
-            let tool = Shape::extrude(&[8.0, 7.0, 12.0, 7.0, 12.0, 13.0, 8.0, 13.0], 3.0)
-                .unwrap()
-                .transformed(&[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 7.0])
-                .unwrap();
-            let hollow = solid.boolean(&tool, 0).unwrap();
             assert_eq!((hollow.shell_count(), hollow.solid_count()), (2, 1));
             // Fully enclosed rectangular cavity: 20³ - 4*6*3 mm³.
             assert!((hollow.volume() - (8000.0 - 4.0 * 6.0 * 3.0)).abs() < 1e-8);
-            let mesh = hollow.tessellate_merged(0.5).unwrap().0;
-            (solid, hollow, mesh)
-        };
+        }
         let source = s.p.add_source("sealed.step", Vec::new());
         let body = s.p.add_mesh(mesh);
         s.p.import_tree_as_parts(
@@ -791,10 +809,7 @@ mod tests {
     #[test]
     fn reporting_sphere_bounds_follow_nominal_accuracy_at_part_and_large_import_scales() {
         for radius in [2.0, 1000.0] {
-            let shape = {
-                let _gate = qymcad_kernel::kernel_gate();
-                Shape::sphere_named(radius, [1, 2, 3]).unwrap()
-            };
+            let shape = native::sphere_named(radius, [1, 2, 3]);
             // A sphere has bounds ±r and diagonal 2*r*sqrt(3). Use nominal deflection
             // max(.005, diagonal*1e-5) plus f32 coordinate rounding, rather than native padding.
             let tolerance = 0.005_f64.max(2.0 * radius * 3.0_f64.sqrt() * 1e-5) + f32::EPSILON as f64 * radius;
@@ -809,11 +824,10 @@ mod tests {
     fn live_unnamed_edges_refuse_topology_restoration() {
         let mut s = Session::new_part();
         let sh = {
+            let mut bytes = native::bytes("cylinder-2-3");
+            native::rename_names(&mut bytes, &[], true);
+            let sh = native::restore(bytes);
             let _gate = qymcad_kernel::kernel_gate();
-            let sh = Shape::cylinder(2.0, 3.0).unwrap();
-            let edges = sh.edges_info();
-            assert!(!edges.is_empty(), "the cylinder has live edges");
-            sh.rename_edges(&edges.iter().map(|e| (e.id, 0)).collect::<Vec<_>>());
             assert!(!sh.edges_info().is_empty());
             sh
         };
@@ -860,10 +874,7 @@ mod tests {
         s.advisory_warnings.push(AdvisoryWarning::Geometry(baseline.clone()));
         let before = s.p.clone();
         let result: Result<()> = s.with_rebuild_copies(before, &HashSet::new(), "failed closure", |s| {
-            let shape = {
-                let _gate = qymcad_kernel::kernel_gate();
-                Shape::sphere_named(2.0, [1, 2, 3]).unwrap()
-            };
+            let shape = native::sphere_named(2.0, [1, 2, 3]);
             s.shapes.insert(99, shape); // No recipe node owns this newly introduced body.
             s.advisory_warnings.push(AdvisoryWarning::Geometry(NodeIssue {
                 node: 99,

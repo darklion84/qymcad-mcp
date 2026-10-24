@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support as native;
 use qymcad_core::model::Body;
 
 #[test]
@@ -17,16 +18,6 @@ fn straight_polyline_detection_uses_relative_collinearity() {
     assert!(!polyline_is_straight(&[[0.0; 3], [1.0, 0.0, 0.0], [0.0; 3]]), "closed curve is not a line");
 }
 
-fn bilinear_patch(f: impl Fn(f64, f64) -> [f64; 3]) -> [[[f64; 3]; 4]; 4] {
-    std::array::from_fn(|i| std::array::from_fn(|j| f(i as f64 / 3.0, j as f64 / 3.0)))
-}
-
-fn curved_patch(f: impl Fn(f64, f64, f64) -> [f64; 3]) -> [[[f64; 3]; 4]; 4] {
-    // Cubic Bezier controls for q(y)=0.1*(y²-1), y=-1+2*v.
-    let height = [0.0, -2.0 / 15.0, -2.0 / 15.0, 0.0];
-    std::array::from_fn(|i| std::array::from_fn(|j| f(i as f64 / 3.0, j as f64 / 3.0, height[j])))
-}
-
 #[test]
 fn native_spline_crease_with_changing_sign_is_omitted() {
     // With q(y)=0.1*(y²-1), the top is z=q(y) on -1<=x<=0, and
@@ -34,21 +25,9 @@ fn native_spline_crease_with_changing_sign_is_omitted() {
     // The crease x=0 changes sign at y=1/4, away from its midpoint. Its gentle
     // curvature forces the native mesher to resolve several adjacent triangles;
     // a straight seam can remain one chord despite varying surface derivatives.
-    let patches = [
-        curved_patch(|u, v, q| [-1.0 + u, -1.0 + 2.0 * v, q]),
-        curved_patch(|u, v, q| [u, -1.0 + 2.0 * v, q + 40.0 * u * (-1.25 + 2.0 * v)]),
-        bilinear_patch(|u, v| [-1.0 + 2.0 * v, -1.0 + 2.0 * u, -60.0]),
-        curved_patch(|u, v, q| [-1.0, -1.0 + 2.0 * v, -60.0 + (60.0 + q) * u]),
-        curved_patch(|u, v, q| [1.0, -1.0 + 2.0 * v, q - 50.0 + 80.0 * v - u * (10.0 + q + 80.0 * v)]),
-        bilinear_patch(|u, v| [-1.0 + u, -1.0, -60.0 + 60.0 * v]),
-        bilinear_patch(|u, v| [u, -1.0, -60.0 + v * (60.0 - 50.0 * u)]),
-        bilinear_patch(|u, v| [-1.0 + v, 1.0, -60.0 + 60.0 * u]),
-        bilinear_patch(|u, v| [v, 1.0, -60.0 + u * (60.0 + 30.0 * v)]),
-    ];
     let (shape, mesh, faces, crease) = {
+        let shape = native::fixture("changing-crease");
         let _gate = qymcad_kernel::kernel_gate();
-        let (shape, free) = Shape::from_bezier_patches(&patches, 1e-6, true).unwrap();
-        assert_eq!(free, 0, "all patches close into a shell");
         assert!(shape.is_valid(), "changing-sign crease belongs to a valid native B-rep");
         assert_eq!(shape.solid_count(), 1);
         // Integral of 60 over the 2*2 footprint is 240. The right patch adds
@@ -68,7 +47,9 @@ fn native_spline_crease_with_changing_sign_is_omitted() {
         assert_eq!(matching.len(), 1, "one continuous changing-sign crease");
         let crease = matching[0];
         assert!(shape.edges_info().iter().any(|e| e.id == crease && !e.smooth), "native midpoint smoothness does not omit it");
-        let (mesh, faces) = shape.tessellate_merged(0.001).unwrap();
+        drop(_gate);
+        let built = qymcad_kernel::ask::export_mesh(&shape, 0.001).unwrap();
+        let (mesh, faces) = (built.mesh, built.faces);
         (shape, mesh, faces, crease)
     };
     let body = 42;
@@ -78,8 +59,8 @@ fn native_spline_crease_with_changing_sign_is_omitted() {
     s.shapes.insert(body, shape);
     s.restore_edges().unwrap();
     {
+        let (_, a, b) = crate::session::edge_face_pairs(&s.shapes[&body]).unwrap().into_iter().find(|p| p.0 == crease).unwrap();
         let _gate = qymcad_kernel::kernel_gate();
-        let (_, a, b) = s.shapes[&body].edge_face_pairs().into_iter().find(|p| p.0 == crease).unwrap();
         let e = s.p.regen_edges[&body].iter().find(|e| e.id == crease).unwrap();
         let a = s.p.regen_faces[&body].iter().find(|f| f.id == a).unwrap();
         let b = s.p.regen_faces[&body].iter().find(|f| f.id == b).unwrap();
@@ -98,7 +79,7 @@ fn native_spline_crease_with_changing_sign_is_omitted() {
         assert!(signs.contains(&true) && signs.contains(&false), "the native mesh resolves both corner signs: {signs:?}");
     }
     for concave in [false, true] {
-        let corners = s.corner_edges(body, concave);
+        let corners = s.corner_edges(body, concave).unwrap();
         assert!(!corners.contains(&crease), "changing-sign crease {crease} must be omitted for concave={concave}: {corners:?}");
     }
 }

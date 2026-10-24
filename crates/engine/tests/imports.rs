@@ -64,8 +64,8 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
         ExactFormat::Iges => "igs",
     };
     let input = dir.join(format!("cube.{ext}"));
+    let cube = common::native::fixture("cube-10");
     let _gate = qymcad_kernel::kernel_gate();
-    let cube = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).unwrap();
     match format {
         ExactFormat::Step => qymcad_kernel::write_step(&[(&cube, PLACE_IDENTITY)], input.to_str().unwrap()).unwrap(),
         ExactFormat::Iges => {
@@ -73,7 +73,8 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
         }
     }
     let source = p.add_source(format!("cube.{ext}"), std::fs::read(&input).unwrap());
-    let (mesh, faces) = qymcad_kernel::import_exact(format, input.to_str().unwrap(), 0.5).unwrap().remove(0);
+    let built = qymcad_kernel::import_exact(format, input.to_str().unwrap(), 0.5).unwrap().remove(0);
+    let (mesh, faces) = (built.mesh, built.faces);
     let body = p.add_mesh(mesh);
     p.import_tree_as_parts(vec![ImportNode { name: "imported cube".into(), body: Some(body), ..Default::default() }], source, "cube")
         .unwrap();
@@ -82,11 +83,11 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
     {
         *value = scale;
     }
-    let live = live.transformed(&[scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0]).unwrap();
-    let mut shapes: HashMap<Id, Shape> =
-        own.into_iter().map(|id| (id, Shape::from_brep_bytes(&s.shape(id).unwrap().to_brep_bytes().unwrap()).unwrap())).collect();
-    shapes.insert(body, live);
+    let breps = own.into_iter().map(|id| (id, s.shape(id).unwrap().to_brep_bytes().unwrap())).collect();
     drop(_gate);
+    let live = qymcad_kernel::imports::scaled(&live, scale).unwrap();
+    let mut shapes: HashMap<Id, Shape> = common::restore_shapes(breps);
+    shapes.insert(body, live);
     let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut p, shapes);
     assert!(report.errors.is_empty(), "fixture regeneration: {:?}", report.errors);
     p.set_body_faces(body, faces);
