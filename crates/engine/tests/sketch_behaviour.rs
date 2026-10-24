@@ -224,10 +224,14 @@ fn removing_entities_and_constraints() {
 #[test]
 fn constant_names_are_not_parameters() {
     let mut s = Session::new_part();
-    for bad in ["e", "PI", "tau"] {
+    for bad in ["e", "pi", "tau"] {
         let e = s.param_set(bad, &v(1.0)).unwrap_err();
         assert!(e.to_string().contains("built-in constant"), "{e}");
     }
+    // QymCAD 0.1.1's constants are exactly `pi`, `tau`, `e` (expr.rs `constant`); `PI` is an ordinary name.
+    s.param_set("PI", &v(3.0)).unwrap();
+    s.param_set("q", &Num::Expr("PI*2".into())).unwrap();
+    assert_eq!(s.params().iter().find(|p| p.name == "q").unwrap().value, 6.0);
 }
 
 /// Review #2: a parameter edit that leaves a sketch unsolvable is refused and rolled back. A line's angle to the

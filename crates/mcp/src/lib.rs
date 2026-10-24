@@ -11,7 +11,7 @@ pub fn instructions(app_note: &str) -> String {
     format!(
         "qymcad-mcp builds native, parametric QymCAD parts (.qcad) headlessly. Units: mm, degrees.\n\
          Objects and arrays may also be sent as JSON strings where the argument schema expects structured values; keep strings inside opaque selection/axis objects literal.\n\
-         Workflow: doc_new -> param_set for every dimension the user may change (lowercase names) -> \
+         Workflow: doc_new -> param_set for every dimension the user may change (names are case-sensitive) -> \
          sketch_create on \"XY\"/\"XZ\"/\"YZ\", a datum plane or a face -> sketch_add rect/circle/line/polyline/arc/\
          polygon/slot using expressions like \"w\" or \"-hx\" (fully dimensioned; sketch_constrain adds constraints \
          and dimensions between ids from sketch_info) -> extrude (op add/cut/intersect; direction relative to the sketch normal: XY +Z, \

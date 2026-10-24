@@ -21,8 +21,7 @@ fn n(s: &str) -> Num {
     Num::Expr(s.into())
 }
 
-/// Build the plate through the engine API only. Parameter names deliberately use uppercase input: the engine
-/// must store them lowercase (FINDINGS F-001).
+/// Build the plate through the engine API only.
 fn build() -> Session {
     build_impl("direct", true)
 }
@@ -33,7 +32,7 @@ fn build_offset(mode: &str) -> Session {
 
 fn build_impl(mode: &str, pocket_dimensions: bool) -> Session {
     let mut s = Session::new_part();
-    for (k, v) in [("W", W), ("L", L), ("T", 6.0), ("D", D), ("HX", 22.0), ("HY", 12.0), ("PW", PW), ("PL", PL), ("PD", PD)] {
+    for (k, v) in [("w", W), ("l", L), ("t", 6.0), ("d", D), ("hx", 22.0), ("hy", 12.0), ("pw", PW), ("pl", PL), ("pd", PD)] {
         s.param_set(k, &Num::Value(v)).unwrap();
     }
     let plate = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("plate sketch")).unwrap();
@@ -56,7 +55,7 @@ fn build_impl(mode: &str, pocket_dimensions: bool) -> Session {
     assert_eq!(r.bodies.len(), 1);
     assert_eq!(r.bodies[0].id, body);
     let (base, dist) = match mode {
-        "direct" => (PlaneRef::Base(BaseName::XY), n("T")),
+        "direct" => (PlaneRef::Base(BaseName::XY), n("t")),
         "parent" => {
             let (base, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &n("t-2"), Some("parent")).unwrap();
             (PlaneRef::Plane(base), 2.0.into())
@@ -75,7 +74,7 @@ fn build_impl(mode: &str, pocket_dimensions: bool) -> Session {
     let pocket = s.sketch_create(&PlaneRef::Plane(top), Some("pocket sketch")).unwrap();
     // Literal pocket dimensions reproduce the MCP recipe: unrelated sketch expressions can mask the bug
     // by making the sketch dirty before the datum resolves.
-    let (pw, pl) = if pocket_dimensions { (n("PW"), n("pl")) } else { (PW.into(), PL.into()) };
+    let (pw, pl) = if pocket_dimensions { (n("pw"), n("pl")) } else { (PW.into(), PL.into()) };
     s.sketch_rect(pocket, &0.0.into(), &0.0.into(), &pw, &pl, false).unwrap();
     s.extrude(&Extrude {
         sketch: pocket,
@@ -105,11 +104,36 @@ fn plate_volume_and_bbox() {
 }
 
 #[test]
-fn params_are_stored_lowercase() {
+fn params_keep_their_names() {
     let s = build();
     let names: Vec<String> = s.params().into_iter().map(|p| p.name).collect();
     assert_eq!(names, ["w", "l", "t", "d", "hx", "hy", "pw", "pl", "pd"]);
-    assert!(s.uppercase_params().is_empty());
+    assert!(s.case_twin_params().is_empty());
+}
+
+/// F-001 is fixed in QymCAD 0.1.1 (5dcaa65): an uppercase parameter edited the GUI way rebuilds the body, so the
+/// server no longer lowercases names. A W x L x T block with T = 6, edited to T = 10 in the app: V = W·L·10.
+#[test]
+fn gui_param_edit_rebuilds_from_an_uppercase_name() {
+    let mut s = Session::new_part();
+    s.param_set("T", &Num::Value(6.0)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &W.into(), &L.into(), false).unwrap();
+    let extrude = Extrude {
+        sketch: sk,
+        profiles: None,
+        height: n("T"),
+        op: Op::Add,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    };
+    s.extrude(&extrude).unwrap();
+    assert_eq!(s.params()[0].name, "T");
+    let path = scratch("plate_uppercase_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    assert_close(gui_edit_param(&path, "T", "10"), W * L * 10.0, 1e-6, "GUI edit of T rebuilds");
 }
 
 #[test]

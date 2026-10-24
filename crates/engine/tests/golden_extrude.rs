@@ -54,20 +54,43 @@ fn intersect_keeps_only_the_overlap_and_follows_height() {
     assert_body(volume, bbox, 20.0 * 20.0 * 6.0, expected_bbox);
 }
 
+/// Since QymCAD 0.1.1 (5ea7514) a through-all goes to the chosen side only; both sides need the symmetric
+/// direction (ADR 0021). The stock is 40·30·h with an interior plane at z = 12 and an 8·10 tool on it.
 #[test]
-fn through_cut_spans_both_sides_of_an_interior_plane_and_follows_stock_height() {
+fn through_cut_goes_to_its_side_of_an_interior_plane_and_follows_stock_height() {
     let mut s = Session::new_part();
     s.param_set("height", &24.0.into()).unwrap();
     let stock = rectangle(&mut s, PlaneRef::Base(BaseName::XY), 0.0, 40.0, 30.0);
     extrude(&mut s, stock, expr("height"), Op::Add, Direction::Normal, false);
     let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &12.0.into(), None).unwrap();
     let tool = rectangle(&mut s, PlaneRef::Plane(plane), 0.0, 8.0, 10.0);
-    // The plane lies inside the stock, and the nominal cut height is just 0.25 mm.
-    // Through-all removes an 8*10 prism over all z=[0,h], on both sides of that plane.
-    // Thus V=(40*30-8*10)*h; the outer bounding box stays 40*30*h.
+    // The nominal cut height is just 0.25 mm. Through-all along +z removes the 8*10 prism from the plane to
+    // the top, plus the 0.001 mm entry clearance below the plane: V = 40*30*h - 8*10*(h-12+0.001).
     extrude(&mut s, tool, 0.25.into(), Op::Cut, Direction::Normal, true);
-    assert_result(&s, (40.0 * 30.0 - 8.0 * 10.0) * 24.0, [-20.0, -15.0, 0.0, 20.0, 15.0, 24.0]);
+    let one_side = |h: f64| 40.0 * 30.0 * h - 8.0 * 10.0 * (h - 12.0 + 0.001);
+    assert_result(&s, one_side(24.0), [-20.0, -15.0, 0.0, 20.0, 15.0, 24.0]);
     let path = scratch("extrude_through_gui.qcad");
+    s.save(Some(&path)).unwrap();
+    s.param_set("height", &36.0.into()).unwrap();
+    let expected_bbox = [-20.0, -15.0, 0.0, 20.0, 15.0, 36.0];
+    assert_result(&s, one_side(36.0), expected_bbox);
+    let (volume, bbox) = gui_edit_param_body(&path, "height", "36");
+    assert_body(volume, bbox, one_side(36.0), expected_bbox);
+}
+
+/// Through-all with the symmetric direction removes the 8·10 prism over the whole stock height, on both sides
+/// of the interior plane: V = (40·30 - 8·10)·h, and it follows the stock height.
+#[test]
+fn symmetric_through_cut_spans_both_sides_of_an_interior_plane() {
+    let mut s = Session::new_part();
+    s.param_set("height", &24.0.into()).unwrap();
+    let stock = rectangle(&mut s, PlaneRef::Base(BaseName::XY), 0.0, 40.0, 30.0);
+    extrude(&mut s, stock, expr("height"), Op::Add, Direction::Normal, false);
+    let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &12.0.into(), None).unwrap();
+    let tool = rectangle(&mut s, PlaneRef::Plane(plane), 0.0, 8.0, 10.0);
+    extrude(&mut s, tool, 0.25.into(), Op::Cut, Direction::Symmetric, true);
+    assert_result(&s, (40.0 * 30.0 - 8.0 * 10.0) * 24.0, [-20.0, -15.0, 0.0, 20.0, 15.0, 24.0]);
+    let path = scratch("extrude_through_symmetric_gui.qcad");
     s.save(Some(&path)).unwrap();
     s.param_set("height", &36.0.into()).unwrap();
     let expected_bbox = [-20.0, -15.0, 0.0, 20.0, 15.0, 36.0];

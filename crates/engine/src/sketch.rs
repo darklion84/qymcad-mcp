@@ -109,7 +109,7 @@ impl Session {
             // Bound traversal even for malformed cycles in externally produced documents.
             for _ in 0..self.p.planes.len() {
                 if let Some(expr) = self.p.feat_dim(plane, "dist") {
-                    desired.insert(format!("datum_dist_{plane}"), expr.to_lowercase());
+                    desired.insert(format!("datum_dist_{plane}"), expr.to_string());
                 }
                 match self.p.planes.iter().find(|p| p.id == plane).map(|p| &p.def) {
                     Some(PlaneDef::OffsetPlane { plane: parent, .. }) => plane = *parent,

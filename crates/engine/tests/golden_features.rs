@@ -238,12 +238,11 @@ fn descriptive_fillet_survives_an_upstream_edit() {
     assert_close(v, cylinder_rim_fillet(20.0, 12.0, 3.0), 0.05, "GUI edit h=12");
 }
 
-/// FINDINGS F-024, the reason fillets store pick lists: the same document with the fillet's edges stored as a
-/// QymCAD *query* (`Adjacent(OfFeature(cap end))`), reopened in the app and the radius edited, rounds EVERY edge
-/// (both rims): the query is re-evaluated against an edge pool that a reopened document does not have. When this
-/// test fails, QymCAD fixed it and stored edge queries can be reconsidered.
+/// FINDINGS F-024 is fixed in QymCAD 0.1.1 (d2f2184): a fillet whose edges are stored as a QymCAD *query*
+/// (`Adjacent(OfFeature(cap end))`), reopened in the app and the radius edited, rounds only the queried rim; 0.1.0
+/// rounded both. The server still stores pick lists (ADR 0021); this keeps the native fix from regressing.
 #[test]
-fn stored_edge_query_rounds_everything_after_reopen_upstream_bug() {
+fn stored_edge_query_rounds_one_rim_after_reopen_in_the_app() {
     use qymcad_core::feature::FeatureKind;
     use qymcad_core::refs::{Query, Ref};
     let mut s = Session::new_part();
@@ -262,7 +261,7 @@ fn stored_edge_query_rounds_everything_after_reopen_upstream_bug() {
     qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
     let v = gui_edit_param(&path, "r", "4");
     let one_rim = PI * 400.0 * 10.0 - cylinder_rim_fillet(20.0, 10.0, 4.0);
-    assert_close(v, PI * 400.0 * 10.0 - 2.0 * one_rim, 0.05, "both rims rounded (upstream bug)");
+    assert_close(v, PI * 400.0 * 10.0 - one_rim, 1e-6, "only the queried rim is rounded");
 }
 
 /// The server is immune to F-024 on files it opens: `Session::open` restores the edge pool from the live B-reps, so
@@ -626,7 +625,9 @@ fn too_big_fillet_is_rolled_back_with_the_reason() {
     let before = s.info().timeline.len();
     let e = s.fillet(None, &along_z(), &15.0.into(), None).unwrap_err();
     let Error::Rebuild(lines) = &e else { panic!("expected a rebuild error, got {e}") };
-    assert!(lines.iter().any(|l| l.contains("fillet R15.00 only works edge by edge")), "QymCAD's reason: {e}");
+    // QymCAD 0.1.1 builds this as four overlapping R15 cylinders with sharp joins and no error; the server's
+    // acceptance check refuses it (F-074). QymCAD 0.1.0 refused it as "only works edge by edge".
+    assert!(lines.iter().any(|l| l.contains("fillet R15.00 does not fit these edges together")), "the reason: {e}");
     eprintln!("too-big fillet: {e}");
     assert_eq!(s.info().timeline.len(), before, "nothing added");
     assert_close(volume(&s), 8000.0, 1e-6, "volume unchanged");
@@ -1004,4 +1005,60 @@ fn check_invalid_array_count(invalid: f64) {
             assert_eq!(s.info(), before, "invalid count edit must roll back");
         }
     }
+}
+
+/// The acceptance check (F-074) must not refuse real fillets: blends tangent to their supports, the limiting case
+/// where neighbouring blends meet tangentially, blends meeting at top corners, and corner patches.
+#[test]
+fn fillets_that_roll_off_a_neighbour_are_accepted() {
+    // Four vertical edges of a 20 mm cube, radius r: each corner loses (r² − πr²/4)·20.
+    for r in [9.9, 10.0] {
+        let (mut s, _) = block(20.0, 20.0, 20.0);
+        let (_, report) = s.fillet(None, &along_z(), &r.into(), None).unwrap();
+        assert!(report.errors.is_empty(), "R{r}: {:?}", report.errors);
+        // The limiting case is built by QymCAD's exact prism construction: 2.4e-9 relative off the formula.
+        assert_close(volume(&s), 8000.0 - 4.0 * (r * r - PI * r * r / 4.0) * 20.0, 1e-4, &format!("R{r}"));
+    }
+    // R10 is the limiting case: the four quarter cylinders form one cylinder of radius 10, V = π·10²·20.
+    assert_close(8000.0 - 4.0 * (100.0 - PI * 25.0) * 20.0, PI * 100.0 * 20.0, 1e-9, "limiting case is a cylinder");
+    let bottom = Sel::Extreme { axis: Axis::Z, max: false };
+    for (label, edges) in [
+        ("top rim", Sel::EdgesOf(Box::new(top()))),
+        ("top rim and vertical edges", Sel::Union(vec![Sel::EdgesOf(Box::new(top())), along_z()])),
+        ("every edge", Sel::Union(vec![Sel::EdgesOf(Box::new(top())), Sel::EdgesOf(Box::new(bottom.clone())), along_z()])),
+    ] {
+        let (mut s, _) = block(40.0, 30.0, 10.0);
+        let (_, report) = s.fillet(None, &edges, &2.0.into(), None).unwrap_or_else(|e| panic!("{label}: {e}"));
+        assert!(report.errors.is_empty(), "{label}: {:?}", report.errors);
+        // Rounding removes material but keeps the extents of the 40 x 30 x 10 block.
+        assert!(volume(&s) < 12000.0 - 1.0, "{label}: material removed");
+        assert_eq!(bbox(&s), [-20.0, -15.0, 0.0, 20.0, 15.0, 10.0], "{label}");
+    }
+}
+
+/// A parameter edit that grows a fillet past its limit is refused and rolled back, like a new fillet (F-074).
+#[test]
+fn growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back() {
+    let (mut s, _) = block(20.0, 20.0, 20.0);
+    s.param_set("r", &n("2")).unwrap();
+    s.fillet(None, &along_z(), &n("r"), None).unwrap();
+    let rounded = 8000.0 - 4.0 * (4.0 - PI) * 20.0;
+    assert_close(volume(&s), rounded, 1e-6, "R2");
+    let e = s.param_set("r", &n("15")).unwrap_err();
+    assert!(e.to_string().contains("fillet R15.00 does not fit these edges together"), "{e}");
+    assert_close(volume(&s), rounded, 1e-6, "R2 kept");
+    assert_eq!(s.info().params.iter().find(|p| p.name == "r").map(|p| p.expr.as_str()), Some("2"), "parameter rolled back");
+}
+
+/// Pins QymCAD 0.1.1: a chamfer wider than its faces is built as the intersection of the chamfer planes, not
+/// refused. Four 15 mm chamfers on a 20 mm cube leave |x| + |y| ≤ 5: a square of area 2·5², V = 50·20. Geometry
+/// is predictable, so the server does not guard it (F-074); this test notices if QymCAD changes it.
+#[test]
+fn chamfer_wider_than_its_faces_keeps_the_intersection_of_its_planes() {
+    let (mut s, _) = block(20.0, 20.0, 20.0);
+    let (_, report) = s.chamfer(None, &along_z(), &15.0.into(), None, None).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_close(volume(&s), 2.0 * 5.0 * 5.0 * 20.0, 1e-6, "diamond prism");
+    let b = bbox(&s);
+    assert!((b[0] + 5.0).abs() < 1e-6 && (b[3] - 5.0).abs() < 1e-6, "{b:?}");
 }

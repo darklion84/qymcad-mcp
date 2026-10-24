@@ -38,7 +38,8 @@ pub struct ExtrudeArgs {
     /// normal (default), reverse, symmetric — relative to the sketch plane's normal (XY +Z, XZ −Y, YZ +X, face: outward).
     #[serde(default)]
     pub direction: Direction,
-    /// Go through the whole body (cut/add/intersect only).
+    /// Go through the whole body to the chosen side (cut/add/intersect only): `normal` or `reverse` reach the
+    /// stock boundary on that side; `symmetric` goes through on both sides of the sketch plane.
     #[serde(default)]
     pub through: bool,
     /// Body to modify (id or name); must be a current body, not one consumed by a later feature. Default: the
@@ -330,7 +331,7 @@ pub fn tools() -> Vec<Tool> {
                  returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. \
                  On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. \
                  For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. \
-                 Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock.",
+                 Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane.",
                 stale!()
             ),
             |st, a: ExtrudeArgs| {

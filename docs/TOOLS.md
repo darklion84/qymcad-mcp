@@ -128,7 +128,7 @@ Create or change a named parameter and rebuild everything that depends on it. Us
   "additionalProperties": false,
   "properties": {
     "name": {
-      "description": "Parameter name: letters, digits, `_`, starting with a letter. Stored lowercase.",
+      "description": "Parameter name: letters, digits, `_`, starting with a letter. Case-sensitive (`H` and `h` are different names; a\nnew name differing from an existing one only by case is refused).",
       "type": "string"
     },
     "value": {
@@ -1132,7 +1132,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
 
 ## extrude
 
-Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true spans the whole stock. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -1270,7 +1270,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
     },
     "through": {
       "default": false,
-      "description": "Go through the whole body (cut/add/intersect only).",
+      "description": "Go through the whole body to the chosen side (cut/add/intersect only): `normal` or `reverse` reach the\nstock boundary on that side; `symmetric` goes through on both sides of the sketch plane.",
       "type": "boolean"
     }
   },

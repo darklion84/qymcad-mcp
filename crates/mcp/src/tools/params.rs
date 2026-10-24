@@ -10,7 +10,8 @@ use serde_json::json;
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SetArgs {
-    /// Parameter name: letters, digits, `_`, starting with a letter. Stored lowercase.
+    /// Parameter name: letters, digits, `_`, starting with a letter. Case-sensitive (`H` and `h` are different names; a
+    /// new name differing from an existing one only by case is refused).
     pub name: String,
     /// A number, or an expression over other parameters (`"w/2"`, `"2*t+1"`).
     pub value: Num,

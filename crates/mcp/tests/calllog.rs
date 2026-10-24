@@ -133,7 +133,7 @@ fn logs_session_in_order_with_errors_and_redacted_images() {
         ("param_set", json!({ "name": "Width", "value": 20 })),
         ("extrude", json!({ "sketch": "missing", "height": 5 })),
         ("sketch_create", json!({ "plane": "XY", "name": "s" })),
-        ("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "w": "width", "h": 10 }] })),
+        ("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "w": "Width", "h": 10 }] })),
         ("extrude", json!({ "sketch": "s", "height": 5, "name": "box" })),
         ("render", json!({ "view": "top", "width": 64, "height": 64 })),
     ];

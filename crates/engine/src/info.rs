@@ -44,11 +44,10 @@ impl Session {
         warnings.extend(
             bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| format!("{} ({}): {message}", b.name, b.id))),
         );
-        let upper = self.uppercase_params();
-        if !upper.is_empty() {
+        for twins in self.case_twin_params() {
             warnings.push(format!(
-                "parameters {upper:?} have uppercase letters: QymCAD {} does not rebuild features from them in the GUI; rename them lowercase",
-                crate::QYMCAD_VERSION
+                "parameters {} differ only by letter case; QymCAD keeps them apart, so check each formula names the one it means",
+                twins.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
             ));
         }
         DocInfo {

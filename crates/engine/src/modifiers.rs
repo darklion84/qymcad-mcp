@@ -296,6 +296,48 @@ impl Session {
     }
 }
 
+/// Why a fillet that QymCAD built must still be refused, or `None` when it is acceptable (F-074).
+///
+/// Every face a fillet makes rolls off some neighbour tangentially: a support face, the next blend of a chain, or
+/// a corner patch. QymCAD 0.1.1 builds a radius too big for neighbouring edges as overlapping prisms
+/// (`blend_limit`) and returns blend faces that meet everything at sharp edges, without an error. A new face
+/// (an id the source body does not have) whose named non-seam edges are all sharp is such a face. Smoothness is
+/// the kernel's own per-edge flag. A source or result whose adjacency cannot be read is refused, not waved through.
+/// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
+pub(crate) fn fillet_acceptance(source: &qymcad_kernel::Shape, result: &qymcad_kernel::Shape, radius: f64) -> Option<String> {
+    let (Ok(old), Ok(new)) = (crate::session::edge_face_pairs(source), crate::session::edge_face_pairs(result)) else {
+        return Some(format!("fillet R{radius:.2}: cannot read the faces of the result to check it"));
+    };
+    let old_faces: std::collections::HashSet<u32> = old.iter().flat_map(|&(_, a, b)| [a, b]).collect();
+    let smooth: std::collections::HashMap<u32, bool> = {
+        let _gate = qymcad_kernel::kernel_gate();
+        result.edges_info().into_iter().map(|e| (e.id, e.smooth)).collect()
+    };
+    // Per new face: (has a named non-seam edge, has a smooth one).
+    let mut faces: std::collections::BTreeMap<u32, (bool, bool)> = Default::default();
+    for (edge, a, b) in new {
+        if a == b || a == 0 || b == 0 || edge == 0 {
+            continue;
+        }
+        let Some(&tangent) = smooth.get(&edge) else { continue };
+        for face in [a, b].into_iter().filter(|f| !old_faces.contains(f)) {
+            let entry = faces.entry(face).or_default();
+            entry.0 = true;
+            entry.1 |= tangent;
+        }
+    }
+    let sharp: Vec<u32> = faces.into_iter().filter(|(_, (edged, tangent))| *edged && !tangent).map(|(face, _)| face).collect();
+    (!sharp.is_empty()).then(|| {
+        format!(
+            "fillet R{radius:.2} does not fit these edges together: {} rounded {} it built {} tangent to no neighbouring face \
+             (QymCAD returned it without an error); try a smaller radius or fewer edges",
+            sharp.len(),
+            if sharp.len() == 1 { "face" } else { "faces" },
+            if sharp.len() == 1 { "is" } else { "are" },
+        )
+    })
+}
+
 fn chamfer_failure_advice(mut error: Error, revolve_source: bool) -> Error {
     if revolve_source {
         if let Error::Rebuild(lines) = &mut error {

@@ -19,14 +19,15 @@ impl Session {
         self.p.parameters.iter().map(|q| ParamInfo { name: q.name.clone(), expr: q.expr.clone(), value: q.value }).collect()
     }
 
-    /// Create or change a parameter and rebuild everything that depends on it. Names are stored lowercase
-    /// (FINDINGS F-001). The change is rolled back if the model no longer rebuilds.
+    /// Create or change a parameter and rebuild everything that depends on it. Names are case-sensitive, as in
+    /// QymCAD 0.1.1; a new name that differs from an existing one only by case is refused (ADR 0021). The change
+    /// is rolled back if the model no longer rebuilds.
     pub fn param_set(&mut self, name: &str, value: &Num) -> Result<Rebuild> {
         let name = normalize_name(name)?;
         // QymCAD resolves these constants before parameters, so a parameter with such a name is never read
         // (FINDINGS F-039). Only creation/assignment is refused: an old document may hold one, and it must stay
         // deletable.
-        if ["pi", "tau", "e"].contains(&name.as_str()) {
+        if qymcad_core::expr::is_constant(&name) {
             return Err(Error::Invalid(format!("`{name}` is a built-in constant in expressions; choose another parameter name")));
         }
         let expr = match value {
@@ -36,18 +37,24 @@ impl Session {
         };
         // QymCAD evaluates it (eval_parameters) with a recursive parser that has no depth cap.
         crate::value::check_expr(&expr)?;
+        if !self.p.parameters.iter().any(|q| q.name == name) {
+            if let Some(twin) = self.case_twin(&name) {
+                return Err(Error::Invalid(format!(
+                    "parameter `{twin}` already exists and `{name}` differs from it only by letter case; names are case-sensitive, \
+                     so use `{twin}` to change it, or choose a clearly different name"
+                )));
+            }
+        }
         let before = self.p.clone();
         let broken_before = self.unsolved_sketches();
-        match self.p.parameters.iter_mut().find(|q| q.name.eq_ignore_ascii_case(&name)) {
-            Some(q) => {
-                q.name = name.clone();
-                q.expr = expr.clone();
-            }
+        match self.p.parameters.iter_mut().find(|q| q.name == name) {
+            Some(q) => q.expr = expr.clone(),
             None => self.p.parameters.push(Param { name: name.clone(), expr: expr.clone(), value: 0.0 }),
         }
         if let Some((what, err)) = self.p.eval_parameters().into_iter().next() {
+            let message = format!("`{what}`: {}", crate::value::explain(&err, self.p.param_map().keys()));
             self.p = before;
-            return Err(Error::Expr(format!("`{what}`: {err:?}")));
+            return Err(Error::Expr(message));
         }
         // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
         if let Err(e) = self.check_array_limits() {
@@ -101,12 +108,10 @@ impl Session {
     /// Delete a parameter. Refused while an expression still uses it.
     pub fn param_delete(&mut self, name: &str) -> Result<()> {
         let name = normalize_name(name)?;
-        let idx = self
-            .p
-            .parameters
-            .iter()
-            .position(|q| q.name.eq_ignore_ascii_case(&name))
-            .ok_or_else(|| Error::NotFound(format!("parameter `{name}`")))?;
+        let idx = self.p.parameters.iter().position(|q| q.name == name).ok_or_else(|| {
+            let hint = self.case_twin(&name).map(|twin| format!("; names are case-sensitive: did you mean `{twin}`?")).unwrap_or_default();
+            Error::NotFound(format!("parameter `{name}`{hint}"))
+        })?;
         let users = self.param_users(&name);
         if !users.is_empty() {
             return Err(Error::Invalid(format!("parameter `{name}` is used by {}; change those first", users.join(", "))));
@@ -120,21 +125,21 @@ impl Session {
         use qymcad_core::expr::mentions;
         let mut out = Vec::new();
         for q in &self.p.parameters {
-            if !q.name.eq_ignore_ascii_case(name) && mentions(&q.expr.to_lowercase(), name) {
+            if q.name != name && mentions(&q.expr, name) {
                 out.push(format!("parameter `{}`", q.name));
             }
         }
         for (node, dims) in &self.p.feat_dims {
             let is_sketch = self.p.sketch_index(*node).is_some();
-            if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_dist_") && mentions(&e.to_lowercase(), name)) {
+            if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_dist_") && mentions(e, name)) {
                 out.push(format!("datum dependency of sketch {} `{}`", node, self.node_name(*node)));
             }
-            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_dist_")) && mentions(&e.to_lowercase(), name)) {
+            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_dist_")) && mentions(e, name)) {
                 out.push(format!("feature {} `{}`", node, self.node_name(*node)));
             }
         }
         for s in &self.p.sketches {
-            if s.constraints.iter().any(|c| c.expr().is_some_and(|e| mentions(&e.to_lowercase(), name))) {
+            if s.constraints.iter().any(|c| c.expr().is_some_and(|e| mentions(e, name))) {
                 out.push(format!("sketch {} `{}`", s.id, crate::localization::name(&s.name)));
             }
         }
@@ -143,7 +148,7 @@ impl Session {
 
     /// Solve only reached sketch expressions, including names refreshed by driven dimensions after a solve.
     /// Rebuild scheduling retains blanket native dirtying and face-derived datum barriers (F-002, F-017).
-    /// Lowercase imported expressions too (F-001). Returns reached sketches left unsolved.
+    /// Names match exactly, as QymCAD evaluates them. Returns reached sketches left unsolved.
     pub(crate) fn propagate_params(&mut self, before: &std::collections::HashMap<String, f64>) -> Result<Vec<(Id, f64)>> {
         let mut previous = before.clone();
         let mut unsolved = Vec::new();
@@ -163,7 +168,7 @@ impl Session {
                 values = next;
             }
             if let Some((what, err)) = errors.into_iter().next() {
-                return Err(Error::Expr(format!("`{what}`: {err:?}")));
+                return Err(Error::Expr(format!("`{what}`: {}", crate::value::explain(&err, self.p.param_map().keys()))));
             }
             let values = self.p.param_map();
             let changed: Vec<&str> =
@@ -171,10 +176,7 @@ impl Session {
             if changed.is_empty() {
                 break;
             }
-            let reached = |expr: &str| {
-                let expr = expr.to_lowercase();
-                changed.iter().any(|name| qymcad_core::expr::mentions(&expr, name))
-            };
+            let reached = |expr: &str| changed.iter().any(|name| qymcad_core::expr::mentions(expr, name));
             for si in 0..self.p.sketches.len() {
                 if self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some_and(reached)) {
                     #[cfg(test)]
@@ -234,15 +236,24 @@ impl Session {
             .collect()
     }
 
-    /// Parameter names that break GUI rebuilds (uppercase, FINDINGS F-001) — reported as warnings for files
-    /// created elsewhere.
-    pub fn uppercase_params(&self) -> Vec<String> {
-        self.p.parameters.iter().filter(|q| q.name.chars().any(|c| c.is_uppercase())).map(|q| q.name.clone()).collect()
+    /// Groups of parameter names that differ only by letter case. QymCAD 0.1.1 keeps them apart, but they are easy
+    /// to confuse; a document made elsewhere may hold them, and doc_info warns.
+    pub fn case_twin_params(&self) -> Vec<Vec<String>> {
+        let mut groups: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        for q in &self.p.parameters {
+            groups.entry(q.name.to_lowercase()).or_default().push(q.name.clone());
+        }
+        groups.into_values().filter(|g| g.len() > 1).collect()
+    }
+
+    /// An existing parameter whose name equals `name` ignoring case but not exactly.
+    fn case_twin(&self, name: &str) -> Option<String> {
+        self.p.parameters.iter().find(|q| q.name != name && crate::value::same_ignoring_case(&q.name, name)).map(|q| q.name.clone())
     }
 }
 
 fn normalize_name(name: &str) -> Result<String> {
-    let n = name.trim().to_lowercase();
+    let n = name.trim().to_string();
     // The release validator also rejects constants. Keep assignment's existing explanation above,
     // while permitting deletion of constant-named parameters from legacy documents (F-039).
     match qymcad_core::drivers::check_ident(&n) {
@@ -293,22 +304,66 @@ mod tests {
     }
 
     #[test]
-    fn parameter_edit_solves_only_reached_sketch_including_transitive_uppercase_expressions() {
+    fn parameter_edit_solves_only_reached_sketch_including_transitive_expressions() {
         let (mut s, reached, untouched) = two_sketches();
-        // Existing files may carry uppercase expressions; matching must respect F-001.
-        for c in &mut s.p.sketches.iter_mut().find(|sk| sk.id == reached).unwrap().constraints {
-            if let qymcad_core::model::Constraint::Distance { expr, .. } = c {
-                *expr = expr.to_uppercase();
-            }
-        }
         let untouched_before = format!("{:?}", s.p.sketches.iter().find(|sk| sk.id == untouched).unwrap());
-        let r = s.param_set("W", &12.0.into()).unwrap();
+        // `w` reaches the first sketch only through `twice` = w*2.
+        let r = s.param_set("w", &12.0.into()).unwrap();
         PARAM_SOLVES.with(|solves| assert_eq!(*solves.borrow(), vec![reached]));
         assert_eq!(format!("{:?}", s.p.sketches.iter().find(|sk| sk.id == untouched).unwrap()), untouched_before);
         // First width follows twice=2*w; second width follows other=8. Both have height 3 and depth 2.
         for (body, expected) in r.bodies.iter().zip([2.0 * 12.0 * 3.0 * 2.0, 8.0 * 3.0 * 2.0]) {
             assert!((body.volume - expected).abs() < 1e-6, "{} != {expected}", body.volume);
         }
+    }
+
+    /// QymCAD 0.1.1 matches names exactly (5dcaa65); the server follows it and stops lowercasing (ADR 0021).
+    #[test]
+    fn names_are_case_sensitive_and_case_twins_are_refused() {
+        let (mut s, _, _) = two_sketches();
+        // A mixed-case name is stored as given and read exactly.
+        s.param_set("Wall", &3.0.into()).unwrap();
+        assert!(s.params().iter().any(|p| p.name == "Wall" && p.value == 3.0));
+        s.param_set("Wall", &4.0.into()).unwrap();
+        assert_eq!(s.params().iter().filter(|p| p.name.to_lowercase() == "wall").count(), 1, "same exact name changes it");
+        // A twin differing only by case is refused, naming the existing parameter, and nothing changes.
+        let before = serde_json::to_vec(&s.p).unwrap();
+        for twin in ["W", "WALL", "wall"] {
+            let e = s.param_set(twin, &1.0.into()).unwrap_err().to_string();
+            assert!(e.contains("differs from it only by letter case"), "{twin}: {e}");
+        }
+        assert!(s.param_set("W", &1.0.into()).unwrap_err().to_string().contains("`w` already exists"));
+        assert_eq!(serde_json::to_vec(&s.p).unwrap(), before);
+        // Cyrillic names compare by case too.
+        s.param_set("Ширина", &5.0.into()).unwrap();
+        assert!(s.param_set("ширина", &5.0.into()).unwrap_err().to_string().contains("`Ширина` already exists"));
+        // A formula naming a parameter in the wrong case is an unknown name, explained.
+        let e = s.param_set("q", &Num::Expr("TWICE+1".into())).unwrap_err().to_string();
+        assert!(e.contains("no parameter `TWICE`") && e.contains("did you mean `twice`?"), "{e}");
+        let e = s.param_delete("TWICE").unwrap_err().to_string();
+        assert!(e.contains("did you mean `twice`?"), "{e}");
+        // A sketch dimension in the wrong case is refused the same way at the sketch tool.
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let e = s.sketch_rect(sk, &0.0.into(), &0.0.into(), &Num::Expr("Other".into()), &3.0.into(), false).unwrap_err().to_string();
+        assert!(e.contains("did you mean `other`?"), "{e}");
+    }
+
+    /// A document from the GUI may already hold names differing only by case: it opens, both stay, and edits keep
+    /// them apart.
+    #[test]
+    fn existing_case_twins_stay_apart() {
+        let (mut s, _, _) = two_sketches();
+        s.p.parameters.push(Param { name: "W".into(), expr: "100".into(), value: 0.0 });
+        assert!(s.p.eval_parameters().is_empty());
+        assert_eq!(s.case_twin_params(), vec![vec!["w".to_string(), "W".to_string()]]);
+        let warning = s.info().warnings.into_iter().find(|w| w.contains("differ only by letter case")).expect("doc_info warns");
+        assert!(warning.contains("`w`, `W`"), "{warning}");
+        // Editing `W` does not touch `w`, nor the sketch that reads `twice` = w*2.
+        PARAM_SOLVES.with(|solves| solves.borrow_mut().clear());
+        s.param_set("W", &50.0.into()).unwrap();
+        PARAM_SOLVES.with(|solves| assert!(solves.borrow().is_empty()));
+        let map = s.p.param_map();
+        assert_eq!((map["w"], map["W"], map["twice"]), (10.0, 50.0, 20.0));
     }
 
     #[test]

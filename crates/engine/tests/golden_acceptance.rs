@@ -78,10 +78,11 @@ fn shelf_bounds_are_tight_on_open_rebuild_and_save_round_trip() {
     assert_shelf_bounds(reopened.render(View::Top, 128, 128, None).unwrap().bbox);
 }
 
-/// A minimal upstream fit repro: one stored planar face, no recipe rebuild or native Shape.
-/// This test intentionally pins the upstream defect; remove it if QymCAD fixes the fit.
+/// The F-065 repro (our QymCAD #172): one stored planar face, no recipe rebuild or native Shape. QymCAD 0.1.1
+/// rejects planar faces before fitting (0646b3c); this keeps that fix from regressing. The server's own residual
+/// check stays, because the fit's 2% radius tolerance is unchanged for curved faces.
 #[test]
-fn upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh() {
+fn native_sphere_fit_rejects_a_single_coplanar_floor_mesh() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hanging_shelf.qcad");
     let mut p = qymcad_io::load_project(path).unwrap();
     let body = 123;
@@ -102,14 +103,5 @@ fn upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh() {
     for v in &points {
         assert_close(v.z, 10.0 - 0.001, f32::EPSILON as f64 * 10.0, "coplanar floor vertex");
     }
-    let (center, radius) = p.face_sphere(body, &key).expect("pinned upstream accepts this planar mesh as a sphere");
-    let scale = points.iter().flat_map(|v| [v.x.abs(), v.y.abs(), v.z.abs()]).chain(center.map(f64::abs)).fold(radius.max(1.0), f64::max);
-    let residual = points
-        .iter()
-        .map(|v| {
-            let distance = ((v.x - center[0]).powi(2) + (v.y - center[1]).powi(2) + (v.z - center[2]).powi(2)).sqrt();
-            (distance - radius).abs()
-        })
-        .fold(0.0_f64, f64::max);
-    assert!(residual > 16.0 * f32::EPSILON as f64 * scale, "fitted radius contradicts the face's own vertices");
+    assert_eq!(p.face_sphere(body, &key), None, "a planar floor is not a sphere");
 }

@@ -100,8 +100,10 @@ fn seam_only_blend_selection_is_refused_clearly() {
     }
 }
 
+/// The legacy fixture (saved by QymCAD 0.1.0) still carries duplicate face names, so the server's seam guards stay
+/// (F-068). Rebuilt by QymCAD 0.1.1 the same chamfers name every face uniquely (5e334fc, 81c0dda; our #173).
 #[test]
-fn seam_repaired_chamfers_keep_unique_edge_names_in_investigated_cases() {
+fn rebuilt_cone_chamfers_have_unique_face_and_edge_names() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cone_negative_chamfer.qcad");
     let (mut original, _) = cone();
     let original_topo = original.topology(None, true).unwrap();
@@ -113,7 +115,6 @@ fn seam_repaired_chamfers_keep_unique_edge_names_in_investigated_cases() {
     };
     unique_edges(&original_topo);
     assert!(original_topo.faces.iter().any(|f| f.ambiguous_id), "original fixture exercised native seam rescue");
-    let mut repaired_cases = 0;
     for distance in [0.25_f64, 0.5, 0.75] {
         let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(fixture.to_str().unwrap()).unwrap();
         let body = project.timeline.last().unwrap().id;
@@ -126,7 +127,7 @@ fn seam_repaired_chamfers_keep_unique_edge_names_in_investigated_cases() {
         let topo = s.topology(None, true).unwrap();
         unique_edges(&topo);
         let duplicate_faces = topo.faces.iter().filter(|f| f.ambiguous_id).count();
-        repaired_cases += usize::from(duplicate_faces > 0);
+        assert_eq!(duplicate_faces, 0, "{distance}: QymCAD 0.1.1 names rebuilt chamfer faces uniquely");
         eprintln!(
             "seam investigation dist={distance}: {} edges, {} unique edge ids, {duplicate_faces} ambiguous face rows",
             topo.edges.len(),
@@ -140,7 +141,6 @@ fn seam_repaired_chamfers_keep_unique_edge_names_in_investigated_cases() {
                 * (10.0 * (3.25_f64.powi(2) + 3.25 * 2.0 + 2.0_f64.powi(2)) / 3.0 + distance * a * (3.25 + 2.0 + 2.0 * distance / 3.0));
         assert!((report.bodies[0].volume - expected).abs() < 2e-5);
     }
-    assert!(repaired_cases >= 2, "investigation must include several positively identified seam-rescue results");
 }
 
 #[test]

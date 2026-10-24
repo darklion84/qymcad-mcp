@@ -470,6 +470,22 @@ impl Session {
                 }
             }
         }
+        let refused: Vec<NodeIssue> = self
+            .p
+            .timeline
+            .iter()
+            .filter(|n| rebuilt.contains(&n.id) && !errors.iter().any(|e| e.node == n.id))
+            .filter_map(|n| match n.kind {
+                qymcad_core::feature::FeatureKind::Fillet { src, radius, body, .. } => {
+                    // The node keeps the number typed last; a formula's value is what was built.
+                    let radius = self.p.feat_dim_value(n.id, "radius", radius, &self.p.param_map());
+                    let message = crate::modifiers::fillet_acceptance(self.shapes.get(&src)?, self.shapes.get(&body)?, radius)?;
+                    Some(self.issue(n.id, message))
+                }
+                _ => None,
+            })
+            .collect();
+        errors.extend(refused);
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));

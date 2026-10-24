@@ -55,7 +55,7 @@ fn undo_reports_restored_parameter_expressions_values_and_bodies() {
     call(&mut r, "sketch_add", json!({"sketch":"profile", "entities":[{"type":"rect", "w":20, "h":30}]}));
     call(&mut r, "extrude", json!({"sketch":"profile", "height":"h", "name":"stock"}));
     let before = call(&mut r, "doc_info", json!({}));
-    let args = json!({"name":"T", "value":9});
+    let args = json!({"name":"t", "value":9});
     call(&mut r, "param_set", args.clone());
     let result = call(&mut r, "undo", json!({}));
     assert_eq!(result["params"], before["params"], "undo must report restored parameter expressions and values");

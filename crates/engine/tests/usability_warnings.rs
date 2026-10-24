@@ -143,10 +143,12 @@ fn opening_unchanged_dirty_boolean_geometry_does_not_warn() {
     assert!(report.warnings.is_empty(), "unchanged dirty geometry: {:?}", report.warnings);
 }
 
-#[test]
-fn opening_legacy_sealed_plate_reports_the_stored_shell_difference() {
+/// A plate with a pocket on a datum plane at z = t (t: 6 → 10). QymCAD 0.1.0 could rebuild it on the old plane
+/// and seal the pocket inside the stock (F-017, our #165); 0.1.1 cannot (fc1dedc), but files saved that way still
+/// exist. The test makes one by storing the body of the same recipe with the plane left at z = 6.
+fn sealed_plate(dist: Num) -> (Session, Id, Id) {
     let mut s = Session::new_part();
-    s.param_set("t", &6.0.into()).unwrap();
+    s.param_set("t", &10.0.into()).unwrap();
     let stock = rect(&mut s, PlaneRef::Base(BaseName::XY), 60.0, 40.0);
     s.extrude(&Extrude {
         sketch: stock,
@@ -159,35 +161,37 @@ fn opening_legacy_sealed_plate_reports_the_stored_shell_difference() {
         name: Some("plate".into()),
     })
     .unwrap();
-    let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &Num::Expr("t".into()), None).unwrap();
+    let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &dist, None).unwrap();
     let sketch = rect(&mut s, PlaneRef::Plane(plane), 30.0, 16.0);
     let (body, _) = extrude(&mut s, sketch, 3.0, Op::Cut, Direction::Reverse, "pocket");
+    (s, sketch, body)
+}
+
+#[test]
+fn opening_legacy_sealed_plate_reports_the_stored_shell_difference() {
+    let (mut recipe, sketch, body) = sealed_plate(Num::Expr("t".into()));
+    let (mut legacy, _, legacy_body) = sealed_plate(6.0.into());
+    assert_eq!(legacy_body, body, "same recipe, same ids");
     let path = scratch("legacy_sealed_plate.qcad");
-    s.save(Some(&path)).unwrap();
-    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
-    // Reproduce the old GUI recipe without the F-017 scheduling dependency: stock grows to 10,
-    // but preparation captures the old pocket plane at 6, sealing it inside the stock.
+    recipe.save(Some(&path)).unwrap();
+    let legacy_path = scratch("legacy_sealed_plate_body.qcad");
+    legacy.save(Some(&legacy_path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, mut breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let old = qymcad_io::load_project_with_brep(legacy_path.to_str().unwrap()).unwrap();
+    // A file saved by the 0.1.0 GUI has no server datum dependency (F-017); opening adds it and rebuilds.
     project.feat_dims.remove(&sketch);
-    project.parameters.iter_mut().find(|p| p.name == "t").unwrap().expr = "10".into();
-    project.eval_parameters();
-    project.mark_param_dependents_dirty_for("t");
-    let shapes = common::restore_shapes(breps);
-    let (legacy, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
-    assert!(legacy.errors.is_empty(), "legacy rebuild errors: {:?}", legacy.errors);
-    let stored = &shapes[&body];
+    // Store the sealed body (mesh, faces and B-rep) under the open-pocket recipe.
+    let sealed_brep = old.breps.iter().find(|(id, _)| *id == body).unwrap().1.clone();
+    breps.iter_mut().find(|(id, _)| *id == body).unwrap().1 = sealed_brep.clone();
+    let (i, j) = (project.mesh_index(body).unwrap(), old.project.mesh_index(body).unwrap());
+    project.bodies[i] = old.project.bodies[j].clone();
+    let stored = common::restore_shapes(vec![(body, sealed_brep)]).remove(&body).unwrap();
     // Sealed pocket has six stock faces plus six inner faces; open pocket has five inner faces.
     assert_eq!((stored.shell_count(), stored.solid_count()), (2, 1));
     assert_eq!(stored.face_kinds().unwrap().into_iter().sum::<u32>(), 6 + 6);
     let sealed_volume = 60.0 * 40.0 * 10.0 - 30.0 * 16.0 * (3.0 + 0.001);
     assert_close(stored.volume(), sealed_volume, 1e-6, "legacy sealed pocket volume");
     let stored_bbox = stored.bbox().unwrap();
-    for (id, faces) in legacy.built {
-        project.set_body_faces(id, faces);
-    }
-    let breps: Vec<_> = {
-        let _gate = qymcad_kernel::kernel_gate();
-        shapes.iter().map(|(&id, shape)| (id, shape.to_brep_bytes().unwrap())).collect()
-    };
     qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
     let (opened, report) = Session::open(&path).unwrap();
     assert!(report.errors.is_empty(), "repaired plate rebuild errors: {:?}", report.errors);

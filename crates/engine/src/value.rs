@@ -15,7 +15,7 @@ pub enum Num {
 }
 
 impl Num {
-    /// The expression as stored in the document: trimmed and lowercased (FINDINGS F-001). `None` for numbers.
+    /// The expression as stored in the document: trimmed; names keep their case (QymCAD matches them exactly). `None` for numbers.
     pub fn expr(&self) -> Option<String> {
         match self {
             Num::Value(_) => None,
@@ -23,7 +23,7 @@ impl Num {
         }
     }
 
-    /// The current value against `vars` (from `Project::param_map`, keys lowercase).
+    /// The current value against `vars` (from `Project::param_map`, keys as named).
     pub fn eval(&self, vars: &HashMap<String, f64>) -> Result<f64> {
         match self {
             Num::Value(v) if v.is_finite() => Ok(*v),
@@ -37,7 +37,9 @@ impl Num {
                     Ok(v) => v,
                     // QymCAD's own arithmetic parser (numbers, + - * / ^, a fixed set of math functions,
                     // parameter names); it does not execute code.
-                    Err(_) => qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {err:?}")))?,
+                    Err(_) => {
+                        qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {}", explain(&err, vars.keys()))))?
+                    }
                 };
                 if !v.is_finite() {
                     return Err(Error::Expr(format!("`{e}` is not a finite number ({v})")));
@@ -110,5 +112,21 @@ pub(crate) fn check_expr(e: &str) -> Result<()> {
 }
 
 pub(crate) fn normalize_expr(s: &str) -> String {
-    s.trim().to_lowercase()
+    s.trim().to_string()
+}
+
+/// Equal up to letter case, any alphabet (names may be Cyrillic).
+pub(crate) fn same_ignoring_case(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
+
+/// An expression error in words. Names are case-sensitive in QymCAD 0.1.1, so an unknown name that matches a
+/// known one ignoring case is most likely that one mistyped: say which.
+pub(crate) fn explain<'a>(err: &qymcad_core::errors::ExprError, names: impl IntoIterator<Item = &'a String>) -> String {
+    if let qymcad_core::errors::ExprError::UnknownName(unknown) = err {
+        if let Some(known) = names.into_iter().find(|n| same_ignoring_case(n, unknown)) {
+            return format!("no parameter `{unknown}`; names are case-sensitive: did you mean `{known}`?");
+        }
+    }
+    format!("{err:?}")
 }
