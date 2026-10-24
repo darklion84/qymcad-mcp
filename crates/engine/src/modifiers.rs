@@ -299,13 +299,15 @@ impl Session {
 /// Why fillet `node` that QymCAD built must still be refused, or `None` when it is acceptable (F-074).
 ///
 /// QymCAD 0.1.1 builds a radius too big for neighbouring edges as overlapping prisms (`blend_limit`) without an
-/// error: the blends of two edges that do not meet cross each other at a sharp cusp. Blends of edges that share a
-/// vertex may legitimately meet at a sharp mitre (a rim corner), and blends of separate edges may meet smoothly in
-/// a limiting case (two R5 roundings across a 10 mm face). So a sharp named non-seam edge between two blend faces of
-/// this node (`Role::Blend`, named after the edge they round: its 1-based place in the pick, or its own name) whose
-/// source edges share no end point is refused. Smoothness is the kernel's own per-edge flag (about 1.5°), so an
-/// overlap within about that angle of the limit passes. A blend whose source edge cannot be found is not judged.
-/// A source or result whose adjacency cannot be read is refused, not waved through.
+/// error: the blends of two edges that do not meet cross each other. Blends of edges that share a vertex may meet
+/// at a sharp mitre (a rim corner), and blends of separate edges may meet tangentially at an exact limit (two R5
+/// roundings across a 10 mm face). So a join between two blend faces of this node (`Role::Blend`, named after the
+/// edge they round: a 1-based place in the pick list, or the edge's own name) whose source edges share no vertex is
+/// refused when it is sharp by the kernel's flag, or, for two cylindrical blends, when their normals at the join
+/// differ by more than `TANGENT_DEG` (the kernel's flag lets about 1.5° pass). Vertices are compared by their
+/// native names (`MeshEdge::ends`), by position only when a name is missing. Blends of earlier fillets, unnamed join
+/// edges, and blends whose source edge cannot be found (a pick renamed since it was stored) are not judged.
+/// A source or result whose topology cannot be read is refused, not waved through.
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
 pub(crate) fn fillet_acceptance(
     p: &qymcad_core::model::Project,
@@ -314,49 +316,72 @@ pub(crate) fn fillet_acceptance(
     result: &qymcad_kernel::Shape,
     radius: f64,
 ) -> Option<String> {
-    use qymcad_core::names::Role;
+    use qymcad_core::names::{NameTable, Role, VertexName};
     use std::collections::HashMap;
-    let Ok(pairs) = crate::session::edge_face_pairs(result) else {
+    /// Two blends meeting at an exact limit are tangent; past it they cross at an angle (1.47° at R10.13 where the
+    /// limit is R10, Codex review). Limits built a hair short stay far below this.
+    const TANGENT_DEG: f64 = 0.1;
+    let (Ok(pairs), Ok(edges)) = (crate::session::edge_face_pairs(result), crate::session::edges_with_ends(source)) else {
         return Some(format!("fillet R{radius:.2}: cannot read the faces of the result to check it"));
     };
     let picks: Vec<u32> = match p.timeline.iter().find(|n| n.id == node).map(|n| &n.kind) {
-        Some(FeatureKind::Fillet { edges, .. }) => match &edges.query {
-            qymcad_core::refs::Query::Ids(ids) => ids.clone(),
-            _ => Vec::new(),
-        },
+        Some(FeatureKind::Fillet { edges, .. }) if edges.query.is_pick_list() => edges.query.picked_descs(),
         _ => Vec::new(),
     };
-    type Ends = [[f64; 3]; 2];
-    let (smooth, ends): (HashMap<u32, bool>, HashMap<u32, Ends>) = {
+    let ends: HashMap<u32, (VertexName, VertexName, [f64; 3], [f64; 3])> =
+        edges.iter().map(|e| (e.id, (e.ends[0], e.ends[1], e.a, e.b))).collect();
+    let (smooth, mids): (HashMap<u32, bool>, HashMap<u32, [f64; 3]>) = {
         let _gate = qymcad_kernel::kernel_gate();
-        let smooth = result.edges_info().into_iter().map(|e| (e.id, e.smooth)).collect();
-        let ends = source
-            .edges_info()
-            .into_iter()
-            .filter_map(|e| {
-                let point = |q: &[f32; 3]| q.map(f64::from);
-                Some((e.id, [point(e.poly.first()?), point(e.poly.last()?)]))
-            })
-            .collect();
-        (smooth, ends)
+        let info = result.edges_info();
+        let mid = |poly: &[[f32; 3]]| poly.get(poly.len() / 2).map(|q| q.map(f64::from));
+        (info.iter().map(|e| (e.id, e.smooth)).collect(), info.iter().filter_map(|e| Some((e.id, mid(&e.poly)?))).collect())
     };
     // The source edge a blend face of this node rounds.
-    let rounds = |face: u32| -> Option<Ends> {
+    let rounds = |face: u32| -> Option<u32> {
         let name = p.names.get(face).filter(|n| n.feature == node && n.role == Role::Blend)?;
-        let place = usize::try_from(name.src).ok()?;
-        let edge = if (1..=picks.len()).contains(&place) { picks[place - 1] } else { u32::try_from(name.src).ok()? };
-        ends.get(&edge).copied()
+        let src = u32::try_from(name.src).ok()?;
+        let edge = if NameTable::is_named(src) { src } else { *picks.get(usize::try_from(src).ok()?.checked_sub(1)?)? };
+        ends.contains_key(&edge).then_some(edge)
     };
-    let meet = |a: Ends, b: Ends| a.iter().any(|x| b.iter().any(|y| (0..3).map(|k| (x[k] - y[k]).powi(2)).sum::<f64>().sqrt() <= 1e-4));
+    let meet = |a: u32, b: u32| {
+        let (a0, a1, pa, qa) = ends[&a];
+        let (b0, b1, pb, qb) = ends[&b];
+        let named = |v: VertexName| v != VertexName::default();
+        let close = |x: [f64; 3], y: [f64; 3]| {
+            (0..3).map(|k| (x[k] - y[k]).powi(2)).sum::<f64>().sqrt() <= 1e-6 * x.iter().fold(1.0, |m: f64, c| m.max(c.abs()))
+        };
+        [(a0, pa), (a1, qa)]
+            .iter()
+            .any(|&(va, xa)| [(b0, pb), (b1, qb)].iter().any(|&(vb, xb)| if named(va) && named(vb) { va == vb } else { close(xa, xb) }))
+    };
+    // Angle between two cylindrical faces' normals at `point`, degrees; `None` unless both are cylinders.
+    let cylinder_angle = |fa: u32, fb: u32, point: [f64; 3]| -> Option<f64> {
+        let _gate = qymcad_kernel::kernel_gate();
+        let normal = |f: u32| -> Option<[f64; 3]> {
+            let (origin, axis, _) = result.face_cylinder(f)?;
+            let d = [point[0] - origin[0], point[1] - origin[1], point[2] - origin[2]];
+            let along = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
+            let r = [d[0] - along * axis[0], d[1] - along * axis[1], d[2] - along * axis[2]];
+            let len = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
+            (len > 1e-9).then(|| r.map(|c| c / len))
+        };
+        let (na, nb) = (normal(fa)?, normal(fb)?);
+        Some((na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2]).clamp(-1.0, 1.0).acos().to_degrees())
+    };
     let cusps = pairs
         .into_iter()
-        .filter(|&(edge, a, b)| a != b && a != 0 && b != 0 && edge != 0 && smooth.get(&edge) == Some(&false))
-        .filter(|&(_, a, b)| matches!((rounds(a), rounds(b)), (Some(ea), Some(eb)) if !meet(ea, eb)))
+        .filter(|&(edge, a, b)| a != b && a != 0 && b != 0 && edge != 0)
+        .filter(|&(_, a, b)| matches!((rounds(a), rounds(b)), (Some(ea), Some(eb)) if ea != eb && !meet(ea, eb)))
+        .filter(|&(edge, a, b)| match smooth.get(&edge) {
+            Some(false) => true,
+            Some(true) => mids.get(&edge).and_then(|&m| cylinder_angle(a, b, m)).is_some_and(|deg| deg > TANGENT_DEG),
+            None => false,
+        })
         .count();
     (cusps > 0).then(|| {
         format!(
             "fillet R{radius:.2} does not fit these edges together: the roundings of edges that do not meet cut into \
-             each other ({cusps} sharp {}; QymCAD returned it without an error); try a smaller radius or fewer edges",
+             each other ({cusps} {}; QymCAD returned it without an error); try a smaller radius or fewer edges",
             if cusps == 1 { "join" } else { "joins" },
         )
     })

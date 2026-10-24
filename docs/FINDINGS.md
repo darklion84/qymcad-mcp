@@ -1561,22 +1561,27 @@ asserts those exact fractional halves before checking away-from-zero output.
   `occt_limits.cpp:160-265`; test: `golden_features.rs` `too_big_fillet_is_rolled_back_with_the_reason`,
   `growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back`, `fillets_that_roll_off_a_neighbour_are_accepted`,
   `chamfer_wider_than_its_faces_keeps_the_intersection_of_its_planes`.
-- **How we handle it:** `modifiers::fillet_acceptance` looks at the result's sharp named non-seam edges between two
-  blend faces of the fillet (`Role::Blend`, named after the edge they round: its 1-based place in the pick, or its
-  own name). If the two source edges share no end point, their blends overlap and cut into each other: refused.
-  Blends of edges that share a vertex may meet at a sharp mitre (a rim corner), and blends of separate edges may
-  meet smoothly at an exact limit, so neither is refused. Smoothness is the kernel's flag (about 1.5° at the edge
-  midpoint), so an overlap within about that angle of the limit passes (Codex: R10.13 at the end of a 100 x 20 x 20
-  block passes, R10.14 is refused). Runs after every rebuild of a fillet and, in `Session::open`, on fillets kept
-  from the file without a rebuild. A refusal is a rebuild error: a new fillet and a parameter edit roll back; found
-  outside an edit it is kept in `regen_errors` as `CoreError::Kernel` with the same words, so doc_info shows it,
-  export refuses, and unrelated parameter edits still work. Accepted with exact volumes: R9.9 and R10 on the cube,
-  R9 at the block end, R10 as high as a 10 mm block, two R5 meeting across a 10 mm top, a quarter round (R10 on a
-  10 x 10 bar). Accepted: the top rim at R2 and at the limiting R10 (sides eaten, corner mitres), rim with vertical
-  edges, every edge. Refused: R15 on the cube (also from a clean file saved without the check), R15 at the block
-  end, R6 across the 10 mm top. Two earlier rules failed review: "no tangent edge" refused the quarter round, and
-  "fewer than two tangent rails at a sharp join" refused the limiting rim (Codex). Each check copies the result
-  B-rep once for adjacency; not measured on large imports. Not reported upstream yet.
+- **How we handle it:** `modifiers::fillet_acceptance` looks at named non-seam joins between two blend faces of
+  the fillet (`Role::Blend`, named after the edge they round: a 1-based place in the flattened pick list of any
+  pick form, `Id`/`Ids`/`Union`, or the edge's own name). If the two source edges share no vertex (compared by
+  native vertex names, `MeshEdge::ends`; by position only where a name is missing), their blends overlap: the
+  join is refused when the kernel flags it sharp, or, for two cylindrical blends, when their normals at the join
+  differ by more than 0.1° (the kernel's own flag lets about 1.5° pass; R10.13 past an R10 limit meets at 1.47°).
+  Blends of edges that share a vertex may meet at a sharp mitre (a rim corner), and blends of separate edges meet
+  tangentially at an exact limit, so neither is refused. It runs after every rebuild of a fillet and, in
+  `Session::open`, on fillets kept from the file and not rebuilt. A refusal is a rebuild error: a new fillet and a
+  parameter edit roll back; found outside an edit it is kept in `regen_errors` as `CoreError::Kernel` with the same
+  words, so doc_info shows it, export refuses, and unrelated parameter edits still work.
+  Accepted with exact volumes: R9.9 and R10 on the cube, R9 and the R10 limit at the end of a 100 x 20 x 20 block,
+  R10 as high as a 10 mm block, two R5 meeting across a 10 mm top, a quarter round (R10 on a 10 x 10 bar).
+  Accepted: the top rim at R2 and at the limiting R10 (sides eaten, corner mitres), rim with vertical edges, every
+  edge. Refused: R15 on the cube (also saved clean, also with a `Union` pick list rebuilt natively), R15 at the
+  block end, R10.13 at the block end, R6 across the 10 mm top, R0.6 on a 0.8 mm end at y = 10⁷.
+  Not judged (known gaps): overlaps with blends of an earlier fillet node, unnamed join edges, non-cylindrical blends
+  within the kernel's 1.5° flag, and picks renamed since they were stored (their source edge is not found).
+  Two earlier rules failed review: "no tangent edge" refused the quarter round, and "fewer than two tangent rails at
+  a sharp join" refused the limiting rim. Each check copies the source and result B-reps once; not measured on large
+  imports. Not reported upstream yet.
 ## F-075 QymCAD 0.1.1 drops the splines of a 0.1.0 document on load
 
 - **Version:** v0.1.1-dev.20261026

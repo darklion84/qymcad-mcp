@@ -21,8 +21,9 @@ workarounds whose cause still exists.
   scheduling bug, now fixed.
 - **Through-all follows QymCAD** (5ea7514): it goes to the stock boundary on the chosen side; the symmetric
   direction spans both sides. Schema text and instructions say so.
-- **A fillet must be a fillet** (F-074): a sharp join between the blends of two edges that do not meet is the cusp
-  of overlapping blends, which QymCAD 0.1.1 can return without an error; the server refuses it. Mitres between
+- **A fillet must be a fillet** (F-074): a join between the blends of two edges that share no vertex, sharp by the
+  kernel's flag or (cylinders) more than 0.1° off tangent, is where overlapping blends cross; QymCAD 0.1.1 can
+  return them without an error, and the server refuses them. Known gaps are listed in F-074. Mitres between
   blends of edges sharing a vertex and smooth limiting joins are accepted. The check runs after a fillet rebuilds
   and on open for fillets kept from the file. Creation and parameter edits roll back; found outside an edit, the
   refusal is kept in `regen_errors` in the same words, so doc_info shows it and export refuses, while unrelated

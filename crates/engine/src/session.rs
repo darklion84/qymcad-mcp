@@ -158,6 +158,16 @@ pub(crate) fn edge_face_pairs(shape: &Shape) -> Result<Vec<(u32, u32, u32)>> {
     Ok(kernel.edge_face_pairs(0).into_iter().map(|p| (p.edge, p.faces[0], p.faces[1])).collect())
 }
 
+/// The edges of `shape` as the kernel lists them for a body, with the native names of their end vertices
+/// (`MeshEdge::ends`). Same ownership rule as `edge_face_pairs`. Must be called without the gate held.
+pub(crate) fn edges_with_ends(shape: &Shape) -> Result<Vec<qymcad_core::geom::MeshEdge>> {
+    use qymcad_core::feature::Kernel;
+    let kernel = qymcad_kernel::OcctKernel::default();
+    *kernel.shapes.borrow_mut() = copy_shapes([(0, shape)]).map_err(|_| Error::Io("cannot copy body for edges".into()))?;
+    let _gate = qymcad_kernel::kernel_gate();
+    Ok(kernel.edges(0))
+}
+
 /// Reporting bounds must not depend on the live shape's triangulation state (F-066).
 /// Tessellate an independent copy: the native tessellator cleans/replaces triangulations even via &Shape.
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
@@ -289,6 +299,8 @@ impl Session {
             sess.p.mark_all_dirty();
         }
         let stored: HashMap<Id, BodyMetrics> = sess.shapes.iter().map(|(&id, sh)| (id, BodyMetrics::of(sh))).collect();
+        // Planned nodes are checked by the rebuild itself; the rest are checked below (F-074).
+        let planned: HashSet<Id> = sess.p.regen_plan().nodes.into_iter().collect();
         let mut r = sess.rebuild();
         for (&id, old) in &stored {
             let Some(sh) = sess.shapes.get(&id) else { continue };
@@ -339,7 +351,7 @@ impl Session {
         }
         // Fillets kept from the file were not rebuilt, so the rebuild did not check them: a file saved by the app
         // can hold overlapping blends (F-074).
-        let checked: HashSet<Id> = r.errors.iter().map(|e| e.node).chain(sess.p.regen_errors.keys().copied()).collect();
+        let checked: HashSet<Id> = r.errors.iter().map(|e| e.node).chain(sess.p.regen_errors.keys().copied()).chain(planned).collect();
         for (node, message) in sess.fillet_refusals(|n| !checked.contains(&n)) {
             sess.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             r.errors.push(sess.issue(node, message));

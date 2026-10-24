@@ -1063,6 +1063,64 @@ fn limiting_fillets_pass_the_check() {
     assert_close(volume(&s), PI * 100.0 / 4.0 * 20.0, 1e-6, "quarter round");
 }
 
+/// Near the limit (F-074, Codex review): two vertical edges 20 mm apart at one end of a 100 x 20 x 20 block. R10 is
+/// the exact limit, the blends meet tangentially: V = 100·20·20 − 2·(1 − π/4)·10²·20. R10.13 overlaps by 0.13 mm
+/// and the blends meet at 1.47°, below the kernel's smoothness flag; the exact cylinder angle refuses it.
+#[test]
+fn a_shallow_overlap_past_the_limit_is_refused() {
+    let end = || Sel::And(Box::new(along_z()), Box::new(Sel::EdgesOf(Box::new(Sel::Extreme { axis: Axis::X, max: true }))));
+    let (mut s, _) = block(100.0, 20.0, 20.0);
+    s.fillet(None, &end(), &10.0.into(), None).unwrap();
+    assert_close(volume(&s), 40000.0 - 2.0 * (1.0 - PI / 4.0) * 100.0 * 20.0, 1e-4, "R10, the exact limit");
+    let (mut s, _) = block(100.0, 20.0, 20.0);
+    let e = s.fillet(None, &end(), &10.13.into(), None).unwrap_err();
+    assert!(e.to_string().contains("fillet R10.13 does not fit these edges together"), "{e}");
+}
+
+/// The same overlap far from the origin, where f32 coordinates of the two ends 0.8 mm apart coincide: vertices are
+/// compared by their native names, so R0.6 on the two vertical end edges of a 100 x 0.8 x 20 block at y = 10⁷ is
+/// still refused (Codex review).
+#[test]
+fn an_overlap_far_from_the_origin_is_refused() {
+    let (mut s, _) = block_at(0.0.into(), 1e7.into(), 100.0.into(), 0.8.into(), 20.0.into());
+    let end = Sel::And(Box::new(along_z()), Box::new(Sel::EdgesOf(Box::new(Sel::Extreme { axis: Axis::X, max: true }))));
+    let e = s.fillet(None, &end, &0.6.into(), None).unwrap_err();
+    assert!(e.to_string().contains("fillet R0.60 does not fit these edges together"), "{e}");
+}
+
+/// A pick list stored as a union, as the app may write it (`Union(Ids, Ids)`), names the blends by place in the
+/// flattened pick: an overlapping R15 rebuilt natively and saved clean is still refused on open (Codex review).
+#[test]
+fn overlapping_blends_from_a_union_pick_are_refused_on_open() {
+    use qymcad_core::feature::FeatureKind;
+    use qymcad_core::refs::Query;
+    let (mut s, _) = block(20.0, 20.0, 20.0);
+    let (fillet, _) = s.fillet(None, &along_z(), &2.0.into(), None).unwrap();
+    let path = scratch("union_pick_r15.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let node = project.timeline.iter_mut().find(|n| n.id == fillet).unwrap();
+    let FeatureKind::Fillet { edges, radius, .. } = &mut node.kind else { panic!("not a fillet") };
+    let Query::Ids(ids) = edges.query.clone() else { panic!("pick list expected: {:?}", edges.query) };
+    edges.query = Query::Union(Box::new(Query::Ids(ids[..2].to_vec())), Box::new(Query::Ids(ids[2..].to_vec())));
+    *radius = 15.0;
+    node.dirty = true;
+    let shapes = common::restore_shapes(breps);
+    let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
+    assert!(report.errors.is_empty(), "QymCAD builds it: {:?}", report.errors);
+    for (id, faces) in report.built {
+        project.set_body_faces(id, faces);
+    }
+    let breps: Vec<_> = {
+        let _gate = qymcad_kernel::kernel_gate();
+        shapes.iter().map(|(&id, shape)| (id, shape.to_brep_bytes().unwrap())).collect()
+    };
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (opened, report) = Session::open(&path).unwrap();
+    assert!(report.errors.iter().any(|e| e.node == fillet && e.message.contains("fillet R15.00 does not fit")), "{:?}", report.errors);
+    assert!(opened.info().errors.iter().any(|e| e.node == fillet));
+}
+
 /// The whole top rim of a 40 x 30 x 10 block at R10 eats the side faces: the blends keep one tangent rail each and
 /// meet at sharp mitres at the corners, which is right (Codex review). It builds, also when an upstream height
 /// parameter comes down from 11 to 10 to reach the limit.

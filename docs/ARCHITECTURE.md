@@ -42,8 +42,8 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
    regenerate; `retryable()` errors).
 3. Copy `report.built` faces into the bodies (F-007), so saved files have faces like GUI-saved ones.
 4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
-   Check every rebuilt fillet: a sharp join between the blends of two edges that do not meet (overlapping blends)
-   is a rebuild error, kept in `regen_errors`; `Session::open` checks fillets kept from the file too (F-074, ADR 0021).
+   Check every rebuilt fillet: a non-tangent join between the blends of two edges that share no vertex
+   (overlapping blends) is a rebuild error, kept in `regen_errors`; `Session::open` checks fillets kept from the file too (F-074, ADR 0021).
 5. Report errors, warnings (`regen_warnings` plus session advisories) and the result bodies (unconsumed, with volume and bbox).
 
 ## Edits are atomic
