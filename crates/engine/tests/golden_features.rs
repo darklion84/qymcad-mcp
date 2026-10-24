@@ -1036,6 +1036,51 @@ fn fillets_that_roll_off_a_neighbour_are_accepted() {
     }
 }
 
+/// Limiting cases QymCAD builds on purpose pass the check (F-074): a radius as high as the block eats the front
+/// face whole (V = 40·30·10 − (1 − π/4)·10²·40), and two R5 roundings of a 10 mm wide top meet tangentially in
+/// the middle (V = 40·10·10 − 2·(1 − π/4)·5²·40).
+#[test]
+fn limiting_fillets_pass_the_check() {
+    let top_edges = || Sel::EdgesOf(Box::new(top()));
+    let (mut s, _) = block(40.0, 30.0, 10.0);
+    let front_top = Sel::And(Box::new(top_edges()), Box::new(Sel::EdgesOf(Box::new(Sel::Extreme { axis: Axis::Y, max: false }))));
+    s.fillet(None, &front_top, &10.0.into(), None).unwrap();
+    assert_close(volume(&s), 12000.0 - (1.0 - PI / 4.0) * 100.0 * 40.0, 1e-6, "R10 step");
+    let (mut s, _) = block(40.0, 10.0, 10.0);
+    let long_top = Sel::And(Box::new(top_edges()), Box::new(Sel::Along { dir: [1.0, 0.0, 0.0], tol_deg: 1.0 }));
+    s.fillet(None, &long_top, &5.0.into(), None).unwrap();
+    assert_close(volume(&s), 4000.0 - 2.0 * (1.0 - PI / 4.0) * 25.0 * 40.0, 1e-6, "two R5 meeting");
+    // Both supports eaten: R10 on one vertical edge of a 10 x 10 bar leaves a quarter round, V = π·10²/4·20.
+    let (mut s, _) = block(10.0, 10.0, 20.0);
+    let corner = Sel::And(
+        Box::new(along_z()),
+        Box::new(Sel::And(
+            Box::new(Sel::EdgesOf(Box::new(Sel::Extreme { axis: Axis::X, max: true }))),
+            Box::new(Sel::EdgesOf(Box::new(Sel::Extreme { axis: Axis::Y, max: true }))),
+        )),
+    );
+    s.fillet(None, &corner, &10.0.into(), None).unwrap();
+    assert_close(volume(&s), PI * 100.0 / 4.0 * 20.0, 1e-6, "quarter round");
+}
+
+/// Overlapping blends are refused also when a support face survives (F-074): R15 on the two vertical edges of
+/// one end of a 100 x 20 x 20 block (15 + 15 > 20) keeps the long faces but crosses the two cylinders at a cusp;
+/// R6 on both top long edges of a 10 mm wide block does the same. R9 at that end fits.
+#[test]
+fn overlapping_blends_beside_a_surviving_face_are_refused() {
+    let end = || Sel::And(Box::new(along_z()), Box::new(Sel::EdgesOf(Box::new(Sel::Extreme { axis: Axis::X, max: true }))));
+    let (mut s, _) = block(100.0, 20.0, 20.0);
+    let e = s.fillet(None, &end(), &15.0.into(), None).unwrap_err();
+    assert!(e.to_string().contains("fillet R15.00 does not fit these edges together"), "{e}");
+    assert_close(volume(&s), 40000.0, 1e-6, "nothing changed");
+    s.fillet(None, &end(), &9.0.into(), None).unwrap();
+    assert_close(volume(&s), 40000.0 - 2.0 * (1.0 - PI / 4.0) * 81.0 * 20.0, 1e-6, "R9 fits");
+    let (mut s, _) = block(40.0, 10.0, 10.0);
+    let long_top = Sel::And(Box::new(Sel::EdgesOf(Box::new(top()))), Box::new(Sel::Along { dir: [1.0, 0.0, 0.0], tol_deg: 1.0 }));
+    let e = s.fillet(None, &long_top, &6.0.into(), None).unwrap_err();
+    assert!(e.to_string().contains("fillet R6.00 does not fit"), "{e}");
+}
+
 /// A parameter edit that grows a fillet past its limit is refused and rolled back, like a new fillet (F-074).
 #[test]
 fn growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back() {
@@ -1068,10 +1113,14 @@ fn a_fillet_past_its_limit_found_on_open_stays_an_error() {
     assert!(report.errors.iter().any(|e| e.node == fillet && e.message.contains("fillet R15.00 does not fit")), "{:?}", report.errors);
     let info = opened.info();
     assert!(
-        info.errors.iter().any(|e| e.node == fillet && e.message.contains("fillet R15.00")),
-        "doc_info keeps the refusal: {:?}",
+        info.errors.iter().any(|e| e.node == fillet && e.message.contains("fillet R15.00 does not fit these edges together")),
+        "doc_info keeps the refusal in the check's words: {:?}",
         info.errors
     );
+    // An unrelated parameter can still be edited; the refusal stays.
+    opened.param_set("unrelated", &n("3")).unwrap();
+    opened.param_set("unrelated", &n("4")).unwrap();
+    assert!(opened.info().errors.iter().any(|e| e.node == fillet), "still refused");
     let out = scratch("fillet_grown_outside.stl");
     let e = opened.export(ExportFormat::Stl, &out, Quality::Standard, None).unwrap_err();
     assert!(e.to_string().contains("did not build"), "{e}");

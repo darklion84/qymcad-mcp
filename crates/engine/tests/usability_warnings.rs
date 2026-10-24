@@ -312,7 +312,11 @@ fn opening_a_0_1_0_spline_says_it_is_lost() {
     std::fs::copy(&path, &copy).unwrap();
     let (mut s, report) = Session::open(&copy).unwrap();
     let sketch = s.sketches()[0].id;
-    assert_eq!(s.sketch_detail(sketch).unwrap().entities.len(), 0, "QymCAD 0.1.1 kept no spline entity");
+    let detail = s.sketch_detail(sketch).unwrap();
+    assert_eq!(detail.entities.len(), 0, "QymCAD 0.1.1 kept no spline entity");
+    let mut points: Vec<(f64, f64)> = detail.points.iter().filter(|p| p.role.is_none()).map(|p| (p.x, p.y)).collect();
+    points.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(points, [(0.0, 0.0), (10.0, 5.0), (20.0, 0.0), (30.0, 5.0)], "the spline's points stay");
     let lost = |warnings: Vec<String>| warnings.into_iter().filter(|w| w.contains("1 spline saved by QymCAD 0.1.0 is lost")).count();
     assert_eq!(
         report.warnings.iter().filter(|w| w.node == sketch && w.message.contains("1 spline saved by QymCAD 0.1.0 is lost")).count(),

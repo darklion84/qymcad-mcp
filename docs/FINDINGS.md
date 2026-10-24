@@ -1562,14 +1562,21 @@ asserts those exact fractional halves before checking away-from-zero output.
   `occt_limits.cpp:160-265`; test: `golden_features.rs` `too_big_fillet_is_rolled_back_with_the_reason`,
   `growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back`, `fillets_that_roll_off_a_neighbour_are_accepted`,
   `chamfer_wider_than_its_faces_keeps_the_intersection_of_its_planes`.
-- **How we handle it:** after every rebuild of a fillet node, `modifiers::fillet_acceptance` checks that each new
-  face (an id the source body does not have) with named non-seam edges has at least one smooth edge (the
-  kernel's own flag, about 1.5°). A real blend always rolls off a support, a neighbouring blend or a corner
-  patch; the overlapping ones touch nothing tangentially. A failure is a rebuild error, so a new fillet and a
-  parameter edit are both rolled back. Controls: R9.9 and the limiting R10 (one cylinder, V = π·10²·20), the top
-  rim, the top rim with vertical edges, and every edge of a 40 x 30 x 10 block pass. Disabling the check makes
-  both refusal tests red. Not reported upstream yet.
-
+- **How we handle it:** after every rebuild of a fillet node, `modifiers::fillet_acceptance` looks at each new face
+  (an id the source body does not have) with named non-seam edges. A real blend rolls between two tangent rails
+  (supports, a chain neighbour, a corner patch, or the neighbouring blend in a limiting case); blends may also meet
+  at a sharp mitre at a rim corner, and a limiting case may leave rails sharp against old faces (a quarter round
+  of a square bar touches nothing tangentially). A face is refused when it meets another new face at a sharp edge
+  with fewer than two tangent neighbours: the cusp of overlapping blends (also MiMo's case, R15 on the two vertical
+  edges of one end of a 100 x 20 x 20 block, where the long faces survive as single rails). Smoothness is the kernel's flag (about 1.5°). A
+  failure is a rebuild error: a new fillet and a parameter edit roll back; found outside an edit (on open) it is
+  kept in `regen_errors` as `CoreError::Kernel` with the same words, so doc_info shows it, export refuses, and
+  unrelated parameter edits still work. Controls that pass: R9.9 and R10 on the cube, R9 at the block end, R10 as
+  high as a 10 mm block (front face eaten, exact volume), two R5 meeting across a 10 mm top, a quarter round (R10 on
+  a 10 x 10 bar, V = π·10²/4·20), the top rim, rim with vertical edges, every edge. Refused: R15 on the cube, R15 at
+  the block end, R6 across the 10 mm top. An earlier "no tangent edge at all" rule refused the quarter round and
+  was dropped. Disabling the check turns the refusal tests red. Each check copies the source and result B-reps once for
+  adjacency; not measured on large imports. Not reported upstream yet.
 ## F-075 QymCAD 0.1.1 drops the splines of a 0.1.0 document on load
 
 - **Version:** v0.1.1-dev.20261026

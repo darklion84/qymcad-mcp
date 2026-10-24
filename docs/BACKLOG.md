@@ -9,6 +9,8 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
     on 0.1.1 (geometry identical); decide whether `doc_info` should explain it.
   - MiMo review (minor): the stored-edge-query guard's errors (`edge_query_rebuild_errors`) are returned without
     entering `regen_errors`; after a kept rebuild outside an edit, doc_info may not show them (dirty flags stay set).
+  - MiMo review r2 (minor): each fillet check copies source and result B-reps for adjacency; cache per body per
+    pass or use a borrowed adjacency query if QymCAD exposes one. `legacy_splines` reparses document.ron on open.
   - case twins use Unicode lowercase mapping, not full case folding (ß/SS, ς/σ are not twins).
   - the app leaves a constant sketch on a face-derived datum in place on a parameter edit (F-017 characterization);
     an upstream report candidate once seen in the real app.

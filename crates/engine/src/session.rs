@@ -485,11 +485,12 @@ impl Session {
             self.p.set_body_faces(id, faces);
         }
         // Import source warnings outlive retessellation: a live B-rep cannot repair an unavailable original.
-        // Geometry lost on load is a fact of the document, whether or not its sketch is a timeline node.
+        // Geometry lost on load is a fact of the document while its sketch exists, timeline node or not.
         // Other diagnostics last until their node rebuilds or disappears; inherited inner shells do not warn again.
         let live: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        let sketches: HashSet<Id> = self.p.sketches.iter().map(|s| s.id).collect();
         self.advisory_warnings.retain(|w| {
-            matches!(w, AdvisoryWarning::LostOnLoad(_))
+            matches!(w, AdvisoryWarning::LostOnLoad(issue) if sketches.contains(&issue.node))
                 || live.contains(&w.issue().node) && (!rebuilt.contains(&w.issue().node) || matches!(w, AdvisoryWarning::ImportSource(_)))
         });
         for node in self.p.timeline.iter().filter(|n| rebuilt.contains(&n.id)) {
@@ -513,7 +514,7 @@ impl Session {
                 }
             }
         }
-        let refused: Vec<(Id, f64, String)> = self
+        let refused: Vec<(Id, String)> = self
             .p
             .timeline
             .iter()
@@ -527,14 +528,15 @@ impl Session {
                         Some(source) => crate::modifiers::fillet_acceptance(source, result, radius)?,
                         None => format!("fillet R{radius:.2}: its source body is not built, so the result cannot be checked"),
                     };
-                    Some((n.id, radius, message))
+                    Some((n.id, message))
                 }
                 _ => None,
             })
             .collect();
-        for (node, radius, message) in refused {
-            // Kept like a native failure (F-074): doc_info and export see it, and the node rebuilds next time.
-            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::FilletEdgesOneByOne { radius });
+        for (node, message) in refused {
+            // Kept like a native failure (F-074), in the check's own words: doc_info and export see it, and the
+            // node rebuilds next time.
+            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
         }
         let mut warnings: Vec<NodeIssue> =

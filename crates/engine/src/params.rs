@@ -38,11 +38,19 @@ impl Session {
         // QymCAD evaluates it (eval_parameters) with a recursive parser that has no depth cap.
         crate::value::check_expr(&expr)?;
         if !self.p.parameters.iter().any(|q| q.name == name) {
-            if let Some(twin) = self.case_twin(&name) {
+            // A named driving dimension shares the expression scope and wins over a parameter of the same name.
+            if self.p.named_dims.iter().any(|d| d.name == name) {
                 return Err(Error::Invalid(format!(
-                    "parameter `{twin}` already exists and `{name}` differs from it only by letter case; names are case-sensitive, \
-                     so use `{twin}` to change it, or choose a clearly different name"
+                    "`{name}` is a named dimension of a sketch, not a parameter; choose another name for the parameter"
                 )));
+            }
+            if let Some(twin) = self.case_twin(&name) {
+                let advice = if self.p.parameters.iter().any(|q| q.name == twin) {
+                    format!("parameter `{twin}` already exists and `{name}` differs from it only by letter case; names are case-sensitive, so use `{twin}` to change it, or choose a clearly different name")
+                } else {
+                    format!("named dimension `{twin}` already exists and `{name}` differs from it only by letter case; names are case-sensitive, so choose a clearly different name")
+                };
+                return Err(Error::Invalid(advice));
             }
         }
         let before = self.p.clone();
@@ -95,11 +103,15 @@ impl Session {
                 nodes.extend(self.p.dependents(sketch.id));
             }
         }
+        // A node that already failed (e.g. a fillet refused on open, F-074) does not block an unrelated edit;
+        // only nodes this edit breaks roll it back, as in sketch_edit.
+        let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         self.with_rebuild_copies(before, &nodes, "parameter rebuild", |s| {
             let r = s.rebuild_retrying(Some(&nodes));
-            if !r.errors.is_empty() {
-                let lines = r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
-                return Err(Error::Rebuild(lines));
+            let broken: Vec<String> =
+                r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+            if !broken.is_empty() {
+                return Err(Error::Rebuild(broken));
             }
             Ok(r)
         })
@@ -109,7 +121,13 @@ impl Session {
     pub fn param_delete(&mut self, name: &str) -> Result<()> {
         let name = normalize_name(name)?;
         let idx = self.p.parameters.iter().position(|q| q.name == name).ok_or_else(|| {
-            let hint = self.case_twin(&name).map(|twin| format!("; names are case-sensitive: did you mean `{twin}`?")).unwrap_or_default();
+            let hint = self
+                .p
+                .parameters
+                .iter()
+                .find(|q| crate::value::same_ignoring_case(&q.name, &name))
+                .map(|q| format!("; names are case-sensitive: did you mean `{}`?", q.name))
+                .unwrap_or_default();
             Error::NotFound(format!("parameter `{name}`{hint}"))
         })?;
         let users = self.param_users(&name);
@@ -381,7 +399,13 @@ mod tests {
         let refs = qymcad_core::model::Project::dim_refs(c).unwrap();
         assert!(s.p.add_named_dim("Span".into(), sk, refs));
         let e = s.param_set("span", &1.0.into()).unwrap_err().to_string();
-        assert!(e.contains("`Span` already exists"), "{e}");
+        assert!(e.contains("named dimension `Span` already exists"), "{e}");
+        let e = s.param_set("Span", &1.0.into()).unwrap_err().to_string();
+        assert!(e.contains("`Span` is a named dimension of a sketch, not a parameter"), "{e}");
+        assert!(!s.p.parameters.iter().any(|q| q.name == "Span"), "no shadowed parameter");
+        // Deleting by the wrong case suggests only parameters.
+        let e = s.param_delete("span").unwrap_err().to_string();
+        assert!(!e.contains("did you mean"), "{e}");
         s.p.parameters.push(Param { name: "SPAN".into(), expr: "1".into(), value: 0.0 });
         assert_eq!(s.case_twin_params(), vec![vec!["SPAN".to_string(), "Span".to_string()]]);
     }

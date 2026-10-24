@@ -14,18 +14,19 @@ workarounds whose cause still exists.
   it saves do not open in QymCAD 0.1.0. `rust-version` 1.89 (the release's dependencies need it).
 - **Names are case-sensitive, as in QymCAD** (5dcaa65). The server stores names and expressions as given. A new
   parameter whose name equals an existing parameter or named dimension ignoring case (Unicode lowercase mapping, not
-  full case folding) is refused with the existing name;
+  full case folding), or exactly equals a named dimension, is refused, saying which kind of name it collides with;
   an unknown name that matches a known one ignoring case is explained with a did-you-mean. Documents that
   already hold such twins open unchanged and `doc_info` warns; a parameter formula that no longer evaluates is
   explained there too. Lowercasing (F-001) existed only for the old GUI
   scheduling bug, now fixed.
 - **Through-all follows QymCAD** (5ea7514): it goes to the stock boundary on the chosen side; the symmetric
   direction spans both sides. Schema text and instructions say so.
-- **A fillet must be a fillet** (F-074): every new face of a fillet with named non-seam edges must meet some face
-  smoothly. QymCAD 0.1.1 can return overlapping blends with only sharp joins and no error; the server turns that
-  into a rebuild error, so creation and parameter edits roll back; found outside an edit (on open), it is kept as
-  the native `FilletEdgesOneByOne` error, so doc_info shows it and export refuses. Chamfers past their faces are left to QymCAD
-  (predictable plane intersection).
+- **A fillet must be a fillet** (F-074): a new face of a fillet that meets another new face at a sharp edge must
+  still roll between two tangent rails; otherwise it is the cusp of overlapping blends. QymCAD 0.1.1 can return overlapping
+  blends with sharp cusps and no error; the server turns that into a rebuild error, so creation and parameter edits
+  roll back. Found outside an edit (on open), it is kept in `regen_errors` in the same words, so doc_info shows it
+  and export refuses, while unrelated parameter edits still go through. Chamfers past their faces are left to
+  QymCAD (predictable plane intersection).
 - **Workarounds removed** where a test proves the native fix: lowercasing (F-001), repeated sketch solves
   (F-040), slot and line-on-arc tangency rewrites (F-041), entity-removal markers (F-046), the arc reference
   radius refusal (F-047). Tests that pinned fixed upstream defects now assert the fixes (F-024, F-065, F-068).
