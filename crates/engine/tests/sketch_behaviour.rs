@@ -386,17 +386,15 @@ fn param_arc() -> (Session, Id, Added) {
 /// value would go stale after the arc changes.
 #[test]
 fn a_reference_radius_on_an_arc_does_not_go_stale() {
+    // QymCAD 0.1.1 refreshes reference radii of arcs too (our #167); 0.1.0 kept the creation value (F-047).
     let (mut s, sk, arc) = param_arc();
     let mut spec = c(ConstraintKind::Radius, &[id(arc.entities[0])], None);
     spec.reference = true;
-    match s.sketch_constrain(sk, &spec) {
-        Err(e) => assert!(e.to_string().contains("arc"), "{e}"),
-        Ok(r) => {
-            s.param_set("r", &v(25.0)).unwrap();
-            let dim = &s.sketch_detail(sk).unwrap().constraints[r.index.unwrap()];
-            assert_close(dim.value.unwrap(), 25.0, 1e-6, "reference radius after r = 25");
-        }
-    }
+    let r = s.sketch_constrain(sk, &spec).unwrap();
+    s.param_set("r", &v(25.0)).unwrap();
+    let dim = s.sketch_detail(sk).unwrap().constraints.into_iter().find(|k| Some(k.index) == r.index).unwrap();
+    assert!(dim.reference);
+    assert_close(dim.value.unwrap(), 25.0, 1e-6, "reference radius after r = 25");
 }
 
 /// Review #3 (F-042): a circle drawn on an ordinary point (a polyline vertex) takes that point as its centre; a

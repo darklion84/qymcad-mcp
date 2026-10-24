@@ -219,37 +219,8 @@ impl Session {
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }
-            // Upstream drops free helpers and spline controls (FINDINGS F-046). Protect only those tied to
-            // surviving geometry: endpoints owned exclusively by the removed entity must lose their dimensions.
-            let sk = &s.p.sketches[si];
-            let owned: HashSet<Id> = sk.entities.iter().flat_map(entity_points).collect();
-            let surviving: HashSet<Id> = sk.entities.iter().filter(|e| e.id != entity).flat_map(entity_points).collect();
-            let mut protected: HashSet<Id> = sk
-                .entities
-                .iter()
-                .filter(|e| e.id != entity)
-                .filter_map(|e| e.kind.as_spline())
-                .flat_map(|sp| sp.nodes.iter().copied())
-                .collect();
-            protected.extend(
-                sk.constraints
-                    .iter()
-                    .map(|c| c.points())
-                    .filter(|pts| pts.iter().any(|p| surviving.contains(p)))
-                    .flatten()
-                    .filter(|p| !owned.contains(p)),
-            );
-            let already_protected: HashSet<Id> = sk
-                .system_ids()
-                .into_iter()
-                .chain(sk.constraints.iter().filter_map(|c| if let Constraint::Midpoint { p, .. } = c { Some(*p) } else { None }))
-                .collect();
-            let markers: HashSet<Id> = protected.difference(&already_protected).copied().collect();
-            s.p.sketches[si].constraints.extend(markers.iter().map(|&p| Constraint::Midpoint { p, a: p, b: p }));
+            // QymCAD 0.1.1 keeps spline controls and free helpers of surviving geometry (F-046 fixed, our #166).
             s.p.delete_entities(si, &[entity]);
-            s.p.sketches[si]
-                .constraints
-                .retain(|c| !matches!(*c, Constraint::Midpoint { p, a, b } if p == a && a == b && markers.contains(&p)));
             s.prune_debris(si);
             s.finish_sketch_edit(si)
         })
@@ -465,15 +436,6 @@ impl Session {
             }
             (K::Diameter | K::Radius, [G::Curve { center, r }]) => {
                 let diam = kind == K::Diameter;
-                let is_circle =
-                    self.p.sketches[si].entities.iter().any(|e| matches!(e.kind, EntityKind::Circle { center: c, .. } if c == *center));
-                if driven && !is_circle {
-                    // QymCAD refreshes reference radii from circles only: on an arc the value would go stale, in
-                    // the app as well (FINDINGS F-047).
-                    return Err(Error::Invalid(
-                        "a reference radius/diameter on an arc is not kept up to date by QymCAD; use a driving one, or a reference distance from the centre to an end".into(),
-                    ));
-                }
                 let (d, expr) = value(if diam { 2.0 * r } else { *r })?;
                 Constraint::Diameter { c: *center, d, off: 0.0, expr, driven, diam, at: None }
             }
