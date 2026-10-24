@@ -44,6 +44,7 @@ impl Session {
         warnings.extend(
             bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| format!("{} ({}): {message}", b.name, b.id))),
         );
+        warnings.extend(self.param_formula_problems());
         for twins in self.case_twin_params() {
             warnings.push(format!(
                 "parameters {} differ only by letter case; QymCAD keeps them apart, so check each formula names the one it means",

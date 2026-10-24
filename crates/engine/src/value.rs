@@ -115,7 +115,8 @@ pub(crate) fn normalize_expr(s: &str) -> String {
     s.trim().to_string()
 }
 
-/// Equal up to letter case, any alphabet (names may be Cyrillic).
+/// Equal up to letter case by Unicode lowercase mapping, so Cyrillic and Greek capitals match their small letters.
+/// This is not full case folding: `ß`/`SS` or a final `ς`/`Σ` are not treated as the same name.
 pub(crate) fn same_ignoring_case(a: &str, b: &str) -> bool {
     a.to_lowercase() == b.to_lowercase()
 }
@@ -124,7 +125,8 @@ pub(crate) fn same_ignoring_case(a: &str, b: &str) -> bool {
 /// known one ignoring case is most likely that one mistyped: say which.
 pub(crate) fn explain<'a>(err: &qymcad_core::errors::ExprError, names: impl IntoIterator<Item = &'a String>) -> String {
     if let qymcad_core::errors::ExprError::UnknownName(unknown) = err {
-        if let Some(known) = names.into_iter().find(|n| same_ignoring_case(n, unknown)) {
+        // The first in sorted order: the names come from a hash map, and the answer must not change between runs.
+        if let Some(known) = names.into_iter().filter(|n| same_ignoring_case(n, unknown)).min() {
             return format!("no parameter `{unknown}`; names are case-sensitive: did you mean `{known}`?");
         }
     }

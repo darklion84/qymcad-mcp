@@ -7,6 +7,9 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
     could follow edits like hole/shell faces do. Needs tests for reopen, parameter edits and legacy pick lists.
   - QymCAD's "a reference was found by place, not by name" appears when the user's 0.1.0 parts are fully rebuilt
     on 0.1.1 (geometry identical); decide whether `doc_info` should explain it.
+  - MiMo review (minor): the stored-edge-query guard's errors (`edge_query_rebuild_errors`) are returned without
+    entering `regen_errors`; after a kept rebuild outside an edit, doc_info may not show them (dirty flags stay set).
+  - case twins use Unicode lowercase mapping, not full case folding (ß/SS, ς/σ are not twins).
   - the app leaves a constant sketch on a face-derived datum in place on a parameter edit (F-017 characterization);
     an upstream report candidate once seen in the real app.
 - MiMo import review nit 3 (2026-10-11): keep `imports.rs`'s scale matrix synchronized with GUI-private `import_scale::scale_matrix` (currently identical, `qymcad/src/gui/import_scale.rs:25-26`); retain the scaled-import golden.

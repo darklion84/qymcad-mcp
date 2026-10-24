@@ -1050,6 +1050,37 @@ fn growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back() {
     assert_eq!(s.info().params.iter().find(|p| p.name == "r").map(|p| p.expr.as_str()), Some("2"), "parameter rolled back");
 }
 
+/// A fillet grown past its limit outside the server (here: the app's parameter edit saved with the node dirty) is
+/// refused when the document is opened, and the refusal stays: doc_info lists it and export is refused (F-074).
+#[test]
+fn a_fillet_past_its_limit_found_on_open_stays_an_error() {
+    let (mut s, _) = block(20.0, 20.0, 20.0);
+    s.param_set("r", &n("2")).unwrap();
+    let (fillet, _) = s.fillet(None, &along_z(), &n("r"), None).unwrap();
+    let path = scratch("fillet_grown_outside.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    project.parameters.iter_mut().find(|q| q.name == "r").unwrap().expr = "15".into();
+    project.eval_parameters();
+    project.mark_param_dependents_dirty_for("r");
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (mut opened, report) = Session::open(&path).unwrap();
+    assert!(report.errors.iter().any(|e| e.node == fillet && e.message.contains("fillet R15.00 does not fit")), "{:?}", report.errors);
+    let info = opened.info();
+    assert!(
+        info.errors.iter().any(|e| e.node == fillet && e.message.contains("fillet R15.00")),
+        "doc_info keeps the refusal: {:?}",
+        info.errors
+    );
+    let out = scratch("fillet_grown_outside.stl");
+    let e = opened.export(ExportFormat::Stl, &out, Quality::Standard, None).unwrap_err();
+    assert!(e.to_string().contains("did not build"), "{e}");
+    // Bringing the radius back clears it.
+    opened.param_set("r", &n("2")).unwrap();
+    assert!(opened.info().errors.is_empty(), "{:?}", opened.info().errors);
+    assert_close(volume(&opened), 8000.0 - 4.0 * (4.0 - PI) * 20.0, 1e-6, "R2 again");
+}
+
 /// Pins QymCAD 0.1.1: a chamfer wider than its faces is built as the intersection of the chamfer planes, not
 /// refused. Four 15 mm chamfers on a 20 mm cube leave |x| + |y| ≤ 5: a square of area 2·5², V = 50·20. Geometry
 /// is predictable, so the server does not guard it (F-074); this test notices if QymCAD changes it.

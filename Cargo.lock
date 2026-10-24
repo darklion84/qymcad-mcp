@@ -1319,9 +1319,11 @@ dependencies = [
  "qymcad-io",
  "qymcad-kernel",
  "qymcad-testkit",
+ "ron",
  "schemars",
  "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

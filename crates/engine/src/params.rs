@@ -236,19 +236,42 @@ impl Session {
             .collect()
     }
 
-    /// Groups of parameter names that differ only by letter case. QymCAD 0.1.1 keeps them apart, but they are easy
-    /// to confuse; a document made elsewhere may hold them, and doc_info warns.
+    /// Names in the expression scope: parameters, then named driving dimensions (`param_map` holds both).
+    fn scope_names(&self) -> impl Iterator<Item = &String> {
+        self.p.parameters.iter().map(|q| &q.name).chain(self.p.named_dims.iter().map(|d| &d.name)).filter(|n| !n.is_empty())
+    }
+
+    /// Groups of names in the expression scope (parameters and named dimensions) that differ only by letter case.
+    /// QymCAD 0.1.1 keeps them apart, but they are easy to confuse; a document made elsewhere may hold them, and
+    /// doc_info warns.
     pub fn case_twin_params(&self) -> Vec<Vec<String>> {
         let mut groups: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-        for q in &self.p.parameters {
-            groups.entry(q.name.to_lowercase()).or_default().push(q.name.clone());
+        for name in self.scope_names() {
+            let group = groups.entry(name.to_lowercase()).or_default();
+            if !group.contains(name) {
+                group.push(name.clone());
+            }
         }
         groups.into_values().filter(|g| g.len() > 1).collect()
     }
 
-    /// An existing parameter whose name equals `name` ignoring case but not exactly.
+    /// An existing name in the expression scope that equals `name` ignoring case but not exactly.
     fn case_twin(&self, name: &str) -> Option<String> {
-        self.p.parameters.iter().find(|q| q.name != name && crate::value::same_ignoring_case(&q.name, name)).map(|q| q.name.clone())
+        self.scope_names().find(|n| *n != name && crate::value::same_ignoring_case(n, name)).cloned()
+    }
+
+    /// Parameters whose formula does not evaluate now, explained (an unknown name in the wrong case gets a
+    /// did-you-mean). A document can arrive so, e.g. from QymCAD 0.1.0, whose names were not case-sensitive.
+    pub fn param_formula_problems(&self) -> Vec<String> {
+        let vars = self.p.param_map();
+        self.p
+            .parameters
+            .iter()
+            .filter_map(|q| {
+                let err = qymcad_core::expr::eval(&q.expr, &vars).err()?;
+                Some(format!("parameter `{}` = `{}` does not evaluate: {}", q.name, q.expr, crate::value::explain(&err, vars.keys())))
+            })
+            .collect()
     }
 }
 
@@ -346,6 +369,39 @@ mod tests {
         let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
         let e = s.sketch_rect(sk, &0.0.into(), &0.0.into(), &Num::Expr("Other".into()), &3.0.into(), false).unwrap_err().to_string();
         assert!(e.contains("did you mean `other`?"), "{e}");
+    }
+
+    /// Named driving dimensions share the expression scope with parameters: a parameter that differs from one only
+    /// by case is refused too, and doc_info names such twins.
+    #[test]
+    fn named_dimensions_count_as_case_twins() {
+        let (mut s, sk, _) = two_sketches();
+        let si = s.p.sketch_index(sk).unwrap();
+        let c = s.p.sketches[si].constraints.iter().find(|c| c.expr() == Some("twice")).unwrap();
+        let refs = qymcad_core::model::Project::dim_refs(c).unwrap();
+        assert!(s.p.add_named_dim("Span".into(), sk, refs));
+        let e = s.param_set("span", &1.0.into()).unwrap_err().to_string();
+        assert!(e.contains("`Span` already exists"), "{e}");
+        s.p.parameters.push(Param { name: "SPAN".into(), expr: "1".into(), value: 0.0 });
+        assert_eq!(s.case_twin_params(), vec![vec!["SPAN".to_string(), "Span".to_string()]]);
+    }
+
+    /// A parameter formula that no longer evaluates (a name in the wrong case from an older document) is said in
+    /// doc_info with a did-you-mean, rather than leaving a stale value unexplained.
+    #[test]
+    fn an_unevaluable_parameter_formula_is_explained_in_doc_info() {
+        let (mut s, _, _) = two_sketches();
+        s.p.parameters.push(Param { name: "q".into(), expr: "W*2".into(), value: 0.0 });
+        let warning = s.info().warnings.into_iter().find(|w| w.starts_with("parameter `q`")).expect("doc_info explains");
+        assert!(warning.contains("no parameter `W`") && warning.contains("did you mean `w`?"), "{warning}");
+        // Several twins: the suggestion is stable (the smallest name).
+        s.p.parameters.push(Param { name: "WW".into(), expr: "1".into(), value: 1.0 });
+        s.p.parameters.push(Param { name: "Ww".into(), expr: "1".into(), value: 1.0 });
+        s.p.parameters.push(Param { name: "z".into(), expr: "ww+1".into(), value: 0.0 });
+        for _ in 0..5 {
+            let w = s.info().warnings.into_iter().find(|w| w.starts_with("parameter `z`")).unwrap();
+            assert!(w.contains("did you mean `WW`?"), "{w}");
+        }
     }
 
     /// A document from the GUI may already hold names differing only by case: it opens, both stay, and edits keep

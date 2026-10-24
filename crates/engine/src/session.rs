@@ -15,17 +15,19 @@ pub struct NodeIssue {
     pub message: String,
 }
 
-/// Source availability cannot be repaired by retessellating an import's live shape.
+/// Source availability cannot be repaired by retessellating an import's live shape, nor can geometry QymCAD
+/// dropped when it read the file; both last for the session.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum AdvisoryWarning {
     Geometry(NodeIssue),
     ImportSource(NodeIssue),
+    LostOnLoad(NodeIssue),
 }
 
 impl AdvisoryWarning {
     pub(crate) fn issue(&self) -> &NodeIssue {
         match self {
-            Self::Geometry(issue) | Self::ImportSource(issue) => issue,
+            Self::Geometry(issue) | Self::ImportSource(issue) | Self::LostOnLoad(issue) => issue,
         }
     }
 }
@@ -119,6 +121,31 @@ pub(crate) fn copy_shapes<'a>(shapes: impl IntoIterator<Item = (Id, &'a Shape)>)
         return Err(id);
     }
     Ok(copies)
+}
+
+/// Per sketch index, how many splines a QymCAD 0.1.0 document stores in the old `Sketch.splines` records. QymCAD
+/// 0.1.1 has no such field and drops them on load without a word (F-075). Unreadable files report nothing: the
+/// native loader has already accepted this one.
+fn legacy_splines(path: &Path) -> Vec<(usize, usize)> {
+    #[derive(serde::Deserialize)]
+    struct Doc {
+        #[serde(default)]
+        sketches: Vec<Sketch>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Sketch {
+        #[serde(default)]
+        splines: Vec<ron::Value>,
+    }
+    let read = || -> Option<Doc> {
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("document.ron").ok()?, &mut text).ok()?;
+        ron::Options::default().without_recursion_limit().from_str(&text).ok()
+    };
+    read()
+        .map(|doc| doc.sketches.into_iter().enumerate().filter(|(_, s)| !s.splines.is_empty()).map(|(i, s)| (i, s.splines.len())).collect())
+        .unwrap_or_default()
 }
 
 /// The public adjacency API owns its shapes. Use a named B-rep copy while Session retains its live handle.
@@ -221,6 +248,20 @@ impl Session {
         let import_warnings = crate::imports::restore_missing(&project, &mut shapes);
         let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
         let saved_lineage = first_body_feature(&project);
+        let mut import_warnings = import_warnings;
+        for (si, count) in legacy_splines(path) {
+            let Some(sketch) = project.sketches.get(si) else { continue };
+            import_warnings.push(AdvisoryWarning::LostOnLoad(NodeIssue {
+                node: sketch.id,
+                name: crate::localization::name(&sketch.name),
+                message: format!(
+                    "{count} {} saved by QymCAD 0.1.0 {} lost: QymCAD 0.1.1 does not read the old spline records and keeps only \
+                     their points (F-075). Save to a new path to keep the original file",
+                    if count == 1 { "spline" } else { "splines" },
+                    if count == 1 { "is" } else { "are" },
+                ),
+            }));
+        }
         let mut sess = Session {
             p: project,
             shapes,
@@ -444,10 +485,12 @@ impl Session {
             self.p.set_body_faces(id, faces);
         }
         // Import source warnings outlive retessellation: a live B-rep cannot repair an unavailable original.
+        // Geometry lost on load is a fact of the document, whether or not its sketch is a timeline node.
         // Other diagnostics last until their node rebuilds or disappears; inherited inner shells do not warn again.
         let live: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
         self.advisory_warnings.retain(|w| {
-            live.contains(&w.issue().node) && (!rebuilt.contains(&w.issue().node) || matches!(w, AdvisoryWarning::ImportSource(_)))
+            matches!(w, AdvisoryWarning::LostOnLoad(_))
+                || live.contains(&w.issue().node) && (!rebuilt.contains(&w.issue().node) || matches!(w, AdvisoryWarning::ImportSource(_)))
         });
         for node in self.p.timeline.iter().filter(|n| rebuilt.contains(&n.id)) {
             if errors.iter().any(|e| e.node == node.id) {
@@ -470,7 +513,7 @@ impl Session {
                 }
             }
         }
-        let refused: Vec<NodeIssue> = self
+        let refused: Vec<(Id, f64, String)> = self
             .p
             .timeline
             .iter()
@@ -479,13 +522,21 @@ impl Session {
                 qymcad_core::feature::FeatureKind::Fillet { src, radius, body, .. } => {
                     // The node keeps the number typed last; a formula's value is what was built.
                     let radius = self.p.feat_dim_value(n.id, "radius", radius, &self.p.param_map());
-                    let message = crate::modifiers::fillet_acceptance(self.shapes.get(&src)?, self.shapes.get(&body)?, radius)?;
-                    Some(self.issue(n.id, message))
+                    let result = self.shapes.get(&body)?;
+                    let message = match self.shapes.get(&src) {
+                        Some(source) => crate::modifiers::fillet_acceptance(source, result, radius)?,
+                        None => format!("fillet R{radius:.2}: its source body is not built, so the result cannot be checked"),
+                    };
+                    Some((n.id, radius, message))
                 }
                 _ => None,
             })
             .collect();
-        errors.extend(refused);
+        for (node, radius, message) in refused {
+            // Kept like a native failure (F-074): doc_info and export see it, and the node rebuilds next time.
+            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::FilletEdgesOneByOne { radius });
+            errors.push(self.issue(node, message));
+        }
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));

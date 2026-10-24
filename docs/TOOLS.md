@@ -153,7 +153,7 @@ Delete a parameter. Refused while an expression still uses it.
   "additionalProperties": false,
   "properties": {
     "name": {
-      "description": "Name of the parameter to delete (case-insensitive). Refused while an expression still uses it.",
+      "description": "Exact name of the parameter to delete (names are case-sensitive). Refused while an expression still uses it.",
       "type": "string"
     }
   },

@@ -301,3 +301,25 @@ fn opening_stale_disjoint_array_reports_solid_counts_without_a_void_warning() {
     assert!(warning.message.contains("faces 18 → 12"), "stored face difference: {}", warning.message);
     assert!(!report.warnings.iter().any(|w| w.message.contains("void")), "disconnected bodies have no inner shells: {:?}", report.warnings);
 }
+
+/// F-075: QymCAD 0.1.1 drops the spline records of a 0.1.0 document on load and keeps only their points. The
+/// fixture was written by the 0.1.0 release (`Project::add_spline` + `save_project`: one open spline through
+/// (0,0) (10,5) (20,0) (30,5), no other entity). The loss is said on open and stays in doc_info after rebuilds.
+#[test]
+fn opening_a_0_1_0_spline_says_it_is_lost() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/legacy_spline_0.1.0.qcad");
+    let copy = scratch("legacy_spline_0.1.0.qcad");
+    std::fs::copy(&path, &copy).unwrap();
+    let (mut s, report) = Session::open(&copy).unwrap();
+    let sketch = s.sketches()[0].id;
+    assert_eq!(s.sketch_detail(sketch).unwrap().entities.len(), 0, "QymCAD 0.1.1 kept no spline entity");
+    let lost = |warnings: Vec<String>| warnings.into_iter().filter(|w| w.contains("1 spline saved by QymCAD 0.1.0 is lost")).count();
+    assert_eq!(
+        report.warnings.iter().filter(|w| w.node == sketch && w.message.contains("1 spline saved by QymCAD 0.1.0 is lost")).count(),
+        1
+    );
+    assert_eq!(lost(s.info().warnings), 1);
+    s.param_set("w", &Num::Value(5.0)).unwrap();
+    s.rebuild();
+    assert_eq!(lost(s.info().warnings), 1, "the loss outlives rebuilds and is not repeated");
+}

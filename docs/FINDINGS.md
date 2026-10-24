@@ -666,7 +666,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-040 One sketch solve stops short when an angle dimension's arm must change length
 
 - **Version:** v0.1.0-dev.20261001
-- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (c899ea7): one solve settles angle arms. The server solves once (`solve_settled` no longer repeats); with the old loop removed every test passes, and a parameter-driven angle is exact to 1e-6 in the server and in the app (`an_angle_driven_by_a_parameter_settles_in_one_solve_in_the_app`).
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (c899ea7): one solve settles angle arms. The server solves once, and once more only when the first stops between 1e-6 and QymCAD's own 1e-4 bar; with the old loop removed every test passes, and a parameter-driven angle is exact to 1e-6 in the server and in the app (`an_angle_driven_by_a_parameter_settles_in_one_solve_in_the_app`). The text below is history.
 - **What:** the solver holds the arms of every `Angle`/`AngleLines` softly at their pre-solve lengths
   (`w_len = 0.1`, arms already set by a `Distance` excepted). An edit that needs an arm to change length ends one
   `solve_sketch` (120 iterations) at a compromise; each further call gains only a fraction. Arcs whose ends are held
@@ -690,7 +690,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-041 A tangency at its own contact point is invisible to the rank analysis (QymCAD's slot reports 4 + 4)
 
 - **Version:** v0.1.0-dev.20261001
-- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (4767faf, our #168): slots keep QymCAD's four `Tangent` constraints and report (0, 0); a tangent on a line ending on an arc is stored as `Tangent` and removes one freedom. Both rewrites are removed; their tests assert the native kinds and were red with the old rewrites restored.
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (4767faf, our #168): slots keep QymCAD's four `Tangent` constraints and report (0, 0); a tangent on a line ending on an arc is stored as `Tangent` and removes one freedom. Both rewrites are removed; their tests assert the native kinds and were red with the old rewrites restored. The app's own rank-gated add paths (`independent_of`, `add_constraint_if_independent`) judge a new contact tangency before it is stored, so the app may still drop it (reasoned from source by the review, not run). The text below is history.
 - **What:** `Tangent{a, b, c}` where `a` or `b` already lies on the circle (an arc endpoint) is a second-order
   condition: its Jacobian row is parallel to the arc's intrinsic `PointOnCircle`. `add_slot_entity` uses four such
   tangencies, so a slot with its centres and radius dimensioned still reports `sketch_dof` = (4, 4). The GUI hides
@@ -791,7 +791,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-046 Deleting an entity drops spline control points and free dimension helpers
 
 - **Version:** v0.1.0-dev.20261001
-- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (our #166): `delete_entities` keeps spline controls and helpers of surviving geometry. The temporary markers are removed; with them disabled all 440 tests passed before removal.
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (our #166): `delete_entities` keeps spline controls and helpers of surviving geometry. The temporary markers are removed; with them disabled all 440 tests passed before removal. That shows the markers are no longer needed; no test can be made red by restoring them. Splines in files saved by 0.1.0 are a separate loss on load (F-075). The text below is history.
 - **What:** `delete_entities` keeps only points used by entities, the frame and midpoints. Spline control points
   and angle-reference points are none of these, so removing unrelated geometry drops them and their constraints,
   including ArcLength driving a parametric arc end or polygon rotation (F-045).
@@ -815,7 +815,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-047 Reference radius/diameter dimensions are refreshed from circles only
 
 - **Version:** v0.1.0-dev.20261001
-- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (our #167): reference radii on arcs follow the arc. The refusal is removed; `a_reference_radius_on_an_arc_does_not_go_stale` was red with the old refusal restored.
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (our #167): reference radii on arcs follow the arc. The refusal is removed; `a_reference_radius_on_an_arc_does_not_go_stale` was red with the old refusal restored. The text below is history.
 - **What:** `update_driven_dims` takes radii from `Circle` entities; a reference radius on an arc keeps its creation
   value (20 after the arc's radius became 25).
 - **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `update_driven_dims` (~2641-2650, 2681-2685);
@@ -1569,3 +1569,18 @@ asserts those exact fractional halves before checking away-from-zero output.
   parameter edit are both rolled back. Controls: R9.9 and the limiting R10 (one cylinder, V = π·10²·20), the top
   rim, the top rim with vertical edges, and every edge of a 40 x 30 x 10 block pass. Disabling the check makes
   both refusal tests red. Not reported upstream yet.
+
+## F-075 QymCAD 0.1.1 drops the splines of a 0.1.0 document on load
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** 0.1.0 kept splines in `Sketch.splines` records; 0.1.1 keeps them as `EntityKind::Spline` entities and its
+  `Sketch` has no `splines` field, no alias and no migration (`qymcad-core/src/model/sketch_types.rs:13-108`,
+  `doc_file.rs` `into_model`, `model.rs:823-836` `from_ron`). serde ignores the unknown field: the document opens
+  without an error, the spline's points stay as free points and the curve is gone. Saving writes the loss into
+  the file. The server never created splines; GUI-drawn ones are affected.
+- **Evidence:** observed: a document written by the 0.1.0 release (`add_spline` + `save_project`, one open spline
+  of four points) opens on 0.1.1 with 0 entities and 4 points, no warning (2026-10-24). Test:
+  `usability_warnings.rs` `opening_a_0_1_0_spline_says_it_is_lost` (fixture `tests/fixtures/legacy_spline_0.1.0.qcad`).
+- **How we handle it:** `Session::open` reads the old records from `document.ron` and warns once per sketch that its
+  splines are lost and that saving to a new path keeps the original. The warning lasts for the session and is in
+  doc_info. Not reported upstream yet.

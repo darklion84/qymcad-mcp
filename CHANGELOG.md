@@ -13,13 +13,16 @@ All notable changes to this project are documented here. The format follows
   non-recursive kernel-gate scopes (F-073).
 - Parameter names are case-sensitive, as in QymCAD: they are stored as given, a new name differing from an
   existing one only by letter case is refused, and an unknown name in the wrong case is explained with a
-  did-you-mean. `doc_info` warns about case twins in documents made elsewhere.
+  did-you-mean. Named driving dimensions count as twins too. `doc_info` warns about case twins in documents made
+  elsewhere and explains parameter formulas that no longer evaluate.
 - `extrude` with `through` goes to the end of the stock on the chosen side; `symmetric` spans both sides.
 - The test emulation of an app parameter edit follows QymCAD 0.1.1.
 
 ### Fixed
 - A fillet too big for neighbouring edges is refused (also when a parameter grows it): QymCAD 0.1.1 returns
-  overlapping blends with sharp joins and no error (F-074).
+  overlapping blends with sharp joins and no error (F-074). Found on open, it stays an error in `doc_info` and
+  export refuses until the radius fits.
+- Opening a QymCAD 0.1.0 document with splines warns that QymCAD 0.1.1 dropped them (F-075).
 
 ### Removed
 - Workarounds for defects fixed upstream: lowercasing names (F-001), repeated sketch solves (F-040), slot and

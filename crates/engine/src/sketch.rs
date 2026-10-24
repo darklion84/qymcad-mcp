@@ -350,10 +350,14 @@ impl Session {
         })
     }
 
-    /// Solve sketch `si` once and return the residual. QymCAD 0.1.1 settles angle-dimension arms itself
-    /// (c899ea7; the repeated calls of F-040 are gone), but a solve can still land on a wrong branch, checked below.
+    /// Solve sketch `si` and return the residual. QymCAD 0.1.1 settles angle-dimension arms in one solve (c899ea7;
+    /// the repeated calls of F-040 are gone). Its own "solved" bar is 1e-4 while edits here are refused above 1e-6,
+    /// so a solve that stops in between gets one more before a refusal. A wrong branch is checked below.
     pub(crate) fn solve_settled(&mut self, si: usize) -> f64 {
-        let residual = self.p.solve_sketch(si);
+        let mut residual = self.p.solve_sketch(si);
+        if residual > 1e-6 {
+            residual = self.p.solve_sketch(si);
+        }
         // Horizontal + PointOnCircle also admit a reference on the -x side. That alternate branch
         // satisfies ArcLength while rotating every direction by 180°, so reject it through the same
         // residual/rollback path as a failed solve.

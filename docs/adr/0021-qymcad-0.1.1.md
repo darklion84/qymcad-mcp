@@ -13,15 +13,18 @@ workarounds whose cause still exists.
 - **Pin** all QymCAD crates to the tag; `QYMCAD_VERSION` 0.1.1-dev.20261026; server version 0.2.0 because files
   it saves do not open in QymCAD 0.1.0. `rust-version` 1.89 (the release's dependencies need it).
 - **Names are case-sensitive, as in QymCAD** (5dcaa65). The server stores names and expressions as given. A new
-  parameter whose name equals an existing one ignoring case (any alphabet) is refused with the existing name;
+  parameter whose name equals an existing parameter or named dimension ignoring case (Unicode lowercase mapping, not
+  full case folding) is refused with the existing name;
   an unknown name that matches a known one ignoring case is explained with a did-you-mean. Documents that
-  already hold such twins open unchanged and `doc_info` warns. Lowercasing (F-001) existed only for the old GUI
+  already hold such twins open unchanged and `doc_info` warns; a parameter formula that no longer evaluates is
+  explained there too. Lowercasing (F-001) existed only for the old GUI
   scheduling bug, now fixed.
 - **Through-all follows QymCAD** (5ea7514): it goes to the stock boundary on the chosen side; the symmetric
   direction spans both sides. Schema text and instructions say so.
 - **A fillet must be a fillet** (F-074): every new face of a fillet with named non-seam edges must meet some face
   smoothly. QymCAD 0.1.1 can return overlapping blends with only sharp joins and no error; the server turns that
-  into a rebuild error, so creation and parameter edits roll back. Chamfers past their faces are left to QymCAD
+  into a rebuild error, so creation and parameter edits roll back; found outside an edit (on open), it is kept as
+  the native `FilletEdgesOneByOne` error, so doc_info shows it and export refuses. Chamfers past their faces are left to QymCAD
   (predictable plane intersection).
 - **Workarounds removed** where a test proves the native fix: lowercasing (F-001), repeated sketch solves
   (F-040), slot and line-on-arc tangency rewrites (F-041), entity-removal markers (F-046), the arc reference
@@ -32,6 +35,8 @@ workarounds whose cause still exists.
   descriptions in BACKLOG), stored-edge-query refusal on an empty pool for legacy documents.
 - The test emulation of an app parameter edit follows the 0.1.1 app (`apply_param_edit`: solve sketches that
   read names, mark only what mentions a changed name).
+
+- **Splines of 0.1.0 documents** are dropped by QymCAD 0.1.1 on load (F-075); the server warns on open.
 
 ## Consequences
 - Files saved by 0.2.x need QymCAD 0.1.1; the app 0.1.0 refuses them (`Unexpected variant named Orientation`)
