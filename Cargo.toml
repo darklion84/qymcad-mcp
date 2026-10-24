@@ -3,9 +3,9 @@ resolver = "2"
 members = ["crates/engine", "crates/mcp"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "AGPL-3.0-or-later"
 
 # The QymCAD version this server is built against. Bump ALL FIVE together and follow docs/UPGRADING.md.

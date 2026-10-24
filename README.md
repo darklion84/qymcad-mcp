@@ -43,11 +43,14 @@ between operations. Document tools, undo, output, inspection and nested batches 
 ## Compatibility
 | qymcad-mcp | QymCAD release | OpenCASCADE |
 |---|---|---|
-| 0.1.x (stage A port; acceptance pending) | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
+| 0.2.x | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
+| 0.1.x | v0.1.0-dev.20261001 | 7.9.3 (Homebrew) |
 
-The `.qcad` format changes between QymCAD releases: **use the QymCAD app release listed above.**
-The stage A port preserves existing server policies and test expectations; see
-[the upgrade report](tasks/review-upgrade-a.md) for upstream behavior differences and outstanding GUI acceptance.
+**Use the QymCAD app release listed for your server version.** Files saved by 0.2.x do not open in QymCAD
+0.1.0: QymCAD 0.1.1 writes a new sketch constraint (`Orientation`) and B-rep format (QYMB v3) under the same
+`schema_version`. Files from 0.1.x open in QymCAD 0.1.1; the app warns that rebuilt fillets, chamfers and planes
+may lie differently, and old picks may be "found by place, not by name". Since 0.2.0, parameter names are
+case-sensitive and a through cut goes to its chosen side only (ADR 0021).
 
 ## Build (macOS)
 ```sh

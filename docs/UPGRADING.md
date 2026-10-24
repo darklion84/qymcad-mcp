@@ -19,12 +19,22 @@ Defect-pinning tests assert the old upstream failure deliberately. During step 4
 interpreting a red result as a server regression; remove the defect-pinning assertion/test when the upstream
 fix is confirmed, update its finding, and retain the companion server correctness regressions:
 
-- `golden_acceptance::upstream_sphere_fit_accepts_a_single_coplanar_floor_mesh` — F-065's planar mesh
-  misidentified as a sphere; keep `shelf_floor_is_planar_after_open_and_rebuild`.
-- `golden_features::stored_edge_query_rounds_everything_after_reopen_upstream_bug` — F-024's reopened
-  query broadening to both cylinder rims; keep the one-rim server open/edit and pick-persistence tests.
+- (v0.1.1: F-065's and F-024's pins became `native_sphere_fit_rejects_a_single_coplanar_floor_mesh` and
+  `stored_edge_query_rounds_one_rim_after_reopen_in_the_app`, which now guard the upstream fixes.)
 - `golden_revolve_chamfer::upstream_negative_side_shelf_refuses_each_mouth_but_axis_reversal_recovers` —
   F-067's indirect cone-frame mouth-chamfer failure; keep the equivalent-geometry successful controls.
+
+Lessons from v0.1.1-dev.20261026 (ADR 0021):
+- Public kernel doors may take the non-reentrant kernel gate themselves (F-073): list every gated public function
+  you call and make sure no caller holds the gate around it.
+- Re-check `tests/common/mod.rs`'s emulation of the app's parameter edit against the new app
+  (`apply_param_edit`, `mark_changed_params_dirty`); an over-generous emulation hides app-side defects.
+- Before removing a workaround, disable it and run the whole suite on the new release; remove it only when its
+  tests stay green, and add an assertion that is red with the workaround restored.
+- Capture the user's real saved parts with the old server first (volumes, bboxes, face/edge ids), then compare
+  after opening and after a full rebuild on the new release.
+- A `schema_version` that does not change says nothing about compatibility: load a file written by the new
+  release with the old release's loader.
 
 Search `rg 'upstream_|pinned upstream|pins the upstream' crates/engine` on each upgrade to catch newly added
 pinning tests. `descriptive_fillet_survives_an_upstream_edit` is a correctness regression about editing an

@@ -2,6 +2,13 @@
 
 Known follow-ups that were consciously deferred. Each item says where it came from.
 
+- QymCAD 0.1.1 upgrade (2026-10-24, ADR 0021):
+  - store blend edges as descriptions again: F-024 is fixed upstream (d2f2184), so descriptive fillets/chamfers
+    could follow edits like hole/shell faces do. Needs tests for reopen, parameter edits and legacy pick lists.
+  - QymCAD's "a reference was found by place, not by name" appears when the user's 0.1.0 parts are fully rebuilt
+    on 0.1.1 (geometry identical); decide whether `doc_info` should explain it.
+  - the app leaves a constant sketch on a face-derived datum in place on a parameter edit (F-017 characterization);
+    an upstream report candidate once seen in the real app.
 - MiMo import review nit 3 (2026-10-11): keep `imports.rs`'s scale matrix synchronized with GUI-private `import_scale::scale_matrix` (currently identical, `qymcad/src/gui/import_scale.rs:25-26`); retain the scaled-import golden.
 - MiMo import review nit 4 (2026-10-11): add panic-safe cleanup for the staged source file in `imports.rs`; the current closure removes files on success/error but leaves one if unwinding skips cleanup.
 - MiMo batch review (2026-10-12), deferred, none reachable as a defect today:

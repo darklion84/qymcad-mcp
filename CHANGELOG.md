@@ -5,12 +5,26 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
-### QymCAD release port (stage A)
-- Pin QymCAD v0.1.1-dev.20261026 (f25f27d); adapt engine restoration, independent
-  copies, mesh export and named adjacency to public APIs with non-recursive kernel-gate scopes.
-- Preserve server policies, workarounds, MCP schemas and behavioral test expectations.
-  Replace private test constructors with exact checked-in B-rep fixtures. Upstream
-  behavior differences and remaining acceptance work are recorded in tasks/review-upgrade-a.md.
+## 0.2.0 — follows QymCAD v0.1.1-dev.20261026 (ADR 0021)
+
+### Changed
+- Pin QymCAD v0.1.1-dev.20261026 (f25f27d) and Rust 1.89. Files saved now need QymCAD 0.1.1; QymCAD 0.1.0 cannot
+  open them. Engine restoration, copies, mesh export and adjacency use the release's public APIs with
+  non-recursive kernel-gate scopes (F-073).
+- Parameter names are case-sensitive, as in QymCAD: they are stored as given, a new name differing from an
+  existing one only by letter case is refused, and an unknown name in the wrong case is explained with a
+  did-you-mean. `doc_info` warns about case twins in documents made elsewhere.
+- `extrude` with `through` goes to the end of the stock on the chosen side; `symmetric` spans both sides.
+- The test emulation of an app parameter edit follows QymCAD 0.1.1.
+
+### Fixed
+- A fillet too big for neighbouring edges is refused (also when a parameter grows it): QymCAD 0.1.1 returns
+  overlapping blends with sharp joins and no error (F-074).
+
+### Removed
+- Workarounds for defects fixed upstream: lowercasing names (F-001), repeated sketch solves (F-040), slot and
+  line-on-arc tangency rewrites (F-041; sketches keep QymCAD's own `Tangent`), entity-removal markers (F-046), the
+  refusal of reference radii on arcs (F-047). Tests that pinned fixed upstream defects now assert the fixes.
 
 ### Backlog J
 - Preserve literal feature names inside opaque selection/axis objects when decoding JSON-string arguments;

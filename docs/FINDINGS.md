@@ -8,12 +8,15 @@ Conventions:
 - **Evidence** says how it was established: `test:` (a test in this repo), `observed:` (ran it and saw it),
   `source:` (read the code, path relative to the QymCAD repo root).
 - An entry without evidence is a guess and must not be relied on.
+- **Upgrade to v0.1.1-dev.20261026 (2026-10-24):** entries with an "On v0.1.1" line were re-checked one by one
+  (ADR 0021). The others were not re-read individually; every test they name passes on v0.1.1-dev.20261026.
 
 ---
 
 ## F-001 Uppercase parameter names never trigger a rebuild in the GUI
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (5dcaa65): names and expressions match exactly; an uppercase parameter edited in the app rebuilds (`golden_plate::gui_param_edit_rebuilds_from_an_uppercase_name`). The server no longer lowercases: names are case-sensitive and a new case twin is refused (ADR 0021). The text below is history.
 - **What:** `Project::param_map()` keys parameters by `name.to_lowercase()`, but `expr::mentions` /
   `expr::occurrences` match with a case-sensitive `str::find`. The GUI computes changed parameters from
   `param_map` (lowercase) and asks `mark_param_dependents_dirty_for(name)` to find features whose expressions
@@ -161,6 +164,7 @@ Conventions:
 ## F-013 macOS packaging: `.qcad` is not a registered document type
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** Still open upstream (#170, taken by a contributor 2026-10-12).
 - **What:** `open -a QymCAD file.qcad` and double-click fail with "cannot open files of this type"; files must be
   opened with File > Open.
 - **Evidence:** observed on macOS 15 with the release zip.
@@ -203,6 +207,7 @@ Conventions:
 ## F-017 Parallel preparation can capture a datum sketch's old placement
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Still holds** for the server path: with the datum dependency and barriers disabled, 11 datum tests fail (`datum_only_param_moves_a_literal_extrusion`, `chained_datum_param_edit_moves_the_pocket`, ...); #165 (fc1dedc) fixed only the sealed-pocket case. In the 0.1.1 app a constant sketch on a face-derived datum keeps its old placement on a parameter edit, now also when an unrelated sketch reads the name (`native_gui_face_datum_parameter_edit_characterization`; the app no longer dirties every expression sketch, `qymcad/src/gui/panels_windows/params.rs:375-398`). Workaround kept.
 - **What:** the former “0.001 mm deeper” diagnosis was wrong. For a literal 30 × 16 pocket sketched on an XY
   datum at `t`, changing stock thickness 6 → 10 leaves the pocket floor at z=3 instead of z=7, creating a
   sealed internal void. The datum's origin itself does update; parallel preparation captured its old sketch
@@ -365,6 +370,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-024 A stored edge *query* rounds every edge after the document is reopened
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (d2f2184): a stored edge query reopened in the app rounds only the queried rim, analytic volume to 1e-6 (`stored_edge_query_rounds_one_rim_after_reopen_in_the_app`). The server keeps storing pick lists and keeps the empty-pool refusal for legacy documents; storing descriptions is in docs/BACKLOG.md.
 - **What:** a fillet/chamfer whose edges are a descriptive `refs::Ref` (`add_fillet_ref`) resolves it against
   `regen_edges` of its source. When the source was not rebuilt earlier (a reopened document, F-023, then an edit
   of the fillet's own parameter), the pool is empty, the query yields nothing, and for a query without explicit
@@ -469,6 +475,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-029 Seam edges and planar normals
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** Seam policy unchanged; see the F-068 note on 0.1.1.
 - **What:** a cylindrical face's closing line is an edge whose `edge_face_pairs` entry names the same face twice;
   descriptions such as "along z" include it. Seams are not blendable: the kernel drops smooth edges from a
   fillet/chamfer and moves a seam off an edge that lies along one before blending, refusing the edge if it cannot
@@ -502,6 +509,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-031 The expression evaluator has no recursion limit
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Native crash fixed** (244bb1b, our #171; nesting cap 256). The server limits (64 levels, 1000 characters) stay as policy.
 - **What:** `qymcad_core::expr::eval` is recursive descent (expr → term → power → unary → atom): each `(` costs
   five frames, each unary sign and each `^` (right-recursive) one or two, with no depth or length cap. 100 000
   `(` abort the process with a stack overflow. Parameters are evaluated by the same parser
@@ -533,6 +541,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-033 Arrays have no size limit upstream
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Native cap added** (2f2e03c: 10 000 copies before allocation). The server cap of 1000 and strict whole counts stay as policy.
 - **What:** `prep_lineararray` multiplies the three counts and allocates a transform per copy; nothing caps it, so
   10000 × 10000 would try 10⁸ copies. Counts are feature dimensions, so a parameter edit can grow an array that
   was small when created. Cost measured here: 1000 copies of a Ø2 × 2 cylinder took 1.2 s (debug and release),
@@ -644,6 +653,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-039 The constants `pi`, `tau`, `e` shadow parameters of the same name
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream**: `drivers::check_ident` rejects `pi`, `tau`, `e` (`IdentError::Constant`). Constants are exactly these lowercase names; `PI` is an ordinary parameter (`sketch_behaviour::constant_names_are_not_parameters`). The server keeps its clearer refusal message.
 - **What:** the expression evaluator resolves a bare name as a constant first and only then as a variable, so a
   parameter named `e` (or `pi`, `tau`) is never read: a dimension `e` evaluates to 2.718..., silently.
 - **Evidence:**
@@ -656,6 +666,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-040 One sketch solve stops short when an angle dimension's arm must change length
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (c899ea7): one solve settles angle arms. The server solves once (`solve_settled` no longer repeats); with the old loop removed every test passes, and a parameter-driven angle is exact to 1e-6 in the server and in the app (`an_angle_driven_by_a_parameter_settles_in_one_solve_in_the_app`).
 - **What:** the solver holds the arms of every `Angle`/`AngleLines` softly at their pre-solve lengths
   (`w_len = 0.1`, arms already set by a `Distance` excepted). An edit that needs an arm to change length ends one
   `solve_sketch` (120 iterations) at a compromise; each further call gains only a fraction. Arcs whose ends are held
@@ -679,6 +690,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-041 A tangency at its own contact point is invisible to the rank analysis (QymCAD's slot reports 4 + 4)
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (4767faf, our #168): slots keep QymCAD's four `Tangent` constraints and report (0, 0); a tangent on a line ending on an arc is stored as `Tangent` and removes one freedom. Both rewrites are removed; their tests assert the native kinds and were red with the old rewrites restored.
 - **What:** `Tangent{a, b, c}` where `a` or `b` already lies on the circle (an arc endpoint) is a second-order
   condition: its Jacobian row is parallel to the arc's intrinsic `PointOnCircle`. `add_slot_entity` uses four such
   tangencies, so a slot with its centres and radius dimensioned still reports `sketch_dof` = (4, 4). The GUI hides
@@ -779,6 +791,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-046 Deleting an entity drops spline control points and free dimension helpers
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (our #166): `delete_entities` keeps spline controls and helpers of surviving geometry. The temporary markers are removed; with them disabled all 440 tests passed before removal.
 - **What:** `delete_entities` keeps only points used by entities, the frame and midpoints. Spline control points
   and angle-reference points are none of these, so removing unrelated geometry drops them and their constraints,
   including ArcLength driving a parametric arc end or polygon rotation (F-045).
@@ -802,6 +815,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-047 Reference radius/diameter dimensions are refreshed from circles only
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream** (our #167): reference radii on arcs follow the arc. The refusal is removed; `a_reference_radius_on_an_arc_does_not_go_stale` was red with the old refusal restored.
 - **What:** `update_driven_dims` takes radii from `Circle` entities; a reference radius on an arc keeps its creation
   value (20 after the arc's radius became 25).
 - **Evidence:** source: `crates/qymcad-core/src/model/sketch.rs` `update_driven_dims` (~2641-2650, 2681-2685);
@@ -1189,6 +1203,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-065 Upstream sphere fits can accept a flat rounded pocket floor
 
 - **Version:** v0.1.0-dev.20261001
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Planar case fixed upstream** (0646b3c, our #172): `face_sphere` rejects the flat floor (`native_sphere_fit_rejects_a_single_coplanar_floor_mesh`). The 2% radius tolerance is unchanged for curved faces, so the server residual check stays.
 - **What:** `Project::face_sphere` is a least-squares fit to this face's mesh vertices, not a native
   surface query. Unscaled normal equations with an absolute pivot cutoff do not reliably reject a
   numerically singular coplanar point set. Its 2% radius residual and 0.9 normal cosine checks can then
@@ -1293,6 +1308,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
 ## F-068 Seam repair can duplicate blend face names and hide conical surface identity
 
 - **Version:** v0.1.0-dev.20261001 (OCCT 7.9.3)
+- **On v0.1.1-dev.20261026 (2026-10-24):** **Fixed upstream for rebuilt geometry** (5e334fc, 81c0dda, 0eb0c3b; our #173): rebuilt cone chamfers have no duplicate face names (`rebuilt_cone_chamfers_have_unique_face_and_edge_names`). Files saved by 0.1.0 still carry duplicates, so the guards stay.
 - **Upstream bug candidate / minimal repro:** block 15×15×10; XZ closed profile
   (0,-1),(-3.375,-1),(-1.875,11),(0,11); construction axis (0,-2)→(0,12);
   revolve cut 360°, chamfer both mouth circles .5 mm. Stored fixture
@@ -1526,9 +1542,30 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Identifier API:** `drivers::check_ident` now rejects `IdentError::Constant`
   (`qymcad-core/src/drivers.rs:80,86-99`). Normalization accepts that specific code
   so assignment retains the existing built-in-constant explanation and deletion
-  still removes constant-named legacy parameters (F-039). All other validation,
-  lowercasing and assignment refusals remain. Existing `sketch_behaviour` constant
+  still removes constant-named legacy parameters (F-039). Stage B then dropped
+  lowercasing (F-001, ADR 0021). Existing `sketch_behaviour` constant
   tests caught the initial port gap and verify this adaptation.
 - **Audit:** `tasks/release-api-audit.md` records the full release call inventory,
   caller scopes and source evidence. Historical findings above are deliberately
   retained for stage B policy review; they are not blanket revalidated by this port.
+
+## F-074 A fillet too big for neighbouring edges is built from overlapping blends, without an error
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** when a group fillet fails, the kernel tries an exact limiting construction (`blend_limit`, prisms
+  taken off per edge). For a radius beyond the limit it returns overlapping blend cylinders that meet each other
+  and the caps at sharp edges, and the node is green. R15 on the four vertical edges of a 20 mm cube gives
+  V = 4363.25 mm³, bbox ±9.142 (joins at acos(7/9) = 38.9°). 0.1.0 refused it: "fillet R15.00 only works edge
+  by edge". A chamfer past its faces uses the same path; it gives the intersection of the chamfer planes
+  (15 mm on the cube: |x| + |y| ≤ 5, V = 1000), which is predictable, so it is not guarded.
+- **Evidence:** source: `crates/qymcad-kernel/src/ops/blend.rs:142-176,245-300`, `door/mod.rs:205-235`,
+  `occt_limits.cpp:160-265`; test: `golden_features.rs` `too_big_fillet_is_rolled_back_with_the_reason`,
+  `growing_a_fillet_past_its_limit_by_a_parameter_is_rolled_back`, `fillets_that_roll_off_a_neighbour_are_accepted`,
+  `chamfer_wider_than_its_faces_keeps_the_intersection_of_its_planes`.
+- **How we handle it:** after every rebuild of a fillet node, `modifiers::fillet_acceptance` checks that each new
+  face (an id the source body does not have) with named non-seam edges has at least one smooth edge (the
+  kernel's own flag, about 1.5°). A real blend always rolls off a support, a neighbouring blend or a corner
+  patch; the overlapping ones touch nothing tangentially. A failure is a rebuild error, so a new fillet and a
+  parameter edit are both rolled back. Controls: R9.9 and the limiting R10 (one cylinder, V = π·10²·20), the top
+  rim, the top rim with vertical edges, and every edge of a 40 x 30 x 10 block pass. Disabling the check makes
+  both refusal tests red. Not reported upstream yet.
