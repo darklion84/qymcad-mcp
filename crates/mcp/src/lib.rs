@@ -18,6 +18,7 @@ pub fn instructions(app_note: &str) -> String {
          XZ -Y, YZ +X) -> doc_info to check bodies (volume, bbox), errors, warnings -> doc_save to a .qcad path.\n\
          Use batch for 1-200 predictable modelling steps with one undo entry and whole-batch rollback; use single calls when topology ids, sketch_info, selections or a render must be inspected between steps.\n\
          Rectangles accept turn and centre/corner anchors. Ellipse/rectangle turn formulas and ellipse-arc endpoint angles must stay strictly between 0 and 180 degrees (literal turn 0/180 also allowed). Polygon sides accept integral formulas in 3..=64. Use dimension_set to edit/name native sketch or feature dimensions; doc_info lists named_dimensions. New sketch-item names are refused because app edits leave their solids stale.\n\
+         sketch_edit changes existing curves: op trim/extend/break (new ends are tied to the curves they lie on), offset (distance stays a formula), corner (fillet by radius/chord/arc_length, chamfer symmetric/two_dist/dist_angle) and mirror_point (the copy follows its source). Its result lists created/removed ids, the size dimensions it made and any formula it removed.\n\
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\

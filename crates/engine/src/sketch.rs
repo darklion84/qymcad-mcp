@@ -3,11 +3,20 @@
 //! in the QymCAD GUI.
 
 mod constrain;
+mod corner_edit;
 mod detail;
+mod edits;
 mod entities;
 mod figures;
+mod mirror_point;
+mod offset_edit;
 mod selectors;
 mod splines;
+
+pub use corner_edit::{CornerSize, CornerSpec};
+pub use edits::{BreakSpec, CurvePickSpec, EditedSketch, ExtendSpec};
+pub use mirror_point::MirrorPointSpec;
+pub use offset_edit::SketchOffsetSpec;
 
 pub use constrain::{ConstrainSpec, Constrained, ConstraintKind, DistAxis, FrameRef, SketchRef};
 pub use detail::{ConstraintInfo, EntityInfo, PointInfo, SketchDetail};

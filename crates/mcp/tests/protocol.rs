@@ -256,6 +256,7 @@ fn lists_tools_with_object_schemas() {
         "sketch_info",
         "sketch_constrain",
         "sketch_remove",
+        "sketch_edit",
         "extrude",
         "plane_offset",
         "export",

@@ -47,6 +47,7 @@ impl Snapshot {
             "sketch_add" => "Add sketch geometry".into(),
             "sketch_constrain" => "Constrain sketch".into(),
             "sketch_remove" => "Remove sketch geometry".into(),
+            "sketch_edit" => "Edit sketch curves".into(),
             "feature_delete" => "Delete feature".into(),
             _ => {
                 let action = tool.replace('_', " ");

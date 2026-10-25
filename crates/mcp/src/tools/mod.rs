@@ -9,6 +9,7 @@ mod history;
 mod output;
 mod params;
 mod sketch;
+mod sketch_edit;
 mod topology;
 
 use qymcad_engine::Session;
@@ -93,6 +94,7 @@ fn modelling_tool(name: &str) -> bool {
             | "sketch_add"
             | "sketch_constrain"
             | "sketch_remove"
+            | "sketch_edit"
             | "plane_offset"
             | "extrude"
             | "revolve"
@@ -205,6 +207,7 @@ impl Registry {
         tools.extend(doc::tools());
         tools.extend(params::tools());
         tools.extend(sketch::tools());
+        tools.extend(sketch_edit::tools());
         tools.extend(features::tools());
         tools.extend(output::tools());
         tools.extend(history::tools());

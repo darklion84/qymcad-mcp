@@ -68,3 +68,13 @@ Individual sketch entities get no names: the native records have no field for th
 - The tool count grows. TOOLS.md, the initialize instructions and README describe the new surface.
 - The F-074 fillet check also applies to bodies built from the new curves. Its known gaps stay listed in F-074.
 - Files keep opening and rebuilding in QymCAD 0.1.1. Circle offsets differ from the app's own recipe by design (F-076).
+
+## Amendments
+
+- **Stage 2 (2026-10-25).** Trim, extend and break tie a new end with the membership constraint the app itself
+  uses for that curve kind (`point_on`: PointOnLine, PointOnCircle, PointOnEllipse or PointOnCurve), not always
+  `PointOnCurve`: it is what the app writes for lines and round curves, and it solves the same way (F-083).
+  The point mirror ties its copy to the source through the centre, where the app leaves it free (F-086), so a
+  mirrored profile stays fully defined and follows its source. All six edits are one tool, `sketch_edit`, with
+  an `op` discriminator: they share the sketch, the curve selectors and the result report.
+

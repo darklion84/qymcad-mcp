@@ -15,6 +15,17 @@ All notable changes to this project are documented here. The format follows
 - Polygon side-count formulas with integral/range checks, retained vertices/first side and app-compatible
   rebuilding. Ellipse axes and polygon turn retain sketch dimension formulas: native item-only formulas
   conflict with full definition. New sketch-item names are refused because app SetDriver leaves bodies stale.
+- `sketch_edit` (ADR 0022 items 5–6): trim, extend and break any sketch curve, as the app does, with new ends
+  tied to the curves they lie on; offset a chain or loop with the distance kept as a formula (circle and arc
+  offsets use `CurveDistance`, F-076); round or bevel a corner in all six native size modes; mirror curves about a
+  point with the copy tied to its source. The result lists created/removed ids, the size dimensions made, the
+  formula dimensions an edit removed, released offsets and the remaining freedom.
+
+### Changed
+- `sketch_add` `rect` now writes QymCAD's native rectangle figure, as the app does. The four side ids, the contour
+  and full definition are the same as before; the sketch also gets the figure's two construction diagonals, the
+  centre is their crossing point, and width and height are aligned `distance` dimensions along the sides instead
+  of `distance_x`/`distance_y`.
 
 ## 0.1.1-dev.20261026 — follows QymCAD v0.1.1-dev.20261026 (ADR 0021)
 

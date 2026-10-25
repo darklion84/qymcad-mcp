@@ -1609,7 +1609,8 @@ asserts those exact fractional halves before checking away-from-zero output.
   `CurveDistance.expr` is evaluated. ADR 0022 reserves the latter recipe for the later offset stage.
 - **Evidence:** source: `model/sketch/offset.rs:98–106`, `model/params.rs:381–409` in the pinned QymCAD source;
   stage-0 executable probes and exact outputs in `tasks/research-features.md`, section 5.
-  Stage 1 exposes generic CurveDistance; it does not yet expose offset creation.
+  Stage 2 `sketch_edit` offset replaces the circle's `EdgeDistance` and an arc's radial endpoint `Distance` with
+  `CurveDistance` between the two round curves (`golden_offset_2`; mutation: keeping them fails the app edit).
 
 ## F-077 Native splines retain interpolation nodes and automatic handles
 
@@ -1705,6 +1706,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   names are refused. Imported item names remain discoverable/clearable/editable; direct server item edits
   explicitly solve/dirty the owner and refuse values discarded by its constraints. This fixes server edits,
   not the pinned app's SetDriver. Options and evidence are in `tasks/review-features-1.md`.
+  Reported upstream as QymIs-Tech/QymCAD#337 (2026-10-25).
 - **Count policy:** native count imposition rounds, clamps only at three, and can allocate arbitrary counts
   (`item_values.rs:213–215,274–361`). Server initial and prospective edits require integral 3..=64 before
   native allocation. The upstream prospective name-graph evaluator is private (`model/formulas.rs:324`),
@@ -1725,3 +1727,48 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Policy:** preflight native `centres_touching`, refuse missing/distinct tied solutions before allocation,
   call the public constructor, then add the independent native radius dimension with the requested formula.
   Radius must exceed native 1e-9 mm. `near` is a one-time branch hint, not a persisted driver.
+
+## F-083 Native trim and extend tie new ends only for lines and round curves
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `trim_curve` keeps a line's or a circle's new ends on the cutter (`point_on` rows written by the
+  specialised keep paths), but the generic path for ellipses and splines (`cut_curve`, then settle) writes no row,
+  and `extend_curve_by` uses the boundary only to place the end. Without a tie, a trimmed or extended end does not
+  follow its cutter or boundary when a parameter moves it.
+- **Evidence:** source: `model/sketch/trim.rs:14–26`, `model/curve/cut.rs:15–89`, `model/sketch/crossings.rs:250–262,
+  307–402`. `golden_curve_edits_2::an_extended_end_follows_its_boundary_when_the_boundary_moves` (mutation: no ties
+  leaves the end at the old boundary).
+- **Policy:** after the native edit, every new or moved end of the edited curve's pieces that lies on another curve
+  gets the app's own membership row for that curve kind (`point_on`: PointOnLine, PointOnCircle, PointOnEllipse or
+  PointOnCurve), unless an equivalent row exists or the row is dependent.
+
+## F-084 Native extend keeps a dimension-held end
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `curve_extension` reports `EndKept::Joined` and no growth for an end that is joined or held by a driving
+  dimension (`trim.rs:50–79`). Every end the server dimensions counts as held, so `sketch_edit` extend applies to
+  ends left free (`dimensioned: false`) and refuses held ends with the reason.
+- **Evidence:** `golden_curve_edits_2::extend_free_end_attaches_to_formula_boundary_and_refuses_held_end`.
+
+## F-085 Sketch corner sizes are separate native dimensions per mode
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `cut_corner_set` writes the size as a `Diameter` (radius, `diam: false`), a `Distance` between the
+  touching points (chord) or an `ArcLength` (fillet); a `Distance` along the cut (symmetric chamfer: the cut's
+  length, not a setback), two setback `Distance`s (two_dist) or a setback and `AngleLines` (dist_angle). Each takes
+  its own formula; storing a radius for a chord or arc-length request would change the requested measure when the
+  corner angle changes.
+- **Evidence:** source: `model/sketch/blends.rs:152–154,184–208`, `model/sketch_ops.rs:320–369`; `golden_corner_2`
+  covers all six modes with app parameter and SetDriver edits (mutation: unwritten formula fails all six).
+
+## F-086 The native point mirror leaves the copy free; the server ties it to its source
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `mirror_about_point` copies curves with their own size rows but leaves the copy's position free (a
+  mirrored triangle adds 6 freedoms). The server ties each copied point to its source with the centre as midpoint
+  (`Midpoint`), falls back to keeping it on the line through source and centre (`PointOnLine`) when the copy's
+  own dimensions already hold its distance (an ellipse axis end), and gives a copied circle its source's radius
+  (`EqualRadius`). Only rows that remove freedom without redundancy are kept. The copy then follows its source.
+- **Evidence:** source: `model/sketch_ops.rs:49–50`, `model/sketch/edit.rs:526–585`. `golden_mirror_point_2`
+  (mutations: no ties, or no line fallback, leave freedom or redundancy).
+

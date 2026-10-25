@@ -42,10 +42,11 @@ pub use render::{Rendered, View, RENDER_BACKGROUND, RENDER_MAX_SIDE, RENDER_MIN_
 pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{
-    Added, ArcSpec, BaseName, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, CurveQuery, DistAxis,
-    EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, FrameRef, LineSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel,
-    PointSel, PolygonSpec, PolylineSpec, RectAnchor, RectSpec, SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchRef,
-    SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec, Xy,
+    Added, ArcSpec, BaseName, BreakSpec, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, CornerSize, CornerSpec,
+    CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, ExtendSpec, FrameRef, LineSpec,
+    MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel, PointSel, PolygonSpec, PolylineSpec, RectAnchor, RectSpec,
+    SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchOffsetSpec, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec,
+    TangentCircleSpec, Xy,
 };
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, SelectionKind, Topology};
 pub use value::Num;

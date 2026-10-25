@@ -159,7 +159,7 @@ pub struct RemoveArgs {
 }
 
 /// The sketch detail as compact JSON, plus the rebuild of dependent features when there was one.
-fn sketch_result(s: &qymcad_engine::Session, sketch: Id, rebuild: Option<&qymcad_engine::Rebuild>) -> Result<Value, String> {
+pub(super) fn sketch_result(s: &qymcad_engine::Session, sketch: Id, rebuild: Option<&qymcad_engine::Rebuild>) -> Result<Value, String> {
     let detail = s.sketch_detail(sketch).map_err(err)?;
     let mut o = json!({ "sketch": serde_json::to_value(detail).unwrap_or(Value::Null) });
     if let Some(r) = rebuild {

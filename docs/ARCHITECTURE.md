@@ -115,6 +115,13 @@ item edits explicitly solve/dirty the owner and refuse discarded values; this do
 Strict curve selectors resolve before mutation; generic relations retain drawn curve spans and all native
 tangency rows, checking rank and residual both before and after solving.
 
+`sketch_edit` runs the app's own curve edits (trim, extend, break, offset, corner, point mirror) inside one sketch
+transaction and reports what changed against a snapshot of the sketch: created/removed/changed entity and point
+ids, the size dimensions made, formula dimensions removed, released offsets and the remaining freedom. Native
+edits leave some ends and copies free; the server adds the app's membership rows for new ends (F-083) and
+midpoint/line/radius ties for a point-mirrored copy (F-086), keeping only rows that remove freedom without
+redundancy. Offsets of round curves replace `EdgeDistance` with `CurveDistance` (F-076).
+
 ## Topology and selections
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,

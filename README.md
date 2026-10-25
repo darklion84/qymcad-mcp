@@ -4,9 +4,10 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent build **n
 [QymCAD](https://github.com/QymIs-Tech/QymCAD) parts** — sketches, extrusions, cuts, fillets, holes, driven by
 named parameters — and save them as `.qcad` files you open and edit in the QymCAD app.
 
-> Status: **pre-release.** 30 tools for QymCAD 0.1.1: documents, parameters and named driving dimensions;
+> Status: **pre-release.** 31 tools for QymCAD 0.1.1: documents, parameters and named driving dimensions;
 > sketches (rotated rectangle, circle, tangent circle, line, polyline, spline, arc, ellipse, ellipse arc,
-> polygon, slot) fully dimensioned with expressions, plus curve constraints; datum planes;
+> polygon, slot) fully dimensioned with expressions, plus curve constraints and curve editing (trim, extend,
+> break, offset, corner fillet/chamfer, point mirror); datum planes;
 > extrude / cut / revolve; fillet, chamfer, hole, shell, push face; linear / circular arrays and mirror;
 > topology and descriptive selections; atomic modelling batches, feature deletion and undo;
 > export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
