@@ -5,7 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
-## 0.2.0 — follows QymCAD v0.1.1-dev.20261026 (ADR 0021)
+## 0.1.1-dev.20261026 — follows QymCAD v0.1.1-dev.20261026 (ADR 0021)
+
+From this release on, the server's version number is the QymCAD release it works with; a server fix for the
+same QymCAD release adds `.1`, `.2`, … (README, "Versions and compatibility"). The previous release, numbered
+0.1.0, worked with QymCAD v0.1.0-dev.20261001.
 
 ### Changed
 - Pin QymCAD v0.1.1-dev.20261026 (f25f27d) and Rust 1.89. Files saved now need QymCAD 0.1.1; QymCAD 0.1.0 cannot

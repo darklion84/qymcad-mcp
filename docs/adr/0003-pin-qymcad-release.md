@@ -8,10 +8,13 @@ format version (FINDINGS F-012). A file written by one build may fail to open, o
 
 ## Decision
 - Depend on the QymCAD crates by git **tag** of a published release (the app is distributed only as release
-  builds), never on `main`. Currently `v0.1.1-dev.20261026` (stage A port; GUI acceptance pending).
+  builds), never on `main`. Currently `v0.1.1-dev.20261026`.
 - Record the version in `qymcad_engine::QYMCAD_VERSION`, report it in `initialize.serverInfo` and in
   `doc_info`, and warn at startup if the installed QymCAD.app reports a different version.
 - Upgrades follow docs/UPGRADING.md and are gated by the golden tests.
+- (2026-10-25) The server's own version is the QymCAD release it is built for (`0.1.1-dev.20261026`); a server
+  fix for the same release adds a counter (`0.1.1-dev.20261026.1`, SemVer orders it after the base). Repository
+  tags carry the same number with a `v`. A test keeps the workspace version and `QYMCAD_VERSION` in step.
 
 ## Consequences
 - The server lags QymCAD `main` until the next release; fixes from `main` are not available earlier.

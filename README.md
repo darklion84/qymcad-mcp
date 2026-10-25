@@ -40,17 +40,29 @@ default, with created-node ids/names and final bodies/warnings/errors; `"verbose
 full result. Use individual calls when you need to inspect `topology`, `sketch_info`, `select` or a `render`
 between operations. Document tools, undo, output, inspection and nested batches are refused inside `batch`.
 
-## Compatibility
+## Versions and compatibility
+
+**The server and the QymCAD app must be the same release.** Each server version is built against exactly
+one QymCAD release, and it carries that release's number:
+
+- server `0.1.1-dev.20261026` works with QymCAD `v0.1.1-dev.20261026`;
+- a fix to the server for the same QymCAD release adds a counter: `0.1.1-dev.20261026.1`, `.2`, …;
+- tags in this repository follow the same pattern: `v0.1.1-dev.20261026`, `v0.1.1-dev.20261026.1`.
+
+So the QymCAD part of the server's version is the app you need. `qymcad-mcp --version` prints both, and at
+startup the server warns when the installed QymCAD.app is a different release.
+
 | qymcad-mcp | QymCAD release | OpenCASCADE |
 |---|---|---|
-| 0.2.x | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
-| 0.1.x | v0.1.0-dev.20261001 | 7.9.3 (Homebrew) |
+| 0.1.1-dev.20261026 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
+| 0.1.0 (numbered before this scheme) | v0.1.0-dev.20261001 | 7.9.3 (Homebrew) |
 
-**Use the QymCAD app release listed for your server version.** Files saved by 0.2.x do not open in QymCAD
-0.1.0: QymCAD 0.1.1 writes a new sketch constraint (`Orientation`) and B-rep format (QYMB v3) under the same
-`schema_version`. Files from 0.1.x open in QymCAD 0.1.1; the app warns that rebuilt fillets, chamfers and planes
-may lie differently, and old picks may be "found by place, not by name". Since 0.2.0, parameter names are
-case-sensitive and a through cut goes to its chosen side only (ADR 0021).
+Why it matters: QymCAD changes its file format between releases without saying so (the `schema_version` stays
+the same). Files saved by the server for QymCAD 0.1.1 do not open in QymCAD 0.1.0, because they use a new sketch
+constraint (`Orientation`) and a new B-rep format (QYMB v3). Files from 0.1.0 do open in QymCAD 0.1.1. The app
+warns that rebuilt fillets, chamfers and planes may lie differently, and that old picks may be "found by place,
+not by name". Since 0.1.1-dev.20261026, parameter names are case-sensitive, and a through cut goes only to the
+side it is directed to (ADR 0021).
 
 ## Build (macOS)
 ```sh

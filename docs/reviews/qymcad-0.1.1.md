@@ -2,7 +2,7 @@
 
 The upgrade happened in three stages:
 - **Stage A, the API port, commit 13cdf13.** Written by OpenAI Codex (gpt-6.1-sol, high).
-- **Stages B and C.** Policies, removal of obsolete workarounds, docs and version 0.2.0. Written by Claude (Opus 5.5) after Codex hit its usage limit.
+- **Stages B and C.** Policies, removal of obsolete workarounds, docs and the version number. Written by Claude (Opus 5.5) after Codex hit its usage limit.
 
 Two models reviewed the work read-only on identical snapshots: Xiaomi MiMo (MiMo-V2.6-Pro) reviewed all of it, and Codex reviewed Claude's part. Claude assessed every finding against the code. Each behavioural fix came with a test that failed before the fix, and with a mutation of the fixed code that turned the test red again. Mutation evidence was recorded per round.
 

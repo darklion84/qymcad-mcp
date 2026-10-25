@@ -5,15 +5,16 @@ Do this only for a published QymCAD release (the app ships as release builds; AD
 1. Read the QymCAD changes between the old and new tag:
    `gh api repos/QymIs-Tech/QymCAD/compare/<old>...<new> --jq '.commits[].commit.message'`.
    Note anything touching `qymcad-core` model/regen/sketch, `qymcad-io` project files, `qymcad-kernel`, or the English `qymcad-i18n` catalogue/formatter.
-2. Change the tag in all five QymCAD `[workspace.dependencies]` entries of `Cargo.toml` and `QYMCAD_VERSION` in
-   `crates/engine/src/lib.rs`. Run `cargo update -p qymcad-core -p qymcad-io -p qymcad-kernel -p qymcad-testkit -p qymcad-i18n`.
+2. Change the tag in all five QymCAD `[workspace.dependencies]` entries of `Cargo.toml`, `QYMCAD_VERSION` in
+   `crates/engine/src/lib.rs`, and the workspace `version` to the same release number (README, "Versions and
+   compatibility"). Run `cargo update -p qymcad-core -p qymcad-io -p qymcad-kernel -p qymcad-testkit -p qymcad-i18n`.
 3. `scripts/check.sh`. Fix compile errors in `crates/engine` only.
 4. Re-verify every entry in docs/FINDINGS.md: the tests named as evidence must pass; re-read the `source:`
    references; update the **Version** line of each entry you confirmed, delete entries that no longer hold
    (and the workarounds for them).
 5. Install the same QymCAD.app release; run the manual GUI check: open the golden parts saved by
    `cargo test -p qymcad-engine -- --ignored gui_artifacts` (phase 1+), change a parameter, confirm the rebuild.
-6. Update README's compatibility table and CHANGELOG; release a new minor version.
+6. Update README's compatibility table and CHANGELOG; tag the release `v<QymCAD release>`.
 
 Defect-pinning tests assert the old upstream failure deliberately. During step 4, review these before
 interpreting a red result as a server regression; remove the defect-pinning assertion/test when the upstream

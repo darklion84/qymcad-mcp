@@ -10,8 +10,8 @@ blend fallback. The server's rule since ADR 0003 is to match the app release the
 workarounds whose cause still exists.
 
 ## Decision
-- **Pin** all QymCAD crates to the tag; `QYMCAD_VERSION` 0.1.1-dev.20261026; server version 0.2.0 because files
-  it saves do not open in QymCAD 0.1.0. `rust-version` 1.89 (the release's dependencies need it).
+- **Pin** all QymCAD crates to the tag; `QYMCAD_VERSION` 0.1.1-dev.20261026; the server version is the same
+  number (ADR 0003): files it saves do not open in QymCAD 0.1.0, so the version must say which app it needs. `rust-version` 1.89 (the release's dependencies need it).
 - **Names are case-sensitive, as in QymCAD** (5dcaa65). The server stores names and expressions as given. A new
   parameter whose name equals an existing parameter or named dimension ignoring case (Unicode lowercase mapping, not
   full case folding), or exactly equals a named dimension, is refused, saying which kind of name it collides with;
@@ -41,7 +41,7 @@ workarounds whose cause still exists.
 - **Splines of 0.1.0 documents** are dropped by QymCAD 0.1.1 on load (F-075); the server warns on open.
 
 ## Consequences
-- Files saved by 0.2.x need QymCAD 0.1.1; the app 0.1.0 refuses them (`Unexpected variant named Orientation`)
+- Files saved by server 0.1.1-dev.20261026 need QymCAD 0.1.1; the app 0.1.0 refuses them (`Unexpected variant named Orientation`)
   or cannot read their B-reps. The startup check already warns when the installed app differs.
 - The user's seven parts saved by the server on 0.1.0 open in 0.1.1 with identical volumes, bboxes and face/edge
   ids, and a full rebuild reproduces their volumes to 1e-11; QymCAD may add "a reference was found by place, not by

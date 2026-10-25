@@ -48,3 +48,19 @@ pub use value::Num;
 
 /// The QymCAD release this engine is built against. Must match the tag in the workspace Cargo.toml.
 pub const QYMCAD_VERSION: &str = "0.1.1-dev.20261026";
+
+#[cfg(test)]
+mod version_tests {
+    /// The server is numbered after the QymCAD release it is built for; a server fix adds `.N` (ADR 0003).
+    #[test]
+    fn the_server_version_is_the_qymcad_release() {
+        let ours = env!("CARGO_PKG_VERSION");
+        let fix = ours.strip_prefix(super::QYMCAD_VERSION).and_then(|rest| rest.strip_prefix('.'));
+        assert!(
+            ours == super::QYMCAD_VERSION || fix.is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())),
+            "workspace version {ours} must be QymCAD {} or {}.N",
+            super::QYMCAD_VERSION,
+            super::QYMCAD_VERSION
+        );
+    }
+}
