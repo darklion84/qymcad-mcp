@@ -83,6 +83,12 @@ fn tangent_circle_refuses_ties_missing_solutions_and_ambiguous_selectors_before_
     x = spec(ids, [12.0, 12.0]);
     x.curves[1] = x.curves[0].clone();
     assert!(s.sketch_circle_tangent(sk, &x).is_err());
+    // Below the native 0.01 mm minimum the constructor would draw a bigger circle than asked: refused up front.
+    x = spec(ids, [12.0, 12.0]);
+    x.radius = Num::Value(0.004);
+    let err = s.sketch_circle_tangent(sk, &x).unwrap_err().to_string();
+    assert!(err.contains("0.01"), "{err}");
+    assert_eq!(s.sketch_detail(sk).unwrap(), before);
     assert_eq!(s.sketch_detail(sk).unwrap(), before);
     x = spec(ids, [12.0, 12.0]);
     x.radius = v(-1.0);

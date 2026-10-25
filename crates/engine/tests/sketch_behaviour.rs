@@ -324,6 +324,9 @@ fn a_distance_between_lines_makes_them_parallel() {
         .unwrap();
     assert_eq!(r.dof, (2, 0), "4 freedoms − parallel − distance");
     let d = s.sketch_detail(sk).unwrap();
+    let kinds: Vec<&str> = r.indices.iter().map(|&i| d.constraints[i].kind.as_str()).collect();
+    assert_eq!(kinds, ["parallel", "distance_point_line"], "both rows this call appended are reported");
+    assert_eq!(r.index, r.indices.last().copied(), "index is the dimension's");
     for p in &l.points {
         let q = d.points.iter().find(|q| q.id == *p).unwrap();
         assert_close(q.y, 5.0, 1e-6, "both ends at y = 5");

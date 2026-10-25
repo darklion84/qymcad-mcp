@@ -179,6 +179,7 @@ impl Session {
         let c = self.build_constraint(si, spec, &gs)?;
         let is_dim = c.dim_value().is_some();
         let before = self.p.sketch_dof(si);
+        let start = self.p.sketches[si].constraints.len();
         // A distance between two lines measures from a point of the first to the second; it means "the distance
         // between them" only when they are parallel, so parallelism is added with it unless already implied.
         if let (ConstraintKind::Distance, [G::Line(a, b), G::Line(c2, d)]) = (spec.kind, gs.as_slice()) {
@@ -234,7 +235,8 @@ impl Session {
             }
         }
         self.finish_sketch_edit(si)?;
-        Ok(Constrained { index: Some(idx), indices: vec![idx], note: None, dof: self.p.sketch_dof(si) })
+        // A kept `Parallel` stands just before the dimension; both were appended by this call.
+        Ok(Constrained { index: Some(idx), indices: (start..=idx).collect(), note: None, dof: self.p.sketch_dof(si) })
     }
 
     /// Delete an entity together with the points only it used and the constraints on them; a helper point left

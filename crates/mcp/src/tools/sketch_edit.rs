@@ -80,7 +80,7 @@ enum EditArgs {
         size: CornerSize,
     },
     /// Copy curves through a half turn about a point. The copy is tied to its source through the centre, so it
-    /// follows the source and the centre when parameters change.
+    /// follows the source's position, the centre and shared formulas; a size dimension it carried stays its own.
     MirrorPoint {
         /// Sketch id or name.
         sketch: ObjRef,

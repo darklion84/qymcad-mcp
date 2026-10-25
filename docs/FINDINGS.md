@@ -1703,7 +1703,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   `gui/panels_windows/params.rs:260–286` (only Sketch targets explicitly dirty their owner).
 - **Stage-1 boundary:** ellipse axes/turn and polygon turn keep fully driving sketch dimension formulas;
   their competing native item-formula creation is stopped pending upstream/design action. New item driver
-  names are refused. Imported item names remain discoverable/clearable/editable; direct server item edits
+  names are refused. Imported item names remain discoverable and clearable, their values editable (a rename is refused like a new name); direct server item edits
   explicitly solve/dirty the owner and refuse values discarded by its constraints. This fixes server edits,
   not the pinned app's SetDriver. Options and evidence are in `tasks/review-features-1.md`.
   Reported upstream as QymIs-Tech/QymCAD#337 (2026-10-25).
@@ -1768,7 +1768,8 @@ asserts those exact fractional halves before checking away-from-zero output.
   mirrored triangle adds 6 freedoms). The server ties each copied point to its source with the centre as midpoint
   (`Midpoint`), falls back to keeping it on the line through source and centre (`PointOnLine`) when the copy's
   own dimensions already hold its distance (an ellipse axis end), and gives a copied circle its source's radius
-  (`EqualRadius`). Only rows that remove freedom without redundancy are kept. The copy then follows its source.
+  (`EqualRadius`). Only rows that remove freedom without redundancy are kept. The copy then follows its source's
+  position and any formula they share; a size dimension the copy carried stays its own and can be edited alone.
 - **Evidence:** source: `model/sketch_ops.rs:49–50`, `model/sketch/edit.rs:526–585`. `golden_mirror_point_2`
   (mutations: no ties, or no line fallback, leave freedom or redundancy).
 

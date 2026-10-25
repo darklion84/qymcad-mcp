@@ -14,7 +14,7 @@ use std::collections::HashSet;
 pub struct TangentCircleSpec {
     /// Two different curves in the sketch.
     pub curves: [EntityRef; 2],
-    /// Positive driving radius in mm, or its formula.
+    /// Driving radius in mm (at least 0.01, the native minimum), or its formula.
     pub radius: Num,
     /// One-time centre-selection hint in sketch coordinates; tied solutions are refused.
     pub near: [Num; 2],
@@ -137,8 +137,9 @@ impl Session {
         }
         let vars = self.p.param_map();
         let r = spec.radius.eval(&vars)?;
-        if r <= 1e-9 {
-            return Err(Error::Invalid("a tangent circle radius must be greater than 1e-9 mm".into()));
+        // The native constructor makes a circle of at least 0.01 mm whatever it is asked for.
+        if !r.is_finite() || r < 0.01 {
+            return Err(Error::Invalid(format!("a tangent circle radius must be at least 0.01 mm (native minimum), got {r}")));
         }
         let near = Point2::new(spec.near[0].eval(&vars)?, spec.near[1].eval(&vars)?);
         let s = &self.p.sketches[si];

@@ -20,7 +20,8 @@ impl Session {
     /// Mirror curves about a point through the app's own copy (`mirror_about_point`), which keeps the copy's
     /// own size dimensions but leaves where it stands free. Each copied point is then tied to its source point
     /// with the centre as their midpoint (and each copied circle to its source's radius), so the copy follows
-    /// the source and the centre when parameters change. Only independent ties are added.
+    /// the source's position, the centre and any shared formula when parameters change; a size dimension the copy
+    /// carried stays its own. Only independent ties are added.
     pub fn sketch_mirror_point(&mut self, sketch: Id, spec: &MirrorPointSpec) -> Result<EditedSketch> {
         let si = self.sketch_si(sketch)?;
         let curves = self.sketch_curve_ids(sketch, &spec.curves)?;

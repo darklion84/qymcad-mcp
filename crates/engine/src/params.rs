@@ -292,8 +292,9 @@ impl Session {
         while !formulas.is_empty() {
             let done: Vec<_> =
                 formulas.iter().filter_map(|(name, expr)| qymcad_core::expr::eval(expr, &scope).ok().map(|v| (name.clone(), v))).collect();
+            // What does not evaluate stays out of scope; it matters only if a side count reads it.
             if done.is_empty() {
-                return Err(Error::Expr("polygon side count depends on a cyclic or invalid formula".into()));
+                break;
             }
             for (name, value) in done {
                 formulas.remove(&name);
@@ -301,7 +302,9 @@ impl Session {
             }
         }
         for (id, expr) in counts {
-            let n = Num::Expr(expr.clone()).eval(&scope)?;
+            let n = Num::Expr(expr.clone())
+                .eval(&scope)
+                .map_err(|e| Error::Expr(format!("the side count `{expr}` of polygon {id} cannot be evaluated: {e}")))?;
             if n.fract() != 0.0 || !(3.0..=64.0).contains(&n) {
                 return Err(Error::Invalid(format!("polygon {id} needs an integral side count in 3..=64, got {n}")));
             }

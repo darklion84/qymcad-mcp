@@ -21,7 +21,7 @@ fn trim_circle_to_half_disk_tracks_boundary_and_radius_in_app() {
     line(&mut s, sk, [v(-20.), v(0.)], [v(20.), v(0.)], true, true);
     let out = s.sketch_trim(sk, &CurvePickSpec { curve: EntityRef::Id(c), at: [v(0.), v(-5.)] }).unwrap();
     assert!(!out.created_entities.is_empty());
-    assert!(out.dof.0 >= 0);
+    assert_eq!(out.dof.1, 0, "the trim leaves no redundant constraint");
     let arc = s.sketch_detail(sk).unwrap().entities.into_iter().find(|x| x.kind == "arc").unwrap();
     let d = s.sketch_detail(sk).unwrap();
     for id in &arc.points[1..] {

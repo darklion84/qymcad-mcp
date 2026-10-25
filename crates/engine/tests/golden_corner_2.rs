@@ -194,3 +194,45 @@ fn native_spline_line_corner_retains_full_definition() {
     assert_eq!(arc.kind, "arc");
     assert_close(arc.r.unwrap(), 2.0, 1e-6, "curved corner radius");
 }
+
+/// A chamfer on a spline–line corner: QymCAD does not hold the sharp on the spline leg (blends.rs), so the cut
+/// point on the spline keeps a freedom. The edit is applied and reports it, as every sketch edit does (ADR 0022).
+#[test]
+fn a_chamfer_on_a_spline_corner_is_applied_and_reports_its_freedom() {
+    for size in [
+        CornerSize::Symmetric { value: n(2.0) },
+        CornerSize::TwoDist { first: n(2.0), second: n(3.0) },
+        CornerSize::DistAngle { first: n(2.0), second: n(40.0) },
+    ] {
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let spline = s
+            .sketch_spline(
+                sk,
+                &SplineSpec {
+                    points: vec![Xy(n(-30.0), n(-10.0)), Xy(n(-15.0), n(0.0)), Xy(n(0.0), n(0.0))],
+                    closed: false,
+                    construction: false,
+                    dimensioned: true,
+                },
+            )
+            .unwrap();
+        let line = s
+            .sketch_line(sk, &LineSpec { x1: n(0.0), y1: n(0.0), x2: n(0.0), y2: n(30.0), construction: false, dimensioned: true })
+            .unwrap();
+        assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+        let result = s
+            .sketch_corner(
+                sk,
+                &CornerSpec {
+                    curves: [EntityRef::Id(spline.entities[0]), EntityRef::Id(line.entities[0])],
+                    point: PointSel::Id(spline.points[2]),
+                    size: size.clone(),
+                },
+            )
+            .unwrap_or_else(|e| panic!("{size:?}: {e}"));
+        assert_eq!(result.dof.1, 0, "{size:?}: no redundancy");
+        assert_eq!(result.dof.0 > 0, !result.free_points.is_empty(), "{size:?}: freedom and free points agree");
+        assert_eq!(s.sketch_detail(sk).unwrap().entities.iter().find(|e| e.id == result.created_entities[0]).unwrap().kind, "line");
+    }
+}

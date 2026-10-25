@@ -622,7 +622,7 @@ Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, p
             },
             "radius": {
               "$ref": "#/$defs/Num",
-              "description": "Positive driving radius in mm, or its formula."
+              "description": "Driving radius in mm (at least 0.01, the native minimum), or its formula."
             },
             "type": {
               "const": "circle_tangent",
@@ -2240,7 +2240,7 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
     },
     {
       "additionalProperties": false,
-      "description": "Copy curves through a half turn about a point. The copy is tied to its source through the centre, so it\nfollows the source and the centre when parameters change.",
+      "description": "Copy curves through a half turn about a point. The copy is tied to its source through the centre, so it\nfollows the source's position, the centre and shared formulas; a size dimension it carried stays its own.",
       "properties": {
         "about": {
           "$ref": "#/$defs/PointSel",

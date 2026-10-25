@@ -61,3 +61,37 @@ fn sweep_loft_profiles_at_and_hole_offset_through_the_tools() {
     let e = refused(&mut r, "hole", json!({"face": {"extreme": "+z"}, "offset": [1, 1], "at": [1, 1, 10], "diameter": 2, "depth": 2}));
     assert!(e.contains("not both"), "{e}");
 }
+
+#[test]
+fn sweep_and_loft_run_in_a_batch_and_undo_as_one_step() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    let out = call(
+        &mut r,
+        "batch",
+        json!({"steps": [
+            {"tool": "sketch_create", "args": {"plane": "XY", "name": "p"}},
+            {"tool": "sketch_add", "args": {"sketch": "p", "entities": [{"type": "rect", "w": 4, "h": 4}]}},
+            {"tool": "sketch_create", "args": {"plane": "XZ", "name": "path"}},
+            {"tool": "sketch_add", "args": {"sketch": "path", "entities": [{"type": "line", "x1": 0, "y1": 0, "x2": 0, "y2": 20}]}},
+            {"tool": "sweep", "args": {"sketch": "p", "path": {"sketch": "path"}, "name": "post"}},
+            {"tool": "plane_offset", "args": {"base": "XY", "dist": 30}},
+            {"tool": "sketch_create", "args": {"plane": "XY", "name": "low"}},
+            {"tool": "sketch_add", "args": {"sketch": "low", "entities": [{"type": "circle", "cx": 50, "d": 10}]}}
+        ]}),
+    );
+    let plane = out["steps"][5]["created"]["id"].clone();
+    call(&mut r, "sketch_create", json!({"plane": {"plane": plane}, "name": "high"}));
+    call(&mut r, "sketch_add", json!({"sketch": "high", "entities": [{"type": "circle", "cx": 50, "d": 10}]}));
+    let lofted = call(
+        &mut r,
+        "batch",
+        json!({"steps": [{"tool": "loft", "args": {"sections": [{"sketch": "low"}, {"sketch": "high"}], "op": "new_body"}}]}),
+    );
+    assert_eq!(lofted["bodies"].as_array().unwrap().len(), 2, "{lofted}");
+    let undone = call(&mut r, "undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "batch");
+    let info = call(&mut r, "doc_info", json!({}));
+    assert_eq!(info["bodies"].as_array().unwrap().len(), 1, "the loft is undone, the sweep stays: {info}");
+    assert!((info["bodies"][0]["volume_mm3"].as_f64().unwrap() - 320.0).abs() < 1e-6);
+}

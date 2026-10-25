@@ -22,7 +22,7 @@ and exposes native polygon side-count formulas (which preserve existing point/fi
 
 `dimension_set` refuses ambiguous sketch targets, new item names and item values discarded by driving
 constraints. Sketch and timeline-feature driver naming/editing remain supported. Imported item names remain
-visible, clearable and editable. Direct server item edits explicitly solve/dirty their owner, without claiming
+visible and clearable, and their values editable; renaming them is refused like a new name. Direct server item edits explicitly solve/dirty their owner, without claiming
 to repair the pinned app's SetDriver scheduler. No new persisted dependency fields or upstream edits are added.
 
 ## Options awaiting a decision

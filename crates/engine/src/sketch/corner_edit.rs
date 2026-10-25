@@ -97,7 +97,9 @@ impl Session {
         if self.p.corner_blend(si, point, corner.pair, cut).is_none() {
             return Err(Error::Invalid("native corner cut does not fit these curves or the requested size mode".into()));
         }
-        let was_defined = self.p.sketch_dof(si) == (0, 0);
+        // Freedom left by the cut is reported, not refused (ADR 0022): a chamfer does not hold its cut point on a
+        // spline leg, as in the app. Redundant rows would be a defect of the edit, so those are refused.
+        let redundant = self.p.sketch_dof(si).1;
         self.sketch_edit_report(sketch, |s| {
             let before = s.p.sketches[si].clone();
             if s.p.cut_corner_set(si, &[corner], cut, None) != 1 {
@@ -185,8 +187,8 @@ impl Session {
             }
             s.finish_sketch_edit(si)?;
             let dof = s.p.sketch_dof(si);
-            if was_defined && dof != (0, 0) {
-                return Err(Error::Invalid(format!("native corner edit did not preserve full definition: DOF {dof:?}")));
+            if dof.1 > redundant {
+                return Err(Error::Invalid(format!("the corner cut left redundant constraints in the sketch: DOF {dof:?}")));
             }
             Ok(dimensions)
         })

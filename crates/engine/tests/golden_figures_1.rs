@@ -383,3 +383,42 @@ fn literal_cardinal_turns_retain_the_requested_ellipse_and_rectangle_branch() {
         assert_close(next.y - first.y, 20.0 * turn.to_radians().sin(), 1e-6, "rect cardinal direction y");
     }
 }
+
+/// A broken formula elsewhere in the document (here a named diameter whose expression reads a name that no longer
+/// exists) is reported as itself; the polygon side-count check only refuses a side count it cannot evaluate.
+#[test]
+fn an_unrelated_broken_named_formula_is_reported_as_itself_in_polygon_documents() {
+    let mut s = Session::new_part();
+    s.param_set("N", &n(6.0)).unwrap();
+    s.param_set("R", &n(10.0)).unwrap();
+    let sk = sketch(&mut s);
+    let spec = PolygonSpec {
+        cx: n(20.0),
+        cy: n(30.0),
+        sides: 6,
+        r: Some(e("R")),
+        angle: Some(n(30.0)),
+        vertex: None,
+        construction: false,
+        dimensioned: true,
+    };
+    s.sketch_polygon_sides(sk, &spec, &e("N")).unwrap();
+    let other = sketch(&mut s);
+    s.sketch_circle(other, &n(80.0), &n(0.0), &n(6.0), false).unwrap();
+    let diameter = s.sketch_detail(other).unwrap().constraints.iter().find(|c| c.kind == "diameter").unwrap().index;
+    s.dimension_set(&DimensionTarget::Sketch { sketch: other, constraint: diameter }, None, Some("Dia")).unwrap();
+    let path = scratch("polygon-unrelated-broken.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let si = project.sketch_index(other).unwrap();
+    for c in &mut project.sketches[si].constraints {
+        if let qymcad_core::model::Constraint::Diameter { expr, .. } = c {
+            *expr = "Gone+1".into();
+        }
+    }
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (mut opened, _) = Session::open(&path).unwrap();
+    // The edit is refused because of the broken formula, and the message names it, not the polygon.
+    let error = opened.param_set("R", &n(12.0)).unwrap_err().to_string();
+    assert!(error.contains("Gone") && !error.contains("polygon"), "{error}");
+}
