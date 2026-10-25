@@ -87,6 +87,7 @@ fn modelling_tool(name: &str) -> bool {
     matches!(
         name,
         "param_set"
+            | "dimension_set"
             | "param_delete"
             | "sketch_create"
             | "sketch_add"

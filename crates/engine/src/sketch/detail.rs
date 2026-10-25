@@ -23,11 +23,17 @@ pub struct PointInfo {
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct EntityInfo {
     pub id: Id,
-    /// `line`, `arc`, `circle` or `ellipse`.
+    /// `line`, `arc`, `circle`, `ellipse`, `ellipse_arc` or `spline`.
     #[serde(rename = "type")]
     pub kind: &'static str,
     /// line: [start, end]; arc: [centre, start, end]; circle: [centre]; ellipse: [centre, major, minor].
     pub points: Vec<Id>,
+    /// Ordered interpolation node ids of a spline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes: Option<Vec<Id>>,
+    /// Whether a spline is closed; its ordered nodes are also listed in `points`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed: Option<bool>,
     /// Radius of a circle or arc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r: Option<f64>,
@@ -77,7 +83,7 @@ impl Session {
         let entities = s
             .entities
             .iter()
-            .filter_map(|e| {
+            .map(|e| {
                 let (kind, r, ccw) = match &e.kind {
                     EntityKind::Line { .. } => ("line", None, None),
                     EntityKind::Arc { center, a, ccw, .. } => {
@@ -85,11 +91,29 @@ impl Session {
                         ("arc", r, Some(*ccw))
                     }
                     EntityKind::Circle { r, .. } => ("circle", Some(*r), None),
-                    EntityKind::Ellipse { .. } => ("ellipse", None, None),
-                    // Splines lived outside the entity list in the old release and were omitted here.
-                    EntityKind::Spline { .. } => return None,
+                    EntityKind::Ellipse { span, .. } => (
+                        if span.is_some() { "ellipse_arc" } else { "ellipse" },
+                        None,
+                        span.map(|s| s.winding == qymcad_core::feature::Winding::Ccw),
+                    ),
+                    EntityKind::Spline { .. } => ("spline", None, None),
                 };
-                Some(EntityInfo { id: e.id, kind, points: entity_points(e), r, ccw, construction: e.construction })
+                EntityInfo {
+                    id: e.id,
+                    kind,
+                    points: entity_points(e),
+                    r,
+                    ccw,
+                    construction: e.construction,
+                    nodes: match &e.kind {
+                        EntityKind::Spline { nodes, .. } => Some(nodes.clone()),
+                        _ => None,
+                    },
+                    closed: match &e.kind {
+                        EntityKind::Spline { ends, .. } => Some(*ends == qymcad_core::feature::Ends::Closed),
+                        _ => None,
+                    },
+                }
             })
             .collect();
         let angle_refs: Vec<Id> = s

@@ -125,3 +125,43 @@ pub fn restore_shapes(breps: Vec<(Id, Vec<u8>)>) -> HashMap<Id, qymcad_kernel::S
 #[path = "../../src/test_support.rs"]
 /// Exact native fixtures shared by engine integration tests.
 pub mod native;
+
+/// Emulate QymCAD 0.1.1 `Act::SetDriver` (params.rs:260–286), then `apply_param_edit`
+/// and changed-name rebuild scheduling. A literal driver explicitly solves and dirties its own sketch.
+pub fn gui_edit_driver(path: &std::path::Path, name: &str, text: &str) -> f64 {
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    project.ensure_document();
+    for i in 0..project.bodies.len() {
+        if let (Some(body), false) = (project.mesh_id(i), project.bodies[i].faces.is_empty()) {
+            project.regen_faces.insert(body, project.bodies[i].faces.clone());
+        }
+    }
+    let shapes = restore_shapes(breps);
+    let seen = project.param_map();
+    let target = project.named_dims.iter().find(|d| d.name == name).expect("named dimension").target.clone();
+    project.check_dim_target_text(&target, text).unwrap();
+    assert!(project.set_dim_target_text(&target, text).unwrap());
+    if let qymcad_core::model::DimTarget::Sketch { sketch, .. } = target {
+        let si = project.sketch_index(sketch).unwrap();
+        assert!(project.solve_sketch(si) <= 1e-6);
+        project.mark_sketch_dirty(sketch);
+    }
+    project.eval_parameters();
+    for si in 0..project.sketches.len() {
+        if project.sketch_reads_names(si) {
+            assert!(project.solve_sketch(si) <= 1e-6);
+        }
+    }
+    let vars = project.param_map();
+    let mut changed: Vec<String> =
+        vars.iter().filter(|(k, v)| seen.get(*k).is_none_or(|o| (o - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
+    changed.extend(seen.keys().filter(|k| !vars.contains_key(*k)).cloned());
+    for name in changed {
+        project.mark_param_dependents_dirty_for(&name);
+    }
+    let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
+    assert!(report.errors.is_empty(), "GUI SetDriver rebuild errors: {:?}", report.errors);
+    let consumed = project.consumed_bodies();
+    let last = project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).expect("a body");
+    shapes[&last].volume()
+}

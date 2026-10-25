@@ -1536,8 +1536,8 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Sketch API:** splines now live in `EntityKind`, which is no longer Copy;
   ellipses can carry arc spans (`qymcad-core/src/model/curve/kinds.rs:5-39`).
   Public `entity_points` (`:470-479`) supplies ownership ids, including spline nodes
-  and ellipse endpoints. Existing spline-detail omission and helper-protection
-  policies remain; `tasks/upgrade-evidence/release-sketch-port.md` records the port.
+  and ellipse endpoints. The port initially retained spline-detail omission; stage 1
+  exposes native spline rows and nodes (F-077). `tasks/upgrade-evidence/release-sketch-port.md` records the port.
 - **Identifier API:** `drivers::check_ident` now rejects `IdentError::Constant`
   (`qymcad-core/src/drivers.rs:80,86-99`). Normalization accepts that specific code
   so assignment retains the existing built-in-constant explanation and deletion
@@ -1601,3 +1601,127 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **How we handle it:** `Session::open` reads the old records from `document.ron` and warns once per sketch that its
   splines are lost and that saving to a new path keeps the original. The warning lasts for the session and is in
   doc_info. Not reported upstream yet.
+
+## F-076 Circular offsets need CurveDistance for an evaluated formula
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** native circle offsets write `EdgeDistance.expr`, which native `eval_parameters` does not evaluate.
+  `CurveDistance.expr` is evaluated. ADR 0022 reserves the latter recipe for the later offset stage.
+- **Evidence:** source: `model/sketch/offset.rs:98–106`, `model/params.rs:381–409` in the pinned QymCAD source;
+  stage-0 executable probes and exact outputs in `tasks/research-features.md`, section 5.
+  Stage 1 exposes generic CurveDistance; it does not yet expose offset creation.
+
+## F-077 Native splines retain interpolation nodes and automatic handles
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `add_spline` stores an `EntityKind::Spline` with ordered sketch-point node ids, default automatic
+  handles and `Ends`. Nodes weld to existing points within 1e-6 mm. Node pins can carry independent x/y
+  formulas and give DOF (0,0). Splines belong in entity inspection, unlike the old omission after the port.
+- **Evidence:** source: `model/sketch/entities.rs:669–695`, `model/curve/kinds.rs:470–479`,
+  `geom/bspline.rs:426–490`. Tests: `golden_splines_1` checks open/closed interpolation, node formulas,
+  persistence and exact app parameter edits. Open-arch area is independently integrated as 5LH/8;
+  the four-node periodic fixture uses independent Hermite polynomial quadrature with converged area.
+- **Numerical scope:** the open fixture native volume differs by 0.00416 mm³ initially and 0.00665 after
+  H=16 (0.02 mm³ local allowance). Closed L20/H10 and L20/H12 fixtures differ by +0.02904 and -0.19759 mm³
+  (0.25 mm³ local allowance, below 0.022%). The independent closed integral gives exactly 344 mm² initially.
+  Default kernel volume integration is the suspected cause, not an isolated proof: `shape/asks.rs:14`
+  delegates to `BRepGProp::VolumeProperties` (`occt_helical.cpp:725–739`). These are fixture tolerances,
+  not a universal spline accuracy guarantee.
+
+## F-078 Ellipse arcs and rotated rectangle figures need explicit branch dimensions
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** ellipse constructors return a centre handle for whole ellipses, entity id for arcs, and clamp
+  initial semi-axes to 0.01 mm. Arc endpoint angles are eccentric, stored as owned endpoint points plus
+  `EllipseSpan` winding. Rectangle `add_rect`/`add_rect_from_centre` store native figure metadata;
+  `give_rect_turn_to` replaces its axis-alignment ties with ties relative to the turn dimension.
+- **Evidence:** source: `model/sketch/entities.rs:67–101`, `model/sketch/entities.rs:1028–1058` constructors and
+  `model/sketch/edit.rs:149–176` (`give_rect_turn_to`); tests `golden_figures_1` compare πab, wh, rotated corner/centre bounds and
+  ab(Δt−sinΔt)/2 segment area, before/after global edits, save/open and native app edits/SetDriver.
+- **Policy:** unsigned AngleLines cannot hold both mirrored half-planes. Formula turns and eccentric arc
+  endpoint angles are restricted to the open range 0..180 degrees; literal turn 0/180 also work. Saved
+  formula guards reject unsupported edits in the app as well. Semi-axes below the constructor minimum
+  are refused initially. Clockwise and counter-clockwise arcs are tested.
+- **Deletion:** breaking a native rectangle removes its auxiliary diagonals and centre along with figure
+  metadata (`model/sketch/entities.rs:843–863`). Saved inspection entity lists can contain those diagonals,
+  so clients refresh ids after deletion. The existing rollback baseline test now does so.
+- **Override semantics:** replacing an arc axis dimension directly leaves its endpoint angle formulas
+  reading the original global axis parameter; native SetDriver edits that one driver, not other formulas.
+  The arc golden independently converts retained polar directions to the new eccentric angles for its
+  expected segment volume. Editing the original global axis parameter preserves the requested eccentric span.
+
+## F-079 Generic curve relations must retain drawn spans and every native tangency row
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `point_on` chooses PointOnEllipse for ellipses and PointOnCurve for splines; ordinary round
+  membership uses its whole circle. `tangency` can append multiple rows, including endpoint membership.
+  `curve_ref_drawn` preserves arc spans; `curve_ref_of` denotes whole parent circles/ellipses.
+  Saved splines must use native node references, never the serde-skipped solver-only SplineNow variant.
+- **Evidence:** source: `model/curve/kinds.rs:522–529`, `model/curve/touch.rs:131–202`,
+  `model/curve/refs.rs:12–50,239–262`, `model/sketch/touch.rs:41–48`.
+  `golden_curve_constraints_1` verifies ellipse/natural-cubic point ordinates, tangent support lines and
+  gap geometry with formulas/persistence/app edits, and strict selector ambiguity/refusal/rollback.
+  Its short/long circular and elliptical arc distances differ from whole-parent distances, proving
+  drawn-span retention for distance and nearest selection. New generic rows compare rank before and
+  after solving and refuse redundant/conflicting relations atomically; legacy implied constraints retain
+  their existing no-op behavior.
+
+## F-080 Native dimension targets omit the coordinate axis from sketch identity
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** native sketch targets hold sorted entity references, not the constraint index or its axis.
+  Two dimensions on the same reference set (for example x/y centre pins) cannot be distinguished safely.
+  SetDriver writes through check/set/name methods, explicitly solves/dirties a sketch target, then runs
+  the app parameter-edit path. Literal edits need that explicit dirty marker even if no expression changes.
+- **Evidence:** source: `model/params.rs:59–80,124–153,205–209,240–286`,
+  `model/formulas.rs:295–319`, app `gui/panels_windows/params.rs:260–286,375–398`.
+  `golden_dimensions_1` verifies literal/formula sketch and timeline-feature edits, discovery, cycles,
+  collisions including ADR 0021 case twins, geometry rollback and ambiguous-ref refusal. Removing
+  explicit sketch dirtying yields V=120 rather than expected 144 in the literal-driver test.
+  `common::gui_edit_driver` reproduces the native app path separately from engine propagation.
+- **Policy:** dimension_set rejects ambiguous native targets before mutation. Names and formulas retain
+  exact case. Imported names, including stale/ambiguous targets, remain discoverable in doc_info.
+
+## F-081 Item formulas conflict with full definition; named item edits can leave stale solids
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** native ellipse axes/turn and polygon turn item formulas move raw point coordinates but add no
+  driving rows. Solving a fully defined sketch restores the old dimensional targets. Duplicating the
+  item formula and dimensions creates competing edit sources. Polygon side count is different:
+  `set_polygon_sides` retains existing points/first side and reconstructs only intrinsic figure ties.
+- **Evidence:** source: `model/item_values.rs:193–267,269–361`, `model/params.rs:350–414`.
+  `golden_figures_1::native_item_values_do_not_replace_driving_dimension_targets` shows ellipse full
+  width 16→24 raw→16 solved, polygon turn 30→60 raw→30 solved, with DOF (0,0).
+  `golden_dimensions_1::fully_dimensioned_ellipse_refuses_an_item_edit_that_solver_would_discard`
+  proves refusal/rollback rather than reporting a discarded edit as success.
+- **Additional app defect:** SetDriver on a Feature target marks only its item point id, not the owning
+  sketch. The changed-name scheduler cannot see a new literal formula's own name, so the solid stays stale.
+  `free_ellipse_item_formula_follows_globals_but_app_named_item_driver_keeps_old_body` reproduces
+  V=113.09733552923257 instead of 150.79644737231007 after named item width 12→16; ordinary global
+  parameter edits of the same item formula work. Source: `model/params.rs:277–292,309–326` and app
+  `gui/panels_windows/params.rs:260–286` (only Sketch targets explicitly dirty their owner).
+- **Stage-1 boundary:** ellipse axes/turn and polygon turn keep fully driving sketch dimension formulas;
+  their competing native item-formula creation is stopped pending upstream/design action. New item driver
+  names are refused. Imported item names remain discoverable/clearable/editable; direct server item edits
+  explicitly solve/dirty the owner and refuse values discarded by its constraints. This fixes server edits,
+  not the pinned app's SetDriver. Options and evidence are in `tasks/review-features-1.md`.
+- **Count policy:** native count imposition rounds, clamps only at three, and can allocate arbitrary counts
+  (`item_values.rs:213–215,274–361`). Server initial and prospective edits require integral 3..=64 before
+  native allocation. The upstream prospective name-graph evaluator is private (`model/formulas.rs:324`),
+  so a bounded dependency evaluation over public parameter/driver formulas preflights counts without imposing
+  geometry. `golden_figures_1` covers direct/transitive refusal, count increase/decrease, retained ids and
+  retained radius/turn formulas. Item-dependent sketches must be solved and dirtied explicitly; native
+  per-name scheduling provides the same owner propagation in app global parameter edits.
+
+## F-082 Tangent-circle construction has no driving radius and chooses tied branches silently
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `add_circle_touching` chooses the centre nearest the hint, stores both native tangency relations,
+  and solves. It does not add a radius driver or reject distinct equidistant centres.
+- **Evidence:** source: `model/sketch/touch.rs:18–36`, `model/curve/blend.rs:84–115`.
+  `golden_tangent_circle_1` checks centre=(support_x+R,support_y+R), cylinder volume, support/radius edits,
+  persistence and app edits, missing/tied solutions and selector ambiguity rollback. Removing the radius
+  expression gives centre12 instead of13 after R=3; removing tie preflight accepts an ambiguous branch.
+- **Policy:** preflight native `centres_touching`, refuse missing/distinct tied solutions before allocation,
+  call the public constructor, then add the independent native radius dimension with the requested formula.
+  Radius must exceed native 1e-9 mm. `near` is a one-time branch hint, not a persisted driver.

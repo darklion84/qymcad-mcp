@@ -23,6 +23,9 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `sketch/entities.rs` | line, polyline, arc, polygon, slot: QymCAD adders + independent driving dimensions |
 | `sketch/constrain.rs` | `sketch_constrain` (constraints, dimensions, over-constraint refusal), entity/constraint removal |
 | `sketch/detail.rs` | `SketchDetail`: entities, points (frame roles), constraints for the agent |
+| `sketch/splines.rs`, `sketch/figures.rs` | native interpolation splines, ellipses/arcs and rotated rectangle figures, with independent formula dimensions |
+| `sketch/selectors.rs` | strict sketch curve/point selectors and native radius-driven tangent-circle creation |
+| `dimensions.rs` | atomic native dimension editing/naming, target ambiguity checks and named-driver discovery |
 | `features.rs` | datum planes; extrude/cut/add/intersect |
 | `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-020) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
@@ -97,10 +100,20 @@ followed by current bodies/warnings/errors without an extra rebuild. `verbose=tr
 step's normal result. Inspection, document replacement, disk output, undo and nested batches are excluded.
 
 ## Sketch dimensions
-Entities are added fully dimensioned so the GUI can edit them: rectangle = width + height (`Distance` along
-x/y between corners) + a centre point (`Midpoint` of the diagonal) pinned from the origin; circle = `Diameter`
-+ centre pinned. Pinning uses `Distance{axis}` from the origin (a magnitude `|Δ|`: the side comes from the
+Entities are added fully dimensioned so the GUI can edit them: a native rectangle figure has side dimensions,
+a pinned centre/corner anchor and a transferred turn dimension; circle = `Diameter` + centre pinned.
+Splines pin their ordered interpolation nodes; ellipses/arcs dimension their centre, axes, turn and endpoints.
+Pinning uses `Distance{axis}` from the origin (a magnitude `|Δ|`: the side comes from the
 initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an axis for a plain zero.
+
+`dimension_set` uses the native SetDriver check/write/name path, solves/dirties the target sketch, propagates
+names and rebuilds on independent B-rep copies. Ambiguous native dimension reference sets are refused.
+Polygon counts use native item formulas and retain existing vertices/first side. Native ellipse axes/turn and
+polygon turn item formulas conflict with fully driving dimensions; those creation paths are stopped (F-081).
+New item-driver names are refused because native app SetDriver fails to dirty their owner. Direct server
+item edits explicitly solve/dirty the owner and refuse discarded values; this does not repair the pinned app.
+Strict curve selectors resolve before mutation; generic relations retain drawn curve spans and all native
+tangency rows, checking rank and residual both before and after solving.
 
 ## Topology and selections
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a

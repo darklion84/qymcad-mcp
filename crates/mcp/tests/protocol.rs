@@ -249,6 +249,7 @@ fn lists_tools_with_object_schemas() {
         "doc_save",
         "doc_info",
         "param_set",
+        "dimension_set",
         "param_delete",
         "sketch_create",
         "sketch_add",

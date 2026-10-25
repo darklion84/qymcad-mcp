@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Added
+- Native open/closed interpolation splines, ellipses and ellipse arcs in `sketch_add`, with formula dimensions
+  and spline nodes/closure in `sketch_info`. Native rectangle figures support rotated centre/corner anchors.
+- Strict sketch curve/point selectors; point-on-curve, curve tangency and formula-driven curve distances;
+  native `circle_tangent` with a driving radius and unique near-centre selection.
+- Atomic, batchable and undoable `dimension_set` for native sketch/feature drivers; names, formulas and
+  DOF are discoverable through `doc_info.named_dimensions`. Ambiguous native targets are refused.
+- Polygon side-count formulas with integral/range checks, retained vertices/first side and app-compatible
+  rebuilding. Ellipse axes and polygon turn retain sketch dimension formulas: native item-only formulas
+  conflict with full definition. New sketch-item names are refused because app SetDriver leaves bodies stale.
+
 ## 0.1.1-dev.20261026 — follows QymCAD v0.1.1-dev.20261026 (ADR 0021)
 
 From this release on, the server's version number is the QymCAD release it works with; a server fix for the

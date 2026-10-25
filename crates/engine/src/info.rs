@@ -20,6 +20,8 @@ pub struct DocInfo {
     pub qymcad_version: &'static str,
     pub path: Option<String>,
     pub params: Vec<ParamInfo>,
+    /// Named native sketch, feature and sketch-item drivers with editable selectors and formulas.
+    pub named_dimensions: Vec<crate::dimensions::DimensionInfo>,
     pub sketches: Vec<SketchInfo>,
     /// The timeline (the recipe), in build order.
     pub timeline: Vec<NodeInfo>,
@@ -55,6 +57,7 @@ impl Session {
             qymcad_version: crate::QYMCAD_VERSION,
             path: self.path().map(|p| p.display().to_string()),
             params: self.params(),
+            named_dimensions: self.named_dimensions(),
             sketches: self.sketches(),
             timeline: p
                 .timeline

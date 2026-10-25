@@ -5,25 +5,33 @@
 //! except a geometric one that is already implied and satisfied, which is simply not added. A dimension that
 //! is independent but cannot be satisfied fails the solve and is rolled back.
 
-use super::dist;
+use super::{dist, PointRoleSel, PointSel, SketchCurveSel};
 use crate::error::{Error, Result};
 use crate::session::Session;
 use crate::value::Num;
-use qymcad_core::model::{entity_points, Constraint, EntityKind, Id};
+use qymcad_core::model::{
+    curve::refs::{curve_ref_drawn, CurveRef},
+    entity_points, point_on, Constraint, EntityKind, Id,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// A reference to sketch geometry: a point or entity id from `sketch_info`, or the sketch's frame.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum SketchRef {
     /// A point id or an entity id (line, arc, circle) from `sketch_info`.
     Id(Id),
     /// `"origin"` (a point), `"x_axis"` or `"y_axis"` (lines).
     Frame(FrameRef),
+    /// One uniquely selected native curve, by ids or a strict description.
+    Curve(SketchCurveSel),
+    /// An owned point role on exactly one native curve.
+    Point(PointRoleSel),
 }
 
+/// The origin or a coordinate axis of the selected sketch.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FrameRef {
@@ -54,7 +62,7 @@ pub enum ConstraintKind {
     Collinear,
     /// [line, line]: equal length; [circle/arc, circle/arc]: equal radius.
     Equal,
-    /// [line, circle/arc] or [circle/arc, circle/arc] (external or internal, as they are now).
+    /// Two curves, including ellipses and splines; the current geometry chooses the contact branch.
     Tangent,
     /// [circle/arc or point, circle/arc or point]: same centre.
     Concentric,
@@ -62,6 +70,10 @@ pub enum ConstraintKind {
     Midpoint,
     /// [point, line]: the point lies on the (infinite) line; [point, circle/arc]: on the circle.
     PointOnLine,
+    /// [point, curve]: the point lies on a native line, circle, arc, ellipse or spline.
+    PointOnCurve,
+    /// [point, curve] or [curve, curve]: least distance, measured on the drawn curves.
+    CurveDistance,
     /// [point, point, line]: the points are mirror images about the line.
     Symmetric,
     /// [point]: pinned where it is now.
@@ -95,9 +107,13 @@ pub enum DistAxis {
 /// A request to `sketch_constrain`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConstrainSpec {
+    /// Constraint or dimension to create.
     pub kind: ConstraintKind,
+    /// Point and curve selectors in the argument order required by kind.
     pub refs: Vec<SketchRef>,
+    /// A driving dimension value, or an optional reference measurement.
     pub value: Option<Num>,
+    /// Coordinate axis used only for ordinary distances.
     pub axis: DistAxis,
     /// A reference (driven) dimension: shows the measured value, constrains nothing.
     pub reference: bool,
@@ -108,6 +124,8 @@ pub struct ConstrainSpec {
 pub struct Constrained {
     /// Index of the new constraint (`sketch_info.constraints`); `None` when it was already implied.
     pub index: Option<usize>,
+    /// All appended constraint indices; native tangency can also append endpoint membership.
+    pub indices: Vec<usize>,
     /// Set when nothing was added, and why.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -150,6 +168,13 @@ impl Session {
 
     fn sketch_constrain_inner(&mut self, sketch: Id, spec: &ConstrainSpec) -> Result<Constrained> {
         let si = self.sketch_si(sketch)?;
+        // Resolve every descriptive selector before aliases can materialize origin/axis points.
+        for r in &spec.refs {
+            self.validate_sketch_ref(sketch, r)?;
+        }
+        if self.uses_generic_relation(si, spec) {
+            return self.generic_relation(si, sketch, spec);
+        }
         let gs: Vec<G> = spec.refs.iter().map(|r| self.geo(si, sketch, r)).collect::<Result<_>>()?;
         let c = self.build_constraint(si, spec, &gs)?;
         let is_dim = c.dim_value().is_some();
@@ -191,6 +216,7 @@ impl Session {
                     self.p.sketches[si].constraints.pop();
                     return Ok(Constrained {
                         index: None,
+                        indices: Vec::new(),
                         note: Some(format!("already implied by constraints {with:?}; nothing added")),
                         dof: before,
                     });
@@ -208,7 +234,7 @@ impl Session {
             }
         }
         self.finish_sketch_edit(si)?;
-        Ok(Constrained { index: Some(idx), note: None, dof: self.p.sketch_dof(si) })
+        Ok(Constrained { index: Some(idx), indices: vec![idx], note: None, dof: self.p.sketch_dof(si) })
     }
 
     /// Delete an entity together with the points only it used and the constraints on them; a helper point left
@@ -303,8 +329,156 @@ impl Session {
         s.constraints.retain(|c| !c.points().iter().any(|p| debris.contains(p)));
     }
 
+    fn validate_sketch_ref(&self, sketch: Id, r: &SketchRef) -> Result<()> {
+        let si = self.sketch_si(sketch)?;
+        match r {
+            SketchRef::Id(id) => {
+                let s = &self.p.sketches[si];
+                if !s.points.iter().any(|p| p.id == *id) && !s.entities.iter().any(|e| e.id == *id) {
+                    return Err(Error::NotFound(format!("no point or entity {id} in sketch {sketch}")));
+                }
+            }
+            SketchRef::Curve(sel) => {
+                self.sketch_curve_id(sketch, sel)?;
+            }
+            SketchRef::Point(sel) => {
+                self.sketch_point_id(sketch, &PointSel::Role(sel.clone()))?;
+            }
+            SketchRef::Frame(_) => {}
+        }
+        Ok(())
+    }
+
+    fn ref_curve_id(&self, si: usize, r: &SketchRef) -> Option<Id> {
+        match r {
+            SketchRef::Id(id) if self.p.sketches[si].entities.iter().any(|e| e.id == *id) => Some(*id),
+            SketchRef::Curve(sel) => self.sketch_curve_id(self.p.sketches[si].id, sel).ok(),
+            _ => None,
+        }
+    }
+
+    fn uses_generic_relation(&self, si: usize, spec: &ConstrainSpec) -> bool {
+        matches!(spec.kind, ConstraintKind::PointOnCurve | ConstraintKind::CurveDistance)
+            || (matches!(spec.kind, ConstraintKind::Tangent | ConstraintKind::Distance | ConstraintKind::PointOnLine)
+                && spec.refs.iter().any(|r| {
+                    self.ref_curve_id(si, r).is_some_and(|id| {
+                        self.p.sketches[si]
+                            .entities
+                            .iter()
+                            .any(|e| e.id == id && matches!(e.kind, EntityKind::Ellipse { .. } | EntityKind::Spline { .. }))
+                    })
+                }))
+    }
+
+    fn native_curve_ref(&mut self, si: usize, sketch: Id, r: &SketchRef) -> Result<CurveRef> {
+        if let Some(id) = self.ref_curve_id(si, r) {
+            let e = self.p.sketches[si].entities.iter().find(|e| e.id == id).ok_or_else(|| Error::NotFound(format!("curve {id}")))?;
+            return Ok(curve_ref_drawn(e));
+        }
+        match self.geo(si, sketch, r)? {
+            G::Point(p) => Ok(CurveRef::Point { p }),
+            G::Line(a, b) => Ok(CurveRef::Line { a, b }),
+            G::Curve { .. } => Err(Error::Invalid("select a native curve by its entity id".into())),
+        }
+    }
+
+    fn generic_relation(&mut self, si: usize, sketch: Id, spec: &ConstrainSpec) -> Result<Constrained> {
+        use ConstraintKind as K;
+        if spec.refs.len() != 2 {
+            return Err(Error::Invalid(format!("`{}` takes exactly two refs", kind_name(spec.kind))));
+        }
+        if spec.axis != DistAxis::Aligned {
+            return Err(Error::Invalid("a relation to a curve requires `axis: aligned`".into()));
+        }
+        let dimension = matches!(spec.kind, K::Distance | K::CurveDistance);
+        if !dimension && (spec.value.is_some() || spec.reference) {
+            return Err(Error::Invalid("point-on-curve and tangent are geometric: omit `value` and `reference`".into()));
+        }
+        let mut refs = Vec::new();
+        for r in &spec.refs {
+            refs.push(self.native_curve_ref(si, sketch, r)?);
+        }
+        let constraints = if spec.kind == K::Tangent {
+            let ids: Vec<_> = spec.refs.iter().map(|r| self.ref_curve_id(si, r)).collect();
+            let [Some(one), Some(other)] = ids.as_slice() else {
+                return Err(Error::Invalid("tangent takes two native curve entities".into()));
+            };
+            if one == other {
+                return Err(Error::Invalid("tangent needs two different curves".into()));
+            }
+            let cs = self.p.tangency(si, [*one, *other]);
+            if cs.is_empty() {
+                return Err(Error::Invalid("these two curves have no native tangency relation".into()));
+            }
+            cs
+        } else if dimension {
+            if matches!(refs[1], CurveRef::Point { .. }) {
+                refs.swap(0, 1);
+            }
+            if matches!(refs[1], CurveRef::Point { .. }) {
+                return Err(Error::Invalid("curve_distance requires at least one native curve".into()));
+            }
+            let mut c = Constraint::CurveDistance {
+                from: refs[0].clone(),
+                to: refs[1].clone(),
+                d: 0.0,
+                off: 0.0,
+                expr: String::new(),
+                driven: spec.reference,
+                at: None,
+            };
+            let measured = self
+                .p
+                .curve_distance_ends(si, &c)
+                .map(|[a, b]| a.dist(b))
+                .ok_or_else(|| Error::Invalid("cannot measure the distance between these curves".into()))?;
+            let (d, expression) = match &spec.value {
+                Some(v) => (v.eval(&self.p.param_map())?, v.expr().unwrap_or_default()),
+                None if spec.reference => (measured, String::new()),
+                None => return Err(Error::Invalid("a curve distance needs a `value`".into())),
+            };
+            if d < 0.0 || (!spec.reference && d == 0.0) {
+                return Err(Error::Invalid("a driving curve distance must be positive; use point_on_curve or tangent for zero".into()));
+            }
+            if let Constraint::CurveDistance { d: value, expr, .. } = &mut c {
+                *value = d;
+                *expr = expression;
+            }
+            vec![c]
+        } else {
+            let (p, curve) = match (&refs[0], &refs[1]) {
+                (CurveRef::Point { p }, other) if !matches!(other, CurveRef::Point { .. }) => (*p, &spec.refs[1]),
+                (other, CurveRef::Point { p }) if !matches!(other, CurveRef::Point { .. }) => (*p, &spec.refs[0]),
+                _ => return Err(Error::Invalid("point_on_curve takes [point, curve]".into())),
+            };
+            let c = if let Some(id) = self.ref_curve_id(si, curve) {
+                let e = self.p.sketches[si].entities.iter().find(|e| e.id == id).ok_or_else(|| Error::NotFound(format!("curve {id}")))?;
+                point_on(e, p)
+            } else {
+                let on = self.native_curve_ref(si, sketch, curve)?;
+                Constraint::PointOnCurve { p, on }
+            };
+            vec![c]
+        };
+        let before = self.p.sketch_dof(si);
+        let first = self.p.sketches[si].constraints.len();
+        self.p.sketches[si].constraints.extend(constraints);
+        if !spec.reference && self.p.sketch_dof(si).1 > before.1 {
+            return Err(Error::Invalid(format!(
+                "this {} is redundant or conflicting in sketch {sketch}; remove its existing constraint first",
+                kind_name(spec.kind)
+            )));
+        }
+        self.finish_sketch_edit(si)?;
+        let after = self.p.sketch_dof(si);
+        if !spec.reference && after.1 > before.1 {
+            return Err(Error::Invalid(format!("this {} becomes redundant after solving sketch {sketch}", kind_name(spec.kind))));
+        }
+        Ok(Constrained { index: Some(first), indices: (first..self.p.sketches[si].constraints.len()).collect(), note: None, dof: after })
+    }
+
     fn geo(&mut self, si: usize, sketch: Id, r: &SketchRef) -> Result<G> {
-        let id = match *r {
+        let id = match r {
             SketchRef::Frame(FrameRef::Origin) => return Ok(G::Point(self.p.ensure_origin(si))),
             SketchRef::Frame(FrameRef::XAxis) => {
                 let (a, b) = self.p.ensure_axis(si, 0);
@@ -314,7 +488,9 @@ impl Session {
                 let (a, b) = self.p.ensure_axis(si, 1);
                 return Ok(G::Line(a, b));
             }
-            SketchRef::Id(id) => id,
+            SketchRef::Id(id) => *id,
+            SketchRef::Curve(sel) => self.sketch_curve_id(sketch, sel)?,
+            SketchRef::Point(sel) => return Ok(G::Point(self.sketch_point_id(sketch, &PointSel::Role(sel.clone()))?)),
         };
         let s = &self.p.sketches[si];
         if let Some(e) = s.entities.iter().find(|e| e.id == id) {
@@ -515,6 +691,8 @@ fn kind_name(k: ConstraintKind) -> &'static str {
         K::Concentric => "concentric",
         K::Midpoint => "midpoint",
         K::PointOnLine => "point_on_line",
+        K::PointOnCurve => "point_on_curve",
+        K::CurveDistance => "curve_distance",
         K::Symmetric => "symmetric",
         K::Fix => "fix",
         K::Distance => "distance",
@@ -531,10 +709,12 @@ fn expected(k: ConstraintKind) -> &'static str {
         K::Horizontal | K::Vertical => "[line] or [point, point]",
         K::Parallel | K::Perpendicular | K::Collinear | K::Angle => "[line, line]",
         K::Equal => "[line, line] or [circle/arc, circle/arc]",
-        K::Tangent => "[line, circle/arc] or [circle/arc, circle/arc]",
+        K::Tangent => "[curve, curve]",
         K::Concentric => "[circle/arc, circle/arc]",
         K::Midpoint => "[point, line]",
         K::PointOnLine => "[point, line] or [point, circle/arc]",
+        K::PointOnCurve => "[point, curve]",
+        K::CurveDistance => "[point, curve] or [curve, curve]",
         K::Symmetric => "[point, point, line]",
         K::Fix => "[point]",
         K::Distance => "[point, point], [line], [point, line] or [line, line]",

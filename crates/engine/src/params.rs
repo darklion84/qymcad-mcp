@@ -59,6 +59,10 @@ impl Session {
             Some(q) => q.expr = expr.clone(),
             None => self.p.parameters.push(Param { name: name.clone(), expr: expr.clone(), value: 0.0 }),
         }
+        if let Err(e) = self.check_polygon_sides() {
+            self.p = before;
+            return Err(e);
+        }
         if let Some((what, err)) = self.p.eval_parameters().into_iter().next() {
             let message = format!("`{what}`: {}", crate::value::explain(&err, self.p.param_map().keys()));
             self.p = before;
@@ -178,6 +182,7 @@ impl Session {
             let mut values = self.p.param_map();
             let mut errors = Vec::new();
             for _ in 0..=self.p.named_dims.len() {
+                self.check_polygon_sides()?;
                 errors = self.p.eval_parameters();
                 let next = self.p.param_map();
                 if next == values {
@@ -194,9 +199,20 @@ impl Session {
             if changed.is_empty() {
                 break;
             }
+            for name in &changed {
+                self.p.mark_param_dependents_dirty_for(name);
+            }
             let reached = |expr: &str| changed.iter().any(|name| qymcad_core::expr::mentions(expr, name));
             for si in 0..self.p.sketches.len() {
-                if self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some_and(reached)) {
+                let sketch = &self.p.sketches[si];
+                let item_reached = sketch
+                    .points
+                    .iter()
+                    .map(|p| p.id)
+                    .chain(sketch.patterns.iter().map(|p| p.id))
+                    .chain(sketch.texts.iter().map(|t| t.id))
+                    .any(|id| self.p.feat_dims.get(&id).is_some_and(|dims| dims.values().any(|expr| reached(expr))));
+                if item_reached || self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some_and(reached)) {
                     #[cfg(test)]
                     PARAM_SOLVES.with(|solves| solves.borrow_mut().push(self.p.sketches[si].id));
                     let residual = self.solve_settled(si);
@@ -243,6 +259,54 @@ impl Session {
             self.p.mark_sketch_dirty(sid);
         }
         Ok(unsolved)
+    }
+
+    /// Validate polygon counts before native evaluation rounds/clamps them or allocates new vertices.
+    pub(crate) fn check_polygon_sides(&self) -> Result<()> {
+        let counts: Vec<_> = self
+            .p
+            .feat_dims
+            .iter()
+            .filter_map(|(id, dims)| {
+                dims.get("sides")
+                    .filter(|expr| !expr.trim().is_empty() && self.p.kept_number(*id, "sides").is_some())
+                    .map(|expr| (*id, expr))
+            })
+            .collect();
+        if counts.is_empty() {
+            return Ok(());
+        }
+        // work_out_names is private upstream. Evaluate just the public formula graph without imposing
+        // item values: eval_parameters itself is too late to check an unbounded polygon allocation.
+        let mut formulas: std::collections::BTreeMap<String, String> =
+            self.p.parameters.iter().filter(|p| !p.expr.trim().is_empty()).map(|p| (p.name.clone(), p.expr.clone())).collect();
+        for dim in &self.p.named_dims {
+            if let Some(expr) = self.p.dim_target_expr(&dim.target).filter(|e| !e.trim().is_empty()) {
+                formulas.insert(dim.name.clone(), expr);
+            }
+        }
+        let mut scope = self.p.param_map();
+        for name in formulas.keys() {
+            scope.remove(name);
+        }
+        while !formulas.is_empty() {
+            let done: Vec<_> =
+                formulas.iter().filter_map(|(name, expr)| qymcad_core::expr::eval(expr, &scope).ok().map(|v| (name.clone(), v))).collect();
+            if done.is_empty() {
+                return Err(Error::Expr("polygon side count depends on a cyclic or invalid formula".into()));
+            }
+            for (name, value) in done {
+                formulas.remove(&name);
+                scope.insert(name, value);
+            }
+        }
+        for (id, expr) in counts {
+            let n = Num::Expr(expr.clone()).eval(&scope)?;
+            if n.fract() != 0.0 || !(3.0..=64.0).contains(&n) {
+                return Err(Error::Invalid(format!("polygon {id} needs an integral side count in 3..=64, got {n}")));
+            }
+        }
+        Ok(())
     }
 
     /// Sketches whose constraints do not hold as they stand (a document that came in broken): a parameter edit

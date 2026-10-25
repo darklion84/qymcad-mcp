@@ -308,9 +308,32 @@ impl Session {
         Ok(Added { entities, points: vec![center, ps, pe] })
     }
 
-    /// Add a regular polygon.
+    /// Add a regular polygon with a literal side count.
     pub fn sketch_polygon(&mut self, sketch: Id, g: &PolygonSpec) -> Result<Added> {
-        self.transaction(|s| s.sketch_polygon_inner(sketch, g))
+        self.sketch_polygon_sides(sketch, g, &Num::Value(f64::from(g.sides)))
+    }
+
+    /// Add a regular polygon whose side count follows a native item-value formula.
+    /// The evaluated count must be an integer in 3..=64; existing point and first-side ids survive count edits.
+    pub fn sketch_polygon_sides(&mut self, sketch: Id, g: &PolygonSpec, sides: &Num) -> Result<Added> {
+        self.transaction(|s| {
+            let value = sides.eval(&s.p.param_map())?;
+            if value.fract() != 0.0 || !(3.0..=64.0).contains(&value) {
+                return Err(Error::Invalid(format!("a polygon needs an integral side count in 3..=64, got {value}")));
+            }
+            let mut spec = g.clone();
+            spec.sides = value as u32;
+            let added = s.sketch_polygon_inner(sketch, &spec)?;
+            let centre = added.points.first().copied().ok_or_else(|| Error::Invalid("polygon has no centre".into()))?;
+            let formula = sides.expr().unwrap_or_else(|| value.to_string());
+            s.p.write_feat_formula(
+                &qymcad_core::model::FeatNumber { node: centre, key: "sides" },
+                &formula,
+                qymcad_core::model::PlainNumber::Stands,
+            )
+            .map_err(|err| Error::Expr(format!("polygon sides: {err:?}")))?;
+            Ok(added)
+        })
     }
 
     fn sketch_polygon_inner(&mut self, sketch: Id, g: &PolygonSpec) -> Result<Added> {

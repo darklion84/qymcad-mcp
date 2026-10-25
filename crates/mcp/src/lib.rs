@@ -12,11 +12,12 @@ pub fn instructions(app_note: &str) -> String {
         "qymcad-mcp builds native, parametric QymCAD parts (.qcad) headlessly. Units: mm, degrees.\n\
          Objects and arrays may also be sent as JSON strings where the argument schema expects structured values; keep strings inside opaque selection/axis objects literal.\n\
          Workflow: doc_new -> param_set for every dimension the user may change (names are case-sensitive) -> \
-         sketch_create on \"XY\"/\"XZ\"/\"YZ\", a datum plane or a face -> sketch_add rect/circle/line/polyline/arc/\
+         sketch_create on \"XY\"/\"XZ\"/\"YZ\", a datum plane or a face -> sketch_add rect/circle/circle_tangent/line/polyline/spline/arc/ellipse/ellipse_arc/\
          polygon/slot using expressions like \"w\" or \"-hx\" (fully dimensioned; sketch_constrain adds constraints \
          and dimensions between ids from sketch_info) -> extrude (op add/cut/intersect; direction relative to the sketch normal: XY +Z, \
          XZ -Y, YZ +X) -> doc_info to check bodies (volume, bbox), errors, warnings -> doc_save to a .qcad path.\n\
          Use batch for 1-200 predictable modelling steps with one undo entry and whole-batch rollback; use single calls when topology ids, sketch_info, selections or a render must be inspected between steps.\n\
+         Rectangles accept turn and centre/corner anchors. Ellipse/rectangle turn formulas and ellipse-arc endpoint angles must stay strictly between 0 and 180 degrees (literal turn 0/180 also allowed). Polygon sides accept integral formulas in 3..=64. Use dimension_set to edit/name native sketch or feature dimensions; doc_info lists named_dimensions. New sketch-item names are refused because app edits leave their solids stale.\n\
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\

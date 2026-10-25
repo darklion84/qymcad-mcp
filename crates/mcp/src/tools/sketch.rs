@@ -2,7 +2,10 @@
 
 use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::{tool, Tool};
-use qymcad_engine::{ArcSpec, ConstrainSpec, ConstraintKind, DistAxis, Id, LineSpec, Num, PolygonSpec, PolylineSpec, SketchRef, SlotSpec};
+use qymcad_engine::{
+    ArcSpec, ConstrainSpec, ConstraintKind, DistAxis, EllipseArcSpec, EllipseSpec, Id, LineSpec, Num, PolygonSpec, PolylineSpec, RectSpec,
+    SketchRef, SlotSpec, SplineSpec, TangentCircleSpec, Xy,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -21,27 +24,51 @@ fn zero() -> Num {
     Num::Value(0.0)
 }
 
+fn yes() -> bool {
+    true
+}
+
+/// A polygon whose native side-count item value can follow a formula.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PolygonArgs {
+    /// Centre x, in mm (default 0).
+    #[serde(default = "zero")]
+    pub cx: Num,
+    /// Centre y, in mm (default 0).
+    #[serde(default = "zero")]
+    pub cy: Num,
+    /// Integral side count in 3..=64, a number or formula; `n` is an alias.
+    #[serde(alias = "n")]
+    pub sides: Num,
+    /// Positive circumradius; give this or `vertex`.
+    pub r: Option<Num>,
+    /// First vertex direction in degrees, with `r`; `turn` is an alias. Default 0.
+    #[serde(alias = "turn")]
+    pub angle: Option<Num>,
+    /// First vertex coordinates instead of `r` and `angle`.
+    pub vertex: Option<Xy>,
+    /// Construction geometry, excluded from profiles (default false).
+    #[serde(default)]
+    pub construction: bool,
+    /// Fully dimension the polygon (default true).
+    #[serde(default = "yes")]
+    pub dimensioned: bool,
+}
+
 /// A sketch entity. Coordinates are in the sketch plane (XY: x=X, y=Y; XZ: x=X, y=Z; YZ: x=Y, y=Z), mm, from
 /// the sketch origin. Every value can be an expression; each entity is fully dimensioned with them.
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Entity {
-    /// Rectangle centred at (cx, cy), width w (along x), height h (along y).
-    Rect {
-        /// Centre x (default 0).
-        #[serde(default = "zero")]
-        cx: Num,
-        /// Centre y (default 0).
-        #[serde(default = "zero")]
-        cy: Num,
-        /// Width, along x.
-        w: Num,
-        /// Height, along y.
-        h: Num,
-        /// Construction geometry: not part of any profile.
-        #[serde(default)]
-        construction: bool,
-    },
+    /// Native rectangle figure, with centre/corner anchor and formula-driven turn.
+    Rect(RectSpec),
+    /// Native ellipse with semi-axes rx/ry and turn in degrees.
+    Ellipse(EllipseSpec),
+    /// Native elliptical arc with eccentric start/end angles in degrees.
+    EllipseArc(EllipseArcSpec),
+    /// Circle touching exactly two uniquely selected native curves, near a chosen centre.
+    CircleTangent(TangentCircleSpec),
     /// Circle centred at (cx, cy) with diameter d.
     Circle {
         /// Centre x (default 0).
@@ -60,12 +87,14 @@ pub enum Entity {
     Line(LineSpec),
     /// Connected segments through `points` [[x, y], ...]; `closed` joins the last to the first (a profile).
     Polyline(PolylineSpec),
+    /// Native interpolating spline through nodes; closed splines need at least three nodes.
+    Spline(SplineSpec),
     /// Arc around (cx, cy): `r` + `start_angle` + `end_angle` (degrees, ccw from +x), or `start` + `end` points.
     /// Ends that coincide with existing points (e.g. a polyline's ends) are joined to them.
     Arc(ArcSpec),
     /// Regular polygon around (cx, cy) with `sides`: circumradius `r` (+ optional `angle` of the first vertex)
     /// or one `vertex`.
-    Polygon(PolygonSpec),
+    Polygon(PolygonArgs),
     /// Slot (stadium): round ends of diameter `width` around (x1, y1) and (x2, y2), tangent sides.
     Slot(SlotSpec),
 }
@@ -92,15 +121,17 @@ pub struct ConstrainArgs {
     /// Sketch id or name.
     pub sketch: ObjRef,
     /// What to add. Geometric: coincident, horizontal, vertical, parallel, perpendicular, collinear, equal, tangent,
-    /// concentric, midpoint, point_on_line, symmetric, fix. Dimensions (need `value`): distance, angle, diameter,
-    /// radius.
+    /// concentric, midpoint, point_on_line, point_on_curve, symmetric, fix. Dimensions (need `value`): distance,
+    /// curve_distance, angle, diameter, radius. Tangent/point_on_curve support ellipses and splines.
     pub kind: ConstraintKind,
     /// What it acts on: point or entity ids from sketch_info, or "origin", "x_axis", "y_axis". Circles/arcs stand
     /// for their centre where a point is expected. Shapes per kind: horizontal/vertical [line] or [point, point];
     /// parallel/perpendicular/collinear/angle [line, line]; equal [line, line] or [circle, circle]; tangent [line,
     /// circle] or [circle, circle]; midpoint/point_on_line [point, line] (point_on_line also [point, circle]);
     /// symmetric [point, point, line]; fix [point]; distance [point, point], [line], [point, line] or [line, line];
-    /// diameter/radius [circle or arc].
+    /// diameter/radius [circle or arc]. point_on_curve takes [point, curve]; tangent takes [curve, curve];
+    /// curve_distance takes [point, curve] or [curve, curve] with axis aligned. Curves also accept a unique
+    /// kind/construction/nearest selector, and points accept {curve, role, node_index?}.
     pub refs: Vec<SketchRef>,
     /// The dimension: mm or degrees, a number or an expression over parameters (e.g. "w/2"). Positive.
     #[serde(default)]
@@ -155,9 +186,9 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_add",
-            "Add entities to a sketch (all or nothing): rect, circle, line, polyline, arc, polygon, slot. Each is fully \
+            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot. Each is fully \
              dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in \
-             QymCAD (`dimensioned: false` leaves line/polyline/arc/polygon/slot free for sketch_constrain). Points that \
+             QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that \
              coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form \
              contours; a contour inside another becomes a hole when the outer one is extruded. Returns the new entity and \
              point ids and the sketch (entities, points, constraints, contours, dof; dof [0, 0] = fully defined). Features \
@@ -174,16 +205,22 @@ pub fn tools() -> Vec<Tool> {
                         for e in &a.entities {
                             let added = |kind: &str, x: qymcad_engine::Added| json!({ "type": kind, "entities": x.entities, "points": x.points });
                             out.push(match e {
-                                Entity::Rect { cx, cy, w, h, construction } => {
-                                    json!({ "rect_lines": s.sketch_rect(sketch, cx, cy, w, h, *construction)? })
+                                Entity::Rect(spec) => {
+                                    json!({ "rect_lines": s.sketch_rectangle(sketch, spec)? })
                                 }
+                                Entity::Ellipse(spec) => added("ellipse", s.sketch_ellipse(sketch, spec)?),
+                                Entity::EllipseArc(spec) => added("ellipse_arc", s.sketch_ellipse_arc(sketch, spec)?),
+                                Entity::CircleTangent(spec) => added("circle_tangent", s.sketch_circle_tangent(sketch, spec)?),
                                 Entity::Circle { cx, cy, d, construction } => {
                                     json!({ "circle": s.sketch_circle(sketch, cx, cy, d, *construction)? })
                                 }
                                 Entity::Line(l) => added("line", s.sketch_line(sketch, l)?),
                                 Entity::Polyline(p) => added("polyline", s.sketch_polyline(sketch, p)?),
+                                Entity::Spline(p) => added("spline", s.sketch_spline(sketch, p)?),
                                 Entity::Arc(x) => added("arc", s.sketch_arc(sketch, x)?),
-                                Entity::Polygon(g) => added("polygon", s.sketch_polygon(sketch, g)?),
+                                Entity::Polygon(g) => added("polygon", s.sketch_polygon_sides(sketch, &PolygonSpec {
+                                    cx:g.cx.clone(), cy:g.cy.clone(), sides:3, r:g.r.clone(), angle:g.angle.clone(), vertex:g.vertex.clone(), construction:g.construction, dimensioned:g.dimensioned,
+                                }, &g.sides)?),
                                 Entity::Slot(sl) => added("slot", s.sketch_slot(sketch, sl)?),
                             });
                         }
@@ -211,6 +248,7 @@ pub fn tools() -> Vec<Tool> {
                 let (c, r) = s.sketch_edit(sketch, |s| s.sketch_constrain(sketch, &spec)).map_err(err)?;
                 let mut o = sketch_result(s, sketch, r.as_ref())?;
                 o["index"] = json!(c.index);
+                o["indices"] = json!(c.indices);
                 o["dof"] = json!(c.dof);
                 if let Some(note) = c.note {
                     o["note"] = json!(note);
@@ -238,7 +276,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "sketch_info",
             "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
-             entities (id, type line/arc/circle/ellipse, point ids, r for circles and arcs, ccw for arcs, construction); \
+             entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction); \
              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
              take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",

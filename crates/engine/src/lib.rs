@@ -3,6 +3,7 @@
 //! This crate is the ONLY place that touches the QymCAD API. When QymCAD is upgraded, the changes land here
 //! and nowhere else (see docs/ARCHITECTURE.md and docs/UPGRADING.md).
 
+mod dimensions;
 mod error;
 mod export;
 mod features;
@@ -27,6 +28,7 @@ mod test_support;
 mod topology;
 mod value;
 
+pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};
 pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};
 pub use features::{Direction, Extrude, Op};
@@ -40,8 +42,10 @@ pub use render::{Rendered, View, RENDER_BACKGROUND, RENDER_MAX_SIDE, RENDER_MIN_
 pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{
-    Added, ArcSpec, BaseName, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, DistAxis, EntityInfo, FrameRef,
-    LineSpec, PlaneRef, PointInfo, PolygonSpec, PolylineSpec, SketchDetail, SketchInfo, SketchRef, SketchWorldFrame, SlotSpec, Xy,
+    Added, ArcSpec, BaseName, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, CurveQuery, DistAxis,
+    EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, FrameRef, LineSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel,
+    PointSel, PolygonSpec, PolylineSpec, RectAnchor, RectSpec, SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchRef,
+    SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec, Xy,
 };
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, SelectionKind, Topology};
 pub use value::Num;

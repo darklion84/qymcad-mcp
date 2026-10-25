@@ -5,16 +5,24 @@
 mod constrain;
 mod detail;
 mod entities;
+mod figures;
+mod selectors;
+mod splines;
 
 pub use constrain::{ConstrainSpec, Constrained, ConstraintKind, DistAxis, FrameRef, SketchRef};
 pub use detail::{ConstraintInfo, EntityInfo, PointInfo, SketchDetail};
 pub use entities::{Added, ArcSpec, LineSpec, PolygonSpec, PolylineSpec, SlotSpec, Xy};
+pub use figures::{EllipseArcSpec, EllipseSpec, RectAnchor, RectSpec};
+pub use selectors::{
+    CurveQuery, EntityRef, OriginRef, PointRole, PointRoleSel, PointSel, SketchCurveKind, SketchCurveSel, TangentCircleSpec,
+};
+pub use splines::SplineSpec;
 
 use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::value::Num;
 use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane};
-use qymcad_core::model::{entity_points, Constraint, EntityKind, Id, PlaneDef, SketchPoint};
+use qymcad_core::model::{entity_points, Constraint, EntityKind, Id, PlaneDef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -140,28 +148,18 @@ impl Session {
     /// Add a rectangle centred at (`cx`, `cy`) of size `w` × `h` in sketch coordinates. Returns its four line
     /// ids (bottom, right, top, left).
     pub fn sketch_rect(&mut self, sketch: Id, cx: &Num, cy: &Num, w: &Num, h: &Num, construction: bool) -> Result<Vec<Id>> {
-        self.transaction(|s| s.sketch_rect_inner(sketch, cx, cy, w, h, construction))
-    }
-
-    fn sketch_rect_inner(&mut self, sketch: Id, cx: &Num, cy: &Num, w: &Num, h: &Num, construction: bool) -> Result<Vec<Id>> {
-        let si = self.sketch_si(sketch)?;
-        let vars = self.p.param_map();
-        let (vx, vy, vw, vh) = (cx.eval(&vars)?, cy.eval(&vars)?, w.eval(&vars)?, h.eval(&vars)?);
-        if vw <= 0.0 || vh <= 0.0 {
-            return Err(Error::Invalid(format!("rectangle size must be positive, got {vw} × {vh}")));
-        }
-        let lines = self.p.add_rect_entity(si, vx - vw / 2.0, vy - vh / 2.0, vx + vw / 2.0, vy + vh / 2.0, purpose(construction));
-        let [bl, br, tr, tl] = self.rect_corners(si, &lines)?;
-        // Corners may be shared with earlier geometry (QymCAD merges points within 1e-6): only independent
-        // dimensions are added, as for every other entity.
-        self.add_independent(si, [dist(br, bl, 1, vw, w.magnitude_expr(vw)?), dist(tl, bl, 2, vh, h.magnitude_expr(vh)?)]);
-        let c = self.p.alloc_id();
-        let s = &mut self.p.sketches[si];
-        s.points.push(SketchPoint { id: c, x: vx, y: vy });
-        s.constraints.push(Constraint::Midpoint { p: c, a: bl, b: tr });
-        self.pin_point(si, c, cx, vx, cy, vy)?;
-        self.finish_sketch_edit(si)?;
-        Ok(lines)
+        self.sketch_rectangle(
+            sketch,
+            &RectSpec {
+                cx: cx.clone(),
+                cy: cy.clone(),
+                w: w.clone(),
+                h: h.clone(),
+                turn: Num::Value(0.0),
+                anchor: RectAnchor::Centre,
+                construction,
+            },
+        )
     }
 
     /// Add a circle centred at (`cx`, `cy`) with diameter `d`. Returns the circle entity id.
@@ -257,32 +255,6 @@ impl Session {
                 )
             }
         })
-    }
-
-    /// The four distinct corner points of a rectangle, classified by position: [bl, br, tr, tl].
-    fn rect_corners(&self, si: usize, lines: &[Id]) -> Result<[Id; 4]> {
-        let s = &self.p.sketches[si];
-        let mut ids: Vec<Id> = Vec::new();
-        for e in s.entities.iter().filter(|e| lines.contains(&e.id)) {
-            if let EntityKind::Line { a, b } = e.kind {
-                for p in [a, b] {
-                    if !ids.contains(&p) {
-                        ids.push(p);
-                    }
-                }
-            }
-        }
-        let pts: Vec<(Id, f64, f64)> =
-            ids.iter().filter_map(|id| s.points.iter().find(|p| p.id == *id).map(|p| (p.id, p.x, p.y))).collect();
-        if pts.len() != 4 {
-            return Err(Error::Invalid(format!("rectangle has {} corners", pts.len())));
-        }
-        let (mx, my) = (pts.iter().map(|p| p.1).sum::<f64>() / 4.0, pts.iter().map(|p| p.2).sum::<f64>() / 4.0);
-        let pick = |left: bool, low: bool| pts.iter().find(|p| (p.1 < mx) == left && (p.2 < my) == low).map(|p| p.0);
-        match (pick(true, true), pick(false, true), pick(false, false), pick(true, false)) {
-            (Some(bl), Some(br), Some(tr), Some(tl)) => Ok([bl, br, tr, tl]),
-            _ => Err(Error::Invalid("cannot classify rectangle corners".into())),
-        }
     }
 
     /// Fix point `p` at (`x`, `y`) from the sketch origin with driving dimensions. A plain zero puts the point

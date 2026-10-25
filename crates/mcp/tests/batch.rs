@@ -200,6 +200,7 @@ fn limits_allowlist_and_outer_schema() {
     }
     let allowed = [
         "param_set",
+        "dimension_set",
         "param_delete",
         "sketch_create",
         "sketch_add",

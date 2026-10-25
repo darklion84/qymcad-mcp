@@ -51,8 +51,8 @@ fn volume_bits(s: &Session) -> Vec<(Id, u64)> {
 fn a_feature_refuses_a_failing_dirty_baseline_before_editing() {
     let (mut s, _) = pending_circle();
     let sketch = s.sketches()[0].id;
-    let entities: Vec<Id> = s.sketch_detail(sketch).unwrap().entities.iter().map(|e| e.id).collect();
-    for entity in entities {
+    // Breaking a native rectangle also removes its auxiliary diagonals; refresh ids after each removal.
+    while let Some(entity) = s.sketch_detail(sketch).unwrap().entities.first().map(|e| e.id) {
         s.sketch_remove_entity(sketch, entity).unwrap();
     }
     let nodes = s.project().timeline.len();
