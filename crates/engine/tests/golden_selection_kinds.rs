@@ -83,6 +83,7 @@ fn kind_face_modifier(tool: &str) {
             body: None,
             face: kind_top(),
             at: None,
+            offset: None,
             diameter: 2.0.into(),
             depth: Some(3.0.into()),
             kind: HoleKind::Plain,

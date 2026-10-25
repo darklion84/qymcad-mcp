@@ -1772,3 +1772,37 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Evidence:** source: `model/sketch_ops.rs:49–50`, `model/sketch/edit.rs:526–585`. `golden_mirror_point_2`
   (mutations: no ties, or no line fallback, leave freedom or redundancy).
 
+## F-087 A hole's shift counts from the face's area centroid as the face stands
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `Hole.shift` (`off_u`, `off_v`) is measured from the centroid of the drilled face as resolved at
+  rebuild, along `PlaneFrame::from_origin_normal(centroid, normal, 0)`: u = +X for a face facing ±Z (v = normal ×
+  u: +Y on a top face, −Y on a bottom one), otherwise u = Z × normal. The centroid is the area centroid of the face
+  as it stands, so another cut-out in that face moves it, and a formula-driven hole moves with it. A shift
+  without a formula holds the stored point.
+- **Evidence:** source: `model/regen/prep_bodies.rs:326–342`, `feature/frames.rs:44–55,274–288`.
+  `golden_sweep_loft_3::a_hole_offset_from_the_face_centre_follows_its_formulas`: a second hole offset (−10, −6)
+  on a top face already holding a d4 hole at (15, 18) stands at the holed face's centroid
+  ((1200·20 − 4π·15)/(1200 − 4π) − 10, …) = (10.053, 8.968), not (10, 9).
+
+## F-088 A sweep keeps its profile where it is drawn when the path starts on the profile's plane
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** when a path end lies on the profile plane and leaves across it, the profile stays where it is drawn and
+  that end starts the path; otherwise the sketch origin is carried to the path's start. A body-edge path is stored
+  as the edges' persistent names (`EdgePath { body, edges: Ref::picks }`), so the path follows the body when it is
+  rebuilt. Edges must join end to end (`ask::path_edges_join`, a self-gating door, called with no gate held).
+  Sweep and loft have no size of their own (no `set_feat_dim` key); their sketches and planes carry the formulas.
+- **Evidence:** source: `qymcad-kernel/src/occt_bridge.cpp:3256–3265`, `model/timeline/nodes.rs:234–296`,
+  `qymcad-kernel/src/ask.rs:101–110`. `golden_sweep_loft_3` (straight, arc/Pappus, body-edge rail following T,
+  ruled and smooth lofts), mutations S5/S6.
+
+## F-089 Loft sections must be closed contours
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `FeatureKind::Loft.surface` says a sheet's sections need not be closed, but `loft_section_contour` and
+  the encoder take only closed contours with at least three points, as the app does. A sheet loft through closed
+  sections is built only for a new body (`src` 0); with a source body the solid boolean branch is taken. The server
+  allows `surface` only with `new_body`.
+- **Evidence:** source: `feature/kind.rs:218–221`, `model/sketch/profiles.rs:316–350`, `model/regen/prep_ops.rs:524–539`.
+

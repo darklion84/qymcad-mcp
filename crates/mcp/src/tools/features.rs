@@ -1,10 +1,12 @@
-//! Feature tools: datum planes, extrude, revolve; modifiers (fillet, chamfer, hole, shell, push face); arrays and
+//! Feature tools: datum planes, extrude, revolve, sweep, loft; modifiers (fillet, chamfer, hole, shell, push face); arrays and
 //! mirror. Every feature is atomic: if it does not build, nothing changes and QymCAD's reason is returned.
 
 use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::topology::{AxisArg, SelArg};
 use super::{tool, Tool};
-use qymcad_engine::{ArrayDir, Direction, Extrude, Hole, HoleKind, Id, Num, Op, Revolve, Session, Side};
+use qymcad_engine::{
+    ArrayDir, Direction, Extrude, Hole, HoleKind, Id, Loft, LoftSection, Num, Op, Revolve, Session, Side, Sweep, SweepPath,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -29,6 +31,10 @@ pub struct ExtrudeArgs {
     /// Contour ids from sketch_info. Default: every top-level contour, each minus the contours inside it.
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
+    /// Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost
+    /// closed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`.
+    #[serde(default)]
+    pub profiles_at: Option<Vec<[Num; 2]>>,
     /// Distance, mm (number or expression). Not needed with `through`.
     #[serde(default)]
     pub height: Option<Num>,
@@ -59,6 +65,10 @@ pub struct RevolveArgs {
     /// Contour ids from sketch_info. Default: every top-level contour, each minus the contours inside it.
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
+    /// Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost
+    /// closed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`.
+    #[serde(default)]
+    pub profiles_at: Option<Vec<[Num; 2]>>,
     /// The axis to revolve about; must lie in the sketch plane and must not cross the profile: "sketch_x" /
     /// "sketch_y", {"line": <line id of this sketch>}, "X"/"Y"/"Z", {"origin", "dir"}, {"face", "body"?}
     /// (axis of a round face) or {"datum": <id>}.
@@ -78,6 +88,95 @@ pub struct RevolveArgs {
     #[serde(default)]
     pub target: Option<ObjRef>,
     /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// The path of a sweep: a contour of another sketch, or a chain of body edges.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PathArg {
+    /// A contour of another sketch, open or closed.
+    Sketch(SketchPathArg),
+    /// Edges of a body joining end to end into one chain.
+    Edges(EdgePathArg),
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SketchPathArg {
+    /// Path sketch id or name (not the profile sketch).
+    pub sketch: ObjRef,
+    /// Path contour id from sketch_info; required when the sketch has more than one.
+    #[serde(default)]
+    pub profile: Option<Id>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EdgePathArg {
+    /// Body id or name. Default: the part's current body.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// The edges: ids from topology or a description; stored by their persistent names.
+    pub edges: SelArg,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SweepArgs {
+    /// Profile sketch id or name.
+    pub sketch: ObjRef,
+    /// Closed profile contour ids. Default: every top-level closed contour.
+    #[serde(default)]
+    pub profiles: Option<Vec<Id>>,
+    /// Pick profile contours by points [[x, y], ...] in sketch coordinates instead of ids. Excludes `profiles`.
+    #[serde(default)]
+    pub profiles_at: Option<Vec<[Num; 2]>>,
+    /// {"sketch": <path sketch>, "profile"?: <contour id>} or {"body"?: <body>, "edges": <selection>}.
+    pub path: PathArg,
+    /// add (default; creates the first body), cut, intersect, new_body.
+    #[serde(default)]
+    pub op: Op,
+    /// Body to modify (id or name). Default: the part's current body. Not allowed with op new_body.
+    #[serde(default)]
+    pub target: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SectionArg {
+    /// Section sketch id or name.
+    pub sketch: ObjRef,
+    /// Its closed contour id; required when the sketch has more than one. Excludes `profile_at`.
+    #[serde(default)]
+    pub profile: Option<Id>,
+    /// Pick the contour by a point [x, y] inside it, in sketch coordinates. Excludes `profile`.
+    #[serde(default)]
+    pub profile_at: Option<[Num; 2]>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoftArgs {
+    /// At least two sections, in order; usually sketches on parallel datum planes.
+    pub sections: Vec<SectionArg>,
+    /// Straight faces between sections (default false: smooth, the app's default).
+    #[serde(default)]
+    pub ruled: bool,
+    /// add (default; creates the first body), cut, intersect, new_body.
+    #[serde(default)]
+    pub op: Op,
+    /// Body to modify (id or name). Default: the part's current body. Not allowed with op new_body.
+    #[serde(default)]
+    pub target: Option<ObjRef>,
+    /// A sheet through the sections instead of a solid; only with op new_body.
+    #[serde(default)]
+    pub surface: bool,
+    /// Name for the new feature (timeline node), usable instead of its id later.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -135,6 +234,12 @@ pub struct HoleArgs {
     /// position parametrically; for parametric hole patterns cut sketch circles with extrude instead).
     #[serde(default)]
     pub at: Option<[f64; 3]>,
+    /// Hole centre as a shift [u, v] from the face's area centroid (as the face stands: other cut-outs in it move
+    /// the centroid) along the face's axes, mm, numbers or expressions; it
+    /// follows parameters (QymCAD's off_u/off_v). Axes: on a face facing ±Z, u = +X and v = +Y on a top face (−Y
+    /// on a bottom face); otherwise u is horizontal (Z × normal) and v = normal × u. Excludes `at`.
+    #[serde(default)]
+    pub offset: Option<[Num; 2]>,
     /// Diameter, mm (number or expression).
     pub diameter: Num,
     /// Depth from the face, mm (number or expression). Give `depth` or `through`.
@@ -297,6 +402,15 @@ fn opt_body(s: &Session, b: &Option<ObjRef>) -> Result<Option<Id>, String> {
     b.as_ref().map(|b| b.resolve(s)).transpose()
 }
 
+/// Contour ids given directly, or picked by points (`profiles_at`); not both.
+fn picked_profiles(s: &Session, sketch: Id, ids: Option<Vec<Id>>, at: Option<Vec<[Num; 2]>>) -> Result<Option<Vec<Id>>, String> {
+    match (ids, at) {
+        (Some(_), Some(_)) => Err("give `profiles` or `profiles_at`, not both".into()),
+        (None, Some(points)) => s.contours_at(sketch, &points).map(Some).map_err(err),
+        (ids, None) => Ok(ids),
+    }
+}
+
 fn feature_json(r: Result<(Id, qymcad_engine::Rebuild), qymcad_engine::Error>) -> Result<serde_json::Value, String> {
     let (id, r) = r.map_err(err)?;
     Ok(json!({ "body": id, "rebuild": rebuild_json(&r) }))
@@ -346,9 +460,10 @@ pub fn tools() -> Vec<Tool> {
                     (None, true) => Num::Value(1.0),
                     (None, false) => return Err("`height` is required unless `through` is set".into()),
                 };
+                let profiles = picked_profiles(s, sketch, a.profiles, a.profiles_at)?;
                 let x = Extrude {
                     sketch,
-                    profiles: a.profiles,
+                    profiles,
                     height,
                     op: a.op,
                     direction: a.direction,
@@ -369,9 +484,10 @@ pub fn tools() -> Vec<Tool> {
             ),
             |st, a: RevolveArgs| {
                 let s = st.doc()?;
+                let sketch = a.sketch.resolve(s)?;
                 let x = Revolve {
-                    sketch: a.sketch.resolve(s)?,
-                    profiles: a.profiles,
+                    sketch,
+                    profiles: picked_profiles(s, sketch, a.profiles, a.profiles_at)?,
                     axis: a.axis.resolve(s)?,
                     angle: a.angle.unwrap_or(Num::Value(360.0)),
                     direction: a.direction,
@@ -380,6 +496,59 @@ pub fn tools() -> Vec<Tool> {
                     name: a.name,
                 };
                 feature_json(s.revolve(&x))
+            },
+        ),
+        tool(
+            "sweep",
+            concat!(
+                "Sweep closed profile contours of a sketch along a path: a contour of another sketch, or a chain of \
+                 body edges (kept by their persistent names, so the path follows the body). The profile stays where it \
+                 is drawn when the path starts on its plane; otherwise it is carried to the path's start. add (the \
+                 first add creates the part's body), cut, intersect or new_body. A sweep has no size of its own: the \
+                 profile and path sketches carry the formulas. Atomic.",
+                stale!()
+            ),
+            |st, a: SweepArgs| {
+                let s = st.doc()?;
+                let sketch = a.sketch.resolve(s)?;
+                let path = match a.path {
+                    PathArg::Sketch(p) => SweepPath::Sketch { sketch: p.sketch.resolve(s)?, profile: p.profile },
+                    PathArg::Edges(p) => SweepPath::Edges { body: opt_body(s, &p.body)?, edges: p.edges.resolve(s)? },
+                };
+                let x = Sweep {
+                    sketch,
+                    profiles: picked_profiles(s, sketch, a.profiles, a.profiles_at)?,
+                    path,
+                    op: a.op,
+                    target: opt_body(s, &a.target)?,
+                    name: a.name,
+                };
+                feature_json(s.sweep(&x))
+            },
+        ),
+        tool(
+            "loft",
+            concat!(
+                "Loft a solid (or, with surface and op new_body, a sheet) through closed section contours in order, \
+                 usually sketches on parallel datum planes from plane_offset. ruled gives straight faces; the default \
+                 is smooth. add (the first add creates the part's body), cut, intersect or new_body. A loft has no size \
+                 of its own: the sections and the planes they stand on carry the formulas. Atomic.",
+                stale!()
+            ),
+            |st, a: LoftArgs| {
+                let s = st.doc()?;
+                let mut sections = Vec::new();
+                for section in a.sections {
+                    let sketch = section.sketch.resolve(s)?;
+                    let profile = match (section.profile, section.profile_at) {
+                        (Some(_), Some(_)) => return Err("give `profile` or `profile_at`, not both".into()),
+                        (None, Some(at)) => Some(s.contours_at(sketch, &[at]).map_err(err)?[0]),
+                        (profile, None) => profile,
+                    };
+                    sections.push(LoftSection { sketch, profile });
+                }
+                let x = Loft { sections, ruled: a.ruled, op: a.op, target: opt_body(s, &a.target)?, surface: a.surface, name: a.name };
+                feature_json(s.loft(&x))
             },
         ),
         tool(
@@ -437,6 +606,7 @@ pub fn tools() -> Vec<Tool> {
                     body: opt_body(s, &a.body)?,
                     face: a.face.resolve(s)?,
                     at: a.at,
+                    offset: a.offset,
                     diameter: a.diameter,
                     depth,
                     kind: a.kind,

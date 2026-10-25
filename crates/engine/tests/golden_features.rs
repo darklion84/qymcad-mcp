@@ -372,7 +372,7 @@ fn revolve_cut_groove() {
 // Hole
 
 fn hole(face: Sel, at: Option<[f64; 3]>, d: Num, depth: Option<Num>) -> Hole {
-    Hole { body: None, face, at, diameter: d, depth, kind: HoleKind::Plain, dia2: None, depth2: None, name: None }
+    Hole { body: None, face, at, offset: None, diameter: d, depth, kind: HoleKind::Plain, dia2: None, depth2: None, name: None }
 }
 
 #[test]

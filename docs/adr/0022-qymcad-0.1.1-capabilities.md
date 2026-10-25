@@ -77,4 +77,9 @@ Individual sketch entities get no names: the native records have no field for th
   The point mirror ties its copy to the source through the centre, where the app leaves it free (F-086), so a
   mirrored profile stays fully defined and follows its source. All six edits are one tool, `sketch_edit`, with
   an `op` discriminator: they share the sketch, the curve selectors and the result report.
+- **Stage 3 (2026-10-25).** `sweep` and `loft` follow the existing feature envelope (`op`, `target`, `name`). A
+  sweep's profiles default to every top-level closed contour, as `extrude` does, not the app's first contour; a
+  path sketch or a loft section with several candidate contours must name one. A body-edge path works on the
+  part's current body by default. `profiles_at` also serves `sweep`, and loft sections take `profile_at`. The hole
+  shift is `offset: [u, v]`, exclusive with `at`, and counts from the face's area centroid as QymCAD does (F-087).
 

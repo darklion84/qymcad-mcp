@@ -122,6 +122,13 @@ edits leave some ends and copies free; the server adds the app's membership rows
 midpoint/line/radius ties for a point-mirrored copy (F-086), keeping only rows that remove freedom without
 redundancy. Offsets of round curves replace `EdgeDistance` with `CurveDistance` (F-076).
 
+## Sweep, loft and profile picking
+`sweep` and `loft` call the app's adders (`add_sweep_multi_op`, `add_sweep_along`, `add_loft`) inside `atomic`
+like every feature; they store no size of their own. A body-edge path is resolved from a selection to edge ids
+now and stored as persistent names. `contours_at` turns points into contour ids before a feature is made: each
+point takes the innermost closed contour around it (even-odd test on the contour polygon, smallest area), so the
+feature stores ids exactly as an app click would.
+
 ## Topology and selections
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,

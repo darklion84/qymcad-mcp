@@ -264,6 +264,8 @@ fn lists_tools_with_object_schemas() {
         "topology",
         "select",
         "revolve",
+        "sweep",
+        "loft",
         "fillet",
         "chamfer",
         "hole",

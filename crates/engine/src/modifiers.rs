@@ -47,8 +47,13 @@ pub struct Hole {
     /// The face to drill into; must resolve to exactly one planar face. The hole goes along −(outward normal).
     pub face: Sel,
     /// Centre, world mm. Projected onto the face plane along its normal, so only the in-plane position matters.
-    /// Default: the face centroid. Not parametric (QymCAD stores the point as numbers).
+    /// Default: the face centroid. Not parametric (QymCAD stores the point as numbers). Excludes `offset`.
     pub at: Option<[f64; 3]>,
+    /// Centre as a shift `[u, v]` from the face's area centroid as the face stands (other cut-outs in it move the
+    /// centroid, F-087) along the face's axes, mm, numbers or formulas (QymCAD's
+    /// `off_u`/`off_v`, which follow parameters). The axes: for a face facing ±Z, u = +X and v = normal × u (+Y
+    /// on a top face, −Y on a bottom face); otherwise u = Z × normal (horizontal) and v = normal × u. Excludes `at`.
+    pub offset: Option<[Num; 2]>,
     /// Diameter of the bore, mm (number or expression).
     pub diameter: Num,
     /// Depth from the face (counterbore/countersink included). `None` = 10000 mm; refused at creation when
@@ -229,7 +234,16 @@ impl Session {
                     (if k == HoleKind::Counterbore { 1 } else { 2 }, d2, h2)
                 }
             };
-            let at = a.at.unwrap_or(key.centroid);
+            let at = match (a.at, &a.offset) {
+                (Some(_), Some(_)) => return Err(Error::Invalid("give `at` or `offset`, not both".into())),
+                (Some(at), None) => at,
+                (None, Some([u, v])) => {
+                    let vars = s.p.param_map();
+                    let face = qymcad_core::feature::FaceAt { centre: key.centroid, normal: key.normal };
+                    qymcad_core::feature::point_on_face(face, [u.eval(&vars)?, v.eval(&vars)?])
+                }
+                (None, None) => key.centroid,
+            };
             let id = s.p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 });
             if !a.face.is_ids() {
                 let q = s.face_query(&a.face, &[key.id])?;
@@ -238,6 +252,10 @@ impl Session {
                 }
             }
             dim(s, id, "diameter", &a.diameter);
+            if let Some([u, v]) = &a.offset {
+                dim(s, id, "off_u", u);
+                dim(s, id, "off_v", v);
+            }
             if let Some(n) = &a.depth {
                 dim(s, id, "depth", n);
             }

@@ -23,6 +23,7 @@ mod render;
 mod revolve;
 mod session;
 mod sketch;
+mod sweep;
 #[cfg(test)]
 mod test_support;
 mod topology;
@@ -48,6 +49,7 @@ pub use sketch::{
     SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchOffsetSpec, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec,
     TangentCircleSpec, Xy,
 };
+pub use sweep::{Loft, LoftSection, Sweep, SweepPath};
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, SelectionKind, Topology};
 pub use value::Num;
 

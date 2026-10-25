@@ -20,6 +20,14 @@ All notable changes to this project are documented here. The format follows
   offsets use `CurveDistance`, F-076); round or bevel a corner in all six native size modes; mirror curves about a
   point with the copy tied to its source. The result lists created/removed ids, the size dimensions made, the
   formula dimensions an edit removed, released offsets and the remaining freedom.
+- `sweep` (ADR 0022 item 7): closed profile contours along a contour of another sketch or a chain of body edges
+  kept by their persistent names; add, cut, intersect or new_body.
+- `loft` (item 8): a solid through closed section contours in order, ruled or smooth, or a sheet with
+  `surface` and `new_body`.
+- `profiles_at` on `extrude`, `revolve` and `sweep`, and `profile_at` on loft sections (item 9): pick contours
+  by points, each taking the innermost closed contour around it.
+- `hole` `offset: [u, v]`: the centre as a shift from the face centroid along the face's axes, numbers or
+  formulas stored as QymCAD's `off_u`/`off_v`, so the hole follows parameters (F-087).
 
 ### Changed
 - `sketch_add` `rect` now writes QymCAD's native rectangle figure, as the app does. The four side ids, the contour

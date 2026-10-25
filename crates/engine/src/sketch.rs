@@ -238,6 +238,40 @@ impl Session {
         Ok(self.p.sketches[si].contour_ids.iter().copied().filter(|&c| self.p.contours.parent_of(c).is_none_or(|x| x == 0)).collect())
     }
 
+    /// The contours picked by points in the sketch plane, as a click in the app picks them: for each point,
+    /// the innermost closed contour that contains it (its region, minus the contours inside it, is what a
+    /// feature takes). Points are evaluated once; the ids are what the feature stores. A point outside every
+    /// contour, or within 1e-6 mm of a contour's edge, is refused. Repeated contours are listed once.
+    pub fn contours_at(&self, sketch: Id, points: &[[Num; 2]]) -> Result<Vec<Id>> {
+        let si = self.sketch_si(sketch)?;
+        let vars = self.p.param_map();
+        let loops: Vec<(Id, Vec<[f64; 2]>)> = self.p.sketches[si]
+            .contour_ids
+            .iter()
+            .filter_map(|&c| self.p.contour_profile_xy(c).map(|xy| (c, xy.as_chunks::<2>().0.to_vec())))
+            .collect();
+        let mut picked = Vec::new();
+        for [x, y] in points {
+            let at = [x.eval(&vars)?, y.eval(&vars)?];
+            if loops.iter().any(|(_, poly)| polygon_edge_distance(poly, at) <= 1e-6) {
+                return Err(Error::Invalid(format!("point {at:?} lies on a contour's edge; pick a point inside the region")));
+            }
+            let inner = loops
+                .iter()
+                .filter(|(_, poly)| polygon_contains(poly, at))
+                .min_by(|a, b| polygon_area(&a.1).total_cmp(&polygon_area(&b.1)))
+                .map(|(c, _)| *c)
+                .ok_or_else(|| Error::Invalid(format!("point {at:?} lies in no closed contour of sketch {sketch}")))?;
+            if !picked.contains(&inner) {
+                picked.push(inner);
+            }
+        }
+        if picked.is_empty() {
+            return Err(Error::Invalid("give at least one point".into()));
+        }
+        Ok(picked)
+    }
+
     pub(crate) fn sketch_si(&self, sketch: Id) -> Result<usize> {
         self.p.sketch_index(sketch).ok_or_else(|| Error::NotFound(format!("sketch {sketch}")))
     }
@@ -397,6 +431,43 @@ fn plane_desc(session: &Session, p: &SketchPlane) -> String {
         }
         SketchPlane::Face(body, k) => format!("face {} of body {body}", k.id),
     }
+}
+
+/// Even-odd test of a point against a closed polygon.
+fn polygon_contains(poly: &[[f64; 2]], p: [f64; 2]) -> bool {
+    let mut inside = false;
+    for (i, a) in poly.iter().enumerate() {
+        let b = poly[(i + 1) % poly.len()];
+        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]) {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// Absolute area of a closed polygon (shoelace).
+fn polygon_area(poly: &[[f64; 2]]) -> f64 {
+    (0..poly.len())
+        .map(|i| {
+            let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f64>()
+        .abs()
+        / 2.0
+}
+
+/// Distance from a point to the nearest edge of a closed polygon.
+fn polygon_edge_distance(poly: &[[f64; 2]], p: [f64; 2]) -> f64 {
+    (0..poly.len())
+        .map(|i| {
+            let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 > 0.0 { (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+            (p[0] - a[0] - t * dx).hypot(p[1] - a[1] - t * dy)
+        })
+        .fold(f64::INFINITY, f64::min)
 }
 
 #[cfg(test)]

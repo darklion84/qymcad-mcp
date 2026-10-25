@@ -98,6 +98,8 @@ fn modelling_tool(name: &str) -> bool {
             | "plane_offset"
             | "extrude"
             | "revolve"
+            | "sweep"
+            | "loft"
             | "fillet"
             | "chamfer"
             | "hole"

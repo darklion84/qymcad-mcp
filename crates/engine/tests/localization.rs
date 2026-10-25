@@ -30,6 +30,7 @@ fn unnamed_features_and_datum_planes_have_english_names() {
             body: None,
             face: Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 5.0 },
             at: None,
+            offset: None,
             diameter: 4.0.into(),
             depth: Some(8.0.into()),
             kind: HoleKind::Plain,

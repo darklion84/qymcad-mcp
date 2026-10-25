@@ -210,6 +210,8 @@ fn limits_allowlist_and_outer_schema() {
         "plane_offset",
         "extrude",
         "revolve",
+        "sweep",
+        "loft",
         "fillet",
         "chamfer",
         "hole",
