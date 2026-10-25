@@ -532,3 +532,127 @@ fn export_and_render_refuse_a_document_with_failed_features() {
     let e = s.render(View::Iso, 128, 96, None).unwrap_err();
     assert!(e.to_string().contains("did not build"), "{e}");
 }
+
+/// Item 10 of ADR 0022: every result body is written, not only the active one. Two separate prisms, the second H
+/// high; after the app's own edit of H, saved and reopened, STEP, 3MF and GLB each read back two 600 mm³ bodies.
+#[test]
+fn every_body_survives_glb_and_saved_app_edit() {
+    let mut s = Session::new_part();
+    s.param_set("H", &n(5.)).unwrap();
+    let a = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("a")).unwrap();
+    s.sketch_rect(a, &n(0.), &n(0.), &n(10.), &n(20.), false).unwrap();
+    s.extrude(&extrude(a, 3., Op::NewBody, Direction::Normal, "first")).unwrap();
+    let b = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("b")).unwrap();
+    s.sketch_rect(b, &n(50.), &n(0.), &n(10.), &n(10.), false).unwrap();
+    let mut ex = extrude(b, 5., Op::NewBody, Direction::Normal, "second");
+    ex.height = Num::Expr("H".into());
+    s.extrude(&ex).unwrap();
+    let saved = scratch("all-bodies.qcad");
+    s.save(Some(&saved)).unwrap();
+    assert_close(gui_edit_param(&saved, "H", "6"), 600., 1e-6, "saved app path second body");
+    let edited = scratch("app-edited-all-bodies.qcad");
+    app_edit_save(&saved, &edited, "H", "6");
+    let (s, _) = Session::open(&edited).unwrap();
+    for (format, ext) in [(ExportFormat::Step, "step"), (ExportFormat::ThreeMf, "3mf"), (ExportFormat::Glb, "glb")] {
+        let path = scratch(&format!("all-bodies.{ext}"));
+        let report = s.export(format, &path, Quality::Standard, None).unwrap();
+        assert_eq!(report.bodies.len(), 2);
+        let mut vols = match format {
+            ExportFormat::Step => {
+                let _g = qymcad_kernel::kernel_gate();
+                qymcad_kernel::read_exact(qymcad_kernel::ExactFormat::Step, path.to_str().unwrap(), 0.5)
+                    .unwrap()
+                    .1
+                    .iter()
+                    .map(|s| s.volume())
+                    .collect::<Vec<_>>()
+            }
+            ExportFormat::ThreeMf => qymcad_io::import_3mf(path.to_str().unwrap()).unwrap().iter().map(|m| m.mesh.volume()).collect(),
+            ExportFormat::Glb => {
+                let b = std::fs::read(&path).unwrap();
+                let jl = u32::from_le_bytes(b[12..16].try_into().unwrap()) as usize;
+                let doc: Value = serde_json::from_slice(&b[20..20 + jl]).unwrap();
+                let bin = &b[28 + jl..];
+                let read = |i: usize| {
+                    let acc = &doc["accessors"][i];
+                    let view = &doc["bufferViews"][acc["bufferView"].as_u64().unwrap() as usize];
+                    let at = view["byteOffset"].as_u64().unwrap_or(0) + acc["byteOffset"].as_u64().unwrap_or(0);
+                    (&bin[at as usize..], acc["count"].as_u64().unwrap() as usize)
+                };
+                doc["meshes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|mesh| {
+                        let p = &mesh["primitives"][0];
+                        let (positions, n) = read(p["attributes"]["POSITION"].as_u64().unwrap() as usize);
+                        let vertices: Vec<[f64; 3]> = (0..n)
+                            .map(|i| {
+                                std::array::from_fn(|k| {
+                                    let off = i * 12 + k * 4;
+                                    f32::from_le_bytes(positions[off..off + 4].try_into().unwrap()) as f64 * 1000.
+                                })
+                            })
+                            .collect();
+                        let (indices, n) = read(p["indices"].as_u64().unwrap() as usize);
+                        let tris = (0..n / 3)
+                            .map(|i| {
+                                std::array::from_fn(|k| {
+                                    let off = (i * 3 + k) * 4;
+                                    vertices[u32::from_le_bytes(indices[off..off + 4].try_into().unwrap()) as usize]
+                                })
+                            })
+                            .collect::<Vec<_>>();
+                        tri_volume(&tris)
+                    })
+                    .collect()
+            }
+            _ => unreachable!(),
+        };
+        vols.sort_by(f64::total_cmp);
+        assert_eq!(vols.len(), 2);
+        for v in &vols {
+            assert_close(*v, 600., 0.001, "every read back body");
+        }
+    }
+}
+
+/// Apply the app's parameter edit (see `common::gui_edit_param`) to the saved file `source` and save the result,
+/// with its faces and B-reps, to `destination`.
+fn app_edit_save(source: &std::path::Path, destination: &std::path::Path, name: &str, expr: &str) {
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(source.to_str().unwrap()).unwrap();
+    project.ensure_document();
+    for b in &project.bodies {
+        if !b.faces.is_empty() {
+            project.regen_faces.insert(b.id, b.faces.clone());
+        }
+    }
+    let shapes = restore_shapes(breps);
+    let seen = project.param_map();
+    project.parameters.iter_mut().find(|p| p.name == name).unwrap().expr = expr.into();
+    project.eval_parameters();
+    for si in 0..project.sketches.len() {
+        if project.sketch_reads_names(si) {
+            project.solve_sketch(si);
+        }
+    }
+    let vars = project.param_map();
+    let mut changed: Vec<String> =
+        vars.iter().filter(|(k, v)| seen.get(*k).is_none_or(|old| (old - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
+    changed.extend(seen.keys().filter(|k| !vars.contains_key(*k)).cloned());
+    for n in changed {
+        project.mark_param_dependents_dirty_for(&n);
+    }
+    let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut project, shapes);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    for b in &mut project.bodies {
+        if let Some(f) = project.regen_faces.get(&b.id) {
+            b.faces = f.clone();
+        }
+    }
+    let breps = {
+        let _g = qymcad_kernel::kernel_gate();
+        shapes.iter().map(|(id, s)| (*id, s.to_brep_bytes().unwrap())).collect::<Vec<_>>()
+    };
+    qymcad_io::save_project_with_brep(&project, destination.to_str().unwrap(), &breps).unwrap();
+}
