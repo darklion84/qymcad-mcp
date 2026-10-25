@@ -1,6 +1,6 @@
 # ADR 0023: Stage-1 native item-driver limits
 
-- Status: proposed (upstream/design decision required); safe refusal boundary implemented.
+- Status: accepted (2026-10-25), option 4: keep the refusal boundary.
 - Related: accepted ADR 0022, findings F-080/F-081, tasks/review-features-1.md.
 
 ## Context
@@ -35,3 +35,10 @@ to repair the pinned app's SetDriver scheduler. No new persisted dependency fiel
 
 No option is silently treated as accepted. Source locations and executable evidence are in F-081 and the
 stage-1 report; the implementation leaves those parts explicitly stopped.
+
+## Decision
+
+Option 4. Sketch dimension formulas already give the same parametric control, and the app evaluates them, so
+nothing a user can change in the app is lost. Options 1–3 either wait for an upstream release or change the
+native recipe. The SetDriver scheduling defect (F-081) is a candidate upstream report, sent only with the
+user's approval. Revisit when a QymCAD release fixes item-aware solving or owner scheduling.
