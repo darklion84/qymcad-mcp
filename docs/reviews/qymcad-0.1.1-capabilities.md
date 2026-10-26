@@ -34,3 +34,20 @@ After the fixes: `check.sh` OK, 529 passed.
 | 3 | minor | dropped formulas matched by expression text only, so the wrong dimension was reported | confirmed | `golden_curve_edits_2::a_dropped_formula_is_the_one_that_was_removed` reported index 7 for 0 | match by kind, points and text first, then kind and text; each surviving row accounts for one |
 
 After the fixes: `check.sh` OK, 532 passed; mutations M5/M6 still red.
+
+## Live MCP test (Codex, black box, 2026-10-26; binary from c0fce64)
+
+214 calls over six saved parts; 118 independent arithmetic checks pass, every save/reopen keeps its volumes, every
+refusal left the document unchanged. Report: `3d_modeling/tmp/mcp-test/features-011/REPORT.md`.
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| D1 | P2 | a line broken at a point (or at intersections) loses its straightness: the split point has two free coordinates | confirmed; the app keeps it only for a horizontal or vertical (F-091) | `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` failed with DOF (2, 0) | split points are put on the line's ends where independent |
+| D2 | P2 | rounding a corner of an outline offset by the same distance is refused as redundant | confirmed; the native fillet centre is laid on the source corner point (F-090) | `golden_corner_2::a_corner_of_an_offset_outline_is_cut_without_redundancy` failed with DOF (0, 2) | the arc gets a centre point of its own; only rows the cut added move to it |
+| D3 | P3 | a negative hole diameter through `dimension_set` says only "operation failed: Hole"; a turn of 180 shows the guard expression | confirmed | `golden_dimensions_1::a_non_positive_hole_size_is_refused_by_name`, `golden_figures_1` turn messages | named refusals |
+| D4 | P3 | argument shapes hard to discover | partly: the schemas are complete but behind `$ref`, which that client did not show | — | corner example and size modes in the `sketch_edit` description |
+| D5 | P3 | 3MF vertices are not shared between faces | not this branch: export is unchanged since 0.1.0 and uses QymCAD's own writer; the welded mesh is closed | — | none; candidate for a later look |
+
+Sketch `contours[].area` is sampled, not exact (noted by the tester); unchanged, documented as approximate later if needed.
+
+After the fixes (4bf5dcb): `check.sh` OK, 535 passed.
