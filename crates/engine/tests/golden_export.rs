@@ -225,10 +225,12 @@ fn mesh_exports_are_closed_manifolds() {
         tag[at..at + tag[at..].find('"').unwrap()].to_string()
     };
     for object in objects {
-        let verts: Vec<[String; 3]> =
-            object.split("<vertex ").skip(1).map(|v| ["x", "y", "z"].map(|k| attr(&format!(" {v}"), k))).collect();
-        let tris: Vec<[usize; 3]> =
-            object.split("<triangle ").skip(1).map(|t| ["v1", "v2", "v3"].map(|k| attr(&format!(" {t}"), k).parse().unwrap())).collect();
+        // each fragment cut at its tag's end, so an attribute is never read from the next element
+        let tags = |name: &str| -> Vec<String> {
+            object.split(&format!("<{name} ")).skip(1).map(|t| format!(" {}", &t[..t.find("/>").unwrap()])).collect()
+        };
+        let verts: Vec<[String; 3]> = tags("vertex").iter().map(|v| ["x", "y", "z"].map(|k| attr(v, k))).collect();
+        let tris: Vec<[usize; 3]> = tags("triangle").iter().map(|t| ["v1", "v2", "v3"].map(|k| attr(t, k).parse().unwrap())).collect();
         let distinct: std::collections::HashSet<&[String; 3]> = verts.iter().collect();
         assert_eq!(distinct.len(), verts.len(), "3MF: every point is written once");
         assert_closed_manifold("3MF", verts.len(), &tris);

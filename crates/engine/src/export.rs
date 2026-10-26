@@ -188,8 +188,8 @@ impl Session {
                 let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
                 let qymcad_core::geom::Built { mut mesh, .. } = qymcad_kernel::ask::export_mesh(shape, deflection)
                     .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?;
-                mesh.transform(&self.p.body_world_transform(id));
                 weld(&mut mesh);
+                mesh.transform(&self.p.body_world_transform(id));
                 report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: Some(mesh.volume()) });
                 meshes.push(mesh);
             }
