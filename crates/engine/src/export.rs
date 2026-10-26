@@ -7,7 +7,7 @@
 
 use crate::error::{Error, Result};
 use crate::session::Session;
-use qymcad_core::geom::Mesh;
+use qymcad_core::geom::{Mesh, Point3};
 use qymcad_core::model::Id;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -225,8 +225,9 @@ impl Session {
 /// triangles along a degenerate edge, the pole of a rounded corner, whose nodes all stand at one point.
 ///
 /// Solids of one body that only touch (pattern copies meeting at an edge or a corner) must not share the point there:
-/// an edge of four triangles or a corner of two fans is non-manifold. So the joined triangles are grouped into pieces
-/// that hang together across edges of exactly two triangles, and every piece gets its own copy of each of its points.
+/// an edge of four triangles or a corner of two fans is non-manifold. So the joined triangles are grouped into pieces,
+/// and every piece gets its own copy of each of its points. Across an edge of two triangles they belong together;
+/// around an edge of more, the triangles are paired by the wedges of solid between them (`wedges`).
 /// The per-vertex normals are dropped, as no mesh writer reads them.
 fn weld(mesh: &mut Mesh) {
     use std::collections::HashMap;
@@ -247,30 +248,40 @@ fn weld(mesh: &mut Mesh) {
     let tris: Vec<[u32; 3]> =
         mesh.tris.iter().map(|t| t.map(|i| index[i as usize])).filter(|&[a, b, c]| a != b && b != c && c != a).collect();
 
-    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::with_capacity(tris.len() * 3 / 2);
+    // every edge of every triangle, sorted so that the triangles of one edge stand together
+    let mut edges: Vec<(u32, u32, u32)> = Vec::with_capacity(tris.len() * 3);
     for (k, &[a, b, c]) in tris.iter().enumerate() {
         for (u, v) in [(a, b), (b, c), (c, a)] {
-            by_edge.entry((u.min(v), u.max(v))).or_default().push(k);
+            edges.push((u.min(v), u.max(v), k as u32));
         }
     }
-    let mut piece: Vec<usize> = (0..tris.len()).collect();
-    fn root(piece: &mut [usize], mut k: usize) -> usize {
-        while piece[k] != k {
-            piece[k] = piece[piece[k]];
-            k = piece[k];
+    edges.sort_unstable();
+    let mut piece: Vec<u32> = (0..tris.len() as u32).collect();
+    fn root(piece: &mut [u32], mut k: u32) -> u32 {
+        while piece[k as usize] != k {
+            piece[k as usize] = piece[piece[k as usize] as usize];
+            k = piece[k as usize];
         }
         k
     }
-    for sharing in by_edge.values().filter(|t| t.len() == 2) {
-        let (a, b) = (root(&mut piece, sharing[0]), root(&mut piece, sharing[1]));
-        piece[a] = b;
+    let join = |piece: &mut [u32], a: u32, b: u32| {
+        let (a, b) = (root(piece, a), root(piece, b));
+        piece[a as usize] = b;
+    };
+    for run in edges.chunk_by(|x, y| (x.0, x.1) == (y.0, y.1)) {
+        match run.len() {
+            2 => join(&mut piece, run[0].2, run[1].2),
+            n if n > 2 => wedges(&points, &tris, run).into_iter().for_each(|(a, b)| join(&mut piece, a, b)),
+            _ => {}
+        }
     }
+    drop(edges);
 
     let mut own = HashMap::with_capacity(points.len());
     let mut verts = Vec::with_capacity(points.len());
     mesh.tris = (0..tris.len())
         .map(|k| {
-            let p = root(&mut piece, k);
+            let p = root(&mut piece, k as u32);
             tris[k].map(|i| {
                 *own.entry((p, i)).or_insert_with(|| {
                     verts.push(points[i as usize]);
@@ -281,6 +292,41 @@ fn weld(mesh: &mut Mesh) {
         .collect();
     mesh.verts = verts;
     mesh.norms.clear();
+}
+
+/// The pairs of triangles around an edge of more than two (`run`: the edge's ends and one triangle each) that hold a
+/// wedge of solid between them. Each triangle has the solid against its outward normal, so turning about the edge it
+/// faces the solid either ahead or behind; a triangle facing ahead and the next one round facing back enclose solid.
+/// Closed solids touching along the edge alternate so and every triangle is paired; any other triangle is left
+/// unpaired, as open as it was.
+fn wedges(points: &[Point3], tris: &[[u32; 3]], run: &[(u32, u32, u32)]) -> Vec<(u32, u32)> {
+    let p = |i: u32| {
+        let q = points[i as usize];
+        [q.x, q.y, q.z]
+    };
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let (u, v) = (run[0].0, run[0].1);
+    let (origin, d) = (p(u), sub(p(v), p(u)));
+    // two directions square to the edge, `e2 = d × e1`, measure the turn about it
+    let k = (0..3).min_by(|&i, &j| d[i].abs().total_cmp(&d[j].abs())).unwrap();
+    let e1 = cross(d, std::array::from_fn(|i| if i == k { 1.0 } else { 0.0 }));
+    let e2 = cross(d, e1);
+    let mut round: Vec<(f64, bool, u32)> = run
+        .iter()
+        .map(|&(_, _, t)| {
+            let tri = tris[t as usize];
+            let w = *tri.iter().find(|&&i| i != u && i != v).unwrap();
+            let r = sub(p(w), origin);
+            let normal = cross(sub(p(tri[1]), p(tri[0])), sub(p(tri[2]), p(tri[0])));
+            // `d × r` points to a larger turn; the solid is against the normal
+            (dot(r, e2).atan2(dot(r, e1)), dot(normal, cross(d, r)) < 0.0, t)
+        })
+        .collect();
+    round.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let n = round.len();
+    (0..n).filter(|&i| round[i].1 && !round[(i + 1) % n].1).map(|i| (round[i].2, round[(i + 1) % n].2)).collect()
 }
 
 static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -379,6 +425,23 @@ mod tests {
             assert!((m.volume() - volume).abs() < 1e-12, "{what}: volume");
             assert_manifold(&m);
         }
+    }
+
+    /// Four solids around one corner, each touching the others only along edges (review round 2, Codex): every edge of
+    /// the first one's base carries four triangles. Pairing only two-triangle edges cut that base off as a piece of
+    /// its own and left six open edges.
+    #[test]
+    fn welding_pairs_the_triangles_around_an_edge_of_four() {
+        let mut m = Mesh::default();
+        tetra(|p| p, &mut m);
+        tetra(|[x, y, z]| [x, -y, -z], &mut m);
+        tetra(|[x, y, z]| [-x, y, -z], &mut m);
+        tetra(|[x, y, z]| [1.0 - y, 1.0 - x, -z], &mut m);
+        let volume = m.volume();
+        weld(&mut m);
+        assert_eq!((m.verts.len(), m.tris.len()), (16, 16), "four solids of their own points");
+        assert!((m.volume() - volume).abs() < 1e-12);
+        assert_manifold(&m);
     }
 
     #[test]

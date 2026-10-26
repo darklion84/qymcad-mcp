@@ -1859,12 +1859,14 @@ asserts those exact fractional halves before checking away-from-zero output.
   On every part checked the copies were bit-identical (the golden fixtures and the door hanger parts, curved faces
   included); the triangulation itself runs in the C++ bridge, so this is observed, not guaranteed. Joined exactly,
   they leave a few zero-area triangles with two corners at one point, laid along the degenerate edge at the pole of a
-  rounded corner. The server joins the copies, drops those triangles, and gives each piece that hangs together across
-  two-triangle edges its own points, so solids of one body that only touch (pattern copies meeting at an edge or a
-  corner) stay manifold (`export.rs` `weld`). The app's File > Export takes the same `export_mesh` with no join
+  rounded corner. The server joins the copies, drops those triangles, and gives each piece of the surface its own
+  points: triangles belong together across an edge of two, and around an edge of more they are paired by the wedges of
+  solid between them. Solids of one body that only touch (pattern copies meeting at an edge or a corner) so stay
+  manifold (`export.rs` `weld`, `wedges`). The app's File > Export takes the same `export_mesh` with no join
   (inferred from `gui/io_jobs.rs` `write_mesh_to`; not checked in the app). **Not reported upstream yet.**
 - **Evidence:** source: `qymcad-kernel/src/shape/faces.rs:169–212`, `qymcad-kernel/src/ask.rs:46–49`.
   `golden_export::mesh_exports_are_closed_manifolds` reads 3MF, OBJ and GLB indices as written and STL joined by exact
   coordinates: every edge has two opposite triangles and every point one fan. Before the fix every edge between faces
   failed; joining alone left 16 doubled edges at the rounded block's corners. `export::tests::welding_*` cover solids
-  touching at an edge and at a corner and the pole slivers.
+  touching at an edge and at a corner, four solids around one corner (every base edge of four triangles) and the pole
+  slivers. Welding a million triangles takes about 0.25 s (release build).
