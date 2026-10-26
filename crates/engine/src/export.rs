@@ -316,7 +316,9 @@ fn wedges(points: &[Point3], tris: &[[u32; 3]], run: &[(u32, u32, u32)]) -> Vec<
     let (origin, d) = (p(u), sub(p(v), p(u)));
     // two directions square to the edge, `e2 = d × e1`, measure the turn about it
     let k = (0..3).min_by(|&i, &j| d[i].abs().total_cmp(&d[j].abs())).unwrap();
-    let e1 = cross(d, std::array::from_fn(|i| if i == k { 1.0 } else { 0.0 }));
+    let unit = |a: [f64; 3]| a.map(|c| c / dot(a, a).sqrt());
+    let d = unit(d);
+    let e1 = unit(cross(d, std::array::from_fn(|i| if i == k { 1.0 } else { 0.0 })));
     let e2 = cross(d, e1);
     let mut round: Vec<(f64, bool, u32)> = run
         .iter()
@@ -506,6 +508,37 @@ mod tests {
         weld(&mut m);
         assert!((m.volume() - 7.0).abs() < 1e-12);
         assert_manifold(&m);
+    }
+
+    /// A stray sheet triangle on a solid's edge makes an edge of three (review round 3, MiMo): the solid's two
+    /// triangles there are paired, the sheet's is left on its own points.
+    #[test]
+    fn welding_leaves_a_stray_sheet_on_an_edge_of_three_unpaired() {
+        for (sheet_first, flipped) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut m = Mesh::default();
+            let mut sheet = Mesh::default();
+            tetra(|p| p, &mut m);
+            sheet
+                .verts
+                .extend([[0.0, 0.0, 0.0], [0.5, -1.0, -1.0], [1.0, 0.0, 0.0]].map(|p| qymcad_core::geom::Point3::new(p[0], p[1], p[2])));
+            sheet.tris.push(if flipped { [0, 2, 1] } else { [0, 1, 2] });
+            if sheet_first {
+                std::mem::swap(&mut m, &mut sheet);
+            }
+            let at = m.verts.len() as u32;
+            m.verts.extend(sheet.verts);
+            m.tris.extend(sheet.tris.iter().map(|t| t.map(|i| i + at)));
+            weld(&mut m);
+            let k = if sheet_first { 0 } else { 4 };
+            let solid: Vec<[u32; 3]> = m.tris.iter().enumerate().filter(|&(i, _)| i != k).map(|(_, t)| *t).collect();
+            assert_eq!(m.verts.len(), 7, "the sheet keeps three points of its own");
+            assert!(m.tris[k].iter().all(|i| !solid.iter().flatten().any(|j| j == i)));
+            let mut closed = Mesh { verts: m.verts.clone(), tris: solid, norms: Vec::new() };
+            let used: Vec<u32> = (0..7).filter(|i| closed.tris.iter().flatten().any(|j| j == i)).collect();
+            closed.tris.iter_mut().for_each(|t| *t = t.map(|i| used.iter().position(|&u| u == i).unwrap() as u32));
+            closed.verts = used.iter().map(|&i| m.verts[i as usize]).collect();
+            assert_manifold(&closed);
+        }
     }
 
     #[test]
