@@ -21,7 +21,6 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
     faces, which the kernel does not produce); no test drives a tie across the ±π representation or a non-unit edge.
   - collinear zero-area triangles with distinct points are kept (dropping one could open a T-junction); `wedges`
     gives them turn 0 and "solid behind". Not seen in kernel output.
-  - report the app's unwelded mesh export upstream (F-093) once checked in the app — only with the user's yes.
 - MiMo import review nit 3 (2026-10-11): keep `imports.rs`'s scale matrix synchronized with GUI-private `import_scale::scale_matrix` (currently identical, `qymcad/src/gui/import_scale.rs:25-26`); retain the scaled-import golden.
 - MiMo import review nit 4 (2026-10-11): add panic-safe cleanup for the staged source file in `imports.rs`; the current closure removes files on success/error but leaves one if unwinding skips cleanup.
 - MiMo batch review (2026-10-12), deferred, none reachable as a defect today:

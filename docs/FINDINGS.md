@@ -1586,7 +1586,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   overlap pass. Parts for a printer are far inside that range.
   Two earlier rules failed review: "no tangent edge" refused the quarter round, and "fewer than two tangent rails at
   a sharp join" refused the limiting rim. Each check copies the source and result B-reps once; not measured on large
-  imports. Not reported upstream yet.
+  imports. Reported upstream as #322.
 ## F-075 QymCAD 0.1.1 drops the splines of a 0.1.0 document on load
 
 - **Version:** v0.1.1-dev.20261026
@@ -1600,7 +1600,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   `usability_warnings.rs` `opening_a_0_1_0_spline_says_it_is_lost` (fixture `tests/fixtures/legacy_spline_0.1.0.qcad`).
 - **How we handle it:** `Session::open` reads the old records from `document.ron` and warns once per sketch that its
   splines are lost and that saving to a new path keeps the original. The warning lasts for the session and is in
-  doc_info. Not reported upstream yet.
+  doc_info. Reported upstream as #323.
 
 ## F-076 Circular offsets need CurveDistance for an evaluated formula
 
@@ -1611,6 +1611,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   stage-0 executable probes and exact outputs in `tasks/research-features.md`, section 5.
   Stage 2 `sketch_edit` offset replaces the circle's `EdgeDistance` and an arc's radial endpoint `Distance` with
   `CurveDistance` between the two round curves (`golden_offset_2`; mutation: keeping them fails the app edit).
+- **Upstream:** reported as #341.
 
 ## F-077 Native splines retain interpolation nodes and automatic handles
 
@@ -1821,6 +1822,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   `model/sketch/entities.rs:960–982`. Live test 2026-10-26 D2;
   `golden_corner_2::a_corner_of_an_offset_outline_is_cut_without_redundancy` (refused before the fix),
   `a_fillet_centre_on_an_existing_point_leaves_that_points_rows_alone` (review round 2).
+- **Upstream:** reported as #342.
 
 ## F-091 The app holds a broken line's split point on it only for a horizontal or vertical
 
@@ -1837,6 +1839,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` (DOF (2, 0) before the fix),
   `a_line_broken_at_a_driven_point_is_refused_rather_than_bent` (review round 2),
   `a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways` (review round 3).
+- **Upstream:** reported as #343.
 
 ## F-092 A sketch item's values are addressed by its centre point, and the first item about it answers
 
@@ -1849,6 +1852,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   still be cleared.
 - **Evidence:** source: `model/item_values.rs:29–60,96–116`. `golden_figures_1::an_item_value_on_a_shared_centre_is_refused`
   (the outer ellipse was resized before the fix), `item_values_on_a_shared_centre_are_set_where_one_item_answers`.
+- **Upstream:** reported as #344.
 
 ## F-093 A body's export mesh repeats every point once per face
 
@@ -1863,7 +1867,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   around it: triangles hang together across an edge of two, and around an edge of more they are paired by the wedges
   of solid between them (faces lying on each other hold none). Solids of one body that only touch, and a surface
   closing on itself along an edge, so stay manifold (`export.rs` `weld`, `wedges`). The app's File > Export takes the same `export_mesh` with no join
-  (inferred from `gui/io_jobs.rs` `write_mesh_to`; not checked in the app). **Not reported upstream yet.**
+  (`gui/io_jobs.rs` `write_mesh_to`; confirmed with the same calls on a box: 24 vertices, 24 of 30 edges open). Reported upstream as #346.
   This follows the 3MF Core Specification 4.1: every edge is shared by exactly two triangles, and vertices are
   duplicated only where joining them would make an edge non-manifold.
 - **Known limit:** a solid pinched along an edge (zero thickness along a line, e.g. two cubes standing diagonally

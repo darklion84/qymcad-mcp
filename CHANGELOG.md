@@ -3,13 +3,23 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.2 — closed mesh exports
+
+Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Fixed
 - 3MF, OBJ and GLB exports write each body as a closed mesh: the copies of a point that the kernel writes once per
   face are joined, so slicers no longer report every edge between faces as non-manifold (Bambu Studio: 680 on a
   756-triangle part). Solids of one body that only touch at an edge or a corner keep their own points there. All mesh
   formats, STL included, drop the zero-area triangles at a rounded corner's pole. F-093.
+
+### Known limits
+- A solid pinched along an edge (zero thickness along a line) keeps that edge with four triangles; a slicer's repair
+  fixes it (F-093, docs/BACKLOG.md).
+
+### Docs
+- FINDINGS cite the upstream reports: F-074 #322, F-075 #323, F-076 #341, F-090 #342, F-091 #343, F-092 #344,
+  F-093 #346 (QymCAD's own mesh export has the same unwelded faces).
 
 ## 0.1.1-dev.20261026.1 — the modelling capabilities new in QymCAD v0.1.1-dev.20261026 (ADR 0022)
 
