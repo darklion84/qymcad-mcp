@@ -56,7 +56,7 @@ These are one-time edits, as in the app. Where a new end point lies on the cutti
 A directed span uses the native span fields. Turns and sweeps whose quadrant cannot be held by native constraints are refused with the allowed range in the message, rather than solved onto a wrong branch.
 
 ### Loft
-Closed sections only, as the public encoder requires. The default `op` is `new_body`; `add`, `cut` and `intersect` are available against a target where the app allows them.
+Closed sections only, as the public encoder requires. The default `op` is `add`, as for every modelling tool (it makes the first body); `new_body`, `cut` and `intersect` are available where the app allows them, and a sheet (`surface`) needs an explicit `new_body`. (Corrected in review round 2: this said `new_body`.)
 
 ### Profile choice
 `extrude` and `revolve` accept `profiles_at: [[x, y], …]`, sketch coordinates, as an alternative to contour ids. Each point picks the innermost region containing it, as a click in the app does. Ids and points are mutually exclusive.

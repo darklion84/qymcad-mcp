@@ -255,16 +255,31 @@ fn a_non_positive_hole_size_is_refused_by_name() {
         offset: None,
         diameter: 2.0.into(),
         depth: Some(1.0.into()),
-        kind: HoleKind::Plain,
-        dia2: None,
-        depth2: None,
+        kind: HoleKind::Counterbore,
+        dia2: Some(3.0.into()),
+        depth2: Some(0.5.into()),
         name: Some("Vent".into()),
     };
     let (feature, _) = s.hole(&hole).unwrap();
     let before = serde_json::to_value(s.project()).unwrap();
-    for key in ["diameter", "depth"] {
+    for key in ["diameter", "depth", "dia2", "depth2"] {
         let error = s.dimension_set(&DimensionTarget::Feature { feature, key: key.into() }, Some(&(-1.0).into()), None).unwrap_err();
         assert_eq!(error.to_string(), format!("invalid request: {key} must be positive, got -1"));
+        assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+    }
+}
+
+#[test]
+fn a_non_positive_sketch_diameter_is_refused_by_name() {
+    // Review round 2 (MiMo): a sketch diameter set to -1 solved to a negative radius that the profile clamps.
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
+    let ci = s.project().sketches[0].constraints.iter().position(|c| matches!(c, qymcad_core::model::Constraint::Diameter { .. })).unwrap();
+    let before = serde_json::to_value(s.project()).unwrap();
+    for value in [-1.0, 0.0] {
+        let error = s.dimension_set(&DimensionTarget::Sketch { sketch: sk, constraint: ci }, Some(&value.into()), None).unwrap_err();
+        assert!(error.to_string().contains("diameter must be positive"), "{error}");
         assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
     }
 }

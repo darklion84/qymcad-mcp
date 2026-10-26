@@ -64,3 +64,16 @@ After the fixes (4bf5dcb): `check.sh` OK, 535 passed.
 | 4 | major | a concentric ellipse resolved to the first ellipse on its centre: wrong id, the new one undimensioned | confirmed | `golden_figures_1::a_concentric_ellipse_is_its_own_curve_and_fully_defined` failed | the new curve is the one the adder laid |
 
 After the fixes: `check.sh` OK, 539 passed.
+
+### MiMo (REJECT: 1 major, 2 minor; snapshot b25becb)
+
+All round 1 and live-test fixes checked and confirmed with their tests; atomicity, formula retention, gate scopes,
+batch/undo and exclusive alternatives held.
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| 1 | major | `dimension_set` accepts a non-positive sketch diameter/radius: it solves to a negative radius that the profile clamps to 0.01 mm | confirmed | `golden_dimensions_1::a_non_positive_sketch_diameter_is_refused_by_name` failed | sketch diameter, radius and arc length dimensions refuse values ≤ 0 by name |
+| 2 | minor | the named refusal omits the hole's `dia2`/`depth2` | confirmed | the hole test now uses a counterbore and fails on the old code for `dia2`/`depth2` | added |
+| 3 | minor | ADR 0022 says the loft's default `op` is `new_body`; the code defaults to `add` | confirmed | `features.rs` `Op` default | ADR corrected |
+
+After the fixes: `check.sh` OK, 540 passed.

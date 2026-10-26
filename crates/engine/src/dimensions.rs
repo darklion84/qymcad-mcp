@@ -1,6 +1,6 @@
 //! Edit and discover native sketch, feature and sketch-item driving dimensions.
 use crate::{Error, Id, Num, Rebuild, Result, Session};
-use qymcad_core::model::{DimTarget, Project};
+use qymcad_core::model::{Constraint, DimTarget, Project};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -137,10 +137,26 @@ impl Session {
                     return Err(Error::Invalid(format!("a polygon needs an integral side count in 3..=64, got {evaluated}")));
                 }
                 // Sizes that are positive wherever they appear; the native rebuild would only say that the feature failed.
-                if let DimTarget::Feature { key, .. } = &native {
-                    if ["diameter", "depth", "radius", "thickness"].contains(&key.as_str()) && evaluated <= 0.0 {
-                        return Err(Error::Invalid(format!("{key} must be positive, got {evaluated}")));
+                let size = match (target, &native) {
+                    (_, DimTarget::Feature { key, .. }) => {
+                        ["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str()).then(|| key.clone())
                     }
+                    // A sketch diameter or arc length set negative solves to a negative radius, which the profile
+                    // then clamps to 0.01 mm; sketch_add and sketch_constrain refuse it too.
+                    (DimensionTarget::Sketch { sketch, constraint }, _) => s
+                        .p
+                        .sketch_index(*sketch)
+                        .and_then(|si| s.p.sketches[si].constraints.get(*constraint))
+                        .and_then(|c| match c {
+                            Constraint::Diameter { diam: true, .. } => Some("diameter".to_string()),
+                            Constraint::Diameter { .. } => Some("radius".to_string()),
+                            Constraint::ArcLength { .. } => Some("arc length".to_string()),
+                            _ => None,
+                        }),
+                    _ => None,
+                };
+                if let Some(size) = size.filter(|_| evaluated <= 0.0) {
+                    return Err(Error::Invalid(format!("{size} must be positive, got {evaluated}")));
                 }
                 s.p.check_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))?;
                 if !s.p.set_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))? {
