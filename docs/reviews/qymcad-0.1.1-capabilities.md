@@ -77,3 +77,16 @@ batch/undo and exclusive alternatives held.
 | 3 | minor | ADR 0022 says the loft's default `op` is `new_body`; the code defaults to `add` | confirmed | `features.rs` `Op` default | ADR corrected |
 
 After the fixes: `check.sh` OK, 540 passed.
+
+## Round 3
+
+### Codex (REJECT: 3 major, 1 minor; snapshot a7c450f)
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| 1 | major | the horizontal/vertical exemption let a break at intersections weld a horizontal line to a driven point; `cut_curve` keeps the horizontal on the far ends only | confirmed | `golden_curve_edits_2::a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways` (intersections) failed | exemption removed: a reused split point must take the tie or already be tied |
+| 2 | major | a circle offset chose its side again from the native preview's chords, so a hint just inside a large circle took the outer copy | confirmed | `golden_offset_2::a_circle_offset_takes_the_side_nearer_the_hint_by_exact_radius` failed (r 100.01) | the side comes from the comparison already made; a negative distance still turns it |
+| 3 | major | an item value set through a centre shared by concentric ellipses changed the first ellipse | confirmed (native lookup by centre, F-092) | `golden_figures_1::an_item_value_on_a_shared_centre_is_refused` failed | refused with the reason |
+| 4 | minor | a picked break of a horizontal line at a driven point left a redundant row | confirmed | same test (picked) failed | a line break that adds redundancy is refused |
+
+After the fixes: `check.sh` OK, 543 passed.

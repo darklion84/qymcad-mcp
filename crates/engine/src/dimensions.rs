@@ -278,6 +278,24 @@ impl Session {
                 if self.p.kept_number(*feature, key).is_none() {
                     return Err(Error::NotFound(format!("no numeric dimension `{key}` on feature or sketch item {feature}")));
                 }
+                // QymCAD addresses a sketch item's values by its centre point and takes the first item about it, so
+                // a centre shared by concentric ellipses or a polygon cannot name one of them.
+                if !self.p.timeline.iter().any(|n| n.id == *feature) {
+                    let ellipses = self
+                        .p
+                        .sketches
+                        .iter()
+                        .flat_map(|s| &s.entities)
+                        .filter(|e| e.kind.as_ellipse().is_some_and(|el| el.c == *feature))
+                        .count();
+                    let polygon = usize::from(self.p.kept_number(*feature, "sides").is_some());
+                    if ellipses + polygon > 1 {
+                        return Err(Error::Invalid(format!(
+                            "sketch item {feature} is the centre of {} curves, and QymCAD would change the first of them; dimension the curve with sketch_constrain instead",
+                            ellipses + polygon
+                        )));
+                    }
+                }
                 Ok(DimTarget::Feature { node: *feature, key: key.clone() })
             }
         }

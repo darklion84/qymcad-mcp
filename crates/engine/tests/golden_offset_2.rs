@@ -207,3 +207,21 @@ fn offset_ellipse_circle_control_retains_native_record_and_analytic_annulus() {
     assert_close(gui_edit_param(&path, "Gap", "3"), ring(10.0, 3.0), tolerance, "app ellipse offset edit");
     assert_close(gui_edit_driver(&path, "EllipseGap", "4"), ring(10.0, 4.0), tolerance, "app ellipse offset SetDriver");
 }
+
+#[test]
+fn a_circle_offset_takes_the_side_nearer_the_hint_by_exact_radius() {
+    // Review round 3 (Codex): the side was chosen again from the native preview's chords, which lie inside the
+    // circle, so a hint just inside a large circle took the outer copy.
+    let (mut s, sk) = fixture();
+    let id = s.sketch_circle(sk, &v(0.0), &v(0.0), &v(200.0), false).unwrap();
+    let spec = SketchOffsetSpec {
+        curves: SketchCurveSel::Ids(vec![id]),
+        distance: v(0.01),
+        toward: [v(99.89982691707787), v(4.361720639596774)],
+        dimension_name: None,
+    };
+    let out = s.sketch_offset(sk, &spec).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let copy = d.entities.iter().find(|e| out.created_entities.contains(&e.id)).unwrap();
+    assert_close(copy.r.unwrap(), 99.99, 1e-9, "inner copy, nearer the hint");
+}

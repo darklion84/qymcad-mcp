@@ -44,6 +44,10 @@ Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 - The split points of a broken line stay on the line (F-091); the app holds them only for a horizontal or vertical.
 - A corner of an outline offset by the fillet radius is rounded instead of refused as redundant: the fillet gets a
   centre point of its own (F-090).
+- Review fixes: a point-mirrored copy is tied only to the curve it was made from; a concentric ellipse is returned and
+  dimensioned as itself; a line break at a point held by other dimensions is refused rather than bending later; a
+  circle offset takes the side nearer `toward` by exact radius; an item value on a centre shared by several
+  ellipses or polygons is refused (F-092).
 
 ## 0.1.1-dev.20261026 — follows QymCAD v0.1.1-dev.20261026 (ADR 0021)
 

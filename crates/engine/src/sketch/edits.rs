@@ -198,6 +198,7 @@ impl Session {
         } else {
             Vec::new()
         };
+        let redundant = self.p.sketch_dof(si).1;
         self.sketch_edit_report(sketch, |s| {
             let before = s.p.sketches[si].clone();
             let applied = match at {
@@ -208,10 +209,11 @@ impl Session {
                 return Err(Error::Invalid("the selected curve cannot be split at this location".into()));
             }
             s.tie_edited_ends(si, id, &before);
-            // The app holds the halves of a broken line on it only through a horizontal or vertical of its ends
-            // (`break_line_at`); any other line would bend at its split points, so each is put on the line's ends.
-            // A split point that was already there (the pieces are welded to it) and is held otherwise can take no
-            // such tie; unless it is tied to the line already, the break is refused.
+            // The app holds the halves of a broken line on it only through a horizontal or vertical of its ends,
+            // and only for a picked break (`break_line_at`; `cut_curve` keeps the row on the far ends); any other
+            // line would bend at its split points, so each is put on the line's ends. A split point that was already
+            // there (the pieces are welded to it) and is held otherwise can take no such tie; unless it is tied to
+            // the line already, the break is refused.
             if let Some((entity, line)) = before.entity(id).and_then(|e| e.kind.as_line().map(|l| (e, l))) {
                 let after = &s.p.sketches[si];
                 let mut split: Vec<Id> = after
@@ -224,14 +226,9 @@ impl Session {
                     .collect();
                 split.sort_unstable();
                 split.dedup();
-                let straight = before.constraints.iter().any(|c| {
-                    matches!(*c, Constraint::Horizontal { a, b } | Constraint::Vertical { a, b }
-                        if (a, b) == (line.a, line.b) || (b, a) == (line.a, line.b))
-                });
                 for p in split {
                     let tie = Constraint::PointOnLine { p, a: line.a, b: line.b };
-                    let tied = straight
-                        || before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
+                    let tied = before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
                     if !s.p.add_constraint_if_independent(si, tie) && !tied && before.point(p).is_some() {
                         return Err(Error::Invalid(format!(
                             "point {p} is held by other dimensions, so the line would bend at it when they change; tie it to the line first (point_on_curve) or break elsewhere"
@@ -240,6 +237,12 @@ impl Session {
                 }
             }
             s.finish_sketch_edit(si)?;
+            // A picked break of a horizontal line at a point held otherwise splits its row into two that over-hold the
+            // point. (Breaking a circle or an ellipse leaves the app's own redundant rows, accepted as they are.)
+            let dof = s.p.sketch_dof(si);
+            if before.entity(id).is_some_and(|e| e.kind.as_line().is_some()) && dof.1 > redundant {
+                return Err(Error::Invalid(format!("the break would leave redundant constraints in the sketch: DOF {dof:?}")));
+            }
             Ok(Vec::new())
         })
     }

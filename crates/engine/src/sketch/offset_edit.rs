@@ -77,7 +77,10 @@ impl Session {
         if (plus - minus).abs() <= 1e-7 * (1.0 + d.abs()) {
             return Err(Error::Invalid("offset side is ambiguous; move `toward` towards the desired copy".into()));
         }
-        let signed = self.p.offset_toward(si, &ids, d, toward);
+        // The side the comparison above found, then a negative distance turned to the other side, as the app's
+        // `offset_toward` does with its own (chord) comparison.
+        let near = if minus < plus { -d.abs() } else { d.abs() };
+        let signed = if d < 0.0 { -near } else { near };
         if self.p.offset_preview(si, &ids, signed).is_empty() {
             return Err(Error::Invalid("native offset vanishes on the selected side at this distance".into()));
         }

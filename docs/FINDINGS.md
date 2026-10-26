@@ -1825,12 +1825,24 @@ asserts those exact fractional halves before checking away-from-zero output.
 ## F-091 The app holds a broken line's split point on it only for a horizontal or vertical
 
 - **Version:** v0.1.1-dev.20261026.
-- **What:** `break_line_at` splits a horizontal or vertical of the line's ends into one per half and keeps every other
-  row as it was; a line held by distances or at an angle loses its straightness at the split point, which gets two
+- **What:** a picked break (`break_line_at`) splits a horizontal or vertical of the line's ends into one per half and
+  keeps every other row as it was; a break at intersections (`cut_curve`) keeps that row on the far ends only; a line held by distances or at an angle loses its straightness at the split point, which gets two
   free coordinates. The server puts each new split point on the original line's ends (`PointOnLine`), added only
   where independent, so one free place along the line remains (none at intersections). A split point that already
   existed (the pieces are welded to it) and is held by other rows cannot take that tie; unless it is already tied to
-  the line, the break is refused, since the line would bend when those rows change.
+  the line, the break is refused, since the line would bend when those rows change; so is a picked line break that
+  adds redundant rows (the split horizontal over-holding such a point).
 - **Evidence:** source: `model/curve/cut.rs:91–129`. Live test 2026-10-26 D1;
   `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` (DOF (2, 0) before the fix),
-  `a_line_broken_at_a_driven_point_is_refused_rather_than_bent` (review round 2).
+  `a_line_broken_at_a_driven_point_is_refused_rather_than_bent` (review round 2),
+  `a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways` (review round 3).
+
+## F-092 A sketch item's values are addressed by its centre point, and the first item about it answers
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `item_value` and the item formulas key an ellipse's or polygon's values by the id of its centre point;
+  `ellipse_value`/`polygon_value` take the first item about that point. Concentric free ellipses share their centre
+  (the adder lays it on the point standing there), so an item edit through that centre reaches only the first. The
+  server refuses an item target on a centre that more than one ellipse or polygon uses.
+- **Evidence:** source: `model/item_values.rs:29–60`. `golden_figures_1::an_item_value_on_a_shared_centre_is_refused`
+  (the outer ellipse was resized before the fix).

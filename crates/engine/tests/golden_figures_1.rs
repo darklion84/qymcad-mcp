@@ -442,3 +442,27 @@ fn a_concentric_ellipse_is_its_own_curve_and_fully_defined() {
     assert_close(major.x, 25.0, 1e-9, "inner major-axis end follows Rx");
     assert_close(d.points.iter().find(|p| p.id == outer.points[1]).unwrap().x, 28.0, 1e-9, "outer stays");
 }
+
+#[test]
+fn an_item_value_on_a_shared_centre_is_refused() {
+    // Review round 3 (Codex): concentric free ellipses share their centre, and the native item lookup takes the
+    // first, so an edit meant for the inner one resized the outer one.
+    let mut s = Session::new_part();
+    let sk = sketch(&mut s);
+    let spec = |rx: f64, ry: f64| EllipseSpec {
+        cx: n(20.0),
+        cy: n(30.0),
+        rx: n(rx),
+        ry: n(ry),
+        turn: n(0.0),
+        construction: false,
+        dimensioned: false,
+    };
+    s.sketch_ellipse(sk, &spec(8.0, 6.0)).unwrap();
+    let inner = s.sketch_ellipse(sk, &spec(4.0, 3.0)).unwrap();
+    let before = serde_json::to_value(s.project()).unwrap();
+    let target = DimensionTarget::Feature { feature: inner.points[0], key: "w".into() };
+    let error = s.dimension_set(&target, Some(&n(24.0)), None).unwrap_err();
+    assert!(error.to_string().contains("centre of 2 curves"), "{error}");
+    assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+}

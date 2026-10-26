@@ -305,3 +305,33 @@ fn a_line_broken_at_a_driven_point_is_refused_rather_than_bent() {
         s.sketch_break(sk, &BreakSpec { curve: EntityRef::Id(a.entities[0]), at: Some([v(10.), v(5.)]), intersections: false }).unwrap();
     assert!(out.created_points.is_empty(), "the pieces meet at the existing point");
 }
+
+#[test]
+fn a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways() {
+    // Review round 3 (Codex): the horizontal exemption let a break at intersections weld the pieces to a driven point
+    // (the far-end horizontal row does not hold them), and a picked break there left a redundant row.
+    for intersections in [true, false] {
+        let mut s = Session::new_part();
+        s.param_set("K", &v(5.)).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let a = line(&mut s, sk, [v(-10.), v(5.)], [v(10.), v(5.)], false, true);
+        line(&mut s, sk, [v(0.), e("K")], [v(0.), v(20.)], true, true);
+        // Hold the line by a horizontal instead of its far end's height.
+        let height =
+            s.sketch_detail(sk).unwrap().constraints.iter().find(|c| c.kind == "distance_y" && c.points[0] == a.points[1]).unwrap().index;
+        s.sketch_remove_constraint(sk, height).unwrap();
+        let horizontal = ConstrainSpec {
+            kind: ConstraintKind::Horizontal,
+            refs: vec![SketchRef::Id(a.entities[0])],
+            value: None,
+            axis: DistAxis::Aligned,
+            reference: false,
+        };
+        s.sketch_constrain(sk, &horizontal).unwrap();
+        let before = s.sketch_detail(sk).unwrap();
+        assert_eq!(before.summary.dof, (0, 0));
+        let spec = BreakSpec { curve: EntityRef::Id(a.entities[0]), at: (!intersections).then(|| [v(0.), v(5.)]), intersections };
+        assert!(s.sketch_break(sk, &spec).is_err(), "intersections: {intersections}");
+        assert_eq!(s.sketch_detail(sk).unwrap(), before);
+    }
+}
