@@ -1856,12 +1856,15 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** `kernel::ask::export_mesh` → `Shape::tessellate_merged` concatenates the faces' own triangulations, so the
   nodes of an edge appear once in each face beside it, with separate indices. 3MF, OBJ and GLB keep those indices, and
   a slicer then reads every edge between faces as open (Bambu Studio: "680 non-manifold edges" on a 756-triangle key).
-  The copies are bit-identical. Joined exactly, they leave a few zero-area triangles with two corners at one point,
-  laid along the degenerate edge at the pole of a rounded corner. The server joins the copies and drops those
-  triangles before writing (`export.rs` `weld`). The app's File > Export takes the same `export_mesh` with no join
+  On every part checked the copies were bit-identical (the golden fixtures and the door hanger parts, curved faces
+  included); the triangulation itself runs in the C++ bridge, so this is observed, not guaranteed. Joined exactly,
+  they leave a few zero-area triangles with two corners at one point, laid along the degenerate edge at the pole of a
+  rounded corner. The server joins the copies, drops those triangles, and gives each piece that hangs together across
+  two-triangle edges its own points, so solids of one body that only touch (pattern copies meeting at an edge or a
+  corner) stay manifold (`export.rs` `weld`). The app's File > Export takes the same `export_mesh` with no join
   (inferred from `gui/io_jobs.rs` `write_mesh_to`; not checked in the app). **Not reported upstream yet.**
-- **Evidence:** source: `qymcad-kernel/src/shape/faces.rs:188–212`, `qymcad-kernel/src/ask.rs:46–49`.
-  `golden_export::threemf_mesh_is_closed_and_welded` reads the 3MF package directly: every directed edge once, its
-  reverse once. Before the fix every edge between faces failed. Joining alone still left 16 doubled edges at the
-  rounded block's corners.
-
+- **Evidence:** source: `qymcad-kernel/src/shape/faces.rs:169–212`, `qymcad-kernel/src/ask.rs:46–49`.
+  `golden_export::mesh_exports_are_closed_manifolds` reads 3MF, OBJ and GLB indices as written and STL joined by exact
+  coordinates: every edge has two opposite triangles and every point one fan. Before the fix every edge between faces
+  failed; joining alone left 16 doubled edges at the rounded block's corners. `export::tests::welding_*` cover solids
+  touching at an edge and at a corner and the pole slivers.

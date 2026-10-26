@@ -173,13 +173,46 @@ fn threemf_is_in_millimetres() {
     assert_bbox(tri_bbox(&plate), PLATE_BBOX, 1e-3, "3MF plate");
 }
 
-/// Every edge of an exported mesh is shared by exactly two triangles that run it in opposite directions: a closed,
-/// consistently oriented solid. The kernel meshes faces separately; unwelded, a slicer reported every edge between
-/// faces as non-manifold (F-093). Read straight from the 3MF package, not through an importer that might weld.
+/// A closed manifold: triangles exist, their corners are distinct points of the list, every edge has exactly two
+/// triangles running it in opposite directions, and the triangles around every point form one fan.
+fn assert_closed_manifold(what: &str, points: usize, tris: &[[usize; 3]]) {
+    assert!(points > 0 && !tris.is_empty(), "{what}: empty");
+    let mut directed = std::collections::HashMap::<(usize, usize), usize>::new();
+    let mut around = vec![Vec::new(); points];
+    for (k, t) in tris.iter().enumerate() {
+        assert!(t.iter().all(|&i| i < points) && t[0] != t[1] && t[1] != t[2] && t[2] != t[0], "{what}: triangle {t:?}");
+        for j in 0..3 {
+            *directed.entry((t[j], t[(j + 1) % 3])).or_default() += 1;
+            around[t[j]].push(k);
+        }
+    }
+    let bad: Vec<_> = directed.iter().filter(|&(&(a, b), &k)| k != 1 || directed.get(&(b, a)) != Some(&1)).collect();
+    assert!(bad.is_empty(), "{what}: {} of {} edges are open or doubled, e.g. {:?}", bad.len(), directed.len(), &bad[..bad.len().min(3)]);
+    for (v, fan) in around.iter().enumerate().filter(|(_, f)| !f.is_empty()) {
+        // walk the fan from triangle to triangle across the edge that leaves v
+        let (start, mut k, mut seen) = (fan[0], fan[0], 1);
+        loop {
+            let t = tris[k];
+            let out = t[(t.iter().position(|&i| i == v).unwrap() + 2) % 3];
+            k = *fan.iter().find(|&&u| (0..3).any(|j| tris[u][j] == v && tris[u][(j + 1) % 3] == out)).unwrap();
+            if k == start {
+                break;
+            }
+            seen += 1;
+        }
+        assert_eq!(seen, fan.len(), "{what}: point {v} is shared by more than one fan");
+    }
+}
+
+/// Every mesh format writes each body as a closed manifold. The kernel meshes faces separately; unwelded, a slicer
+/// reported every edge between faces as non-manifold (F-093). The files are read here by hand, not through an importer
+/// that might weld: indices as written for 3MF, OBJ and GLB, and for STL the points joined by their exact float32
+/// coordinates, as a slicer joins them.
 #[test]
-fn threemf_mesh_is_closed_and_welded() {
+fn mesh_exports_are_closed_manifolds() {
     let (mut s, _, _) = build(true);
-    s.fillet(None, &Sel::Convex, &n(0.5), Some("round")).unwrap(); // curved faces meeting curved faces
+    s.fillet(None, &Sel::Convex, &n(0.5), Some("round")).unwrap(); // rounded corners: curved faces and degenerate poles
+
     let path = scratch("export_closed.3mf");
     s.export(ExportFormat::ThreeMf, &path, Quality::Standard, None).unwrap();
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
@@ -197,16 +230,69 @@ fn threemf_mesh_is_closed_and_welded() {
         let tris: Vec<[usize; 3]> =
             object.split("<triangle ").skip(1).map(|t| ["v1", "v2", "v3"].map(|k| attr(&format!(" {t}"), k).parse().unwrap())).collect();
         let distinct: std::collections::HashSet<&[String; 3]> = verts.iter().collect();
-        assert_eq!(distinct.len(), verts.len(), "every point is written once");
-        let mut directed = std::collections::HashMap::<(usize, usize), usize>::new();
-        for t in &tris {
-            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-                *directed.entry((a, b)).or_default() += 1;
-            }
-        }
-        let bad: Vec<_> = directed.iter().filter(|&(&(a, b), &k)| k != 1 || directed.get(&(b, a)) != Some(&1)).collect();
-        assert!(bad.is_empty(), "{} of {} edges are open or doubled, e.g. {:?}", bad.len(), directed.len(), &bad[..bad.len().min(3)]);
+        assert_eq!(distinct.len(), verts.len(), "3MF: every point is written once");
+        assert_closed_manifold("3MF", verts.len(), &tris);
     }
+
+    let path = scratch("export_closed.obj");
+    s.export(ExportFormat::Obj, &path, Quality::Standard, None).unwrap();
+    let (mut points, mut objects) = (0usize, Vec::<(usize, Vec<[usize; 3]>)>::new());
+    for line in std::fs::read_to_string(&path).unwrap().lines() {
+        if line.starts_with("o ") {
+            objects.push((points, Vec::new()));
+        } else if line.starts_with("v ") {
+            points += 1;
+        } else if let Some(f) = line.strip_prefix("f ") {
+            let (base, tris) = objects.last_mut().unwrap();
+            let ids: Vec<usize> = f.split_whitespace().map(|w| w.parse::<usize>().unwrap() - 1 - *base).collect();
+            tris.push(ids.try_into().unwrap());
+        }
+    }
+    assert_eq!(objects.len(), 2);
+    for (k, (base, tris)) in objects.iter().enumerate() {
+        let end = objects.get(k + 1).map_or(points, |o| o.0);
+        assert_closed_manifold("OBJ", end - base, tris);
+    }
+
+    let path = scratch("export_closed.glb");
+    s.export(ExportFormat::Glb, &path, Quality::Standard, None).unwrap();
+    let b = std::fs::read(&path).unwrap();
+    let json_len = u32::from_le_bytes(b[12..16].try_into().unwrap()) as usize;
+    let doc: Value = serde_json::from_slice(&b[20..20 + json_len]).unwrap();
+    let bin = &b[20 + json_len + 8..];
+    let meshes = doc["meshes"].as_array().unwrap();
+    assert_eq!(meshes.len(), 2);
+    for mesh in meshes {
+        let prims = mesh["primitives"].as_array().unwrap();
+        let points = doc["accessors"][prims[0]["attributes"]["POSITION"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() as usize;
+        let mut tris = Vec::new();
+        for prim in prims {
+            assert_eq!(prim["attributes"]["POSITION"], prims[0]["attributes"]["POSITION"], "one point list per body");
+            let acc = &doc["accessors"][prim["indices"].as_u64().unwrap() as usize];
+            assert_eq!(acc["componentType"], 5125, "u32 indices");
+            let view = &doc["bufferViews"][acc["bufferView"].as_u64().unwrap() as usize];
+            let at = view["byteOffset"].as_u64().unwrap_or(0) as usize + acc["byteOffset"].as_u64().unwrap_or(0) as usize;
+            let index = |i: usize| u32::from_le_bytes(bin[at + 4 * i..at + 4 * i + 4].try_into().unwrap()) as usize;
+            tris.extend((0..acc["count"].as_u64().unwrap() as usize / 3).map(|t| [index(3 * t), index(3 * t + 1), index(3 * t + 2)]));
+        }
+        assert_closed_manifold("GLB", points, &tris);
+    }
+
+    // STL holds no shared points: join them by exact coordinates, as a slicer does, and check both bodies together;
+    // they stand apart, so they are two separate fans everywhere.
+    let path = scratch("export_closed.stl");
+    s.export(ExportFormat::Stl, &path, Quality::Standard, None).unwrap();
+    let mut at = std::collections::HashMap::new();
+    let tris: Vec<[usize; 3]> = read_stl(&path)
+        .iter()
+        .map(|t| {
+            t.map(|p| {
+                let n = at.len();
+                *at.entry(p.map(|c| (c as f32).to_bits())).or_insert(n)
+            })
+        })
+        .collect();
+    assert_closed_manifold("STL", at.len(), &tris);
 }
 
 #[test]

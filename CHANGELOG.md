@@ -6,9 +6,10 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Fixed
-- Mesh exports (3MF, OBJ, GLB, STL) are closed solids: the vertices the kernel writes once per face are joined, and
-  the zero-area triangles at a rounded corner's pole are dropped. Slicers reported every edge between faces as
-  non-manifold (Bambu Studio: 680 on a 756-triangle part). F-093.
+- 3MF, OBJ and GLB exports write each body as a closed mesh: the copies of a point that the kernel writes once per
+  face are joined, so slicers no longer report every edge between faces as non-manifold (Bambu Studio: 680 on a
+  756-triangle part). Solids of one body that only touch at an edge or a corner keep their own points there. All mesh
+  formats, STL included, drop the zero-area triangles at a rounded corner's pole. F-093.
 
 ## 0.1.1-dev.20261026.1 — the modelling capabilities new in QymCAD v0.1.1-dev.20261026 (ADR 0022)
 
