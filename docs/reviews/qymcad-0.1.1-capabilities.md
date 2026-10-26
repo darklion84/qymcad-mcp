@@ -116,3 +116,13 @@ After the fixes: `check.sh` OK, 544 passed.
 | 4 | minor | the redundancy refusal of a line break had no test that reached it | confirmed (the test returned earlier) | the picked case of `a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways` now asserts the redundancy message; it fails with the check removed | — |
 
 After the fixes: `check.sh` OK, 546 passed.
+
+### MiMo (ACCEPT; snapshot 97d09bf, before f3877c6)
+
+| # | Severity | Finding | Verdict | Action |
+|---|---|---|---|---|
+| 1 | minor | a break at a free existing point on a horizontal line was refused | confirmed; the same as Codex round 4 #1 | fixed in f3877c6 |
+| 2 | nit | the dependence check of a near-solved row could add a tie the split halves already imply, and the redundancy refusal would then catch a good break | agreed (not reproduced) | points held by the halves take no tie |
+| 3 | nit | a single arc's offset side still uses the native preview's chords | agreed, not reproduced; deferred: the exact comparison for an arc must also handle hints outside its span | none in this release |
+
+After the fixes: `check.sh` OK, 546 passed. Review closed: Codex round 4 fixed, MiMo ACCEPT, live recheck all PASS.

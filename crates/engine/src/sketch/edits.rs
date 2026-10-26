@@ -237,10 +237,10 @@ impl Session {
                     row(line.a, p) && row(p, line.b)
                 };
                 let halved: Vec<Id> = split.iter().copied().filter(|p| halved(*p)).collect();
-                for p in split {
+                // A point the halves hold takes no tie: the near-solved check of a dependent row could still add it.
+                for p in split.into_iter().filter(|p| !halved.contains(p)) {
                     let tie = Constraint::PointOnLine { p, a: line.a, b: line.b };
-                    let tied = halved.contains(&p)
-                        || before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
+                    let tied = before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
                     if !s.p.add_constraint_if_independent(si, tie) && !tied && before.point(p).is_some() {
                         return Err(Error::Invalid(format!(
                             "point {p} is held by other dimensions, so the line would bend at it when they change; tie it to the line first (point_on_curve) or break elsewhere"
