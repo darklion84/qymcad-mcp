@@ -300,3 +300,22 @@ fn a_fillet_on_a_swept_body_is_checked_and_accepted() {
     let (_, r) = s.fillet(None, &Sel::Along { dir: [0., 0., 1.], tol_deg: 1. }, &v(0.5), None).unwrap();
     assert_close(volume(&r), 640. - 4. * (1. - PI / 4.) * 0.25 * 40., 1e-6, "four rounded edges");
 }
+
+/// A section with concentric circles has two closed contours; the loft must ask which (Codex review r1).
+#[test]
+fn a_loft_section_with_nested_contours_must_name_one() {
+    let mut s = Session::new_part();
+    let low = sketch(&mut s, PlaneRef::Base(BaseName::XY));
+    s.sketch_circle(low, &v(0.), &v(0.), &v(30.), false).unwrap();
+    s.sketch_circle(low, &v(0.), &v(0.), &v(10.), false).unwrap();
+    let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &v(12.), None).unwrap();
+    let high = sketch(&mut s, PlaneRef::Plane(plane));
+    s.sketch_circle(high, &v(0.), &v(0.), &v(10.), false).unwrap();
+    let sections = vec![LoftSection { sketch: low, profile: None }, LoftSection { sketch: high, profile: None }];
+    let e = s.loft(&Loft { sections, ruled: true, op: Op::NewBody, target: None, surface: false, name: None }).unwrap_err().to_string();
+    assert!(e.contains("several closed contours"), "{e}");
+    let inner = s.contours_at(low, &[[v(0.), v(0.)]]).unwrap()[0];
+    let sections = vec![LoftSection { sketch: low, profile: Some(inner) }, LoftSection { sketch: high, profile: None }];
+    let (_, r) = s.loft(&Loft { sections, ruled: true, op: Op::NewBody, target: None, surface: false, name: None }).unwrap();
+    assert_close(volume(&r), PI * 25. * 12., 1e-6, "the inner circle lofted to the same circle: a cylinder");
+}

@@ -24,3 +24,13 @@ Reviewers who did not write the code: MiMo (all stages), Claude (stage 1), Codex
   silent mirrored solution; documented in the tool text.
 
 After the fixes: `check.sh` OK, 529 passed.
+
+### Codex on stages 2–4 (REJECT: 2 major, 1 minor; snapshot d8fdad9)
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| 1 | major | the point mirror matched sources by coordinates; coincident points of different curves (concentric centres) both tied to the first | confirmed | `golden_mirror_point_2::concentric_sources_keep_their_own_copies` failed (copy of B did not follow X) | copies are paired with their source curves in the native copy order; points paired per curve |
+| 2 | major | loft ambiguity checked only top-level contours, so a section with concentric circles silently took the outer one | confirmed | `golden_sweep_loft_3::a_loft_section_with_nested_contours_must_name_one` failed | every closed contour counts; a nested one can be named (or picked with `profile_at`) |
+| 3 | minor | dropped formulas matched by expression text only, so the wrong dimension was reported | confirmed | `golden_curve_edits_2::a_dropped_formula_is_the_one_that_was_removed` reported index 7 for 0 | match by kind, points and text first, then kind and text; each surviving row accounts for one |
+
+After the fixes: `check.sh` OK, 532 passed; mutations M5/M6 still red.

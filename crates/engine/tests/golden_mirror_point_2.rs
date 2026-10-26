@@ -243,3 +243,29 @@ fn point_mirrored_profile_keeps_f074_fillet_acceptance() {
         "mirrored prism corner fillets analytic volume",
     );
 }
+
+/// Two concentric circles have distinct centre points at one place; each copy must follow its own source
+/// (Codex review r1).
+#[test]
+fn concentric_sources_keep_their_own_copies() {
+    let mut s = Session::new_part();
+    s.param_set("X", &n(10.0)).unwrap();
+    let sk = sketch(&mut s);
+    let a = s.sketch_circle(sk, &n(10.0), &n(5.0), &n(4.0), false).unwrap();
+    let b = s.sketch_circle(sk, &e("X"), &n(5.0), &n(8.0), false).unwrap();
+    let copy = mirror(&mut s, sk, vec![a, b]);
+    assert_eq!(copy.dof, (0, 0));
+    let path = scratch("mirror_concentric_2.qcad");
+    s.save(Some(&path)).unwrap();
+    s.param_set("X", &n(12.0)).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let centre_of = |r: f64| {
+        let e = d.entities.iter().find(|e| copy.created_entities.contains(&e.id) && (e.r.unwrap() - r).abs() < 1e-6).unwrap();
+        let p = d.points.iter().find(|p| p.id == e.points[0]).unwrap();
+        (p.x, p.y)
+    };
+    assert_close(centre_of(2.0).0, -10.0, 1e-6, "copy of A stays at -10");
+    assert_close(centre_of(4.0).0, -12.0, 1e-6, "copy of B follows X");
+    let (opened, _) = Session::open(&path).unwrap();
+    assert_eq!(opened.sketch_info(sk).unwrap().dof, (0, 0));
+}

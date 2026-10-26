@@ -35,37 +35,51 @@ impl Session {
             if copies.is_empty() {
                 return Err(Error::Invalid("the mirror made no copy of the selected curves".into()));
             }
-            // The source of a copied point is the point of the copied set standing at its mirror image.
-            let sources: HashSet<Id> = curves.iter().filter_map(|id| before.entity(*id)).flat_map(entity_points).collect();
-            let source_of = |x: f64, y: f64| {
-                before
-                    .points
-                    .iter()
-                    .filter(|q| sources.contains(&q.id))
-                    .find(|q| (q.x - (2.0 * px - x)).hypot(q.y - (2.0 * py - y)) < 1e-9)
-                    .map(|q| q.id)
+            // The native copy keeps the sketch order of the copied curves (figures carry their auxiliary
+            // curves), so each copy pairs with the next earlier curve of its kind whose points stand at the
+            // mirror images of its own. Coincident points of different curves (concentric centres) stay apart.
+            let image = |id: Id, of: Id| {
+                after.point(id).zip(before.point(of)).is_some_and(|(q, p)| (q.x - (2.0 * px - p.x)).hypot(q.y - (2.0 * py - p.y)) < 1e-9)
             };
+            let mut pairs: Vec<(Id, Id)> = Vec::new();
+            let mut circles: Vec<(Id, Id)> = Vec::new();
+            let mut next = 0;
+            for copy in &copies {
+                let copy_points = entity_points(copy);
+                let found = before.entities[next..].iter().position(|src| {
+                    let src_points = entity_points(src);
+                    std::mem::discriminant(&src.kind) == std::mem::discriminant(&copy.kind)
+                        && src_points.len() == copy_points.len()
+                        && src_points.iter().zip(&copy_points).all(|(p, q)| image(*q, *p))
+                });
+                let Some(at) = found else {
+                    return Err(Error::Invalid(format!("cannot tell which curve copy {} was made from", copy.id)));
+                };
+                let src = &before.entities[next + at];
+                next += at + 1;
+                pairs.extend(entity_points(src).into_iter().zip(copy_points));
+                if let (Some(a), Some(b)) = (src.kind.as_circle(), copy.kind.as_circle()) {
+                    circles.push((a.center, b.center));
+                }
+            }
             // Each tie is a list of alternatives, strongest first. A midpoint holds both coordinates; when the
             // copy's own dimensions already hold one of them (the end of an ellipse axis at its carried
             // length), the midpoint would be redundant, and the point is kept on the line through its source
             // and the centre instead, which still holds the turn.
             let mut ties: Vec<Vec<Constraint>> = Vec::new();
-            for p in after.points.iter().filter(|p| before.point(p.id).is_none()) {
-                if let Some(a) = source_of(p.x, p.y) {
-                    let mut tie = vec![Constraint::Midpoint { p: centre, a, b: p.id }];
-                    if a != centre {
-                        tie.push(Constraint::PointOnLine { p: p.id, a, b: centre });
-                    }
-                    ties.push(tie);
+            let mut tied = HashSet::new();
+            for (a, b) in pairs {
+                if !tied.insert(b) {
+                    continue;
                 }
+                let mut tie = vec![Constraint::Midpoint { p: centre, a, b }];
+                if a != centre {
+                    tie.push(Constraint::PointOnLine { p: b, a, b: centre });
+                }
+                ties.push(tie);
             }
-            for copy in &copies {
-                if let Some(c) = copy.kind.as_circle() {
-                    let at = after.point(c.center).map(|q| (q.x, q.y));
-                    if let Some(source) = at.and_then(|(x, y)| source_of(x, y)) {
-                        ties.push(vec![Constraint::EqualRadius { c1: source, c2: c.center }]);
-                    }
-                }
+            for (c1, c2) in circles {
+                ties.push(vec![Constraint::EqualRadius { c1, c2 }]);
             }
             for tie in ties {
                 for c in tie {

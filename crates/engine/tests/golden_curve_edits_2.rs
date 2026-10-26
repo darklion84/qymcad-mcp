@@ -217,3 +217,20 @@ fn a_formula_dimension_removed_by_an_edit_is_reported() {
     let dropped: Vec<_> = out.dropped_formulas.iter().map(|d| d.expr.as_deref()).collect();
     assert_eq!(dropped, vec![Some("2*R")], "{:?}", out.dropped_formulas);
 }
+
+/// Two circles share the formula "d"; trimming away the first reports the first one's diameter, with its own
+/// index, not the survivor's (Codex review r1).
+#[test]
+fn a_dropped_formula_is_the_one_that_was_removed() {
+    let mut s = Session::new_part();
+    s.param_set("d", &v(6.)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let first = s.sketch_circle(sk, &v(0.), &v(0.), &e("d"), false).unwrap();
+    s.sketch_circle(sk, &v(20.), &v(0.), &e("d"), false).unwrap();
+    let before = s.sketch_detail(sk).unwrap();
+    let centre = before.entities.iter().find(|x| x.id == first).unwrap().points[0];
+    let expected = before.constraints.iter().find(|c| c.kind == "diameter" && c.points.contains(&centre)).unwrap().index;
+    let out = s.sketch_trim(sk, &CurvePickSpec { curve: EntityRef::Id(first), at: [v(3.), v(0.)] }).unwrap();
+    let dropped: Vec<usize> = out.dropped_formulas.iter().map(|c| c.index).collect();
+    assert_eq!(dropped, vec![expected], "{:?}", out.dropped_formulas);
+}

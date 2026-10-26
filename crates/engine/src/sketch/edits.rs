@@ -6,7 +6,7 @@ use qymcad_core::model::curve::Curve;
 use qymcad_core::model::{entity_ends, entity_points, point_on, Constraint, EndKept, ExtendAsk, ExtendSides, Sketch, SketchEntity};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// A unique curve and a one-time location on the part to edit.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -84,21 +84,26 @@ impl Session {
             let formulas: Vec<ConstraintInfo> = s.sketch_detail(sketch)?.constraints.into_iter().filter(has_formula).collect();
             let dimensions = edit(s)?;
             let after = &s.p.sketches[si];
-            // A formula is dropped when fewer constraints carry its text afterwards than before.
-            let mut kept: HashMap<String, usize> = HashMap::new();
-            for c in s.sketch_detail(sketch)?.constraints.into_iter().filter(has_formula) {
-                *kept.entry(c.expr.unwrap_or_default()).or_default() += 1;
-            }
-            let dropped_formulas = formulas
-                .into_iter()
-                .filter(|c| match kept.get_mut(c.expr.as_deref().unwrap_or_default()) {
-                    Some(n) if *n > 0 => {
-                        *n -= 1;
+            // A formula dimension survives when one afterwards has the same kind, points and text; failing that
+            // (an edit that moved it to another point), the same kind and text. What is left was dropped.
+            let after_formulas: Vec<ConstraintInfo> = s.sketch_detail(sketch)?.constraints.into_iter().filter(has_formula).collect();
+            let key = |c: &ConstraintInfo, with_points: bool| {
+                let mut points = if with_points { c.points.clone() } else { Vec::new() };
+                points.sort_unstable();
+                (c.kind.clone(), c.expr.clone().unwrap_or_default(), points)
+            };
+            // Each row afterwards accounts for one row before, exact matches first.
+            let mut unmatched_after = after_formulas;
+            let mut dropped_formulas = formulas;
+            for with_points in [true, false] {
+                dropped_formulas.retain(|c| match unmatched_after.iter().position(|a| key(a, with_points) == key(c, with_points)) {
+                    Some(i) => {
+                        unmatched_after.swap_remove(i);
                         false
                     }
-                    _ => true,
-                })
-                .collect();
+                    None => true,
+                });
+            }
             let old_entities: HashSet<Id> = before.entities.iter().map(|e| e.id).collect();
             let new_entities: HashSet<Id> = after.entities.iter().map(|e| e.id).collect();
             let old_points: HashSet<Id> = before.points.iter().map(|p| p.id).collect();

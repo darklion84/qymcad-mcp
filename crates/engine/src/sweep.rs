@@ -140,11 +140,14 @@ impl Session {
             let mut sketches = Vec::new();
             let mut contours = Vec::new();
             for section in &a.sections {
-                let candidates = s.closed_profiles(section.sketch, None)?;
+                // Every closed contour is a possible section, nested ones included (a loft takes one region).
+                s.sketch_si(section.sketch)?;
+                let candidates = s.p.sweep_profile_contours(section.sketch);
                 let contour = match section.profile {
                     Some(c) => s.closed_profiles(section.sketch, Some(&[c]))?[0],
                     None => match candidates.as_slice() {
                         [one] => *one,
+                        [] => return Err(Error::Invalid(format!("sketch {} has no closed contour", section.sketch))),
                         many => {
                             return Err(Error::Invalid(format!(
                                 "sketch {} has several closed contours {many:?}; give `profile` for this section",
