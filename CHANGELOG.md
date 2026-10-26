@@ -36,7 +36,7 @@ Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
   and full definition are the same as before; the sketch also gets the figure's two construction diagonals, the
   centre is their crossing point, and width and height are aligned `distance` dimensions along the sides instead
   of `distance_x`/`distance_y`.
-- `dimension_set` refuses a non-positive feature diameter, depth, radius, thickness, dia2 or depth2, and a
+- `dimension_set` refuses a non-positive feature diameter, depth, radius, thickness, dia2, depth2 or chamfer dist, and a
   non-positive sketch diameter, radius or arc length, by name, and a rotated
   figure's turn formula leaving 0..180 degrees is reported as such instead of as its guard expression.
 

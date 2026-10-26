@@ -239,55 +239,70 @@ fn a_chamfer_on_a_spline_corner_is_applied_and_reports_its_freedom() {
 
 #[test]
 fn a_corner_of_an_offset_outline_is_cut_without_redundancy() {
-    // Live test D2: rounding a corner of a formula offset outline was refused as redundant.
-    let mut s = Session::new_part();
-    s.param_set("Gap", &n(2.0)).unwrap();
-    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
-    let ids = s.sketch_rect(sk, &n(0.0), &n(0.0), &n(20.0), &n(10.0), false).unwrap();
-    let offset = s
-        .sketch_offset(
-            sk,
-            &SketchOffsetSpec { curves: SketchCurveSel::Ids(ids), distance: e("Gap"), toward: [n(20.0), n(10.0)], dimension_name: None },
-        )
-        .unwrap();
-    assert_eq!(offset.dof, (0, 0));
-    let detail = s.sketch_detail(sk).unwrap();
-    let corner = detail.points.iter().find(|p| (p.x - 12.0).abs() < 1e-9 && (p.y - 7.0).abs() < 1e-9).unwrap().id;
-    let sides: Vec<Id> =
-        detail.entities.iter().filter(|e| offset.created_entities.contains(&e.id) && e.points.contains(&corner)).map(|e| e.id).collect();
-    let result = s
-        .sketch_corner(
-            sk,
-            &CornerSpec {
-                curves: [EntityRef::Id(sides[0]), EntityRef::Id(sides[1])],
-                point: PointSel::Id(corner),
-                size: CornerSize::Radius { value: e("Gap") },
-            },
-        )
-        .unwrap();
-    assert_eq!(result.dof, (0, 0));
-    // The ring between the 20x10 source and the outline offset by Gap, its outer corner rounded by Gap.
-    let ring = |g: f64| ((20.0 + 2.0 * g) * (10.0 + 2.0 * g) - g * g * (1.0 - std::f64::consts::PI / 4.0) - 200.0) * 2.0;
-    let (body, report) = s
-        .extrude(&Extrude {
-            sketch: sk,
-            profiles: None,
-            height: n(2.0),
-            op: Op::NewBody,
-            direction: Direction::Normal,
-            through: false,
-            target: None,
-            name: None,
-        })
-        .unwrap();
-    assert!(report.errors.is_empty());
-    assert_close(s.shape(body).unwrap().volume(), ring(2.0), 1e-6, "rounded offset ring");
-    let path = scratch("corner_of_offset.qcad");
-    s.save(Some(&path)).unwrap();
-    s.param_set("Gap", &n(3.0)).unwrap();
-    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
-    assert_close(s.shape(body).unwrap().volume(), ring(3.0), 1e-6, "rounded offset ring, server edit");
-    assert_close(gui_edit_param(&path, "Gap", "3"), ring(3.0), 1e-6, "rounded offset ring, app edit");
+    // Live test D2: rounding a corner of a formula offset outline was refused as redundant. The chord and arc-length
+    // modes solve inside the native cut while the shared point stands aside (review round 3, MiMo).
+    let sizes = [
+        CornerSize::Radius { value: e("Gap") },
+        CornerSize::Chord { value: e("Gap*sqrt(2)") },
+        CornerSize::ArcLength { value: e("Gap*pi/2") },
+    ];
+    for (mode, size) in sizes.into_iter().enumerate() {
+        let mut s = Session::new_part();
+        s.param_set("Gap", &n(2.0)).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let ids = s.sketch_rect(sk, &n(0.0), &n(0.0), &n(20.0), &n(10.0), false).unwrap();
+        let offset = s
+            .sketch_offset(
+                sk,
+                &SketchOffsetSpec {
+                    curves: SketchCurveSel::Ids(ids),
+                    distance: e("Gap"),
+                    toward: [n(20.0), n(10.0)],
+                    dimension_name: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(offset.dof, (0, 0));
+        let detail = s.sketch_detail(sk).unwrap();
+        let corner = detail.points.iter().find(|p| (p.x - 12.0).abs() < 1e-9 && (p.y - 7.0).abs() < 1e-9).unwrap().id;
+        let sides: Vec<Id> = detail
+            .entities
+            .iter()
+            .filter(|e| offset.created_entities.contains(&e.id) && e.points.contains(&corner))
+            .map(|e| e.id)
+            .collect();
+        let result = s
+            .sketch_corner(
+                sk,
+                &CornerSpec { curves: [EntityRef::Id(sides[0]), EntityRef::Id(sides[1])], point: PointSel::Id(corner), size },
+            )
+            .unwrap();
+        assert_eq!(result.dof, (0, 0), "mode {mode}");
+        // The ring between the 20x10 source and the outline offset by Gap, its outer corner rounded by Gap.
+        let ring = |g: f64| ((20.0 + 2.0 * g) * (10.0 + 2.0 * g) - g * g * (1.0 - std::f64::consts::PI / 4.0) - 200.0) * 2.0;
+        let (body, report) = s
+            .extrude(&Extrude {
+                sketch: sk,
+                profiles: None,
+                height: n(2.0),
+                op: Op::NewBody,
+                direction: Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+        assert!(report.errors.is_empty());
+        assert_close(s.shape(body).unwrap().volume(), ring(2.0), 1e-6, "rounded offset ring");
+        let path = scratch(&format!("corner_of_offset_{mode}.qcad"));
+        s.save(Some(&path)).unwrap();
+        s.param_set("Gap", &n(3.0)).unwrap();
+        assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+        assert_close(s.shape(body).unwrap().volume(), ring(3.0), 1e-6, "rounded offset ring, server edit");
+        assert_close(gui_edit_param(&path, "Gap", "3"), ring(3.0), 1e-6, "rounded offset ring, app edit");
+        let source = s.sketch_detail(sk).unwrap().points.into_iter().find(|p| p.x == 10.0 && p.y == 5.0);
+        assert!(source.is_some(), "the source corner is back where it stood, mode {mode}");
+    }
 }
 
 #[test]

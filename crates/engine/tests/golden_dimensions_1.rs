@@ -283,3 +283,33 @@ fn a_non_positive_sketch_diameter_is_refused_by_name() {
         assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
     }
 }
+
+#[test]
+fn every_named_size_refusal_has_its_case() {
+    // Review round 3 (MiMo): a chamfer's `dist` was left to the rebuild, and the radius and arc-length branches of
+    // the sketch refusal had no test.
+    let (mut s, _, _, _) = stock();
+    let along_z = Sel::Along { dir: [0.0, 0.0, 1.0], tol_deg: 1.0 };
+    let (chamfer, _) = s.chamfer(None, &along_z, &0.5.into(), None, None).unwrap();
+    let before = serde_json::to_value(s.project()).unwrap();
+    let error =
+        s.dimension_set(&DimensionTarget::Feature { feature: chamfer, key: "dist".into() }, Some(&(-1.0).into()), None).unwrap_err();
+    assert_eq!(error.to_string(), "invalid request: dist must be positive, got -1");
+    assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+
+    for (size, word) in [(CornerSize::Radius { value: 2.0.into() }, "radius"), (CornerSize::ArcLength { value: 3.0.into() }, "arc length")]
+    {
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let sides = s.sketch_rect(sk, &15.0.into(), &10.0.into(), &30.0.into(), &20.0.into(), false).unwrap();
+        let point = s.sketch_detail(sk).unwrap().entities.iter().find(|e| e.id == sides[0]).unwrap().points[0];
+        let cut = s
+            .sketch_corner(sk, &CornerSpec { curves: [EntityRef::Id(sides[0]), EntityRef::Id(sides[3])], point: PointSel::Id(point), size })
+            .unwrap();
+        let before = serde_json::to_value(s.project()).unwrap();
+        let target = DimensionTarget::Sketch { sketch: sk, constraint: cut.dimensions[0] };
+        let error = s.dimension_set(&target, Some(&(-1.0).into()), None).unwrap_err();
+        assert_eq!(error.to_string(), format!("invalid request: {word} must be positive, got -1"));
+        assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+    }
+}

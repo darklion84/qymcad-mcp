@@ -90,3 +90,16 @@ After the fixes: `check.sh` OK, 540 passed.
 | 4 | minor | a picked break of a horizontal line at a driven point left a redundant row | confirmed | same test (picked) failed | a line break that adds redundancy is refused |
 
 After the fixes: `check.sh` OK, 543 passed.
+
+### MiMo (REJECT: 1 major, 1 minor, 2 nit; snapshot a7c450f)
+
+All round 2 fixes checked by reading and confirmed, except the one below.
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| 1 | major | the horizontal/vertical exemption also covered breaks at intersections, where `cut_curve` does not split the row | confirmed; the same as Codex round 3 #1 | `a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways` | fixed in 5f3daae |
+| 2 | minor | a chamfer's `dist` is not refused by name | confirmed | `golden_dimensions_1::every_named_size_refusal_has_its_case` failed | `dist` refused on a chamfer only (signed on a pushed face or a plane) |
+| 3 | nit | chord and arc-length fillets solve inside the native cut while the shared point stands aside; untested | agreed: tested, no change needed | `a_corner_of_an_offset_outline_is_cut_without_redundancy` now runs all three fillet modes and checks the point is back | — |
+| 4 | nit | the radius and arc-length branches of the sketch refusal have no test | agreed | `every_named_size_refusal_has_its_case` | — |
+
+After the fixes: `check.sh` OK, 544 passed.

@@ -1,6 +1,9 @@
 //! Edit and discover native sketch, feature and sketch-item driving dimensions.
 use crate::{Error, Id, Num, Rebuild, Result, Session};
-use qymcad_core::model::{Constraint, DimTarget, Project};
+use qymcad_core::{
+    feature::FeatureKind,
+    model::{Constraint, DimTarget, Project},
+};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -138,8 +141,12 @@ impl Session {
                 }
                 // Sizes that are positive wherever they appear; the native rebuild would only say that the feature failed.
                 let size = match (target, &native) {
-                    (_, DimTarget::Feature { key, .. }) => {
-                        ["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str()).then(|| key.clone())
+                    (_, DimTarget::Feature { node, key }) => {
+                        // `dist` is signed on a pushed face or a plane, a size only on a chamfer.
+                        let chamfer = s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Chamfer { .. }));
+                        (["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str())
+                            || (chamfer && key == "dist"))
+                            .then(|| key.clone())
                     }
                     // A sketch diameter or arc length set negative solves to a negative radius, which the profile
                     // then clamps to 0.01 mm; sketch_add and sketch_constrain refuse it too.
