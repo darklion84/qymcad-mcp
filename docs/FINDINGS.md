@@ -1807,3 +1807,25 @@ asserts those exact fractional halves before checking away-from-zero output.
   allows `surface` only with `new_body`.
 - **Evidence:** source: `feature/kind.rs:218–221`, `model/sketch/profiles.rs:316–350`, `model/regen/prep_ops.rs:524–539`.
 
+
+## F-090 A sketch fillet's centre is laid on any point already standing there
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `round_any` takes the fillet centre from `point_exactly_at` (`sketch_point_at`, 1e-9 mm), so a centre that
+  lands on an existing point shares it. Rounding a corner of an outline offset by the same distance as the radius
+  puts the centre on the source outline's corner: its rows already fix that point, and the arc's tangencies become
+  redundant (DOF (0, 2)); a centre landing on another circle's centre would share its radius variable. The server
+  gives the arc a centre of its own at the same place and moves only the rows the cut added to it.
+- **Evidence:** source: `model/sketch/blends.rs:120–131`, `model/sketch/pieces.rs:27–29`,
+  `model/sketch/entities.rs:960–982`. Live test 2026-10-26 D2;
+  `golden_corner_2::a_corner_of_an_offset_outline_is_cut_without_redundancy` (refused before the fix).
+
+## F-091 The app holds a broken line's split point on it only for a horizontal or vertical
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `break_line_at` splits a horizontal or vertical of the line's ends into one per half and keeps every other
+  row as it was; a line held by distances or at an angle loses its straightness at the split point, which gets two
+  free coordinates. The server puts each new split point on the original line's ends (`PointOnLine`), added only
+  where independent, so one free place along the line remains (none at intersections).
+- **Evidence:** source: `model/curve/cut.rs:91–129`. Live test 2026-10-26 D1;
+  `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` (DOF (2, 0) before the fix).

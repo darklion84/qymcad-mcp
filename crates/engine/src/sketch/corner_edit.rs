@@ -6,7 +6,9 @@ use crate::{
 };
 use qymcad_core::{
     feature::ChamferMode,
-    model::{ChamferLegs, Constraint, CornerAt, CornerCut, FilletBy, FilletSize},
+    model::{
+        remap_constraint_point_pub, ArcParts, ChamferLegs, Constraint, CornerAt, CornerCut, FilletBy, FilletSize, Sketch, SketchPoint,
+    },
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -105,11 +107,13 @@ impl Session {
             if s.p.cut_corner_set(si, &[corner], cut, None) != 1 {
                 return Err(Error::Invalid("native corner edit refused this curve pair or size".into()));
             }
-            let after = &s.p.sketches[si];
-            let created_entities: Vec<_> = after.entities.iter().filter(|e| before.entity(e.id).is_none()).map(|e| e.id).collect();
+            let created_entities: Vec<_> =
+                s.p.sketches[si].entities.iter().filter(|e| before.entity(e.id).is_none()).map(|e| e.id).collect();
             if created_entities.len() != 1 {
                 return Err(Error::Invalid("native corner edit did not return exactly one cut curve".into()));
             }
+            s.own_fillet_centre(si, &before, created_entities[0]);
+            let after = &s.p.sketches[si];
             let new = after.entity(created_entities[0]).ok_or_else(|| Error::Invalid("native cut curve is missing".into()))?;
             let mut dimensions = Vec::new();
             let mut add_unique = |matches: Vec<usize>| -> Result<()> {
@@ -192,5 +196,34 @@ impl Session {
             }
             Ok(dimensions)
         })
+    }
+
+    /// The app lays a fillet's centre on any point already standing there (`point_exactly_at`), such as the corner
+    /// of the outline an equal offset was made from, and that shared point over-holds the arc (F-090). The arc is
+    /// given a centre of its own at the same place, and only the rows the cut added follow it.
+    fn own_fillet_centre(&mut self, si: usize, before: &Sketch, arc: Id) {
+        let s = &self.p.sketches[si];
+        let Some(parts) = s.entity(arc).and_then(|e| e.kind.as_arc()) else { return };
+        let Some(at) = before.point(parts.center).map(|p| (p.x, p.y)) else { return };
+        let row = |c: &Constraint| serde_json::to_string(c).unwrap_or_default();
+        let mut old: Vec<String> = before.constraints.iter().map(row).collect();
+        let added: Vec<usize> = (0..s.constraints.len())
+            .filter(|&i| match old.iter().position(|r| *r == row(&s.constraints[i])) {
+                Some(k) => {
+                    old.swap_remove(k);
+                    false
+                }
+                None => true,
+            })
+            .collect();
+        let centre = self.p.alloc_id();
+        let s = &mut self.p.sketches[si];
+        s.points.push(SketchPoint { id: centre, x: at.0, y: at.1 });
+        if let Some(e) = s.entities.iter_mut().find(|e| e.id == arc) {
+            e.kind = ArcParts { center: centre, ..parts }.into();
+        }
+        for i in added {
+            remap_constraint_point_pub(&mut s.constraints[i], parts.center, centre);
+        }
     }
 }

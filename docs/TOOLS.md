@@ -1659,7 +1659,7 @@ A sketch's plane (named datums show name and plane id) and world_frame (origin m
 
 ## sketch_edit
 
-Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on. Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_offsets, dof and free_points; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.
+Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {"op":"corner","sketch":"s","curves":[12,13],"point":9,"size":{"mode":"radius","value":"r"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_offsets, dof and free_points; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.
 
 ```json
 {

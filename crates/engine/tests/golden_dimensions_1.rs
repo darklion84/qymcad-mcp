@@ -243,3 +243,28 @@ fn ambiguous_native_dimension_references_are_refused_before_editing() {
     assert!(error.contains("ambiguous native dimension references"), "{error}");
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
 }
+
+#[test]
+fn a_non_positive_hole_size_is_refused_by_name() {
+    // Live test D3: a negative hole diameter set through dimension_set answered only "operation failed: Hole".
+    let (mut s, _, _, _) = stock();
+    let hole = Hole {
+        body: None,
+        face: Sel::Extreme { axis: Axis::Z, max: true },
+        at: None,
+        offset: None,
+        diameter: 2.0.into(),
+        depth: Some(1.0.into()),
+        kind: HoleKind::Plain,
+        dia2: None,
+        depth2: None,
+        name: Some("Vent".into()),
+    };
+    let (feature, _) = s.hole(&hole).unwrap();
+    let before = serde_json::to_value(s.project()).unwrap();
+    for key in ["diameter", "depth"] {
+        let error = s.dimension_set(&DimensionTarget::Feature { feature, key: key.into() }, Some(&(-1.0).into()), None).unwrap_err();
+        assert_eq!(error.to_string(), format!("invalid request: {key} must be positive, got -1"));
+        assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+    }
+}

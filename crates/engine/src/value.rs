@@ -37,9 +37,7 @@ impl Num {
                     Ok(v) => v,
                     // QymCAD's own arithmetic parser (numbers, + - * / ^, a fixed set of math functions,
                     // parameter names); it does not execute code.
-                    Err(_) => {
-                        qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(format!("`{e}`: {}", explain(&err, vars.keys()))))?
-                    }
+                    Err(_) => qymcad_core::expr::eval(&e, vars).map_err(|err| Error::Expr(formula_failed(&e, &err, vars.keys())))?,
                 };
                 if !v.is_finite() {
                     return Err(Error::Expr(format!("`{e}` is not a finite number ({v})")));
@@ -119,6 +117,18 @@ pub(crate) fn normalize_expr(s: &str) -> String {
 /// This is not full case folding: `ß`/`SS` or a final `ς`/`Σ` are not treated as the same name.
 pub(crate) fn same_ignoring_case(a: &str, b: &str) -> bool {
     a.to_lowercase() == b.to_lowercase()
+}
+
+/// Why formula `what` cannot be evaluated, in words. A turn of a rotated figure is saved with a guard term,
+/// `+0/sqrt((t)*(180-(t)))` (`sketch/figures.rs`), that is undefined outside the supported half-turn; name that
+/// range rather than the guard.
+pub(crate) fn formula_failed<'a>(what: &str, err: &qymcad_core::errors::ExprError, names: impl IntoIterator<Item = &'a String>) -> String {
+    if let Some(turn) = what.rsplit_once("+0/sqrt((").and_then(|(_, rest)| rest.split_once(")*(180-(")).map(|(t, _)| t) {
+        if matches!(err, qymcad_core::errors::ExprError::NotANumber) {
+            return format!("the turn `{turn}` of a rotated sketch figure must stay strictly between 0 and 180 degrees");
+        }
+    }
+    format!("`{what}`: {}", explain(err, names))
 }
 
 /// An expression error in words. Names are case-sensitive in QymCAD 0.1.1, so an unknown name that matches a

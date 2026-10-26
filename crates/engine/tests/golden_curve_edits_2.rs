@@ -234,3 +234,40 @@ fn a_dropped_formula_is_the_one_that_was_removed() {
     let dropped: Vec<usize> = out.dropped_formulas.iter().map(|c| c.index).collect();
     assert_eq!(dropped, vec![expected], "{:?}", out.dropped_formulas);
 }
+
+#[test]
+fn the_pieces_of_a_broken_line_stay_on_the_line() {
+    // Live test D1: the split point of a line held by distances (not a horizontal) was free to leave the line.
+    let mut s = Session::new_part();
+    s.param_set("W", &v(20.)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let a = line(&mut s, sk, [v(0.), v(0.)], [e("W"), v(10.)], false, true);
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+    let out =
+        s.sketch_break(sk, &BreakSpec { curve: EntityRef::Id(a.entities[0]), at: Some([v(10.), v(5.)]), intersections: false }).unwrap();
+    assert_eq!(out.dof, (1, 0), "only the place along the line is free");
+    let cut = out.created_points[0];
+    let spec = ConstrainSpec {
+        kind: ConstraintKind::Distance,
+        refs: vec![SketchRef::Frame(FrameRef::Origin), SketchRef::Id(cut)],
+        value: Some(e("W/4")),
+        axis: DistAxis::X,
+        reference: false,
+    };
+    s.sketch_constrain(sk, &spec).unwrap();
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+    s.param_set("W", &v(40.)).unwrap();
+    let p = s.sketch_detail(sk).unwrap().points.into_iter().find(|p| p.id == cut).unwrap();
+    assert_close(p.x, 10.0, 1e-9, "cut point x");
+    assert_close(p.y, 2.5, 1e-9, "cut point stays on the line to (40,10)");
+
+    // At intersections each new point is held by the crossing curve and by the line itself: nothing comes free.
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let a = line(&mut s, sk, [v(0.), v(0.)], [e("W"), v(10.)], false, true);
+    line(&mut s, sk, [v(10.), v(-5.)], [v(10.), v(20.)], false, true);
+    line(&mut s, sk, [v(30.), v(-5.)], [v(30.), v(20.)], false, true);
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+    let out = s.sketch_break(sk, &BreakSpec { curve: EntityRef::Id(a.entities[0]), at: None, intersections: true }).unwrap();
+    assert_eq!(out.created_points.len(), 2);
+    assert_eq!(out.dof, (0, 0));
+}

@@ -248,7 +248,8 @@ fn unsupported_ellipse_and_rect_turns_are_atomic() {
     s.sketch_ellipse(sk, &ellipse_spec()).unwrap();
     let before = s.sketch_detail(sk).unwrap();
     for turn in [-30.0, 0.0, 180.0, 270.0] {
-        assert!(s.param_set("Theta", &n(turn)).is_err());
+        let error = s.param_set("Theta", &n(turn)).unwrap_err().to_string();
+        assert!(error.contains("`Theta` of a rotated sketch figure must stay strictly between 0 and 180 degrees"), "{error}");
         assert_eq!(s.sketch_detail(sk).unwrap(), before);
     }
     let sk = sketch(&mut s);

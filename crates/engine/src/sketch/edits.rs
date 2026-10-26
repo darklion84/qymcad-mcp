@@ -208,6 +208,14 @@ impl Session {
                 return Err(Error::Invalid("the selected curve cannot be split at this location".into()));
             }
             s.tie_edited_ends(si, id, &before);
+            // The app holds the halves of a broken line on it only through a horizontal or vertical of its ends
+            // (`break_line_at`); any other line would bend at its split points, so each is put on the line's ends.
+            if let Some(line) = before.entity(id).and_then(|e| e.kind.as_line()) {
+                let split: Vec<Id> = s.p.sketches[si].points.iter().filter(|p| before.point(p.id).is_none()).map(|p| p.id).collect();
+                for p in split {
+                    s.p.add_constraint_if_independent(si, Constraint::PointOnLine { p, a: line.a, b: line.b });
+                }
+            }
             s.finish_sketch_edit(si)?;
             Ok(Vec::new())
         })

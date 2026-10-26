@@ -64,7 +64,7 @@ impl Session {
             return Err(e);
         }
         if let Some((what, err)) = self.p.eval_parameters().into_iter().next() {
-            let message = format!("`{what}`: {}", crate::value::explain(&err, self.p.param_map().keys()));
+            let message = crate::value::formula_failed(&what, &err, self.p.param_map().keys());
             self.p = before;
             return Err(Error::Expr(message));
         }
@@ -191,7 +191,7 @@ impl Session {
                 values = next;
             }
             if let Some((what, err)) = errors.into_iter().next() {
-                return Err(Error::Expr(format!("`{what}`: {}", crate::value::explain(&err, self.p.param_map().keys()))));
+                return Err(Error::Expr(crate::value::formula_failed(&what, &err, self.p.param_map().keys())));
             }
             let values = self.p.param_map();
             let changed: Vec<&str> =

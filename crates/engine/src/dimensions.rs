@@ -136,6 +136,12 @@ impl Session {
                 {
                     return Err(Error::Invalid(format!("a polygon needs an integral side count in 3..=64, got {evaluated}")));
                 }
+                // Sizes that are positive wherever they appear; the native rebuild would only say that the feature failed.
+                if let DimTarget::Feature { key, .. } = &native {
+                    if ["diameter", "depth", "radius", "thickness"].contains(&key.as_str()) && evaluated <= 0.0 {
+                        return Err(Error::Invalid(format!("{key} must be positive, got {evaluated}")));
+                    }
+                }
                 s.p.check_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))?;
                 if !s.p.set_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))? {
                     return Err(Error::NotFound("dimension target no longer exists".into()));
@@ -156,7 +162,7 @@ impl Session {
             }
             // apply_param_edit: item-value formulas count as named sketch inputs, too.
             if let Some((what, err)) = s.p.eval_parameters().into_iter().next() {
-                return Err(Error::Expr(format!("`{what}`: {}", crate::value::explain(&err, s.p.param_map().keys()))));
+                return Err(Error::Expr(crate::value::formula_failed(&what, &err, s.p.param_map().keys())));
             }
             for si in 0..s.p.sketches.len() {
                 if s.p.sketch_reads_names(si) {
