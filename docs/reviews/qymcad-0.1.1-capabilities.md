@@ -126,3 +126,11 @@ After the fixes: `check.sh` OK, 546 passed.
 | 3 | nit | a single arc's offset side still uses the native preview's chords | agreed, not reproduced; deferred: the exact comparison for an arc must also handle hints outside its span | none in this release |
 
 After the fixes: `check.sh` OK, 546 passed. Review closed: Codex round 4 fixed, MiMo ACCEPT, live recheck all PASS.
+
+## App check (2026-10-26)
+
+The three check files (`1_curves`, `2_sketch_edits`, `3_sweep_loft_hole`, built with 8da93ec) were opened in
+QymCAD.app 0.1.1-dev.20261026, one parameter each was edited in the Parameters window (`ang` 30 → 60, `R` 5 → 8,
+`Hf` 30 → 45), and the parts rebuilt as expected with no errors in the tree: 3/3 PASS, with screenshots. The check
+was run through computer use under the user's eye. The app-path emulation of all 17 edits on these files also
+passes on 8da93ec, with volumes equal to the server's.
