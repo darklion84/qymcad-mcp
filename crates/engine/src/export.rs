@@ -224,10 +224,10 @@ impl Session {
 /// stay an open edge. A triangle left with two corners at one point is dropped: the kernel lays such zero-area
 /// triangles along a degenerate edge, the pole of a rounded corner, whose nodes all stand at one point.
 ///
-/// Solids of one body that only touch (pattern copies meeting at an edge or a corner) must not share the point there:
-/// an edge of four triangles or a corner of two fans is non-manifold. So the joined triangles are grouped into pieces,
-/// and every piece gets its own copy of each of its points. Across an edge of two triangles they belong together;
-/// around an edge of more, the triangles are paired by the wedges of solid between them (`wedges`).
+/// Solids of one body that only touch (pattern copies meeting at an edge or a corner, a ring closing on itself along
+/// an edge) must not share the point there: an edge of four triangles or a corner of two fans is non-manifold. So each
+/// point is given once per fan of triangles around it, where a fan hangs together across the edges two triangles are
+/// paired on: the only two of an edge, or around an edge of more, the two holding a wedge of solid (`wedges`).
 /// The per-vertex normals are dropped, as no mesh writer reads them.
 fn weld(mesh: &mut Mesh) {
     use std::collections::HashMap;
@@ -256,37 +256,42 @@ fn weld(mesh: &mut Mesh) {
         }
     }
     edges.sort_unstable();
-    let mut piece: Vec<u32> = (0..tris.len() as u32).collect();
-    fn root(piece: &mut [u32], mut k: u32) -> u32 {
-        while piece[k as usize] != k {
-            piece[k as usize] = piece[piece[k as usize] as usize];
-            k = piece[k as usize];
+    // a corner of a triangle is `3 * triangle + k`; the corners at one point joined across paired edges are one fan
+    let mut fan: Vec<u32> = (0..tris.len() as u32 * 3).collect();
+    fn root(fan: &mut [u32], mut k: u32) -> u32 {
+        while fan[k as usize] != k {
+            fan[k as usize] = fan[fan[k as usize] as usize];
+            k = fan[k as usize];
         }
         k
     }
-    let join = |piece: &mut [u32], a: u32, b: u32| {
-        let (a, b) = (root(piece, a), root(piece, b));
-        piece[a as usize] = b;
-    };
+    let corner = |t: u32, point: u32| 3 * t + tris[t as usize].iter().position(|&i| i == point).unwrap() as u32;
     for run in edges.chunk_by(|x, y| (x.0, x.1) == (y.0, y.1)) {
-        match run.len() {
-            2 => join(&mut piece, run[0].2, run[1].2),
-            n if n > 2 => wedges(&points, &tris, run).into_iter().for_each(|(a, b)| join(&mut piece, a, b)),
-            _ => {}
+        let pairs = match run.len() {
+            2 => vec![(run[0].2, run[1].2)],
+            n if n > 2 => wedges(&points, &tris, run),
+            _ => Vec::new(),
+        };
+        for (a, b) in pairs {
+            for end in [run[0].0, run[0].1] {
+                let (a, b) = (root(&mut fan, corner(a, end)), root(&mut fan, corner(b, end)));
+                fan[a as usize] = b;
+            }
         }
     }
     drop(edges);
 
-    let mut own = HashMap::with_capacity(points.len());
+    let mut own = vec![u32::MAX; fan.len()];
     let mut verts = Vec::with_capacity(points.len());
     mesh.tris = (0..tris.len())
-        .map(|k| {
-            let p = root(&mut piece, k as u32);
-            tris[k].map(|i| {
-                *own.entry((p, i)).or_insert_with(|| {
-                    verts.push(points[i as usize]);
-                    (verts.len() - 1) as u32
-                })
+        .map(|t| {
+            std::array::from_fn(|k| {
+                let r = root(&mut fan, 3 * t as u32 + k as u32) as usize;
+                if own[r] == u32::MAX {
+                    own[r] = verts.len() as u32;
+                    verts.push(points[tris[t][k] as usize]);
+                }
+                own[r]
             })
         })
         .collect();
@@ -326,6 +331,14 @@ fn wedges(points: &[Point3], tris: &[[u32; 3]], run: &[(u32, u32, u32)]) -> Vec<
         .collect();
     round.sort_by(|a, b| a.0.total_cmp(&b.0));
     let n = round.len();
+    // Triangles at one turn (faces lying on each other, within rounding) hold no solid between them: the one with
+    // its solid behind goes first, so no pair spans them. The list starts after its widest gap, so such a group never
+    // straddles the ±π seam.
+    const SAME: f64 = 1e-9;
+    let gap = |i: usize| if i + 1 < n { round[i + 1].0 - round[i].0 } else { round[0].0 + std::f64::consts::TAU - round[i].0 };
+    let widest = (0..n).max_by(|&i, &j| gap(i).total_cmp(&gap(j))).unwrap();
+    round.rotate_left((widest + 1) % n);
+    round.chunk_by_mut(|a, b| (b.0 - a.0).rem_euclid(std::f64::consts::TAU) <= SAME).for_each(|g| g.sort_by_key(|t| t.1));
     (0..n).filter(|&i| round[i].1 && !round[(i + 1) % n].1).map(|i| (round[i].2, round[(i + 1) % n].2)).collect()
 }
 
@@ -441,6 +454,57 @@ mod tests {
         weld(&mut m);
         assert_eq!((m.verts.len(), m.tris.len()), (16, 16), "four solids of their own points");
         assert!((m.volume() - volume).abs() < 1e-12);
+        assert_manifold(&m);
+    }
+
+    /// Two solids lying on each other face to face (review round 3, Codex): the coincident faces hold no solid between
+    /// them and must not tie the solids together.
+    #[test]
+    fn welding_keeps_solids_apart_across_a_shared_face() {
+        let mut m = Mesh::default();
+        tetra(|p| p, &mut m);
+        tetra(|[x, y, z]| [y, x, -z], &mut m);
+        weld(&mut m);
+        assert_eq!(m.verts.len(), 8);
+        assert_manifold(&m);
+    }
+
+    /// The outer faces of unit cubes at `cells`, every face with its own corner copies, wound outward.
+    fn cubes(cells: &[[i32; 3]], mesh: &mut Mesh) {
+        for c in cells {
+            for (a, s) in (0..3).flat_map(|a| [(a, 1), (a, -1)]) {
+                let mut n = *c;
+                n[a] += s;
+                if cells.contains(&n) {
+                    continue;
+                }
+                let (b, d) = ((a + 1) % 3, (a + 2) % 3); // e_b × e_d = e_a
+                let mut quad = [[0, 0], [1, 0], [1, 1], [0, 1]].map(|[i, j]| {
+                    let mut p = c.map(f64::from);
+                    p[a] += if s > 0 { 1.0 } else { 0.0 };
+                    p[b] += f64::from(i);
+                    p[d] += f64::from(j);
+                    qymcad_core::geom::Point3::new(p[0], p[1], p[2])
+                });
+                if s < 0 {
+                    quad.reverse();
+                }
+                let at = mesh.verts.len() as u32;
+                mesh.verts.extend(quad);
+                mesh.tris.extend([[at, at + 1, at + 2], [at, at + 2, at + 3]]);
+            }
+        }
+    }
+
+    /// One connected surface that closes on itself along an edge (review round 3, Codex): a ring of seven cubes whose
+    /// ends touch along x = y = 1. The two wedges there must keep their own points although the surface is one piece.
+    #[test]
+    fn welding_splits_a_connected_surface_touching_itself_along_an_edge() {
+        let mut m = Mesh::default();
+        cubes(&[[0, 0, 0], [-1, 0, 0], [-1, 1, 0], [-1, 2, 0], [0, 2, 0], [1, 2, 0], [1, 1, 0]], &mut m);
+        assert!((m.volume() - 7.0).abs() < 1e-12, "outward winding");
+        weld(&mut m);
+        assert!((m.volume() - 7.0).abs() < 1e-12);
         assert_manifold(&m);
     }
 
