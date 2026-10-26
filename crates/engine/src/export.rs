@@ -341,7 +341,13 @@ fn wedges(points: &[Point3], tris: &[[u32; 3]], run: &[(u32, u32, u32)]) -> Vec<
     let widest = (0..n).max_by(|&i, &j| gap(i).total_cmp(&gap(j))).unwrap();
     round.rotate_left((widest + 1) % n);
     round.chunk_by_mut(|a, b| (b.0 - a.0).rem_euclid(std::f64::consts::TAU) <= SAME).for_each(|g| g.sort_by_key(|t| t.1));
-    (0..n).filter(|&i| round[i].1 && !round[(i + 1) % n].1).map(|i| (round[i].2, round[(i + 1) % n].2)).collect()
+    // a pair needs a turn between them: when every triangle lies at one turn the wrap pair would span the tie
+    let apart = |i: usize, j: usize| (round[j].0 - round[i].0).rem_euclid(std::f64::consts::TAU) > SAME;
+    (0..n)
+        .map(|i| (i, (i + 1) % n))
+        .filter(|&(i, j)| round[i].1 && !round[j].1 && apart(i, j))
+        .map(|(i, j)| (round[i].2, round[j].2))
+        .collect()
 }
 
 static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -539,6 +545,15 @@ mod tests {
             closed.verts = used.iter().map(|&i| m.verts[i as usize]).collect();
             assert_manifold(&closed);
         }
+    }
+
+    /// Coincident sheets alone on an edge (review round 4, MiMo): every triangle lies at one turn, so none are paired.
+    #[test]
+    fn wedges_pair_nothing_when_every_triangle_lies_at_one_turn() {
+        let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]].map(|p| qymcad_core::geom::Point3::new(p[0], p[1], p[2]));
+        let tris = [[0, 1, 2], [1, 0, 2], [0, 1, 2], [1, 0, 2]];
+        let run: Vec<(u32, u32, u32)> = (0..4).map(|t| (0, 1, t)).collect();
+        assert!(wedges(&points, &tris, &run).is_empty());
     }
 
     #[test]
