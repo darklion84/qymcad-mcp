@@ -423,3 +423,22 @@ fn an_unrelated_broken_named_formula_is_reported_as_itself_in_polygon_documents(
     let error = opened.param_set("R", &n(12.0)).unwrap_err().to_string();
     assert!(error.contains("Gone") && !error.contains("polygon"), "{error}");
 }
+
+#[test]
+fn a_concentric_ellipse_is_its_own_curve_and_fully_defined() {
+    // Review round 2 (Codex): the second ellipse on a shared centre reported, and dimensioned, the first one.
+    let mut s = Session::new_part();
+    s.param_set("Rx", &n(4.0)).unwrap();
+    let sk = sketch(&mut s);
+    let spec =
+        |rx: Num, ry: f64| EllipseSpec { cx: n(20.0), cy: n(30.0), rx, ry: n(ry), turn: n(0.0), construction: false, dimensioned: true };
+    let outer = s.sketch_ellipse(sk, &spec(n(8.0), 6.0)).unwrap();
+    let inner = s.sketch_ellipse(sk, &spec(e("Rx"), 3.0)).unwrap();
+    assert_ne!(outer.entities[0], inner.entities[0]);
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+    s.param_set("Rx", &n(5.0)).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let major = d.points.iter().find(|p| p.id == inner.points[1]).unwrap();
+    assert_close(major.x, 25.0, 1e-9, "inner major-axis end follows Rx");
+    assert_close(d.points.iter().find(|p| p.id == outer.points[1]).unwrap().x, 28.0, 1e-9, "outer stays");
+}

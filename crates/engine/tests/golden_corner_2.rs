@@ -289,3 +289,60 @@ fn a_corner_of_an_offset_outline_is_cut_without_redundancy() {
     assert_close(s.shape(body).unwrap().volume(), ring(3.0), 1e-6, "rounded offset ring, server edit");
     assert_close(gui_edit_param(&path, "Gap", "3"), ring(3.0), 1e-6, "rounded offset ring, app edit");
 }
+
+#[test]
+fn a_fillet_centre_on_an_existing_point_leaves_that_points_rows_alone() {
+    // Review round 2 (Codex): the first fix gave the arc its own centre by moving every changed row off the source
+    // corner, including a parallel the cut had only rewritten, so a later radius edit failed to solve.
+    let mut s = Session::new_part();
+    s.param_set("Gap", &n(2.0)).unwrap();
+    s.param_set("R", &n(2.0)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let ids = s.sketch_rect(sk, &n(0.0), &n(0.0), &n(20.0), &n(10.0), false).unwrap();
+    let offset = s
+        .sketch_offset(
+            sk,
+            &SketchOffsetSpec {
+                curves: SketchCurveSel::Ids(ids.clone()),
+                distance: e("Gap"),
+                toward: [n(20.0), n(10.0)],
+                dimension_name: None,
+            },
+        )
+        .unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let at = |x: f64, y: f64| d.points.iter().find(|p| (p.x - x).abs() < 1e-9 && (p.y - y).abs() < 1e-9).unwrap().id;
+    let (corner, below, src_a, src_b) = (at(12.0, 7.0), at(12.0, -7.0), at(10.0, -5.0), at(10.0, 5.0));
+    let entity = |ps: [Id; 2]| d.entities.iter().find(|e| e.points.contains(&ps[0]) && e.points.contains(&ps[1])).unwrap().id;
+    let (right, source_right) = (entity([corner, below]), entity([src_a, src_b]));
+    let top =
+        d.entities.iter().find(|e| offset.created_entities.contains(&e.id) && e.id != right && e.points.contains(&corner)).unwrap().id;
+    let distance = d.constraints.iter().find(|c| c.kind == "distance_point_line" && c.points == vec![corner, src_a, src_b]).unwrap().index;
+    s.sketch_remove_constraint(sk, distance).unwrap();
+    let parallel = ConstrainSpec {
+        kind: ConstraintKind::Parallel,
+        refs: vec![SketchRef::Id(right), SketchRef::Id(source_right)],
+        value: None,
+        axis: DistAxis::Aligned,
+        reference: false,
+    };
+    s.sketch_constrain(sk, &parallel).unwrap();
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+    let result = s
+        .sketch_corner(
+            sk,
+            &CornerSpec {
+                curves: [EntityRef::Id(right), EntityRef::Id(top)],
+                point: PointSel::Id(corner),
+                size: CornerSize::Radius { value: e("R") },
+            },
+        )
+        .unwrap();
+    assert_eq!(result.dof, (0, 0));
+    s.param_set("R", &n(3.0)).unwrap();
+    assert_eq!(s.sketch_info(sk).unwrap().dof, (0, 0));
+    let d = s.sketch_detail(sk).unwrap();
+    assert!(d.points.iter().any(|p| p.id == src_b && (p.x - 10.0).abs() < 1e-9 && (p.y - 5.0).abs() < 1e-9), "source corner stays");
+    let arc = d.entities.iter().find(|e| e.id == result.created_entities[0]).unwrap();
+    assert_close(arc.r.unwrap(), 3.0, 1e-9, "fillet radius follows R");
+}

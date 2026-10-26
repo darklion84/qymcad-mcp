@@ -271,3 +271,37 @@ fn the_pieces_of_a_broken_line_stay_on_the_line() {
     assert_eq!(out.created_points.len(), 2);
     assert_eq!(out.dof, (0, 0));
 }
+
+#[test]
+fn a_line_broken_at_a_driven_point_is_refused_rather_than_bent() {
+    // Review round 2 (Codex): breaking at an existing point welded the pieces to it with no tie to the line, so a
+    // later edit of that point's driver bent the line while the sketch reported full definition.
+    let mut s = Session::new_part();
+    s.param_set("K", &v(5.)).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let a = line(&mut s, sk, [v(0.), v(0.)], [v(20.), v(10.)], false, true);
+    line(&mut s, sk, [v(10.), e("K")], [v(10.), v(30.)], true, true);
+    let before = s.sketch_detail(sk).unwrap();
+    let error = s
+        .sketch_break(sk, &BreakSpec { curve: EntityRef::Id(a.entities[0]), at: Some([v(10.), v(5.)]), intersections: false })
+        .unwrap_err();
+    assert!(error.to_string().contains("would bend"), "{error}");
+    assert_eq!(s.sketch_detail(sk).unwrap(), before);
+
+    // A point already tied to the line keeps the pieces straight, and the break is accepted.
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let a = line(&mut s, sk, [v(0.), v(0.)], [v(20.), v(10.)], false, true);
+    let b = line(&mut s, sk, [v(10.), v(5.)], [v(10.), v(30.)], false, false);
+    let foot = b.points[0];
+    let spec = ConstrainSpec {
+        kind: ConstraintKind::PointOnCurve,
+        refs: vec![SketchRef::Id(foot), SketchRef::Id(a.entities[0])],
+        value: None,
+        axis: DistAxis::Aligned,
+        reference: false,
+    };
+    s.sketch_constrain(sk, &spec).unwrap();
+    let out =
+        s.sketch_break(sk, &BreakSpec { curve: EntityRef::Id(a.entities[0]), at: Some([v(10.), v(5.)]), intersections: false }).unwrap();
+    assert!(out.created_points.is_empty(), "the pieces meet at the existing point");
+}

@@ -6,9 +6,7 @@ use crate::{
 };
 use qymcad_core::{
     feature::ChamferMode,
-    model::{
-        remap_constraint_point_pub, ArcParts, ChamferLegs, Constraint, CornerAt, CornerCut, FilletBy, FilletSize, Sketch, SketchPoint,
-    },
+    model::{ChamferLegs, Constraint, CornerAt, CornerCut, FilletBy, FilletSize},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -96,15 +94,33 @@ impl Session {
                 return Err(Error::Invalid("corner sizes must be greater than 1e-9 (lengths in mm, angles in degrees)".into()));
             }
         }
-        if self.p.corner_blend(si, point, corner.pair, cut).is_none() {
-            return Err(Error::Invalid("native corner cut does not fit these curves or the requested size mode".into()));
-        }
+        let blend = self
+            .p
+            .corner_blend(si, point, corner.pair, cut)
+            .ok_or_else(|| Error::Invalid("native corner cut does not fit these curves or the requested size mode".into()))?;
         // Freedom left by the cut is reported, not refused (ADR 0022): a chamfer does not hold its cut point on a
         // spline leg, as in the app. Redundant rows would be a defect of the edit, so those are refused.
         let redundant = self.p.sketch_dof(si).1;
         self.sketch_edit_report(sketch, |s| {
             let before = s.p.sketches[si].clone();
-            if s.p.cut_corner_set(si, &[corner], cut, None) != 1 {
+            // The app lays a fillet's centre on any point already standing there (`point_exactly_at`, F-090), such as
+            // the corner of the outline an equal offset was made from, and the shared point over-holds the arc. Such a
+            // point is moved 1 µm aside while the cut is made, so the arc gets a centre of its own, and put back.
+            let aside: Vec<(Id, f64)> = blend
+                .arc
+                .map(|([cx, cy], _)| before.points.iter().filter(|p| (p.x - cx).hypot(p.y - cy) < 1e-7).map(|p| (p.id, p.x)).collect())
+                .unwrap_or_default();
+            let shift = |s: &mut Session, by: f64| {
+                for p in s.p.sketches[si].points.iter_mut() {
+                    if let Some((_, x)) = aside.iter().find(|(id, _)| *id == p.id) {
+                        p.x = x + by;
+                    }
+                }
+            };
+            shift(s, 1e-6);
+            let cuts = s.p.cut_corner_set(si, &[corner], cut, None);
+            shift(s, 0.0);
+            if cuts != 1 {
                 return Err(Error::Invalid("native corner edit refused this curve pair or size".into()));
             }
             let created_entities: Vec<_> =
@@ -112,7 +128,6 @@ impl Session {
             if created_entities.len() != 1 {
                 return Err(Error::Invalid("native corner edit did not return exactly one cut curve".into()));
             }
-            s.own_fillet_centre(si, &before, created_entities[0]);
             let after = &s.p.sketches[si];
             let new = after.entity(created_entities[0]).ok_or_else(|| Error::Invalid("native cut curve is missing".into()))?;
             let mut dimensions = Vec::new();
@@ -196,34 +211,5 @@ impl Session {
             }
             Ok(dimensions)
         })
-    }
-
-    /// The app lays a fillet's centre on any point already standing there (`point_exactly_at`), such as the corner
-    /// of the outline an equal offset was made from, and that shared point over-holds the arc (F-090). The arc is
-    /// given a centre of its own at the same place, and only the rows the cut added follow it.
-    fn own_fillet_centre(&mut self, si: usize, before: &Sketch, arc: Id) {
-        let s = &self.p.sketches[si];
-        let Some(parts) = s.entity(arc).and_then(|e| e.kind.as_arc()) else { return };
-        let Some(at) = before.point(parts.center).map(|p| (p.x, p.y)) else { return };
-        let row = |c: &Constraint| serde_json::to_string(c).unwrap_or_default();
-        let mut old: Vec<String> = before.constraints.iter().map(row).collect();
-        let added: Vec<usize> = (0..s.constraints.len())
-            .filter(|&i| match old.iter().position(|r| *r == row(&s.constraints[i])) {
-                Some(k) => {
-                    old.swap_remove(k);
-                    false
-                }
-                None => true,
-            })
-            .collect();
-        let centre = self.p.alloc_id();
-        let s = &mut self.p.sketches[si];
-        s.points.push(SketchPoint { id: centre, x: at.0, y: at.1 });
-        if let Some(e) = s.entities.iter_mut().find(|e| e.id == arc) {
-            e.kind = ArcParts { center: centre, ..parts }.into();
-        }
-        for i in added {
-            remap_constraint_point_pub(&mut s.constraints[i], parts.center, centre);
-        }
     }
 }

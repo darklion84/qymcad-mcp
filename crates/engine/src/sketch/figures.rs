@@ -119,11 +119,14 @@ impl Session {
                 (spec.cx.eval(&vars)?, spec.cy.eval(&vars)?, spec.rx.eval(&vars)?, spec.ry.eval(&vars)?, spec.turn.eval(&vars)?);
             positive_axes(rx, ry)?;
             check_turn(&spec.turn, turn)?;
-            let centre = s.p.add_ellipse_entity(si, Point2::new(cx, cy), rx, ry, turn.to_radians(), purpose(spec.construction));
+            let existing: Vec<Id> = s.p.sketches[si].entities.iter().map(|e| e.id).collect();
+            // The native adder answers the centre, which a concentric ellipse shares: take the curve it laid.
+            s.p.add_ellipse_entity(si, Point2::new(cx, cy), rx, ry, turn.to_radians(), purpose(spec.construction));
             let (id, parts) = s.p.sketches[si]
                 .entities
                 .iter()
-                .find_map(|e| e.kind.as_ellipse().filter(|el| el.c == centre && el.span.is_none()).map(|el| (e.id, el)))
+                .filter(|e| !existing.contains(&e.id))
+                .find_map(|e| e.kind.as_ellipse().filter(|el| el.span.is_none()).map(|el| (e.id, el)))
                 .ok_or_else(|| Error::Invalid("ellipse was not created".into()))?;
             if spec.dimensioned {
                 s.dimension_ellipse(si, parts, spec, [cx, cy, rx, ry, turn])?;

@@ -269,3 +269,21 @@ fn concentric_sources_keep_their_own_copies() {
     let (opened, _) = Session::open(&path).unwrap();
     assert_eq!(opened.sketch_info(sk).unwrap().dof, (0, 0));
 }
+
+#[test]
+fn a_mirrored_curve_is_tied_to_itself_not_to_an_unselected_one_in_the_same_place() {
+    // Review round 2 (Codex): with only B selected, its copy was paired with A, which stands at the same centre.
+    let mut s = Session::new_part();
+    s.param_set("X", &n(10.0)).unwrap();
+    let sk = sketch(&mut s);
+    s.sketch_circle(sk, &n(10.0), &n(5.0), &n(4.0), false).unwrap();
+    let b = s.sketch_circle(sk, &e("X"), &n(5.0), &n(8.0), false).unwrap();
+    let copy = mirror(&mut s, sk, vec![b]);
+    assert_eq!(copy.dof, (0, 0));
+    s.param_set("X", &n(12.0)).unwrap();
+    let d = s.sketch_detail(sk).unwrap();
+    let e = d.entities.iter().find(|e| copy.created_entities.contains(&e.id)).unwrap();
+    let p = d.points.iter().find(|p| p.id == e.points[0]).unwrap();
+    assert_close(p.x, -12.0, 1e-6, "copy of B follows X");
+    assert_close(p.y, -5.0, 1e-6, "copy of B");
+}

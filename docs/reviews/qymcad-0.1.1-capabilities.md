@@ -51,3 +51,16 @@ refusal left the document unchanged. Report: `3d_modeling/tmp/mcp-test/features-
 Sketch `contours[].area` is sampled, not exact (noted by the tester); unchanged, documented as approximate later if needed.
 
 After the fixes (4bf5dcb): `check.sh` OK, 535 passed.
+
+## Round 2
+
+### Codex (REJECT: 4 major; snapshot b25becb)
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| 1 | major | the fillet-centre fix re-pointed every changed row off the shared point, including a parallel the cut had only rewritten; a later radius edit did not solve | confirmed | `golden_corner_2::a_fillet_centre_on_an_existing_point_leaves_that_points_rows_alone` failed on 4bf5dcb | the point is moved 1 µm aside during the cut and put back, so no row is re-pointed (F-090) |
+| 2 | major | the mirror still paired copies against unselected curves, so a copy of B tied to A at the same centre | confirmed | `golden_mirror_point_2::a_mirrored_curve_is_tied_to_itself_not_to_an_unselected_one_in_the_same_place` failed | pairs taken from exactly the curves the native copy takes (selection plus the diagonals of whole rectangles), in sketch order |
+| 3 | major | a line broken at an existing, driven point got no tie, so it bent when the driver changed | confirmed | `golden_curve_edits_2::a_line_broken_at_a_driven_point_is_refused_rather_than_bent` failed | such a break is refused unless the point is already tied to the line (F-091) |
+| 4 | major | a concentric ellipse resolved to the first ellipse on its centre: wrong id, the new one undimensioned | confirmed | `golden_figures_1::a_concentric_ellipse_is_its_own_curve_and_fully_defined` failed | the new curve is the one the adder laid |
+
+After the fixes: `check.sh` OK, 539 passed.

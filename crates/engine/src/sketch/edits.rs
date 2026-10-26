@@ -210,10 +210,33 @@ impl Session {
             s.tie_edited_ends(si, id, &before);
             // The app holds the halves of a broken line on it only through a horizontal or vertical of its ends
             // (`break_line_at`); any other line would bend at its split points, so each is put on the line's ends.
-            if let Some(line) = before.entity(id).and_then(|e| e.kind.as_line()) {
-                let split: Vec<Id> = s.p.sketches[si].points.iter().filter(|p| before.point(p.id).is_none()).map(|p| p.id).collect();
+            // A split point that was already there (the pieces are welded to it) and is held otherwise can take no
+            // such tie; unless it is tied to the line already, the break is refused.
+            if let Some((entity, line)) = before.entity(id).and_then(|e| e.kind.as_line().map(|l| (e, l))) {
+                let after = &s.p.sketches[si];
+                let mut split: Vec<Id> = after
+                    .entities
+                    .iter()
+                    .filter(|e| e.id == id || before.entity(e.id).is_none())
+                    .filter_map(|e| e.kind.as_line())
+                    .flat_map(|l| [l.a, l.b])
+                    .filter(|p| *p != line.a && *p != line.b)
+                    .collect();
+                split.sort_unstable();
+                split.dedup();
+                let straight = before.constraints.iter().any(|c| {
+                    matches!(*c, Constraint::Horizontal { a, b } | Constraint::Vertical { a, b }
+                        if (a, b) == (line.a, line.b) || (b, a) == (line.a, line.b))
+                });
                 for p in split {
-                    s.p.add_constraint_if_independent(si, Constraint::PointOnLine { p, a: line.a, b: line.b });
+                    let tie = Constraint::PointOnLine { p, a: line.a, b: line.b };
+                    let tied = straight
+                        || before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
+                    if !s.p.add_constraint_if_independent(si, tie) && !tied && before.point(p).is_some() {
+                        return Err(Error::Invalid(format!(
+                            "point {p} is held by other dimensions, so the line would bend at it when they change; tie it to the line first (point_on_curve) or break elsewhere"
+                        )));
+                    }
                 }
             }
             s.finish_sketch_edit(si)?;

@@ -35,29 +35,32 @@ impl Session {
             if copies.is_empty() {
                 return Err(Error::Invalid("the mirror made no copy of the selected curves".into()));
             }
-            // The native copy keeps the sketch order of the copied curves (figures carry their auxiliary
-            // curves), so each copy pairs with the next earlier curve of its kind whose points stand at the
-            // mirror images of its own. Coincident points of different curves (concentric centres) stay apart.
+            // The native copy (`dup_entities_unbuilt`) takes the selected curves and the diagonals of each
+            // rectangle all of whose sides are selected, and lays the copies in the sketch order of those curves, so
+            // the n-th copy is made from the n-th of them. Points are paired per curve: coincident points of
+            // different curves (concentric centres) stay apart.
+            let mut taken = curves.clone();
+            for r in before.rects().iter().filter(|r| r.sides.iter().all(|e| curves.contains(e))) {
+                taken.extend(r.diagonals.into_iter().flatten());
+            }
+            let sources: Vec<_> = before.entities.iter().filter(|e| taken.contains(&e.id)).collect();
             let image = |id: Id, of: Id| {
                 after.point(id).zip(before.point(of)).is_some_and(|(q, p)| (q.x - (2.0 * px - p.x)).hypot(q.y - (2.0 * py - p.y)) < 1e-9)
             };
+            if sources.len() != copies.len() {
+                return Err(Error::Invalid(format!("the mirror made {} copies of {} curves", copies.len(), sources.len())));
+            }
             let mut pairs: Vec<(Id, Id)> = Vec::new();
             let mut circles: Vec<(Id, Id)> = Vec::new();
-            let mut next = 0;
-            for copy in &copies {
-                let copy_points = entity_points(copy);
-                let found = before.entities[next..].iter().position(|src| {
-                    let src_points = entity_points(src);
-                    std::mem::discriminant(&src.kind) == std::mem::discriminant(&copy.kind)
-                        && src_points.len() == copy_points.len()
-                        && src_points.iter().zip(&copy_points).all(|(p, q)| image(*q, *p))
-                });
-                let Some(at) = found else {
+            for (src, copy) in sources.into_iter().zip(&copies) {
+                let (src_points, copy_points) = (entity_points(src), entity_points(copy));
+                if std::mem::discriminant(&src.kind) != std::mem::discriminant(&copy.kind)
+                    || src_points.len() != copy_points.len()
+                    || !src_points.iter().zip(&copy_points).all(|(p, q)| image(*q, *p))
+                {
                     return Err(Error::Invalid(format!("cannot tell which curve copy {} was made from", copy.id)));
-                };
-                let src = &before.entities[next + at];
-                next += at + 1;
-                pairs.extend(entity_points(src).into_iter().zip(copy_points));
+                }
+                pairs.extend(src_points.into_iter().zip(copy_points));
                 if let (Some(a), Some(b)) = (src.kind.as_circle(), copy.kind.as_circle()) {
                     circles.push((a.center, b.center));
                 }

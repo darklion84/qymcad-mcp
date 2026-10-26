@@ -1815,10 +1815,12 @@ asserts those exact fractional halves before checking away-from-zero output.
   lands on an existing point shares it. Rounding a corner of an outline offset by the same distance as the radius
   puts the centre on the source outline's corner: its rows already fix that point, and the arc's tangencies become
   redundant (DOF (0, 2)); a centre landing on another circle's centre would share its radius variable. The server
-  gives the arc a centre of its own at the same place and moves only the rows the cut added to it.
+  moves such a point 1 µm aside while the cut is made and puts it back, so the arc gets a centre of its own and no
+  existing row changes (an earlier fix that re-pointed rows afterwards also caught rows the cut had only rewritten).
 - **Evidence:** source: `model/sketch/blends.rs:120–131`, `model/sketch/pieces.rs:27–29`,
   `model/sketch/entities.rs:960–982`. Live test 2026-10-26 D2;
-  `golden_corner_2::a_corner_of_an_offset_outline_is_cut_without_redundancy` (refused before the fix).
+  `golden_corner_2::a_corner_of_an_offset_outline_is_cut_without_redundancy` (refused before the fix),
+  `a_fillet_centre_on_an_existing_point_leaves_that_points_rows_alone` (review round 2).
 
 ## F-091 The app holds a broken line's split point on it only for a horizontal or vertical
 
@@ -1826,6 +1828,9 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** `break_line_at` splits a horizontal or vertical of the line's ends into one per half and keeps every other
   row as it was; a line held by distances or at an angle loses its straightness at the split point, which gets two
   free coordinates. The server puts each new split point on the original line's ends (`PointOnLine`), added only
-  where independent, so one free place along the line remains (none at intersections).
+  where independent, so one free place along the line remains (none at intersections). A split point that already
+  existed (the pieces are welded to it) and is held by other rows cannot take that tie; unless it is already tied to
+  the line, the break is refused, since the line would bend when those rows change.
 - **Evidence:** source: `model/curve/cut.rs:91–129`. Live test 2026-10-26 D1;
-  `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` (DOF (2, 0) before the fix).
+  `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` (DOF (2, 0) before the fix),
+  `a_line_broken_at_a_driven_point_is_refused_rather_than_bent` (review round 2).
