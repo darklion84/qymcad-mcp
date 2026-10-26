@@ -14,6 +14,9 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - case twins use Unicode lowercase mapping, not full case folding (ß/SS, ς/σ are not twins).
   - the app leaves a constant sketch on a face-derived datum in place on a parameter edit (F-017 characterization);
     an upstream report candidate once seen in the real app.
+- QymCAD 0.1.1 capabilities review round 4 (MiMo nit, deferred there): a single arc's offset still chooses its side
+  from the native preview's chords; the exact radius comparison used for circles must also handle hints outside the
+  arc's span before it can replace them. Not reproduced as a defect.
 - Mesh export weld (2026-10-26, F-093):
   - a solid pinched along an edge stays non-manifold there (Codex round 4, major, accepted as a known limit by the
     user); start from the ignored test `welding_a_solid_pinched_along_an_edge`.
