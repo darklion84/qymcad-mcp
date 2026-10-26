@@ -1864,6 +1864,13 @@ asserts those exact fractional halves before checking away-from-zero output.
   of solid between them (faces lying on each other hold none). Solids of one body that only touch, and a surface
   closing on itself along an edge, so stay manifold (`export.rs` `weld`, `wedges`). The app's File > Export takes the same `export_mesh` with no join
   (inferred from `gui/io_jobs.rs` `write_mesh_to`; not checked in the app). **Not reported upstream yet.**
+  This follows the 3MF Core Specification 4.1: every edge is shared by exactly two triangles, and vertices are
+  duplicated only where joining them would make an edge non-manifold.
+- **Known limit:** a solid pinched along an edge (zero thickness along a line, e.g. two cubes standing diagonally
+  between two plates) keeps that edge with four triangles: both ends of it are single fans, so splitting points per
+  fan cannot separate the wedges. The B-rep is itself non-manifold there; a slicer's repair fixes it. Resolving it
+  needs the triangles re-paired across the gap with both ends duplicated (ignored test
+  `export::tests::welding_a_solid_pinched_along_an_edge`).
 - **Evidence:** source: `qymcad-kernel/src/shape/faces.rs:169–212`, `qymcad-kernel/src/ask.rs:46–49`.
   `golden_export::mesh_exports_are_closed_manifolds` reads 3MF, OBJ and GLB indices as written and STL joined by exact
   coordinates: every edge has two opposite triangles and every point one fan. Before the fix every edge between faces

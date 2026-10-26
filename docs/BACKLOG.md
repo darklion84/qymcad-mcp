@@ -14,6 +14,14 @@ Known follow-ups that were consciously deferred. Each item says where it came fr
   - case twins use Unicode lowercase mapping, not full case folding (ß/SS, ς/σ are not twins).
   - the app leaves a constant sketch on a face-derived datum in place on a parameter edit (F-017 characterization);
     an upstream report candidate once seen in the real app.
+- Mesh export weld (2026-10-26, F-093):
+  - a solid pinched along an edge stays non-manifold there (Codex round 4, major, accepted as a known limit by the
+    user); start from the ignored test `welding_a_solid_pinched_along_an_edge`.
+  - MiMo round 4 nits: within a tie group same-side faces keep index order (only matters for same-winding duplicate
+    faces, which the kernel does not produce); no test drives a tie across the ±π representation or a non-unit edge.
+  - collinear zero-area triangles with distinct points are kept (dropping one could open a T-junction); `wedges`
+    gives them turn 0 and "solid behind". Not seen in kernel output.
+  - report the app's unwelded mesh export upstream (F-093) once checked in the app — only with the user's yes.
 - MiMo import review nit 3 (2026-10-11): keep `imports.rs`'s scale matrix synchronized with GUI-private `import_scale::scale_matrix` (currently identical, `qymcad/src/gui/import_scale.rs:25-26`); retain the scaled-import golden.
 - MiMo import review nit 4 (2026-10-11): add panic-safe cleanup for the staged source file in `imports.rs`; the current closure removes files on success/error but leaves one if unwinding skips cleanup.
 - MiMo batch review (2026-10-12), deferred, none reachable as a defect today:

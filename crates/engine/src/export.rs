@@ -556,6 +556,27 @@ mod tests {
         assert!(wedges(&points, &tris, &run).is_empty());
     }
 
+    /// KNOWN LIMIT (review round 4, Codex; F-093): two cubes standing diagonally between two plates touch along an
+    /// edge whose ends are each one fan, so splitting points per fan cannot separate the two wedges there and the edge
+    /// keeps four triangles. Such a solid has zero thickness along that line and is itself non-manifold; resolving it
+    /// needs the triangles re-paired across the gap with both ends duplicated. Kept ignored as the case to start from.
+    #[test]
+    #[ignore = "known limit: a solid pinched along an edge stays non-manifold there (F-093)"]
+    fn welding_a_solid_pinched_along_an_edge() {
+        let mut m = Mesh::default();
+        let mut cells = vec![[0, 0, 0], [1, 1, 0]];
+        for z in [-1, 1] {
+            for x in 0..2 {
+                for y in 0..2 {
+                    cells.push([x, y, z]);
+                }
+            }
+        }
+        cubes(&cells, &mut m);
+        weld(&mut m);
+        assert_manifold(&m);
+    }
+
     #[test]
     fn welding_drops_the_slivers_at_a_pole() {
         let mut m = Mesh::default();
