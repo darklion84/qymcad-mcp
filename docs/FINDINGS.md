@@ -1849,3 +1849,19 @@ asserts those exact fractional halves before checking away-from-zero output.
   still be cleared.
 - **Evidence:** source: `model/item_values.rs:29–60,96–116`. `golden_figures_1::an_item_value_on_a_shared_centre_is_refused`
   (the outer ellipse was resized before the fix), `item_values_on_a_shared_centre_are_set_where_one_item_answers`.
+
+## F-093 A body's export mesh repeats every point once per face
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `kernel::ask::export_mesh` → `Shape::tessellate_merged` concatenates the faces' own triangulations, so the
+  nodes of an edge appear once in each face beside it, with separate indices. 3MF, OBJ and GLB keep those indices, and
+  a slicer then reads every edge between faces as open (Bambu Studio: "680 non-manifold edges" on a 756-triangle key).
+  The copies are bit-identical. Joined exactly, they leave a few zero-area triangles with two corners at one point,
+  laid along the degenerate edge at the pole of a rounded corner. The server joins the copies and drops those
+  triangles before writing (`export.rs` `weld`). The app's File > Export takes the same `export_mesh` with no join
+  (inferred from `gui/io_jobs.rs` `write_mesh_to`; not checked in the app). **Not reported upstream yet.**
+- **Evidence:** source: `qymcad-kernel/src/shape/faces.rs:188–212`, `qymcad-kernel/src/ask.rs:46–49`.
+  `golden_export::threemf_mesh_is_closed_and_welded` reads the 3MF package directly: every directed edge once, its
+  reverse once. Before the fix every edge between faces failed. Joining alone still left 16 doubled edges at the
+  rounded block's corners.
+

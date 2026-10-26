@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- Mesh exports (3MF, OBJ, GLB, STL) are closed solids: the vertices the kernel writes once per face are joined, and
+  the zero-area triangles at a rounded corner's pole are dropped. Slicers reported every edge between faces as
+  non-manifold (Bambu Studio: 680 on a 756-triangle part). F-093.
+
 ## 0.1.1-dev.20261026.1 — the modelling capabilities new in QymCAD v0.1.1-dev.20261026 (ADR 0022)
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.

@@ -173,6 +173,42 @@ fn threemf_is_in_millimetres() {
     assert_bbox(tri_bbox(&plate), PLATE_BBOX, 1e-3, "3MF plate");
 }
 
+/// Every edge of an exported mesh is shared by exactly two triangles that run it in opposite directions: a closed,
+/// consistently oriented solid. The kernel meshes faces separately; unwelded, a slicer reported every edge between
+/// faces as non-manifold (F-093). Read straight from the 3MF package, not through an importer that might weld.
+#[test]
+fn threemf_mesh_is_closed_and_welded() {
+    let (mut s, _, _) = build(true);
+    s.fillet(None, &Sel::Convex, &n(0.5), Some("round")).unwrap(); // curved faces meeting curved faces
+    let path = scratch("export_closed.3mf");
+    s.export(ExportFormat::ThreeMf, &path, Quality::Standard, None).unwrap();
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+    let mut model = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("3D/3dmodel.model").unwrap(), &mut model).unwrap();
+    let objects: Vec<&str> = model.split("<object ").skip(1).collect();
+    assert_eq!(objects.len(), 2, "one object per body");
+    let attr = |tag: &str, name: &str| -> String {
+        let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+        tag[at..at + tag[at..].find('"').unwrap()].to_string()
+    };
+    for object in objects {
+        let verts: Vec<[String; 3]> =
+            object.split("<vertex ").skip(1).map(|v| ["x", "y", "z"].map(|k| attr(&format!(" {v}"), k))).collect();
+        let tris: Vec<[usize; 3]> =
+            object.split("<triangle ").skip(1).map(|t| ["v1", "v2", "v3"].map(|k| attr(&format!(" {t}"), k).parse().unwrap())).collect();
+        let distinct: std::collections::HashSet<&[String; 3]> = verts.iter().collect();
+        assert_eq!(distinct.len(), verts.len(), "every point is written once");
+        let mut directed = std::collections::HashMap::<(usize, usize), usize>::new();
+        for t in &tris {
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                *directed.entry((a, b)).or_default() += 1;
+            }
+        }
+        let bad: Vec<_> = directed.iter().filter(|&(&(a, b), &k)| k != 1 || directed.get(&(b, a)) != Some(&1)).collect();
+        assert!(bad.is_empty(), "{} of {} edges are open or doubled, e.g. {:?}", bad.len(), directed.len(), &bad[..bad.len().min(3)]);
+    }
+}
+
 #[test]
 fn glb_is_in_metres_with_y_up() {
     // Deliberately offset in +X/+Y: symmetric bounds cannot distinguish +Y from -Y.

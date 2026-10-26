@@ -189,6 +189,7 @@ impl Session {
                 let qymcad_core::geom::Built { mut mesh, .. } = qymcad_kernel::ask::export_mesh(shape, deflection)
                     .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?;
                 mesh.transform(&self.p.body_world_transform(id));
+                weld(&mut mesh);
                 report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: Some(mesh.volume()) });
                 meshes.push(mesh);
             }
@@ -214,6 +215,33 @@ impl Session {
         }
         Ok(report)
     }
+}
+
+/// Join the copies of one point into one vertex. The kernel meshes every face on its own and `tessellate_merged` only
+/// concatenates the faces, so two faces meet at copies of their common edge's nodes and a slicer reads every edge
+/// between faces as open (FINDINGS F-093). Both faces take those nodes from the one discretisation of the edge, so the
+/// copies are bit-identical: they are matched exactly, never within a tolerance that could join two distinct points.
+/// A triangle left with two corners at one point is dropped: the kernel lays such zero-area triangles along a
+/// degenerate edge, the pole of a rounded corner, whose nodes all stand at one point. The per-vertex normals are
+/// dropped too, as no mesh writer reads them.
+fn weld(mesh: &mut Mesh) {
+    let mut at = std::collections::HashMap::with_capacity(mesh.verts.len());
+    let mut verts = Vec::with_capacity(mesh.verts.len());
+    let index: Vec<u32> = mesh
+        .verts
+        .iter()
+        .map(|p| {
+            // `+ 0.0` makes -0.0 the same key as 0.0
+            let key = [p.x, p.y, p.z].map(|c| (c + 0.0).to_bits());
+            *at.entry(key).or_insert_with(|| {
+                verts.push(*p);
+                (verts.len() - 1) as u32
+            })
+        })
+        .collect();
+    mesh.tris = mesh.tris.iter().map(|t| t.map(|i| index[i as usize])).filter(|&[a, b, c]| a != b && b != c && c != a).collect();
+    mesh.verts = verts;
+    mesh.norms.clear();
 }
 
 static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
