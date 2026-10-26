@@ -331,7 +331,40 @@ fn a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways() {
         let before = s.sketch_detail(sk).unwrap();
         assert_eq!(before.summary.dof, (0, 0));
         let spec = BreakSpec { curve: EntityRef::Id(a.entities[0]), at: (!intersections).then(|| [v(0.), v(5.)]), intersections };
-        assert!(s.sketch_break(sk, &spec).is_err(), "intersections: {intersections}");
+        let error = s.sketch_break(sk, &spec).unwrap_err().to_string();
+        // At intersections nothing holds the point on the line; a picked break splits the horizontal, which then
+        // over-holds the driven point.
+        let reason = if intersections { "would bend" } else { "redundant constraints" };
+        assert!(error.contains(reason), "intersections: {intersections}: {error}");
         assert_eq!(s.sketch_detail(sk).unwrap(), before);
     }
+}
+
+#[test]
+fn a_horizontal_line_broken_at_a_free_existing_point_is_accepted() {
+    // Review round 4 (Codex): the native halves' horizontals keep a free existing split point on the line, and the
+    // break was refused as if nothing held it.
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let a = line(&mut s, sk, [v(-10.), v(5.)], [v(10.), v(5.)], false, true);
+    let height =
+        s.sketch_detail(sk).unwrap().constraints.iter().find(|c| c.kind == "distance_y" && c.points[0] == a.points[1]).unwrap().index;
+    s.sketch_remove_constraint(sk, height).unwrap();
+    let horizontal = ConstrainSpec {
+        kind: ConstraintKind::Horizontal,
+        refs: vec![SketchRef::Id(a.entities[0])],
+        value: None,
+        axis: DistAxis::Aligned,
+        reference: false,
+    };
+    s.sketch_constrain(sk, &horizontal).unwrap();
+    let free = line(&mut s, sk, [v(0.), v(5.)], [v(3.), v(20.)], true, false);
+    let dof = s.sketch_info(sk).unwrap().dof;
+    let out =
+        s.sketch_break(sk, &BreakSpec { curve: EntityRef::Id(a.entities[0]), at: Some([v(0.), v(5.)]), intersections: false }).unwrap();
+    assert!(out.created_points.is_empty(), "the pieces meet at the existing point");
+    assert_eq!(out.dof.1, 0);
+    assert!(out.dof.0 <= dof.0);
+    let p = s.sketch_detail(sk).unwrap().points.into_iter().find(|p| p.id == free.points[0]).unwrap();
+    assert_close(p.y, 5.0, 1e-9, "the split point stays on the line");
 }

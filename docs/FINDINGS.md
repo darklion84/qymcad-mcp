@@ -1830,8 +1830,9 @@ asserts those exact fractional halves before checking away-from-zero output.
   free coordinates. The server puts each new split point on the original line's ends (`PointOnLine`), added only
   where independent, so one free place along the line remains (none at intersections). A split point that already
   existed (the pieces are welded to it) and is held by other rows cannot take that tie; unless it is already tied to
-  the line, the break is refused, since the line would bend when those rows change; so is a picked line break that
-  adds redundant rows (the split horizontal over-holding such a point).
+  the line or kept on it by the halves of a split horizontal or vertical, the break is refused, since the line would
+  bend when those rows change; a line break that adds redundant rows (split halves over-holding a driven point) is
+  refused too.
 - **Evidence:** source: `model/curve/cut.rs:91–129`. Live test 2026-10-26 D1;
   `golden_curve_edits_2::the_pieces_of_a_broken_line_stay_on_the_line` (DOF (2, 0) before the fix),
   `a_line_broken_at_a_driven_point_is_refused_rather_than_bent` (review round 2),
@@ -1843,6 +1844,8 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** `item_value` and the item formulas key an ellipse's or polygon's values by the id of its centre point;
   `ellipse_value`/`polygon_value` take the first item about that point. Concentric free ellipses share their centre
   (the adder lays it on the point standing there), so an item edit through that centre reaches only the first. The
-  server refuses an item target on a centre that more than one ellipse or polygon uses.
-- **Evidence:** source: `model/item_values.rs:29–60`. `golden_figures_1::an_item_value_on_a_shared_centre_is_refused`
-  (the outer ellipse was resized before the fix).
+  server refuses a value edit when more than one item about the centre has that key (a polygon has `sides`/`turn`,
+  an ellipse `w`/`h`/`turn`; the arcs of one broken ellipse share its axis points and count once); a name can
+  still be cleared.
+- **Evidence:** source: `model/item_values.rs:29–60,96–116`. `golden_figures_1::an_item_value_on_a_shared_centre_is_refused`
+  (the outer ellipse was resized before the fix), `item_values_on_a_shared_centre_are_set_where_one_item_answers`.

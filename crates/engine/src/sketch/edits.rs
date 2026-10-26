@@ -226,9 +226,21 @@ impl Session {
                     .collect();
                 split.sort_unstable();
                 split.dedup();
+                // The halves the app holds by a horizontal or vertical each keep the split point on the line; a point
+                // that is also held otherwise then over-holds the sketch, which the redundancy check below refuses.
+                let halved = |p: Id| {
+                    let row = |x: Id, y: Id| {
+                        after.constraints.iter().any(|c| {
+                            matches!(*c, Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } if (a, b) == (x, y) || (b, a) == (x, y))
+                        })
+                    };
+                    row(line.a, p) && row(p, line.b)
+                };
+                let halved: Vec<Id> = split.iter().copied().filter(|p| halved(*p)).collect();
                 for p in split {
                     let tie = Constraint::PointOnLine { p, a: line.a, b: line.b };
-                    let tied = before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
+                    let tied = halved.contains(&p)
+                        || before.constraints.iter().any(|c| same_membership(c, &tie) || same_membership(c, &point_on(entity, p)));
                     if !s.p.add_constraint_if_independent(si, tie) && !tied && before.point(p).is_some() {
                         return Err(Error::Invalid(format!(
                             "point {p} is held by other dimensions, so the line would bend at it when they change; tie it to the line first (point_on_curve) or break elsewhere"

@@ -140,6 +140,14 @@ impl Session {
                     return Err(Error::Invalid(format!("a polygon needs an integral side count in 3..=64, got {evaluated}")));
                 }
                 // Sizes that are positive wherever they appear; the native rebuild would only say that the feature failed.
+                if let DimTarget::Feature { node, key } = &native {
+                    let items = s.items_answering(*node, key);
+                    if items > 1 {
+                        return Err(Error::Invalid(format!(
+                            "sketch item {node} is the centre of {items} curves with a `{key}`, and QymCAD would change the first of them; dimension the curve with sketch_constrain instead"
+                        )));
+                    }
+                }
                 let size = match (target, &native) {
                     (_, DimTarget::Feature { node, key }) => {
                         // `dist` is signed on a pushed face or a plane, a size only on a chamfer.
@@ -285,26 +293,32 @@ impl Session {
                 if self.p.kept_number(*feature, key).is_none() {
                     return Err(Error::NotFound(format!("no numeric dimension `{key}` on feature or sketch item {feature}")));
                 }
-                // QymCAD addresses a sketch item's values by its centre point and takes the first item about it, so
-                // a centre shared by concentric ellipses or a polygon cannot name one of them.
-                if !self.p.timeline.iter().any(|n| n.id == *feature) {
-                    let ellipses = self
-                        .p
-                        .sketches
-                        .iter()
-                        .flat_map(|s| &s.entities)
-                        .filter(|e| e.kind.as_ellipse().is_some_and(|el| el.c == *feature))
-                        .count();
-                    let polygon = usize::from(self.p.kept_number(*feature, "sides").is_some());
-                    if ellipses + polygon > 1 {
-                        return Err(Error::Invalid(format!(
-                            "sketch item {feature} is the centre of {} curves, and QymCAD would change the first of them; dimension the curve with sketch_constrain instead",
-                            ellipses + polygon
-                        )));
-                    }
-                }
                 Ok(DimTarget::Feature { node: *feature, key: key.clone() })
             }
+        }
+    }
+
+    /// How many sketch items answer `key` about centre point `centre`. QymCAD addresses an item's values by its centre
+    /// and takes the first item about it that has the key (`item_value`: a polygon's `sides`/`turn`, then an
+    /// ellipse's `w`/`h`/`turn`), so a value shared by more than one cannot name one of them (F-092). The arcs of one
+    /// broken ellipse share its axis points and count once.
+    fn items_answering(&self, centre: Id, key: &str) -> usize {
+        if self.p.timeline.iter().any(|n| n.id == centre) {
+            return 0;
+        }
+        let frames: HashSet<(Id, Id)> = self
+            .p
+            .sketches
+            .iter()
+            .flat_map(|s| &s.entities)
+            .filter_map(|e| e.kind.as_ellipse().filter(|el| el.c == centre).map(|el| (el.ma, el.mi)))
+            .collect();
+        let polygon = usize::from(self.p.kept_number(centre, "sides").is_some());
+        match key {
+            "sides" => polygon,
+            "w" | "h" => frames.len(),
+            "turn" => polygon + frames.len(),
+            _ => 0,
         }
     }
 

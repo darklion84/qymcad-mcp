@@ -466,3 +466,40 @@ fn an_item_value_on_a_shared_centre_is_refused() {
     assert!(error.to_string().contains("centre of 2 curves"), "{error}");
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
 }
+
+#[test]
+fn item_values_on_a_shared_centre_are_set_where_one_item_answers() {
+    // Review round 4 (Codex): the shared-centre refusal counted curves regardless of the key, so a polygon's
+    // `sides` and an ellipse's `w` about one centre, or the width of an ellipse broken into arcs, were refused; and
+    // clearing a name was refused too.
+    let mut s = Session::new_part();
+    let sk = sketch(&mut s);
+    let ellipse = EllipseSpec { cx: n(20.0), cy: n(30.0), rx: n(8.0), ry: n(6.0), turn: n(0.0), construction: false, dimensioned: false };
+    let el = s.sketch_ellipse(sk, &ellipse).unwrap();
+    let polygon = PolygonSpec {
+        cx: n(20.0),
+        cy: n(30.0),
+        sides: 6,
+        r: Some(n(3.0)),
+        angle: Some(n(30.0)),
+        vertex: None,
+        construction: false,
+        dimensioned: false,
+    };
+    let pg = s.sketch_polygon(sk, &polygon).unwrap();
+    let centre = el.points[0];
+    assert_eq!(pg.points[0], centre, "the polygon shares the ellipse's centre");
+    s.dimension_set(&DimensionTarget::Feature { feature: centre, key: "sides".into() }, Some(&n(8.0)), None).unwrap();
+    s.dimension_set(&DimensionTarget::Feature { feature: centre, key: "w".into() }, Some(&n(20.0)), None).unwrap();
+    let turn = s.dimension_set(&DimensionTarget::Feature { feature: centre, key: "turn".into() }, Some(&n(10.0)), None).unwrap_err();
+    assert!(turn.to_string().contains("centre of 2 curves with a `turn`"), "{turn}");
+    s.dimension_set(&DimensionTarget::Feature { feature: centre, key: "w".into() }, None, Some("")).unwrap();
+
+    let mut s = Session::new_part();
+    let sk = sketch(&mut s);
+    let el = s.sketch_ellipse(sk, &ellipse).unwrap();
+    s.sketch_break(sk, &BreakSpec { curve: EntityRef::Id(el.entities[0]), at: Some([n(28.0), n(30.0)]), intersections: false }).unwrap();
+    // The arcs of one ellipse are one item here; their own end points may still hold the width (another refusal).
+    let w = s.dimension_set(&DimensionTarget::Feature { feature: el.points[0], key: "w".into() }, Some(&n(20.0)), None);
+    assert!(w.as_ref().err().is_none_or(|e| !e.to_string().contains("centre of")), "{w:?}");
+}

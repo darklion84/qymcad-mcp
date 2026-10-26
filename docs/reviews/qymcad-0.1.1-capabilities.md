@@ -103,3 +103,16 @@ All round 2 fixes checked by reading and confirmed, except the one below.
 | 4 | nit | the radius and arc-length branches of the sketch refusal have no test | agreed | `every_named_size_refusal_has_its_case` | — |
 
 After the fixes: `check.sh` OK, 544 passed.
+
+## Round 4 (narrow: the round 3 diff a7c450f..97d09bf; the user chose it after three rounds)
+
+### Codex (REJECT: 2 major, 2 minor)
+
+| # | Severity | Finding | Verdict | Evidence | Action |
+|---|---|---|---|---|---|
+| 1 | major | a picked break of a horizontal line at a free existing point was refused, though the native halves keep the point on the line | confirmed | `golden_curve_edits_2::a_horizontal_line_broken_at_a_free_existing_point_is_accepted` failed | a split point held by the halves' horizontal/vertical rows counts as tied; a driven one is caught by the redundancy check |
+| 2 | major | the shared-centre refusal counted curves regardless of the key: a polygon's `sides` and an ellipse's `w` about one centre, or one broken ellipse's arcs, were refused | confirmed | `golden_figures_1::item_values_on_a_shared_centre_are_set_where_one_item_answers` failed | counted per key, ellipse arcs by their axis frame |
+| 3 | minor | clearing a name on a shared centre was refused | confirmed | same test | the check runs only when a value is set |
+| 4 | minor | the redundancy refusal of a line break had no test that reached it | confirmed (the test returned earlier) | the picked case of `a_horizontal_line_broken_at_a_driven_point_is_refused_both_ways` now asserts the redundancy message; it fails with the check removed | — |
+
+After the fixes: `check.sh` OK, 546 passed.
