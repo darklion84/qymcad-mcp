@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Fixed
+- Refuse text-height edits through `dimension_set` and inherited item formulas; preserve existing text
+  geometry across parameter/sketch edits and refuse stale height evaluation on open (upstream #347).
+- Refuse undersized ISO internal bores that bury the thread groove, checking current stock again after
+  every rebuild; retain the exposed-groove margin at native stock boundaries. Custom angles ≤1° are
+  refused because native substitutes 60°. Thread validation errors include the feature name and id.
+- Refuse split edits that exchange piece identities despite keeping the count, using global geometric
+  overlap matching. Ordinary moves with preserved identities remain allowed.
+- Refuse numeric-looking piece, sketch and feature names that the resolver interprets as ids.
+
 ### Added
 - Native parametric `thread` with size aliases, persistent rim selection, side detection, all numeric formula
   keys and basic geometry reporting. Default fit is capped to leave the groove exposed; explicit unsafe fits

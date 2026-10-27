@@ -97,7 +97,7 @@ impl Session {
             if let Some(e) = dist.expr() {
                 s.p.set_feat_dim(id, "dist", e);
             }
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
     }
@@ -149,7 +149,7 @@ impl Session {
             if let (Some(e), false) = (a.height.expr(), a.through) {
                 s.p.set_feat_dim(id, "height", e);
             }
-            s.set_node_name(id, a.name.as_deref());
+            s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })
     }

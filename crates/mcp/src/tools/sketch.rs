@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 pub struct CreateArgs {
     /// Sketch plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or {"body": <body>, "face": <planar face id>}.
     pub plane: PlaneArg,
-    /// Name to refer to the sketch later.
+    /// Name to refer to the sketch later. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -56,7 +56,8 @@ pub struct PolygonArgs {
     pub dimensioned: bool,
 }
 
-/// Fixed native text geometry with baked glyphs; recreate the text to resize it.
+/// Fixed native text geometry with baked glyphs; remove and recreate text to change height, anchor,
+/// angle, font or characters. Dimension and parameter edits cannot change existing text geometry.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextArgs {
@@ -226,7 +227,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_add",
-            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; recreate it to resize because app height edits can swap glyph/counter contour ids. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or glyphs are refused. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
+            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or glyphs are refused. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
              dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in \
              QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that \
              coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form \

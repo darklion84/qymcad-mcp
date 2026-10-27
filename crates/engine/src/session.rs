@@ -290,8 +290,10 @@ impl Session {
                 return Err(Error::Invalid(format!("cannot open safely: {e}; the document requires a rebuild")));
             }
         }
+        let before_evaluation = sess.p.clone_without_source_data();
         sess.p.eval_parameters();
-        sess.check_thread_dimensions()?;
+        sess.check_fixed_text_geometry(&before_evaluation)?;
+        sess.check_thread_dimensions().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         let sketches: Vec<Id> = sess.p.sketches.iter().map(|s| s.id).collect();
         for sid in sketches {
             sess.track_datum_dependencies(sid);
@@ -440,8 +442,8 @@ impl Session {
     /// F-005 still holds: a datum created by the edit is one of its nodes.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
-        if let Err(e) = self.check_thread_dimensions() {
-            return Rebuild { errors: vec![self.issue(0, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
+        if let Err((id, e)) = self.check_thread_dimensions() {
+            return Rebuild { errors: vec![self.issue(id, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
         }
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {
@@ -470,6 +472,7 @@ impl Session {
         } else {
             None
         };
+        let split_identities = self.split_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
         let shapes = std::mem::take(&mut self.shapes);
@@ -543,6 +546,16 @@ impl Session {
             // node rebuilds next time.
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
+        }
+        for (node, message) in self.split_identity_refusals(&split_identities, &rebuilt) {
+            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            errors.push(self.issue(node, message));
+        }
+        for issue in self.check_thread_stock() {
+            if !errors.iter().any(|e| e.node == issue.node) {
+                self.p.regen_errors.insert(issue.node, qymcad_core::errors::CoreError::Kernel(issue.message.clone()));
+                errors.push(issue);
+            }
         }
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
@@ -677,6 +690,11 @@ impl Session {
         context: &str,
         edit: impl FnOnce(&mut Session) -> Result<T>,
     ) -> Result<T> {
+        if let Err(error) = self.check_fixed_text_geometry(&before) {
+            self.p = before;
+            return Err(error);
+        }
+        let split_identities = self.split_identities();
         let before_warnings = self.advisory_warnings.clone();
         let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
         let copies = copy_shapes(
@@ -700,7 +718,22 @@ impl Session {
                 std::mem::swap(original, copy);
             }
         }
-        let result = edit(self);
+        let result = edit(self).and_then(|value| {
+            self.check_fixed_text_geometry(&before)?;
+            // Callers allow unrelated native errors that existed before an edit. That exemption must
+            // never hide a new safety refusal on the same node (e.g. a previously overlong thread).
+            if let Err((id, error)) = self.check_thread_dimensions() {
+                return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
+            }
+            let mut refused = self.check_thread_stock();
+            refused.extend(
+                self.split_identity_refusals(&split_identities, nodes).into_iter().map(|(node, message)| self.issue(node, message)),
+            );
+            if !refused.is_empty() {
+                return Err(Error::Rebuild(refused.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect()));
+            }
+            Ok(value)
+        });
         if result.is_err() {
             self.p = before;
             self.advisory_warnings = before_warnings;
@@ -714,7 +747,10 @@ impl Session {
     /// Run edits that do not need a rebuild (sketch geometry) as one unit: on error the document is restored.
     pub fn transaction<T>(&mut self, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
         let before = self.p.clone();
-        let r = edit(self);
+        let r = edit(self).and_then(|value| {
+            self.check_fixed_text_geometry(&before)?;
+            Ok(value)
+        });
         if r.is_err() {
             self.p = before;
         }
@@ -770,10 +806,22 @@ impl Session {
         Rebuild { errors, warnings, bodies, ..Default::default() }
     }
 
-    pub(crate) fn set_node_name(&mut self, id: Id, name: Option<&str>) {
-        if let (Some(name), Some(n)) = (name, self.p.timeline.iter_mut().find(|n| n.id == id)) {
-            n.name = name.to_string();
+    /// Keep object aliases distinct from the numeric syntax reserved by `resolve`.
+    pub(crate) fn check_object_name(name: &str) -> Result<()> {
+        if name.trim().parse::<Id>().is_ok() {
+            return Err(Error::Invalid(format!("object name `{name}` is interpreted as an id; choose a nonnumeric name")));
         }
+        Ok(())
+    }
+
+    pub(crate) fn set_node_name(&mut self, id: Id, name: Option<&str>) -> Result<()> {
+        if let Some(name) = name {
+            Self::check_object_name(name)?;
+            if let Some(n) = self.p.timeline.iter_mut().find(|n| n.id == id) {
+                n.name = name.to_string();
+            }
+        }
+        Ok(())
     }
 
     /// Display name of a body. Split outputs use their native piece names; ordinary feature names stay compatible.

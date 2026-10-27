@@ -32,7 +32,7 @@ pub struct ThreadOptions {
     pub crest_r: Option<Num>,
     /// Root radius; zero takes the standard value.
     pub root_r: Option<Num>,
-    /// Custom profile included angle, default 60 degrees.
+    /// Custom profile included angle, strictly greater than 1 and less than 180 degrees; default 60.
     pub angle: Option<Num>,
     /// Custom profile depth; zero takes the native default.
     pub depth: Option<Num>,
@@ -217,6 +217,34 @@ fn check_fit(spec: ThreadSpec) -> Result<()> {
     Ok(())
 }
 
+fn check_custom_angle(spec: ThreadSpec) -> Result<()> {
+    if spec.standard == ThreadStandard::Custom && spec.custom_angle <= 1.0 {
+        return Err(Error::Invalid(format!(
+            "custom thread angle must be greater than 1 degree and less than 180 degrees, got {}; native ignores angles at or below 1 degree",
+            spec.custom_angle
+        )));
+    }
+    Ok(())
+}
+
+// Native ISO internal prep moves an undersize hole's cutter start to D1/2. Every other
+// profile starts at the actual stock rim, including oversized external stock.
+fn check_stock_open(spec: ThreadSpec, radius: f64) -> Result<()> {
+    let g = spec.geometry();
+    let relief = spec.radial_relief();
+    // occt_helical.cpp only translates the cutter above this exact threshold.
+    let relief = if relief > 1e-6 { relief } else { 0.0 };
+    let start_gap = if spec.internal && spec.standard == ThreadStandard::MetricIso { (g.minor_d * 0.5 - radius).max(0.0) } else { 0.0 };
+    if start_gap + relief > 0.13 * g.pitch {
+        let minimum = g.minor_d + 2.0 * (relief - 0.13 * g.pitch);
+        return Err(Error::Invalid(format!(
+            "thread bore diameter {} is below open-groove limit {minimum:.9} mm: cutter start and radial relief would bury the groove; keep 0.02 pitch exposed",
+            2.0 * radius
+        )));
+    }
+    Ok(())
+}
+
 impl Session {
     /// Cut a native thread on exactly one circular stock rim. Side assertions are checked before creation.
     /// Precondition: the caller must not hold the kernel gate.
@@ -282,6 +310,7 @@ impl Session {
                 custom_angle: values["angle"],
                 custom_depth: values["depth"],
             };
+            check_custom_angle(spec)?;
             let fit_reason = if options.fit.is_none() && spec.radial_relief() > 0.13 * spec.geometry().pitch {
                 spec.fit = fit_limit(spec);
                 values.insert("fit", spec.fit);
@@ -294,6 +323,7 @@ impl Session {
                 "Explicit fit keeps the groove open with the required 0.02 pitch margin".into()
             };
             check_fit(spec)?;
+            check_stock_open(spec, r)?;
             if let Some(reason) = s.p.thread_refusal(src, (c, axis, r), spec, length) {
                 return Err(Error::Invalid(crate::localization::error(&reason)));
             }
@@ -304,7 +334,7 @@ impl Session {
                 s.p.write_feat_formula(&FeatNumber { node: id, key }, &text, PlainNumber::Stands)
                     .map_err(|e| Error::Expr(format!("thread {key}: {e:?}")))?;
             }
-            s.set_node_name(id, options.name.as_deref());
+            s.set_node_name(id, options.name.as_deref())?;
             Ok((src, (id, ids[0]), spec, length, available, fit_reason))
         })?;
         let (body, edge) = rim_id;
@@ -335,39 +365,82 @@ impl Session {
     }
 
     /// Check every evaluated thread key before native regeneration can round counts or clamp dimensions.
-    pub(crate) fn check_thread_dimensions(&self) -> Result<()> {
-        let vars = self.p.param_map();
+    pub(crate) fn check_thread_dimensions(&self) -> std::result::Result<(), (Id, Error)> {
         for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
-            let FeatureKind::Thread { mut spec, .. } = n.kind else {
-                continue;
-            };
-            for key in ["length", "lead_in", "lead_out", "nominal", "pitch", "fit", "crest_r", "root_r", "angle", "depth", "starts"] {
-                let target = qymcad_core::model::DimTarget::Feature { node: n.id, key: key.into() };
-                let v = self
-                    .p
-                    .feat_dims
-                    .get(&n.id)
-                    .and_then(|m| m.get(key))
-                    .filter(|e| !e.trim().is_empty())
-                    .map(|e| Num::Expr(e.clone()).eval(&vars))
-                    .transpose()?
-                    .or_else(|| self.p.dim_target_value(&target))
-                    .ok_or_else(|| Error::Invalid(format!("thread {} missing {key}", n.id)))?;
-                validate(key, v)?;
-                match key {
-                    "nominal" => spec.nominal_d = v,
-                    "pitch" => spec.pitch = v,
-                    "fit" => spec.fit = v,
-                    "crest_r" => spec.crest_r = (v > 0.0).then_some(v),
-                    "root_r" => spec.root_r = (v > 0.0).then_some(v),
-                    "angle" => spec.custom_angle = v,
-                    "depth" => spec.custom_depth = v,
-                    "starts" => spec.starts = v as u32,
-                    _ => (),
-                }
+            if let FeatureKind::Thread { spec, .. } = n.kind {
+                self.evaluated_thread(n.id, spec).map_err(|e| (n.id, e))?;
             }
-            check_fit(spec)?;
         }
         Ok(())
+    }
+
+    fn evaluated_thread(&self, id: Id, mut spec: ThreadSpec) -> Result<(ThreadSpec, f64)> {
+        let vars = self.p.param_map();
+        let mut length = 0.0;
+        for key in ["length", "lead_in", "lead_out", "nominal", "pitch", "fit", "crest_r", "root_r", "angle", "depth", "starts"] {
+            let target = qymcad_core::model::DimTarget::Feature { node: id, key: key.into() };
+            let v = self
+                .p
+                .feat_dims
+                .get(&id)
+                .and_then(|m| m.get(key))
+                .filter(|e| !e.trim().is_empty())
+                .map(|e| Num::Expr(e.clone()).eval(&vars))
+                .transpose()?
+                .or_else(|| self.p.dim_target_value(&target))
+                .ok_or_else(|| Error::Invalid(format!("thread {id} missing {key}")))?;
+            validate(key, v)?;
+            match key {
+                "length" => length = v,
+                "nominal" => spec.nominal_d = v,
+                "pitch" => spec.pitch = v,
+                "fit" => spec.fit = v,
+                "crest_r" => spec.crest_r = (v > 0.0).then_some(v),
+                "root_r" => spec.root_r = (v > 0.0).then_some(v),
+                "angle" => spec.custom_angle = v,
+                "depth" => spec.custom_depth = v,
+                "starts" => spec.starts = v as u32,
+                _ => (),
+            }
+        }
+        check_custom_angle(spec)?;
+        check_fit(spec)?;
+        Ok((spec, length))
+    }
+
+    /// Stock is checked after regeneration: a source-sketch edit can move the saved rim during this pass.
+    pub(crate) fn check_thread_stock(&self) -> Vec<crate::NodeIssue> {
+        self.p
+            .timeline
+            .iter()
+            .filter(|n| !n.suppressed)
+            .filter_map(|n| {
+                let FeatureKind::Thread { src, edge, spec, .. } = n.kind else { return None };
+                let check = || -> Result<()> {
+                    let (mut spec, length) = self.evaluated_thread(n.id, spec)?;
+                    let rim = self
+                        .p
+                        .regen_edges
+                        .get(&src)
+                        .into_iter()
+                        .flatten()
+                        .find(|e| e.id == edge)
+                        .ok_or_else(|| Error::Invalid(format!("thread source rim {edge} is unavailable")))?;
+                    let mi = self.p.mesh_index(src).ok_or_else(|| Error::NotFound(format!("thread source body {src}")))?;
+                    let mesh = &self.p.bodies[mi].mesh;
+                    let axis = qymcad_core::geom::axis_along_cylinder(mesh, rim.center, rim.axis, rim.radius)
+                        .ok_or_else(|| Error::Invalid("thread rim has no adjacent cylindrical stock".into()))?;
+                    spec.internal = qymcad_core::geom::cyl_side_from_mesh(mesh, rim.center, axis, rim.radius, 0.0, length)
+                        .ok_or_else(|| Error::Invalid("cannot detect the material side of this thread rim".into()))?;
+                    check_fit(spec)?;
+                    check_stock_open(spec, rim.radius)?;
+                    if let Some(reason) = self.p.thread_refusal(src, (rim.center, axis, rim.radius), spec, length) {
+                        return Err(Error::Invalid(crate::localization::error(&reason)));
+                    }
+                    Ok(())
+                };
+                check().err().map(|e| crate::NodeIssue { node: n.id, name: self.node_name(n.id), message: e.to_string() })
+            })
+            .collect()
     }
 }

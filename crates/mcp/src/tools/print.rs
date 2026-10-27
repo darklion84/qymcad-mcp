@@ -53,13 +53,13 @@ struct ThreadArgs {
     /// Root rounding radius, mm (number or expression). Default 0 uses the standard profile.
     #[serde(default)]
     root_r: Option<Num>,
-    /// Included flank angle for a custom profile, degrees (number or expression). Default 60.
+    /// Included flank angle for a custom profile, degrees (number or expression), strictly greater than 1 and less than 180. Default 60; native ignores angles at or below 1.
     #[serde(default)]
     angle: Option<Num>,
     /// Radial depth for a custom profile, mm (number or expression). Default 0 uses the native pitch-based depth.
     #[serde(default)]
     depth: Option<Num>,
-    /// Name of the new thread feature/body, usable instead of its id later.
+    /// Name of the new thread feature/body, usable instead of its id later. Names interpreted as numeric ids are refused.
     #[serde(default)]
     name: Option<String>,
 }
@@ -114,10 +114,10 @@ struct SplitArgs {
     /// Offset in mm along the operation plane's normal (number or expression). Default 0; XZ points along +Y.
     #[serde(default = "zero")]
     offset: Num,
-    /// Split feature name, also used as the prefix for default native piece names.
+    /// Split feature name, also used as the prefix for default native piece names. Names interpreted as numeric ids are refused.
     #[serde(default)]
     name: Option<String>,
-    /// Native names of every resulting piece, in result order. Default: <feature name> 1, <feature name> 2, etc.
+    /// Distinct native names of every resulting piece, in result order. Names interpreted as numeric ids (including +1 or leading zeroes) are refused. Default: <feature name> 1, <feature name> 2, etc.
     #[serde(default)]
     piece_names: Option<Vec<String>>,
 }
@@ -130,7 +130,7 @@ fn zero() -> Num {
 pub(super) fn tools() -> Vec<Tool> {
     vec![tool(
         "thread",
-        "Cut a native parametric thread from exactly one circular rim of the current stock. Use size M8/M8x1.25/Tr16x4 or canonical standard/nominal/pitch; length is required. The engine detects external/internal material and refuses an explicit kind mismatch, off-size stock, overlong threads and cuts that remove nothing. App print defaults are lead_in/lead_out 1.5 mm and fit 0.2 mm, lowered when necessary so radial relief stays at most 0.13 pitch. Explicit fits above this limit and later unsafe edits are refused; the result reports the fit used and reason. Every numeric field remains editable through dimension_set's feature/key target. Returns the new body id, persistent rim, detected side, effective pitch/lead, standard basic diameters and fit radial relief, plus the normal rebuild report. Basic diameters are not measured fit-adjusted thread diameters; fit is modelling clearance, not an ISO tolerance class or a printed mating guarantee. Atomic on rebuild failure. Read topology again before selecting edges on the resulting body.",
+        "Cut a native parametric thread from exactly one circular rim of the current stock. Use size M8/M8x1.25/Tr16x4 or canonical standard/nominal/pitch; length is required. The engine detects external/internal material and refuses an explicit kind mismatch, off-size stock, overlong threads and cuts that remove nothing. App print defaults are lead_in/lead_out 1.5 mm and fit 0.2 mm, lowered when necessary so radial relief stays at most 0.13 pitch. ISO internal bores also need diameter at least D1-.26*pitch+2*effective_relief (D1=nominal-1.082532*pitch; effective_relief is radial relief above 1e-6 mm, otherwise zero); external stock remains within nominal +/- max(.05*nominal,.5*pitch). Stock and profile edits recheck the 0.02 pitch groove exposure after regeneration. Custom angle must be >1 and <180 degrees. Explicit fits above the relief limit and later unsafe edits are refused; the result reports the fit used and reason. Every numeric field remains editable through dimension_set's feature/key target. Returns the new body id, persistent rim, detected side, effective pitch/lead, standard basic diameters and fit radial relief, plus the normal rebuild report. Basic diameters are not measured fit-adjusted thread diameters; fit is modelling clearance, not an ISO tolerance class or a printed mating guarantee. Atomic on rebuild failure. Read topology again before selecting edges on the resulting body.",
         |st, a: ThreadArgs| {
             let session = st.doc()?;
             let body = a.body.as_ref().map(|body| body.resolve(session)).transpose()?;
@@ -160,7 +160,7 @@ pub(super) fn tools() -> Vec<Tool> {
         },
     ), tool(
         "split",
-        "Split one body into separate bodies using a base plane, datum plane or planar face and a formula-capable offset. Base-plane offset directions are XY +Z, XZ +Y and YZ +X. Refuses a plane that cuts nothing. The piece count is fixed at creation; later edits that change it fail atomically. Returns the feature/body id and every piece's native id, name, volume and bounds. Names default to <feature name> 1..n or use piece_names. Use an explicit body after a split for further modelling; omitting body retains the usual current-tip behavior. Numeric ids and native piece names select any piece in modelling tools and export bodies; export writes one file per call, and bodies:[piece] writes that piece alone.",
+        "Split one body into separate bodies using a base plane, datum plane or planar face and a formula-capable offset. Base-plane offset directions are XY +Z, XZ +Y and YZ +X. Refuses a plane that cuts nothing. The piece count is fixed at creation; later edits that change it fail atomically. Every rebuilt split must retain piece identity by unique maximum total bounding-box overlap; swaps, ambiguous matches and moves without overlap are refused atomically with affected piece names. Recreate the split for such changes. Returns the feature/body id and every piece's native id, name, volume and bounds. Names default to <feature name> 1..n or use piece_names; names interpreted as numeric ids are refused. Use an explicit body after a split for further modelling; omitting body retains the usual current-tip behavior. Numeric ids and native piece names select any piece in modelling tools and export bodies; export writes one file per call, and bodies:[piece] writes that piece alone.",
         |st, a: SplitArgs| {
             let session = st.doc()?;
             let body = a.body.as_ref().map(|body| body.resolve(session)).transpose()?;

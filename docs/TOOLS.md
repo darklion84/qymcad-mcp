@@ -113,7 +113,7 @@ The whole document: parameters, sketches (world_frame, contours, degrees of free
 
 ## dimension_set
 
-Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.
+Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Text height edits and changes to existing text through imported formulas are refused: remove and recreate text to change its height, position, angle, font or characters. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.
 
 ```json
 {
@@ -212,7 +212,7 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
           "type": "null"
         }
       ],
-      "description": "New value or formula. A literal replaces a previous formula."
+      "description": "New value or formula. A literal replaces a previous formula. Text height edits are refused;\nremove and recreate text to change its fixed geometry."
     }
   },
   "required": [
@@ -224,7 +224,7 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
 
 ## param_set
 
-Create or change a named parameter and rebuild everything that depends on it. Use parameters for every dimension the user may want to change, then refer to them in expressions. If the model no longer builds, the change is rolled back and the error returned. After GUI structural edits (re-hosting a datum sketch, creating a new datum sketch, or replacing a datum distance expression), reopen and save through the server before further GUI parameter edits so its persisted datum dependencies are refreshed (ADR 0007).
+Create or change a named parameter and rebuild everything that depends on it. Use parameters for every dimension the user may want to change, then refer to them in expressions. If the model no longer builds, the change is rolled back and the error returned. Edits that change existing text geometry through imported item formulas are refused; remove and recreate the text instead. After GUI structural edits (re-hosting a datum sketch, creating a new datum sketch, or replacing a datum distance expression), reopen and save through the server before further GUI parameter edits so its persisted datum dependencies are refreshed (ADR 0007).
 
 ```json
 {
@@ -353,7 +353,7 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
   "properties": {
     "name": {
       "default": null,
-      "description": "Name to refer to the sketch later.",
+      "description": "Name to refer to the sketch later. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -373,7 +373,7 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
 
 ## sketch_add
 
-Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; recreate it to resize because app height edits can swap glyph/counter contour ids. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or glyphs are refused. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form contours; a contour inside another becomes a hole when the outer one is extruded. Returns the new entity and point ids and the sketch (entities, points, constraints, contours, dof; dof [0, 0] = fully defined). Features built from the sketch are rebuilt.
+Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or glyphs are refused. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form contours; a contour inside another becomes a hole when the outer one is extruded. Returns the new entity and point ids and the sketch (entities, points, constraints, contours, dof; dof [0, 0] = fully defined). Features built from the sketch are rebuilt.
 
 ```json
 {
@@ -2446,7 +2446,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
     },
     "name": {
       "default": null,
-      "description": "Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -2560,7 +2560,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -2745,7 +2745,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -2952,7 +2952,7 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
   "properties": {
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3118,7 +3118,7 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
   "properties": {
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3238,7 +3238,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3346,7 +3346,7 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3513,7 +3513,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3614,7 +3614,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3740,7 +3740,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3851,7 +3851,7 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -3959,7 +3959,7 @@ Copy the WHOLE body `count` times about an axis (default world Z), including all
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -4061,7 +4061,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -4081,7 +4081,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
 
 ## thread
 
-Cut a native parametric thread from exactly one circular rim of the current stock. Use size M8/M8x1.25/Tr16x4 or canonical standard/nominal/pitch; length is required. The engine detects external/internal material and refuses an explicit kind mismatch, off-size stock, overlong threads and cuts that remove nothing. App print defaults are lead_in/lead_out 1.5 mm and fit 0.2 mm, lowered when necessary so radial relief stays at most 0.13 pitch. Explicit fits above this limit and later unsafe edits are refused; the result reports the fit used and reason. Every numeric field remains editable through dimension_set's feature/key target. Returns the new body id, persistent rim, detected side, effective pitch/lead, standard basic diameters and fit radial relief, plus the normal rebuild report. Basic diameters are not measured fit-adjusted thread diameters; fit is modelling clearance, not an ISO tolerance class or a printed mating guarantee. Atomic on rebuild failure. Read topology again before selecting edges on the resulting body.
+Cut a native parametric thread from exactly one circular rim of the current stock. Use size M8/M8x1.25/Tr16x4 or canonical standard/nominal/pitch; length is required. The engine detects external/internal material and refuses an explicit kind mismatch, off-size stock, overlong threads and cuts that remove nothing. App print defaults are lead_in/lead_out 1.5 mm and fit 0.2 mm, lowered when necessary so radial relief stays at most 0.13 pitch. ISO internal bores also need diameter at least D1-.26*pitch+2*effective_relief (D1=nominal-1.082532*pitch; effective_relief is radial relief above 1e-6 mm, otherwise zero); external stock remains within nominal +/- max(.05*nominal,.5*pitch). Stock and profile edits recheck the 0.02 pitch groove exposure after regeneration. Custom angle must be >1 and <180 degrees. Explicit fits above the relief limit and later unsafe edits are refused; the result reports the fit used and reason. Every numeric field remains editable through dimension_set's feature/key target. Returns the new body id, persistent rim, detected side, effective pitch/lead, standard basic diameters and fit radial relief, plus the normal rebuild report. Basic diameters are not measured fit-adjusted thread diameters; fit is modelling clearance, not an ISO tolerance class or a printed mating guarantee. Atomic on rebuild failure. Read topology again before selecting edges on the resulting body.
 
 ```json
 {
@@ -4124,7 +4124,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
         }
       ],
       "default": null,
-      "description": "Included flank angle for a custom profile, degrees (number or expression). Default 60."
+      "description": "Included flank angle for a custom profile, degrees (number or expression), strictly greater than 1 and less than 180. Default 60; native ignores angles at or below 1."
     },
     "body": {
       "anyOf": [
@@ -4238,7 +4238,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
     },
     "name": {
       "default": null,
-      "description": "Name of the new thread feature/body, usable instead of its id later.",
+      "description": "Name of the new thread feature/body, usable instead of its id later. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -4319,7 +4319,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
 
 ## split
 
-Split one body into separate bodies using a base plane, datum plane or planar face and a formula-capable offset. Base-plane offset directions are XY +Z, XZ +Y and YZ +X. Refuses a plane that cuts nothing. The piece count is fixed at creation; later edits that change it fail atomically. Returns the feature/body id and every piece's native id, name, volume and bounds. Names default to <feature name> 1..n or use piece_names. Use an explicit body after a split for further modelling; omitting body retains the usual current-tip behavior. Numeric ids and native piece names select any piece in modelling tools and export bodies; export writes one file per call, and bodies:[piece] writes that piece alone.
+Split one body into separate bodies using a base plane, datum plane or planar face and a formula-capable offset. Base-plane offset directions are XY +Z, XZ +Y and YZ +X. Refuses a plane that cuts nothing. The piece count is fixed at creation; later edits that change it fail atomically. Every rebuilt split must retain piece identity by unique maximum total bounding-box overlap; swaps, ambiguous matches and moves without overlap are refused atomically with affected piece names. Recreate the split for such changes. Returns the feature/body id and every piece's native id, name, volume and bounds. Names default to <feature name> 1..n or use piece_names; names interpreted as numeric ids are refused. Use an explicit body after a split for further modelling; omitting body retains the usual current-tip behavior. Numeric ids and native piece names select any piece in modelling tools and export bodies; export writes one file per call, and bodies:[piece] writes that piece alone.
 
 ```json
 {
@@ -4433,7 +4433,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
     },
     "name": {
       "default": null,
-      "description": "Split feature name, also used as the prefix for default native piece names.",
+      "description": "Split feature name, also used as the prefix for default native piece names. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
         "null"
@@ -4446,7 +4446,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
     },
     "piece_names": {
       "default": null,
-      "description": "Native names of every resulting piece, in result order. Default: <feature name> 1, <feature name> 2, etc.",
+      "description": "Distinct native names of every resulting piece, in result order. Names interpreted as numeric ids (including +1 or leading zeroes) are refused. Default: <feature name> 1, <feature name> 2, etc.",
       "items": {
         "type": "string"
       },

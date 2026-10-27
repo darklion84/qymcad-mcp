@@ -3,7 +3,7 @@ use super::purpose;
 use crate::error::{Error, Result};
 use crate::session::Session;
 use qymcad_core::geom::Point2;
-use qymcad_core::model::{FontRef, Id};
+use qymcad_core::model::{FontRef, Id, Project};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +59,31 @@ pub struct TextInfo {
 }
 
 impl Session {
+    /// Imported item formulas can reach text through an unrelated parameter or dimension edit. Keep
+    /// existing glyph recipes fixed before rebuilding; additions and explicit removals stay supported.
+    pub(crate) fn check_fixed_text_geometry(&self, before: &Project) -> Result<()> {
+        for old_sketch in &before.sketches {
+            let Some(sketch) = self.p.sketches.iter().find(|s| s.id == old_sketch.id) else { continue };
+            for old in &old_sketch.texts {
+                let Some(text) = sketch.texts.iter().find(|t| t.id == old.id) else { continue };
+                if text.height != old.height
+                    || text.x != old.x
+                    || text.y != old.y
+                    || text.angle != old.angle
+                    || text.text != old.text
+                    || text.font != old.font
+                    || text.glyphs != old.glyphs
+                {
+                    return Err(Error::Invalid(format!(
+                        "text {} geometry is fixed (height, position, angle, font and characters): edits can exchange glyph/counter contour ids; remove and recreate the text instead; edit rolled back",
+                        text.id
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Bake and add a native text object. Geometry is fixed because native height edits can swap profiles.
     pub fn sketch_text(&mut self, sketch: Id, a: &TextSpec) -> Result<Id> {
         self.transaction(|s| {

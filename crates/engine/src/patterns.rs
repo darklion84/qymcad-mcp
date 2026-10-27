@@ -140,7 +140,7 @@ impl Session {
                     dim(s, id, &format!("count{sfx}"), &d.count);
                 }
             }
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
     }
@@ -174,7 +174,7 @@ impl Session {
             let id = s.p.add_circular_array_axis(src, n, ang, ax);
             dim(s, id, "count", count);
             dim(s, id, "angle", angle);
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
     }
@@ -217,7 +217,7 @@ impl Session {
                     id
                 }
             };
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
     }

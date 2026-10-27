@@ -50,7 +50,8 @@ pub enum DimensionTargetArg {
 pub struct DimensionSetArgs {
     /// One sketch constraint or feature/item dimension, with no mixed selector fields.
     pub target: DimensionTargetArg,
-    /// New value or formula. A literal replaces a previous formula.
+    /// New value or formula. A literal replaces a previous formula. Text height edits are refused;
+    /// remove and recreate text to change its fixed geometry.
     pub value: Option<Num>,
     /// Case-sensitive sketch/feature driver name; empty clears the name. New sketch-item names are refused
     /// because native app edits do not dirty their sketch. At least value or name is required.
@@ -59,7 +60,7 @@ pub struct DimensionSetArgs {
 
 pub fn tools() -> Vec<Tool> {
     vec![
-        tool("dimension_set", "Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.", |st, a: DimensionSetArgs| {
+        tool("dimension_set", "Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Text height edits and changes to existing text through imported formulas are refused: remove and recreate text to change its height, position, angle, font or characters. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.", |st, a: DimensionSetArgs| {
             let s = st.doc()?;
             let target = match a.target {
                 DimensionTargetArg::Sketch { sketch, constraint } => qymcad_engine::DimensionTarget::Sketch { sketch: sketch.resolve(s)?, constraint },
@@ -75,7 +76,7 @@ pub fn tools() -> Vec<Tool> {
             "param_set",
             "Create or change a named parameter and rebuild everything that depends on it. Use parameters for every \
              dimension the user may want to change, then refer to them in expressions. If the model no longer \
-             builds, the change is rolled back and the error returned. After GUI structural edits (re-hosting a datum sketch, \
+             builds, the change is rolled back and the error returned. Edits that change existing text geometry through imported item formulas are refused; remove and recreate the text instead. After GUI structural edits (re-hosting a datum sketch, \
              creating a new datum sketch, or replacing a datum distance expression), reopen and save through the server \
              before further GUI parameter edits so its persisted datum dependencies are refreshed (ADR 0007).",
             |st, a: SetArgs| {

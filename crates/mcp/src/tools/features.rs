@@ -18,7 +18,7 @@ pub struct PlaneOffsetArgs {
     pub base: PlaneArg,
     /// Distance along the base plane's normal, mm (number or expression).
     pub dist: Num,
-    /// Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -52,7 +52,7 @@ pub struct ExtrudeArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -87,7 +87,7 @@ pub struct RevolveArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -141,7 +141,7 @@ pub struct SweepArgs {
     /// Body to modify (id or name). Default: the part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later.
+    /// Name for the new feature (timeline node), usable instead of its id later. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -176,7 +176,7 @@ pub struct LoftArgs {
     /// A sheet through the sections instead of a solid; only with op new_body.
     #[serde(default)]
     pub surface: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later.
+    /// Name for the new feature (timeline node), usable instead of its id later. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -193,7 +193,7 @@ pub struct FilletArgs {
     pub edges: SelArg,
     /// Radius, mm (number or expression).
     pub radius: Num,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -215,7 +215,7 @@ pub struct ChamferArgs {
     /// gives the setback. Topology's sorted face ids do not indicate this order.
     #[serde(default)]
     pub d2: Option<Num>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -260,7 +260,7 @@ pub struct HoleArgs {
     /// the wide cylinder, countersink = depth of the cone. Must be less than the hole depth.
     #[serde(default)]
     pub depth2: Option<Num>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -279,7 +279,7 @@ pub struct ShellArgs {
     /// inward (default: the outside stays), outward (the body becomes the cavity), centred.
     #[serde(default)]
     pub side: Side,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -294,7 +294,7 @@ pub struct PushFaceArgs {
     pub face: SelArg,
     /// Distance along the outward normal, mm (number or expression); negative pulls the face in.
     pub dist: Num,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -348,7 +348,7 @@ pub struct LinearArrayArgs {
     /// A second direction, for a grid.
     #[serde(default)]
     pub second: Option<ArrayDirArg>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -373,7 +373,7 @@ pub struct CircularArrayArgs {
     /// Default: world Z through the origin.
     #[serde(default)]
     pub axis: Option<AxisArg>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -393,7 +393,7 @@ pub struct MirrorArgs {
     /// Keep the original as well (default true): one body with both halves. false: only the image.
     #[serde(default = "yes")]
     pub keep: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name.
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
 }

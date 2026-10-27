@@ -38,10 +38,23 @@ probes through save, load and the app's parameter-edit path.
    - the relief comes from the public `thread::radial_relief`. The 0.15·P overshoot is a native constant and is
      recorded in FINDINGS.
 
+   Review amendment (2026-10-27, F-099): a safe fit alone is insufficient for an undersized ISO internal
+   bore. Let D1 = D − 1.082532·P, and e be radial relief when it exceeds native's 1e−6 mm translation
+   threshold, otherwise zero. Native starts its cutter at max(rim radius, D1/2). The exact open-groove
+   condition with the same margin is max(0, D1/2 − rim radius) + e ≤ .13·P. Together with the fit guard,
+   this gives the ISO internal rim-diameter interval [D1 − .26·P + 2e, 1.05·D], intersected with native's
+   [D1 − .5·P, 1.05·D]. Other internal profiles retain [basic minor − .5·P, 1.05·D]. External cutters
+   start at the actual stock radius, so there is no mirror skin on oversized stock: their interval remains
+   D ± max(.05·D, .5·P). These intervals concern groove exposure; native depth/span/turn checks still apply.
+   Check both at creation and **after regeneration**, using current source rims and evaluated thread
+   formulas, so stock-sketch and thread dimension/parameter edits cannot bypass the guard.
+
    This is an upstream defect, a report candidate that goes out only with the user's yes.
 5. **Formulas on every native key.** `length`, `lead_in`, `lead_out`, `nominal`, `pitch`, `fit`, `crest_r`,
    `root_r`, `angle`, `depth` and `starts` are written with the app's `write_feat_formula`. `starts` must
-   evaluate to an integer 1..64, and this is checked again on every later edit.
+   evaluate to an integer 1..64, and this is checked again on every later edit. Custom angles must be
+   strictly greater than 1° and less than 180°: native silently substitutes 60° at or below 1° (F-101).
+   Validation errors retain the thread feature's name and id.
 6. **The result reports basic geometry, not tolerances.** Standard basic diameters, the effective pitch and
    lead, and the fit with its radial relief are reported as such. A fit is a modelling clearance, not an ISO
    tolerance class, and is not proof that a printed pair screws together.
@@ -51,12 +64,24 @@ probes through save, load and the app's parameter-edit path.
 7. **The piece count is fixed at creation.** It is counted on the live B-rep through `ask::split_pieces`,
    called without an outer gate. A later edit that would change the count is refused atomically, as the app
    refuses it. Nothing is recounted or reallocated.
+   Count alone does not preserve identity: native sorts bounding-box centres along the plane normal and
+   zips pieces with fixed ids; disconnected pieces on the same side can exchange ids (F-100). Every rebuild
+   of an existing split compares all output boxes before/after, including consumed outputs. Native ids must
+   be the unique assignment maximizing total box intersection volume. A cycle-gain check proves this
+   globally, rather than greedily matching each row. A better/ambiguous assignment or absent overlap refuses
+   the edit atomically and names the affected pieces. Boxes are conservative and avoid extra booleans;
+   ambiguous boxes or large moves without overlap require recreating the split. Ordinary offset/stock edits
+   whose unique best assignment retains ids remain allowed. Creation/missing-B-rep recovery has no complete
+   previous geometry to compare; later edits are guarded. The native app remains outside server enforcement.
 8. **Plane direction.** For `offset`, XY points along +Z, XZ along **+Y** and YZ along +X. This is the native
    operation plane; it differs from the XZ sketch normal (−Y). A datum plane or a face uses its own normal.
 9. **Pieces are bodies in their own right.** Numeric ids and names resolve to any output body, not only the
    node's first body. Missing-B-rep detection on open walks every output. Piece names are native body names
    (`set_mesh_name`), given by `piece_names` or defaulting to `<feature name> 1..n`. `export` with `bodies`
    writes any piece on its own; one file per call.
+   Piece, sketch and feature names whose trimmed strings parse as a native `Id` are refused: `resolve`
+   reserves that grammar for ids (including leading zeroes and `+`). This rule applies to all server object
+   naming paths; existing imported names are not renamed.
 
 ### Sketch text (`sketch_add` type `text`)
 
@@ -66,6 +91,13 @@ probes through save, load and the app's parameter-edit path.
     instead of 1210.96, errors empty). This is the app's own defect: no server-side repair can fix an edit
     made in the app. To change the size, the agent recreates the text. `at` and `angle` are numbers too: the
     native record has no formula path for them.
+    Existing text geometry is immutable through server edits. Direct `dimension_set` text-height writes
+    are refused; surviving records' height, anchor, angle, font, characters and baked glyphs are compared
+    across parameter, dimension and sketch edit boundaries, with atomic rollback on change. Imported item
+    formulas cannot resize text indirectly; opening a stale height formula that would change stored text
+    is refused too. Only height is a native numeric text item value; other fields have no item-value or
+    constraint selector path (F-102). Remove/recreate text to change them. Dependent depth edits and ordinary
+    sketch edits remain allowed when the existing text records stay fixed, and are checked against fresh builds.
 11. **A deterministic font.** When the font is omitted, it is Arial, face 0, at
     `/System/Library/Fonts/Supplemental/Arial.ttf`. `font: {path, index?}` chooses another font. A missing
     font is an error, with no substitution by family. This intentionally differs from the app's fc-match-first
@@ -77,6 +109,14 @@ probes through save, load and the app's parameter-edit path.
     outlines with their counters kept as holes, never "first contour" or "all contours". Text ids are listed
     by `sketch_info` and removed by `sketch_remove` (`delete_sketch_text`). Text is not given an item name:
     ADR 0023's refusal of new item names still applies.
+
+## Edit acceptance
+
+An earlier regeneration error on a split/thread never exempts it from these safety checks. The shared
+edit boundary independently revalidates evaluated thread dimensions, current stock and split identity
+before retaining a parameter, dimension or sketch edit. Refusal restores the original recipe, handles
+and diagnostics, even when native regeneration was already failing on that node. Safe repairs remain
+allowed; a thread that still violates stock/span safety must be repaired before retaining other edits.
 
 ## Consequences
 

@@ -109,6 +109,9 @@ pub struct SketchInfo {
 impl Session {
     /// Create an empty sketch on `plane`. Returns the sketch id (also its timeline node id).
     pub fn sketch_create(&mut self, plane: &PlaneRef, name: Option<&str>) -> Result<Id> {
+        if let Some(name) = name {
+            Self::check_object_name(name)?;
+        }
         let sp = self.sketch_plane(plane)?;
         let n = self.p.sketches.len() + 1;
         let name = name.map(str::to_string).unwrap_or_else(|| format!("Sketch {n}"));

@@ -123,7 +123,7 @@ impl Session {
                     s.p.add_sweep_along(a.sketch, profiles, EdgePath { body, edges: Ref::picks(&ids) }, src, code)
                 }
             };
-            s.set_node_name(id, a.name.as_deref());
+            s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })
     }
@@ -167,7 +167,7 @@ impl Session {
                 None => (1, 0),
             };
             let id = s.p.add_loft(sketches, contours, a.ruled, src, code, a.surface);
-            s.set_node_name(id, a.name.as_deref());
+            s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })
     }

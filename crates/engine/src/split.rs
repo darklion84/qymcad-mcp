@@ -100,11 +100,12 @@ impl Session {
             let text = options.offset.expr().unwrap_or_else(|| offset.to_string());
             s.p.write_feat_formula(&FeatNumber { node: feature, key: "offset" }, &text, PlainNumber::Stands)
                 .map_err(|e| Error::Expr(format!("split offset: {e:?}")))?;
-            s.set_node_name(feature, options.name.as_deref());
+            s.set_node_name(feature, options.name.as_deref())?;
             let names =
                 options.piece_names.clone().unwrap_or_else(|| (1..=count).map(|i| format!("{} {i}", s.node_name(feature))).collect());
             let mut seen = HashSet::new();
             for name in &names {
+                Self::check_object_name(name)?;
                 if name.trim().is_empty() || name != name.trim() || !seen.insert(name) {
                     return Err(Error::Invalid("piece_names must be distinct, nonblank names without surrounding whitespace".into()));
                 }
@@ -124,5 +125,102 @@ impl Session {
         let pieces = rebuild.bodies.iter().filter(|b| ids.contains(&b.id)).cloned().collect();
         let feature = ids[0];
         Ok(SplitResult { body: feature, feature, name: self.node_name(feature), pieces, offset, rebuild })
+    }
+}
+
+/// Native sorting does not preserve identities of disconnected pieces on the same side (F-100).
+/// Keep conservative local B-rep boxes, including consumed outputs, before any regeneration.
+pub(crate) struct SplitIdentity {
+    node: Id,
+    pieces: Vec<(Id, [f64; 6])>,
+}
+
+fn overlap(a: &[f64; 6], b: &[f64; 6]) -> f64 {
+    (0..3).map(|i| (a[i + 3].min(b[i + 3]) - a[i].max(b[i])).max(0.0)).product()
+}
+
+impl Session {
+    pub(crate) fn split_identities(&self) -> Vec<SplitIdentity> {
+        let _gate = qymcad_kernel::kernel_gate();
+        self.p
+            .timeline
+            .iter()
+            .filter(|n| !n.suppressed)
+            .filter_map(|n| {
+                if !matches!(n.kind, qymcad_core::feature::FeatureKind::SplitBody { .. }) {
+                    return None;
+                }
+                // Creation and missing-B-rep recovery have no complete previous geometry to match.
+                let pieces = n.kind.bodies().into_iter().map(|id| Some((id, self.shapes.get(&id)?.bbox()?))).collect::<Option<Vec<_>>>()?;
+                Some(SplitIdentity { node: n.id, pieces })
+            })
+            .collect()
+    }
+
+    pub(crate) fn split_identity_refusals(&self, before: &[SplitIdentity], rebuilt: &HashSet<Id>) -> Vec<(Id, String)> {
+        let mut errors = Vec::new();
+        for split in before.iter().filter(|s| s.pieces.iter().any(|(id, _)| rebuilt.contains(id))) {
+            let after = {
+                let _gate = qymcad_kernel::kernel_gate();
+                split.pieces.iter().map(|(id, _)| self.shapes.get(id).and_then(|sh| sh.bbox())).collect::<Option<Vec<_>>>()
+            };
+            let Some(after) = after else {
+                errors.push((split.node, "split piece identity cannot be verified: a rebuilt piece has no bounds; edit refused".into()));
+                continue;
+            };
+            let scores: Vec<Vec<f64>> = split.pieces.iter().map(|(_, old)| after.iter().map(|new| overlap(old, new)).collect()).collect();
+            let changed = uncertain_piece_assignment(&scores);
+            if !changed.is_empty() {
+                let names = changed
+                    .iter()
+                    .map(|&i| {
+                        let id = split.pieces[i].0;
+                        format!("`{}` ({id})", self.body_name(id))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                errors.push((split.node, format!("split piece identity would change or is ambiguous for {names}: native ids do not give the unique maximum bounding-box overlap; edit refused atomically; recreate the split for this change")));
+            }
+        }
+        errors
+    }
+}
+
+/// Certify the native assignment instead of greedily choosing a match per row. Every alternative
+/// permutation decomposes into cycles: gain(i,j)=overlap(i,j)-overlap(i,i). A nonnegative cycle
+/// therefore means a better match or an ambiguous one. Max-plus Floyd-Warshall finds all such cycles.
+fn uncertain_piece_assignment(scores: &[Vec<f64>]) -> Vec<usize> {
+    let count = scores.len();
+    let scale = scores.iter().flatten().copied().fold(0.0, f64::max);
+    let tolerance = (scale * 1e-8).max(1e-9) * count as f64;
+    let mut gain: Vec<Vec<f64>> = scores
+        .iter()
+        .enumerate()
+        .map(|(i, row)| row.iter().enumerate().map(|(j, score)| if i == j { f64::NEG_INFINITY } else { score - row[i] }).collect())
+        .collect();
+    for k in 0..count {
+        for i in 0..count {
+            for j in 0..count {
+                gain[i][j] = gain[i][j].max(gain[i][k] + gain[k][j]);
+            }
+        }
+    }
+    (0..count).filter(|&i| scores[i][i] <= tolerance || gain[i][i] >= -tolerance).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::uncertain_piece_assignment;
+
+    #[test]
+    fn overlap_matching_is_global_and_refuses_ties() {
+        // Offset10->15 in a box: the old upper overlaps both new halves equally;
+        // assigning the old lower first proves that native ids still maximize total overlap.
+        assert!(uncertain_piece_assignment(&[vec![4000., 0.], vec![2000., 2000.]]).is_empty());
+        // A greedy row-best would keep the wrong assignment here: 10 < 9+9.
+        assert_eq!(uncertain_piece_assignment(&[vec![10., 9.], vec![9., 0.]]), vec![0, 1]);
+        assert_eq!(uncertain_piece_assignment(&[vec![1., 1.], vec![1., 1.]]), vec![0, 1]);
+        // Three-way swaps must be detected even when no pair alone improves the score.
+        assert_eq!(uncertain_piece_assignment(&[vec![2., 3., 0.], vec![0., 2., 3.], vec![3., 0., 2.]]), vec![0, 1, 2]);
     }
 }

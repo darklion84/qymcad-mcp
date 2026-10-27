@@ -88,7 +88,7 @@ impl Session {
                 }
             };
             dim(s, id, "angle", &a.angle);
-            s.set_node_name(id, a.name.as_deref());
+            s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })
     }

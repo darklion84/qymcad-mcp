@@ -81,6 +81,15 @@ impl Session {
             return Err(Error::Invalid("dimension_set needs value or name (an empty name clears the name)".into()));
         }
         let native = self.native_dimension_target(target)?;
+        if value.is_some()
+            && matches!(&native, DimTarget::Feature { node, .. }
+                if self.p.sketches.iter().any(|sk| sk.texts.iter().any(|t| t.id == *node)))
+        {
+            return Err(Error::Invalid(
+                "text geometry is fixed: text height edits can exchange glyph/counter contour ids; remove and recreate the text instead"
+                    .into(),
+            ));
+        }
         let before = self.p.clone();
         let before_scope = before.param_map();
         let had_unsolved: HashSet<Id> = (0..before.sketches.len())

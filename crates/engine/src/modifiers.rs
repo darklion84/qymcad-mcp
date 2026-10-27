@@ -112,7 +112,7 @@ impl Session {
             dropped_seams = dropped;
             let id = s.p.add_fillet(src, r, ids);
             dim(s, id, "radius", radius);
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
         .map(|result| seam_note(result, dropped_seams))
@@ -137,7 +137,7 @@ impl Session {
             if let Some(n) = d2 {
                 dim(s, id, "d2", n);
             }
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
         .map(|result| seam_note(result, dropped_seams))
@@ -168,7 +168,7 @@ impl Session {
                 }
             }
             dim(s, id, "thickness", thickness);
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
     }
@@ -191,7 +191,7 @@ impl Session {
                 }
             }
             dim(s, id, "dist", dist);
-            s.set_node_name(id, name);
+            s.set_node_name(id, name)?;
             Ok(id)
         })
     }
@@ -265,7 +265,7 @@ impl Session {
                     dim(s, id, "depth2", h2);
                 }
             }
-            s.set_node_name(id, a.name.as_deref());
+            s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })
     }

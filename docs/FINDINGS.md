@@ -1966,7 +1966,7 @@ asserts those exact fractional halves before checking away-from-zero output.
 
 ## F-097 App text-height edits can exchange glyph and counter contour identities
 
-- **Version:** v0.1.1-dev.20261026; **not reported upstream yet**.
+- **Version:** v0.1.1-dev.20261026; **reported upstream as #347**.
 - **Cause:** text glyphs enter contour reconstruction with empty entity provenance
   (`model/sketch/solve.rs:469–487`, especially `:483`). `replace_contours` therefore falls back from provenance
   matching to greedy centroid distance plus area difference (`model/sketch/contours.rs:48–120`). A height edit
@@ -1977,6 +1977,11 @@ asserts those exact fractional halves before checking away-from-zero output.
   with an existing or missing recorded font. Even H10→11 exchanges some outer ids although aggregate volume
   happens to remain correct. Stage-0 probes are retained in `tasks/research-print.md` §3.
 - **Boundary/test:** ADR0024 exposes fixed numeric text geometry and tells callers to recreate it to resize.
+  Review regression `review_text_fix::review_text_height_edit` reproduced the same wrong volume through
+  the server's generic Feature/item target before the fix. The server now refuses direct text-height
+  writes and compares surviving text records across edit boundaries; inherited parameter/named-driver
+  height formulas and stale height evaluation on open are refused atomically. Other text value paths
+  were audited in F-102; accepted dependent edits are compared with independent fresh builds.
   `golden_text_print::upstream_native_text_height_h10_to_20_changes_saved_profile_identity` deliberately builds
   the raw native height formula and remains ignored in the normal suite. Explicit execution must fail on this
   pin. Re-picking roots only in the server would not repair a later app edit, so no such workaround is added.
@@ -1996,3 +2001,81 @@ asserts those exact fractional halves before checking away-from-zero output.
   refusal. Ordinary extrusion-depth/global feature edits rebuild correctly.
 - **Boundary:** ADR0023's refusal of new item-driver names remains in effect for text. Fixed text creation
   stores no height formula or invented placement driver. Neither the scheduler nor the native app is patched.
+
+
+## F-099 ISO internal thread prep can bury a groove behind an undersized bore wall
+
+- **Version:** v0.1.1-dev.20261026, f25f27d; upstream report pending.
+- **Source:** `qymcad-core/src/model/regen/prep_bodies.rs:94–106` uses `geometry_in(Some(face_d))` and
+  starts an ISO internal cutter at max(actual rim radius, D1/2), with D1 = D − 1.082532·P. Native accepts
+  bore diameters [basic minor − .5·P, 1.05·D]; external stock accepts D ± max(.05·D, .5·P). The cutter
+  has .15·P overshoot (`thread.rs:510`); `occt_helical.cpp:246–249` additionally translates its radius
+  by public `ThreadSpec::radial_relief()` when relief >1e−6 mm (outwards internally, inwards externally).
+- **Exact exposure interval:** let e be relief above that translation threshold, otherwise zero. The
+  required .02·P exposure is `max(0,D1/2−r)+e <= .13P`. Alongside the independent fit guard e<=.13P,
+  ISO internal rim diameters must lie in [D1−.26·P+2e, 1.05·D], intersected with the native size range.
+  All other cutters start at the actual rim; non-ISO internal and external retain their native intervals
+  above under the fit guard. Oversized external stock has no mirrored skin defect. Native checks on
+  span, depth, minimum pitch and turns remain in effect.
+- **Evidence:** review bore Ø6.1, annulus Ø16, M8/P1.25 fit.2 accepted but a ray at z6, angle.173 crossed
+  radii [3.048990,3.231851,3.988098,7.998515]: intact bore wall plus enclosed groove. Independent basic
+  diameter/relief equations give a safe minimum6.516690716 mm for this profile/fit. `review_thread_fix`
+  checks ±.001 mm on both sides of all four internal/external interval boundaries; accepted sides have
+  exactly 2 annular or 1 external radial crossings at two angles and 40 axial samples per pitch.
+  Creation and post-regeneration guards use evaluated formulas/current source edges, so stock, nominal,
+  pitch and fit edits cannot bypass the interval. Tests verify atomic recipe/B-rep rollback. Disabling
+  only the post-regeneration open-margin check makes the stock-edit regression fail. Final edit acceptance
+  repeats thread/split guards independently of the callers' exemption for previous node errors; a prior
+  native error cannot hide a new refusal.
+
+## F-100 Native split ordering can exchange same-side pieces without changing their count
+
+- **Version:** v0.1.1-dev.20261026, f25f27d; upstream report pending (orchestrator owns filing).
+- **Source:** `qymcad-kernel/src/kernel.rs:769–784` sorts pieces by their bounding-box centre projected
+  onto the operation-plane normal, then zips them with fixed recipe ids. Separate pieces on the same
+  side have no additional identity matching. `regen/prep_bodies.rs:414–459` checks count only.
+- **Evidence:** reviewer U profile has left leg x[-10,-6], end y20, right leg x[6,10], end parameter22;
+  split XZ offset10 produces bridge/left/right. Editing right_end22→18 retains3 pieces but native
+  assigns the old `left` id to x[6,10] and the old `right` id to x[-10,-6]. `review_split_fix` reproduced
+  the accepted swap before the fix and now checks a refusal naming both pieces and exact rollback.
+- **Server boundary:** every rebuilt existing split compares all previous/new local B-rep boxes,
+  including consumed outputs. Intersection-box volume is the geometric score; native ids must uniquely
+  maximize the sum over a one-to-one assignment, with positive overlap for every retained id. Any
+  alternative permutation decomposes into cycles; max-plus Floyd–Warshall detects nonnegative cycles
+  of `score(i,j)−score(i,i)`, including three-way swaps. Zero/near-zero cycles are ambiguous and refused.
+  This avoids greedy row matching (which can miss a global swap) without repeated geometric booleans.
+  A changed/ambiguous assignment names affected pieces and rolls back through edit snapshots. Bounds
+  can be ambiguous for complex interlocking pieces, and large moves can lose all overlap; these edits
+  conservatively require recreating the split. Creation/missing-output recovery cannot compare absent
+  previous geometry. Native app edits remain unguarded. Offset10→15 in a box and split/stock movements
+  without reordering still pass. The production guard-disabled mutation accepts the U swap and fails
+  the regression; the restored new tests and9 existing split golden tests pass. A saved wrong-count
+  recipe can already have an error on the split node; `a_preexisting_split_error_cannot_exempt_an_identity_swap`
+  verifies that repairing the count while swapping limbs still refuses atomically, while a safe repair passes.
+
+## F-101 Custom thread angles at or below one degree silently become sixty degrees
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **Source:** `qymcad-core/src/thread.rs:321` uses `custom_angle` only for Custom with angle>1.0;
+  otherwise it uses the standard's default60°. The requested number remains stored.
+- **Boundary/evidence:** `review_thread_fix::review_custom_angle_is_kept` stored.5 but observed60
+  before the guard. Creation and evaluated edit/open checks require custom angle>1° and <180°.
+  Tests cover.5, exactly1, 1.000001, parameter/dimension edits and atomic rollback. Relaxing the
+  lower guard to0 makes the effective-angle test fail again.
+
+## F-102 A text id exposes only numeric height and is not a constraint selector
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **Source:** `model/item_values.rs:54–56` exposes only `height` for text; imposing item values first
+  calls that getter and ignores unsupported keys. `SketchText` stores literal position/angle/font/string
+  separately from sketch points/entities (`model/sketch_types.rs:507–525`). There is no item formula or
+  sketch constraint selector for those values.
+- **Evidence/boundary:** `review_text_fix` checks direct height/angle/turn/x/y/at/font/font_index/text
+  item targets and distance/angle/diameter/fix constraints on text ids. Height writes explicitly refuse
+  fixed text; unsupported values/selectors refuse as unavailable. Imported height formulas reached by
+  parameter or another named dimension are also refused, as is stale height evaluation on open. Existing
+  text height/anchor/angle/font/characters/glyphs are compared at edit boundaries; additions/removal are
+  allowed. Depth parameter/dimension changes and an independent construction-circle constraint preserve
+  those records and match volume/bounds of a fresh build. The comparator-disabled production mutation
+  reopens the indirect parameter bypass and makes its regression red. F-097 explains why recreation
+  is required; these guards cannot prevent subsequent edits in QymCAD.app.
