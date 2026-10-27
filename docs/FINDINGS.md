@@ -2030,7 +2030,7 @@ asserts those exact fractional halves before checking away-from-zero output.
 
 ## F-100 Native split ordering can exchange same-side pieces without changing their count
 
-- **Version:** v0.1.1-dev.20261026, f25f27d; upstream report pending (orchestrator owns filing).
+- **Version:** v0.1.1-dev.20261026, f25f27d; upstream QymCAD#350 (2026-10-27).
 - **Source:** `qymcad-kernel/src/kernel.rs:769–784` sorts pieces by their bounding-box centre projected
   onto the operation-plane normal, then zips them with fixed recipe ids. Separate pieces on the same
   side have no additional identity matching. `regen/prep_bodies.rs:414–459` checks count only.
