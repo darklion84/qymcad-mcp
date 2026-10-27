@@ -151,8 +151,9 @@ impl Session {
                 let size = match (target, &native) {
                     (_, DimTarget::Feature { node, key }) => {
                         // `dist` is signed on a pushed face or a plane, a size only on a chamfer.
+                        let thread = s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Thread { .. }));
                         let chamfer = s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Chamfer { .. }));
-                        (["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str())
+                        ((!thread && ["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str()))
                             || (chamfer && key == "dist"))
                             .then(|| key.clone())
                     }

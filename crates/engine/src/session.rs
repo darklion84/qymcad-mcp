@@ -256,7 +256,7 @@ impl Session {
         restore_faces(&mut project);
         let mut shapes = restore_shapes(breps);
         let import_warnings = crate::imports::restore_missing(&project, &mut shapes);
-        let missing = project.timeline.iter().filter_map(|n| n.kind.body()).any(|b| !shapes.contains_key(&b));
+        let missing = project.timeline.iter().flat_map(|n| n.kind.bodies()).any(|b| !shapes.contains_key(&b));
         let saved_lineage = first_body_feature(&project);
         let mut import_warnings = import_warnings;
         for (si, count) in legacy_splines(path) {
@@ -291,6 +291,7 @@ impl Session {
             }
         }
         sess.p.eval_parameters();
+        sess.check_thread_dimensions()?;
         let sketches: Vec<Id> = sess.p.sketches.iter().map(|s| s.id).collect();
         for sid in sketches {
             sess.track_datum_dependencies(sid);
@@ -439,6 +440,9 @@ impl Session {
     /// F-005 still holds: a datum created by the edit is one of its nodes.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
+        if let Err(e) = self.check_thread_dimensions() {
+            return Rebuild { errors: vec![self.issue(0, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
+        }
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {
             return Rebuild { errors: blocked, bodies: self.result_bodies(), ..Default::default() };
@@ -730,7 +734,7 @@ impl Session {
             .filter(|b| !consumed.contains(b))
             .filter_map(|b| {
                 let sh = self.shapes.get(&b)?;
-                Some(BodyInfo { id: b, name: self.node_name(b), volume: sh.volume(), bbox: reporting_bbox(sh).unwrap_or([0.0; 6]) })
+                Some(BodyInfo { id: b, name: self.body_name(b), volume: sh.volume(), bbox: reporting_bbox(sh).unwrap_or([0.0; 6]) })
             })
             .collect()
     }
@@ -772,17 +776,40 @@ impl Session {
         }
     }
 
-    /// Resolve an object reference: a numeric id, or the name of a timeline node (sketch, plane, feature).
+    /// Display name of a body. Split outputs use their native piece names; ordinary feature names stay compatible.
+    pub fn body_name(&self, id: Id) -> String {
+        let split = self
+            .p
+            .timeline
+            .iter()
+            .any(|n| matches!(&n.kind, qymcad_core::feature::FeatureKind::SplitBody { .. }) && n.kind.bodies().contains(&id));
+        if split {
+            if let Some(mi) = self.p.mesh_index(id) {
+                return self.p.mesh_name(mi);
+            }
+        }
+        self.node_name(id)
+    }
+
+    /// Resolve a timeline/sketch id or name, or any output-body id/native name. Current native names take precedence
+    /// over inherited historical body names; different live objects sharing an alias require an explicit id.
     pub fn resolve(&self, r: &str) -> Result<Id> {
         let r = r.trim();
+        let bodies: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
         if let Ok(id) = r.parse::<Id>() {
-            if self.p.timeline.iter().any(|n| n.id == id) || self.p.sketches.iter().any(|s| s.id == id) {
+            if self.p.timeline.iter().any(|n| n.id == id) || self.p.sketches.iter().any(|s| s.id == id) || bodies.contains(&id) {
                 return Ok(id);
             }
             return Err(Error::NotFound(format!("no object with id {id}")));
         }
-        let hits: Vec<Id> =
+        let consumed = self.p.consumed_bodies();
+        let native: Vec<Id> = self.p.bodies.iter().filter(|b| bodies.contains(&b.id) && b.name == r).map(|b| b.id).collect();
+        let current: Vec<Id> = native.iter().copied().filter(|id| !consumed.contains(id)).collect();
+        let mut hits: Vec<Id> =
             self.p.timeline.iter().filter(|n| n.name == r || crate::localization::name(&n.name) == r).map(|n| n.id).collect();
+        hits.extend(if current.is_empty() { native } else { current });
+        hits.sort_unstable();
+        hits.dedup();
         match hits.as_slice() {
             [id] => Ok(*id),
             [] => Err(Error::NotFound(format!("no object named `{r}`"))),

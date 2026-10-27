@@ -28,7 +28,7 @@ pub struct PlaneOffsetArgs {
 pub struct ExtrudeArgs {
     /// Sketch id or name.
     pub sketch: ObjRef,
-    /// Contour ids from sketch_info. Default: every top-level contour, each minus the contours inside it.
+    /// Contour ids from sketch_info. Default: every top-level contour, including all text glyph outlines with counters kept as holes.
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
     /// Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost

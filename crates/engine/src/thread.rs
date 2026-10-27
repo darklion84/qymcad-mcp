@@ -1,0 +1,373 @@
+//! Native helical thread creation, formula validation and basic geometry reporting.
+use crate::{Element, Error, Id, Num, Rebuild, Result, Sel, Session};
+use qymcad_core::{
+    feature::FeatureKind,
+    model::{FeatNumber, PlainNumber},
+    thread::{ThreadSpec, ThreadStandard},
+};
+use serde::Serialize;
+
+/// Thread creation arguments. Numeric defaults follow the application's command, not ThreadSpec::default.
+#[derive(Clone, Debug)]
+pub struct ThreadOptions {
+    /// Exclusive designation alias: M8, M8x1.25 or Tr16x4.
+    pub size: Option<String>,
+    /// Profile family; defaults to metric_iso.
+    pub standard: Option<String>,
+    /// Nominal major diameter in mm; required without size.
+    pub nominal: Option<Num>,
+    /// Pitch in mm; zero selects the standard coarse pitch.
+    pub pitch: Option<Num>,
+    /// Required thread span in mm.
+    pub length: Num,
+    /// Side assertion: auto, external or internal.
+    pub kind: String,
+    /// Radial modelling clearance per side; default 0.2 mm is lowered when it would bury the groove.
+    pub fit: Option<Num>,
+    /// Entry runout, default 1.5 mm.
+    pub lead_in: Option<Num>,
+    /// Exit runout, default 1.5 mm.
+    pub lead_out: Option<Num>,
+    /// Crest radius; zero takes the standard value.
+    pub crest_r: Option<Num>,
+    /// Root radius; zero takes the standard value.
+    pub root_r: Option<Num>,
+    /// Custom profile included angle, default 60 degrees.
+    pub angle: Option<Num>,
+    /// Custom profile depth; zero takes the native default.
+    pub depth: Option<Num>,
+    /// Integral start count 1..=64, default 1.
+    pub starts: Option<Num>,
+    /// Left handed helix.
+    pub left: bool,
+    /// Timeline feature name.
+    pub name: Option<String>,
+}
+impl Default for ThreadOptions {
+    fn default() -> Self {
+        Self {
+            size: None,
+            standard: None,
+            nominal: None,
+            pitch: None,
+            length: Num::Value(0.0),
+            kind: "auto".into(),
+            fit: None,
+            lead_in: None,
+            lead_out: None,
+            crest_r: None,
+            root_r: None,
+            angle: None,
+            depth: None,
+            starts: None,
+            left: false,
+            name: None,
+        }
+    }
+}
+
+/// Created thread and basic standard geometry. Diameters are basic values, not measured tolerances.
+#[derive(Debug, Serialize)]
+pub struct ThreadResult {
+    /// Created body and feature id.
+    pub body: Id,
+    /// Feature name.
+    pub name: String,
+    /// Consumed stock body.
+    pub source: Id,
+    /// Exactly one saved persistent circular edge id.
+    pub edge: u32,
+    /// Detected material side.
+    pub kind: String,
+    /// Profile family.
+    pub standard: String,
+    /// Evaluated nominal diameter, mm.
+    pub nominal: f64,
+    /// Effective pitch, mm.
+    pub pitch: f64,
+    /// Lead per turn, mm.
+    pub lead: f64,
+    /// Basic major diameter, mm.
+    pub basic_major_diameter: f64,
+    /// Basic pitch diameter, mm.
+    pub basic_pitch_diameter: f64,
+    /// Basic minor diameter, mm.
+    pub basic_minor_diameter: f64,
+    /// Modelling clearance per side, mm; no ISO tolerance class is implied.
+    pub fit: f64,
+    /// Why the explicit fit or adjusted app default was used.
+    pub fit_reason: String,
+    /// Additional radial relief from capped axial widening, mm.
+    pub radial_relief: f64,
+    /// Evaluated requested span, mm.
+    pub length: f64,
+    /// Available cylindrical span, when measurable, mm.
+    pub available_length: Option<f64>,
+    /// Normal rebuild bodies and diagnostics.
+    pub rebuild: Rebuild,
+}
+
+impl ThreadOptions {
+    fn numbers(&self) -> Result<(ThreadStandard, Vec<(&'static str, Num)>)> {
+        let (standard, nominal, pitch) = if let Some(size) = &self.size {
+            if self.standard.is_some() || self.nominal.is_some() || self.pitch.is_some() {
+                return Err(Error::Invalid("thread size is exclusive with standard, nominal and pitch".into()));
+            }
+            let (standard, rest) = if let Some(s) = size.strip_prefix("Tr") {
+                (ThreadStandard::TrapezoidalTr, s)
+            } else if let Some(s) = size.strip_prefix('M') {
+                (ThreadStandard::MetricIso, s)
+            } else {
+                return Err(Error::Invalid("thread size must be M8, M8x1.25 or Tr16x4 (length is separate)".into()));
+            };
+            let (d, p) = rest.split_once('x').unwrap_or((rest, "0"));
+            let parse = |s: &str| s.parse::<f64>().map(Num::Value).map_err(|_| Error::Invalid(format!("invalid thread size `{size}`")));
+            (standard, parse(d)?, parse(p)?)
+        } else {
+            let standard = match self.standard.as_deref().unwrap_or("metric_iso") {
+                "metric_iso" => ThreadStandard::MetricIso,
+                "trapezoidal_tr" => ThreadStandard::TrapezoidalTr,
+                "acme" => ThreadStandard::Acme,
+                "round_rd" => ThreadStandard::RoundRd,
+                "buttress" => ThreadStandard::Buttress,
+                "custom" => ThreadStandard::Custom,
+                s => return Err(Error::Invalid(format!("unknown thread standard `{s}`"))),
+            };
+            (
+                standard,
+                self.nominal.clone().ok_or_else(|| Error::Invalid("thread needs nominal or size".into()))?,
+                self.pitch.clone().unwrap_or(0.0.into()),
+            )
+        };
+        let n = |v: &Option<Num>, d: f64| v.clone().unwrap_or(Num::Value(d));
+        Ok((
+            standard,
+            vec![
+                ("nominal", nominal),
+                ("pitch", pitch),
+                ("length", self.length.clone()),
+                ("fit", n(&self.fit, 0.2)),
+                ("lead_in", n(&self.lead_in, 1.5)),
+                ("lead_out", n(&self.lead_out, 1.5)),
+                ("crest_r", n(&self.crest_r, 0.0)),
+                ("root_r", n(&self.root_r, 0.0)),
+                ("angle", n(&self.angle, 60.0)),
+                ("depth", n(&self.depth, 0.0)),
+                ("starts", n(&self.starts, 1.0)),
+            ],
+        ))
+    }
+}
+
+fn validate(key: &str, v: f64) -> Result<()> {
+    let valid = match key {
+        "starts" => v.fract() == 0.0 && (1.0..=64.0).contains(&v),
+        "nominal" | "length" => v > 0.0,
+        "angle" => v > 0.0 && v < 180.0,
+        _ => v >= 0.0,
+    };
+    if !v.is_finite() || !valid {
+        let rule = match key {
+            "starts" => "an integer in 1..=64",
+            "angle" => "strictly between 0 and 180 degrees",
+            "nominal" | "length" => "positive",
+            _ => "nonnegative",
+        };
+        return Err(Error::Invalid(format!("thread {key} must be {rule}, got {v}")));
+    }
+    Ok(())
+}
+
+// The pinned cutter overshoots by .15P (thread.rs:510). Keep .02P exposed even after relief.
+fn fit_limit(mut spec: ThreadSpec) -> f64 {
+    let ceiling = 0.13 * spec.geometry().pitch;
+    let mut low = 0.0;
+    let mut high = spec.geometry().pitch.max(0.2);
+    spec.fit = high;
+    while spec.radial_relief() <= ceiling {
+        high *= 2.0;
+        if !high.is_finite() {
+            return f64::MAX;
+        }
+        spec.fit = high;
+    }
+    // Find the largest representable fit allowed by the public relief calculation.
+    loop {
+        let mid = low + (high - low) * 0.5;
+        if mid == low || mid == high {
+            return low;
+        }
+        spec.fit = mid;
+        if spec.radial_relief() <= ceiling {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+}
+
+fn check_fit(spec: ThreadSpec) -> Result<()> {
+    if spec.radial_relief() > 0.13 * spec.geometry().pitch {
+        return Err(Error::Invalid(format!(
+            "thread fit {} exceeds limit {:.9} mm: radial relief would bury the groove; keep 0.02 pitch below the 0.15 pitch overshoot",
+            spec.fit,
+            fit_limit(spec)
+        )));
+    }
+    Ok(())
+}
+
+impl Session {
+    /// Cut a native thread on exactly one circular stock rim. Side assertions are checked before creation.
+    /// Precondition: the caller must not hold the kernel gate.
+    pub fn thread(&mut self, body: Option<Id>, edge: &Sel, options: &ThreadOptions) -> Result<ThreadResult> {
+        self.ensure_topology()?;
+        let ((src, rim_id, spec, length, available, fit_reason), rebuild) = self.atomic(|s| {
+            let src = s.source_body(body)?;
+            let ids = s.resolve_sel(src, Element::Edges, edge)?;
+            if ids.len() != 1 {
+                return Err(Error::Invalid(format!(
+                    "thread edge must select exactly one circular rim of body {src}, matched {}",
+                    ids.len()
+                )));
+            }
+            let rim =
+                s.p.regen_edges
+                    .get(&src)
+                    .into_iter()
+                    .flatten()
+                    .find(|e| e.id == ids[0] && e.is_circular() && e.a.iter().zip(e.b).map(|(a, b)| (a - b).powi(2)).sum::<f64>() < 1e-12)
+                    .ok_or_else(|| Error::Invalid(format!("thread edge {} is not a circular rim of source body {src}", ids[0])))?;
+            let (c, axis, r) = (rim.center, rim.axis, rim.radius);
+            let (standard, mut numbers) = options.numbers()?;
+            let vars = s.p.param_map();
+            let mut values = numbers
+                .iter()
+                .map(|(k, n)| {
+                    let v = n.eval(&vars)?;
+                    validate(k, v)?;
+                    Ok((*k, v))
+                })
+                .collect::<Result<std::collections::HashMap<_, _>>>()?;
+            let length = values["length"];
+            let mi = s.p.mesh_index(src).ok_or_else(|| Error::NotFound(format!("body {src}")))?;
+            let mesh = &s.p.bodies[mi].mesh;
+            let axis = qymcad_core::geom::axis_along_cylinder(mesh, c, axis, r)
+                .ok_or_else(|| Error::Invalid("thread rim has no adjacent cylindrical stock".into()))?;
+            let internal = qymcad_core::geom::cyl_side_from_mesh(mesh, c, axis, r, 0.0, length)
+                .ok_or_else(|| Error::Invalid("cannot detect the material side of this thread rim".into()))?;
+            match options.kind.as_str() {
+                "auto" => (),
+                "external" if !internal => (),
+                "internal" if internal => (),
+                "external" | "internal" => {
+                    return Err(Error::Invalid(format!(
+                        "thread kind {} disagrees with detected {} material side",
+                        options.kind,
+                        if internal { "internal" } else { "external" }
+                    )))
+                }
+                _ => return Err(Error::Invalid("thread kind must be auto, external or internal".into())),
+            }
+            let mut spec = ThreadSpec {
+                standard,
+                nominal_d: values["nominal"],
+                pitch: values["pitch"],
+                starts: values["starts"] as u32,
+                left: options.left,
+                internal,
+                fit: values["fit"],
+                crest_r: (values["crest_r"] > 0.0).then_some(values["crest_r"]),
+                root_r: (values["root_r"] > 0.0).then_some(values["root_r"]),
+                custom_angle: values["angle"],
+                custom_depth: values["depth"],
+            };
+            let fit_reason = if options.fit.is_none() && spec.radial_relief() > 0.13 * spec.geometry().pitch {
+                spec.fit = fit_limit(spec);
+                values.insert("fit", spec.fit);
+                *numbers.iter_mut().find(|(key, _)| *key == "fit").unwrap() = ("fit", spec.fit.into());
+                "App default 0.2 mm lowered to the largest fit keeping radial relief 0.02 pitch below the 0.15 pitch cutter overshoot"
+                    .into()
+            } else if options.fit.is_none() {
+                "App default 0.2 mm keeps the groove open with the required 0.02 pitch margin".into()
+            } else {
+                "Explicit fit keeps the groove open with the required 0.02 pitch margin".into()
+            };
+            check_fit(spec)?;
+            if let Some(reason) = s.p.thread_refusal(src, (c, axis, r), spec, length) {
+                return Err(Error::Invalid(crate::localization::error(&reason)));
+            }
+            let available = s.p.thread_face_span(src, (c, axis, r));
+            let id = s.p.add_thread(src, ids[0], spec, length, values["lead_in"], values["lead_out"]);
+            for (key, n) in &numbers {
+                let text = n.expr().unwrap_or_else(|| values[key].to_string());
+                s.p.write_feat_formula(&FeatNumber { node: id, key }, &text, PlainNumber::Stands)
+                    .map_err(|e| Error::Expr(format!("thread {key}: {e:?}")))?;
+            }
+            s.set_node_name(id, options.name.as_deref());
+            Ok((src, (id, ids[0]), spec, length, available, fit_reason))
+        })?;
+        let (body, edge) = rim_id;
+        let g = spec.geometry();
+        Ok(ThreadResult {
+            body,
+            name: self.node_name(body),
+            source: src,
+            edge,
+            kind: if spec.internal { "internal" } else { "external" }.into(),
+            standard: options
+                .standard
+                .clone()
+                .unwrap_or_else(|| if spec.standard == ThreadStandard::TrapezoidalTr { "trapezoidal_tr" } else { "metric_iso" }.into()),
+            nominal: spec.nominal_d,
+            pitch: g.pitch,
+            lead: g.lead,
+            basic_major_diameter: g.major_d,
+            basic_pitch_diameter: g.pitch_d,
+            basic_minor_diameter: g.minor_d,
+            fit: spec.fit,
+            fit_reason,
+            radial_relief: spec.radial_relief(),
+            length,
+            available_length: available,
+            rebuild,
+        })
+    }
+
+    /// Check every evaluated thread key before native regeneration can round counts or clamp dimensions.
+    pub(crate) fn check_thread_dimensions(&self) -> Result<()> {
+        let vars = self.p.param_map();
+        for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
+            let FeatureKind::Thread { mut spec, .. } = n.kind else {
+                continue;
+            };
+            for key in ["length", "lead_in", "lead_out", "nominal", "pitch", "fit", "crest_r", "root_r", "angle", "depth", "starts"] {
+                let target = qymcad_core::model::DimTarget::Feature { node: n.id, key: key.into() };
+                let v = self
+                    .p
+                    .feat_dims
+                    .get(&n.id)
+                    .and_then(|m| m.get(key))
+                    .filter(|e| !e.trim().is_empty())
+                    .map(|e| Num::Expr(e.clone()).eval(&vars))
+                    .transpose()?
+                    .or_else(|| self.p.dim_target_value(&target))
+                    .ok_or_else(|| Error::Invalid(format!("thread {} missing {key}", n.id)))?;
+                validate(key, v)?;
+                match key {
+                    "nominal" => spec.nominal_d = v,
+                    "pitch" => spec.pitch = v,
+                    "fit" => spec.fit = v,
+                    "crest_r" => spec.crest_r = (v > 0.0).then_some(v),
+                    "root_r" => spec.root_r = (v > 0.0).then_some(v),
+                    "angle" => spec.custom_angle = v,
+                    "depth" => spec.custom_depth = v,
+                    "starts" => spec.starts = v as u32,
+                    _ => (),
+                }
+            }
+            check_fit(spec)?;
+        }
+        Ok(())
+    }
+}

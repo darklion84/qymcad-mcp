@@ -274,6 +274,8 @@ fn lists_tools_with_object_schemas() {
         "linear_array",
         "circular_array",
         "mirror",
+        "thread",
+        "split",
         "feature_delete",
         "undo",
         "batch",

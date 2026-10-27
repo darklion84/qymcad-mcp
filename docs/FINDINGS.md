@@ -1881,3 +1881,118 @@ asserts those exact fractional halves before checking away-from-zero output.
   failed; joining alone left 16 doubled edges at the rounded block's corners. `export::tests::welding_*` cover solids
   touching at an edge, at a corner and face to face, four solids around one corner (every base edge of four triangles),
   a ring of cubes touching itself along an edge, and the pole slivers. Welding a million triangles takes about 0.25 s (release build).
+
+## F-094 Native threads use material-side detection and may retain a stock skin at large print fits
+
+- **Version:** v0.1.1-dev.20261026.
+- **Recipe:** public `add_thread` creates a native subtractive feature. Its eleven numeric keys are
+  `length`, `lead_in`, `lead_out`, `nominal`, `pitch`, `fit`, `crest_r`, `root_r`, `angle`, `depth`, `starts`.
+  The app seeds fit=.2 and entry/exit runouts=1.5; ThreadSpec::default instead seeds fit=0.
+  Source: `qymcad-core/src/model/timeline/add_ops.rs:579–591`, `feature/kind.rs:716–728`,
+  `thread.rs:128–130`; app `qymcad-ui-state/src/lib.rs:116–118`, `qymcad-part/src/apply/solids.rs:189–201` and stage-0 source trace in
+  `tasks/research-print.md` §1. Native regeneration decides the internal/external side from stock mesh
+  (`model/regen/prep_bodies.rs:86–98`), regardless of the stored boolean. Public cylinder helpers allow
+  the creation gesture to detect and persist the matching side without duplicating private preparation.
+- **Boundary:** native starts evaluation rounds/clamps; the engine checks integral 1..64 before every
+  rebuild. `MeshEdge::is_circular` includes arcs (`geom/mesh.rs:392–396`), so a thread rim also requires
+  coincident endpoints, matching topology's full-circle classification. An unguarded half-disc arc builds
+  a green half-thread. Evidence: `golden_thread_print::a_circular_arc_is_not_a_full_thread_rim`.
+- **Fit geometry:** basic ISO diameters remain basic values. Groove widening caps at .49P; excess fit
+  yields radial relief `max(0,fit-room)/tan(half_angle)`, where `room=max(0,.49P-(P-crest_flat)/2)`.
+  Source: `thread.rs:399–433,506–516` (overshoot at `thread.rs:510`), `qymcad-kernel/src/occt_helical.cpp:225–249`. Relief shifts the
+  cutter; narrow stock lands remain at their original diameter. In external M8/P1.25 fit=.2, relief
+  .232744 exceeds cutter overshoot .15P=.1875: a section can cross an intact outer skin and an enclosed
+  helical groove. This corrects stage-0's unmeasured assumption that the entire crest shrinks by 2*relief.
+  This is an upstream geometry limitation, **not reported upstream yet**. The server retains the public
+  adder and caps the default fit .2 so public `ThreadSpec::radial_relief()` stays <=.13P, leaving .02P of
+  cutter overshoot exposed. Explicit fits above that limit and later edits are refused. For external M8
+  the exact limit is `.0525P + .13P*tan(30°) = .15944441874331418 mm`; ADR's approximate .17 is too high
+  for the stated margin. The raw native recipe remains covered separately from the safe server default.
+  Native success still does not prove that a printed pair mates.
+- **Tests:** `golden_thread_print::{metric_thread_sections_match_hand_dimensions,
+  trapezoidal_thread_sections_match_hand_dimensions,internal_thread_detects_side_and_cuts_the_bore,
+  upstream_metric_fit_relief_leaves_a_stock_skin_over_the_groove}` measure real mesh sections against
+  hand-derived ISO/Tr groove depths, pitch periodicity, stock lands and relief equations. Parameter/formula,
+  saved-file and unmodified app edit paths are covered by
+  `thread_formulas_persist_and_follow_server_and_app_edits`; all native keys by
+  `every_thread_key_is_reachable_by_dimension_set`; F-074 by
+  `fillet_beside_a_threaded_rim_is_checked_before_and_after_thread`.
+
+## F-095 Split output count and every output body's identity belong to the native recipe
+
+- **Version:** v0.1.1-dev.20261026.
+- **Source:** `model/timeline/add_ops.rs:421–435` allocates exactly the measured count, with the first body id
+  also the feature id. `model/regen/prep_ops.rs:366–377` gives base operation normals XY +Z, XZ **+Y**, YZ +X;
+  XZ differs from the sketch frame. `qymcad-kernel/src/ask.rs:16–20` measures pieces under its own kernel gate.
+  Native regeneration refuses a changed count before landing outputs (`model/regen/prep_bodies.rs:414–459`,
+  `qymcad-kernel/src/kernel.rs:756–784`). The app refuses direct count-changing edits for the same reason:
+  downstream references already point to those ids (`qymcad-part/src/apply/update.rs:386–402,562–568`).
+- **Integration:** native body names use `set_mesh_name` (`model/bodies.rs:209–213`), and all-output traversal
+  uses `FeatureKind::bodies()`. Resolving ids/names, detecting missing B-reps on open, reporting and selected
+  exports must include secondary bodies. The existing native deletion frontier already includes every output
+  (`model/timeline/delete.rs:13–38`). The server keeps its existing tip-body default; use an explicit body
+  after a split. Count-changing parameter edits restore all shapes, formulas, names and diagnostics atomically.
+- **Tests:** `golden_split_print` verifies box volume conservation; U volumes1280/400/400 and the y12 edit;
+  both count-change directions; native app edits; missing-secondary-B-rep recovery; native names and every id;
+  selected STL/3MF/STEP independent volume/bounds readback; cap fillet; deletion and undo. `print_split`
+  covers schema, named/numeric piece targets, strict plane arguments, per-piece export, batch and undo.
+  Two production mutations (first-output-only open check; literal instead of offset formula) each fail a
+  named test; evidence is `tasks/split-test-evidence.md`.
+- **Placement:** preflight matches the stored native operation in the B-rep's local frame. Assembly-specific
+  world-plane preview conversion is not added; applying it only to preflight would disagree with native rebuild.
+
+## F-096 Native text stores baked glyphs and literal placement; counters are separate contours
+
+- **Version:** v0.1.1-dev.20261026.
+- **Source:** `qymcad-core/src/text.rs:86–118` outlines glyph loops, and silently skips an unsupported letter
+  (`:102`). Public `family_name`/`can_write` (`:132–150`) let the server validate the exact face and list missing
+  glyphs before mutation. The app rotates each baked vertex about the anchor (`qymcad-ui-state/src/text.rs:50–57`)
+  then calls `add_sketch_text` (`model/sketch/entities.rs:573–595`). `FontRef` and `SketchText` serialize path,
+  face, family, literal placement/height and glyphs, without font bytes (`model/sketch_types.rs:484–525`).
+- **Policy:** fixed numeric height, anchor and angle, deterministic Arial face0 at
+  `/System/Library/Fonts/Supplemental/Arial.ttf`, or an explicit file/index; missing fonts and glyphs are errors.
+  Reopening/rebuilding uses the saved loops without reading the font. Retyping needs its recorded path.
+  Height is an em size, not the visible capital height. Construction text contributes no profiles.
+- **Profiles:** empty native profile picks mean the first contour, and selecting all contours fills counters
+  (`model/sketch/profiles.rs:222–243`; `qymcad-testkit/tests/text_of_any_font_extrudes.rs:58–66`). Existing server
+  root-contour selection already picks every glyph outer with its holes; no special extrusion path is needed.
+  Native `delete_sketch_text` takes a text index (`model/sketch/entities.rs:646`); the server resolves the exposed
+  text id before calling it.
+- **Tests:** `golden_text_print` computes shoelace areas with nesting parity directly from baked loops, then
+  compares extrude/add/cut volumes. Rotation bounds, counters, Cyrillic, missing fonts/glyphs, construction,
+  removal rollback, saved glyphs without a font, depth app edits and a glyph-edge fillet are covered.
+  `print_text` checks numeric schemas, ADR refusal messages, info/remove ids, strict nested font arguments,
+  all-or-nothing mixed additions, save/open/depth edits and batch/undo.
+
+## F-097 App text-height edits can exchange glyph and counter contour identities
+
+- **Version:** v0.1.1-dev.20261026; **not reported upstream yet**.
+- **Cause:** text glyphs enter contour reconstruction with empty entity provenance
+  (`model/sketch/solve.rs:469–487`, especially `:483`). `replace_contours` therefore falls back from provenance
+  matching to greedy centroid distance plus area difference (`model/sketch/contours.rs:48–120`). A height edit
+  scales every baked vertex correctly (`model/item_values.rs:200–210`), but another letter/counter can inherit
+  the old contour id. Extrusion retains those old ids and builds the wrong regions without errors.
+- **Evidence:** native `ABCDEFGHIJ`, Arial height10, depth2: area151.369854435325, volume302.739708870649.
+  Native app-path H10→20 should give1210.958835482598, but gives1301.361804455519 with errors empty. It happens
+  with an existing or missing recorded font. Even H10→11 exchanges some outer ids although aggregate volume
+  happens to remain correct. Stage-0 probes are retained in `tasks/research-print.md` §3.
+- **Boundary/test:** ADR0024 exposes fixed numeric text geometry and tells callers to recreate it to resize.
+  `golden_text_print::upstream_native_text_height_h10_to_20_changes_saved_profile_identity` deliberately builds
+  the raw native height formula and remains ignored in the normal suite. Explicit execution must fail on this
+  pin. Re-picking roots only in the server would not repair a later app edit, so no such workaround is added.
+
+## F-098 App SetDriver on a named text height changes metadata without dirtying its sketch
+
+- **Version:** v0.1.1-dev.20261026; **not reported upstream yet** (text-specific reproduction).
+- **Cause:** text height is a Feature item target, not a timeline node. `set_feat_dim` marks only that id
+  (`model/params.rs:277–292`); the app's SetDriver explicitly solves/dirties only Sketch targets
+  (`qymcad/src/gui/panels_windows/params.rs:260–286`). Changed-name scheduling cannot find the owner from a
+  newly literal formula (`model/params.rs:309–326`). This is the text instance of F-081's item-owner gap.
+- **Evidence:** the stage-0 native named height edit10→15 yields height15 and dirty=[] with the old solid
+  volume; expected volume is2.25 times the old volume. `tasks/research-print.md` §3 and retained text probe
+  outputs document the exact public SetDriver/evaluation/scheduler sequence. The passing characterization
+  `golden_text_print::upstream_native_named_text_height_setdriver_changes_metadata_without_dirtying_solid`
+  reproduces metadata15 with the old solid; `text_item_driver_name_is_refused_atomically` verifies server
+  refusal. Ordinary extrusion-depth/global feature edits rebuild correctly.
+- **Boundary:** ADR0023's refusal of new item-driver names remains in effect for text. Fixed text creation
+  stores no height formula or invented placement driver. Neither the scheduler nor the native app is patched.

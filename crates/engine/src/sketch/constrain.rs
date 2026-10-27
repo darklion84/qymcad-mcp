@@ -239,11 +239,15 @@ impl Session {
         Ok(Constrained { index: Some(idx), indices: (start..=idx).collect(), note: None, dof: self.p.sketch_dof(si) })
     }
 
-    /// Delete an entity together with the points only it used and the constraints on them; a helper point left
+    /// Delete a text object, or an entity together with the points only it used and the constraints on them; a helper point left
     /// with only its own dimensions (e.g. a rectangle's centre) goes too.
     pub fn sketch_remove_entity(&mut self, sketch: Id, entity: Id) -> Result<()> {
         self.transaction(|s| {
             let si = s.sketch_si(sketch)?;
+            if let Some(ti) = s.p.sketches[si].texts.iter().position(|t| t.id == entity) {
+                s.p.delete_sketch_text(si, ti);
+                return s.finish_sketch_edit(si);
+            }
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }

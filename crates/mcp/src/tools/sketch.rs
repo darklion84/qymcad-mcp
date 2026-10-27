@@ -4,10 +4,10 @@ use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::{tool, Tool};
 use qymcad_engine::{
     ArcSpec, ConstrainSpec, ConstraintKind, DistAxis, EllipseArcSpec, EllipseSpec, Id, LineSpec, Num, PolygonSpec, PolylineSpec, RectSpec,
-    SketchRef, SlotSpec, SplineSpec, TangentCircleSpec, Xy,
+    SketchRef, SlotSpec, SplineSpec, TangentCircleSpec, TextFont, TextSpec, Xy,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
 
 #[derive(Deserialize, JsonSchema)]
@@ -56,11 +56,51 @@ pub struct PolygonArgs {
     pub dimensioned: bool,
 }
 
+/// Fixed native text geometry with baked glyphs; recreate the text to resize it.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextArgs {
+    /// Text to outline; every non-whitespace glyph must exist in the selected font.
+    pub text: String,
+    /// Anchor [x, y] in sketch mm, fixed numbers. Native text has no placement formula path.
+    #[serde(deserialize_with = "fixed_text_at")]
+    pub at: [f64; 2],
+    /// Positive em height in mm, a fixed number. Recreate text to resize: app height edits can swap letters and counters.
+    #[serde(deserialize_with = "fixed_text_number")]
+    pub height: f64,
+    /// Rotation in degrees about the anchor, a fixed number. Default 0; no native angle formula path.
+    #[serde(default, deserialize_with = "fixed_text_number")]
+    pub angle: f64,
+    /// Exact font path and face index. Default Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts are errors, without substitution.
+    #[serde(default)]
+    pub font: Option<TextFont>,
+    /// Construction text, excluded from extrusion profiles. Default false.
+    #[serde(default)]
+    pub construction: bool,
+}
+
+const FIXED_TEXT_REASON: &str = "text height, at and angle must be fixed numbers; recreate text to resize it: QymCAD 0.1.1 height edits can swap glyph/counter contour ids, and at/angle have no native formula path";
+
+fn fixed_text_value<E: serde::de::Error>(value: Value) -> Result<f64, E> {
+    value.as_f64().filter(|v| v.is_finite()).ok_or_else(|| E::custom(FIXED_TEXT_REASON))
+}
+
+fn fixed_text_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+    fixed_text_value(Value::deserialize(deserializer)?)
+}
+
+fn fixed_text_at<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[f64; 2], D::Error> {
+    let [x, y] = <[Value; 2]>::deserialize(deserializer)?;
+    Ok([fixed_text_value(x)?, fixed_text_value(y)?])
+}
+
 /// A sketch entity. Coordinates are in the sketch plane (XY: x=X, y=Y; XZ: x=X, y=Z; YZ: x=Y, y=Z), mm, from
-/// the sketch origin. Every value can be an expression; each entity is fully dimensioned with them.
+/// the sketch origin. Curve dimensions accept expressions; text geometry uses fixed numbers.
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Entity {
+    /// Baked text outlines with a deterministic font and fixed numeric height, anchor and angle.
+    Text(TextArgs),
     /// Native rectangle figure, with centre/corner anchor and formula-driven turn.
     Rect(RectSpec),
     /// Native ellipse with semi-axes rx/ry and turn in degrees.
@@ -150,7 +190,7 @@ pub struct ConstrainArgs {
 pub struct RemoveArgs {
     /// Sketch id or name.
     pub sketch: ObjRef,
-    /// An entity id to delete (with the points only it used and the constraints on them).
+    /// A curve entity id (with its unused points and constraints) or a text id from sketch_info.texts.
     #[serde(default)]
     pub entity: Option<Id>,
     /// A constraint index to delete (later indices shift down by one).
@@ -186,7 +226,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_add",
-            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot. Each is fully \
+            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; recreate it to resize because app height edits can swap glyph/counter contour ids. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or glyphs are refused. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
              dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in \
              QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that \
              coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form \
@@ -205,6 +245,10 @@ pub fn tools() -> Vec<Tool> {
                         for e in &a.entities {
                             let added = |kind: &str, x: qymcad_engine::Added| json!({ "type": kind, "entities": x.entities, "points": x.points });
                             out.push(match e {
+                                Entity::Text(t) => json!({ "type": "text", "text": s.sketch_text(sketch, &TextSpec {
+                                    text: t.text.clone(), at: t.at, height: t.height, angle: t.angle,
+                                    font: t.font.clone(), construction: t.construction,
+                                })? }),
                                 Entity::Rect(spec) => {
                                     json!({ "rect_lines": s.sketch_rectangle(sketch, spec)? })
                                 }
@@ -258,7 +302,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_remove",
-            "Delete one entity (with the points only it used and the constraints on them) or one constraint (by index) \
+            "Delete one entity (with the points only it used and the constraints on them), one text id from sketch_info.texts (using entity), or one constraint (by index) \
              from a sketch. Give exactly one of `entity`, `constraint`. Returns the sketch; features built from it are \
              rebuilt (refused if one would break).",
             |st, a: RemoveArgs| {
@@ -276,7 +320,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "sketch_info",
             "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
-             entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction); \
+             texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction); \
              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
              take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",

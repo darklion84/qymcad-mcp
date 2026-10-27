@@ -18,7 +18,7 @@ pub struct ExportArgs {
     /// max 0.005 mm. Ignored for step.
     #[serde(default)]
     pub quality: Quality,
-    /// Bodies to write (ids or names of the features that made them). Default: every current result body.
+    /// Bodies to write (ids, native piece names or feature names). Default: every current result body. After split, bodies:[piece] exports only that piece, in one file.
     #[serde(default)]
     pub bodies: Option<Vec<ObjRef>>,
 }

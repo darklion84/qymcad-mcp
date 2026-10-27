@@ -23,9 +23,11 @@ mod render;
 mod revolve;
 mod session;
 mod sketch;
+mod split;
 mod sweep;
 #[cfg(test)]
 mod test_support;
+mod thread;
 mod topology;
 mod value;
 
@@ -47,9 +49,11 @@ pub use sketch::{
     CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, ExtendSpec, FrameRef, LineSpec,
     MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel, PointSel, PolygonSpec, PolylineSpec, RectAnchor, RectSpec,
     SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchOffsetSpec, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec,
-    TangentCircleSpec, Xy,
+    TangentCircleSpec, TextFont, TextInfo, TextSpec, Xy,
 };
+pub use split::{SplitOptions, SplitResult};
 pub use sweep::{Loft, LoftSection, Sweep, SweepPath};
+pub use thread::{ThreadOptions, ThreadResult};
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, SelectionKind, Topology};
 pub use value::Num;
 

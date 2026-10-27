@@ -12,6 +12,7 @@ mod mirror_point;
 mod offset_edit;
 mod selectors;
 mod splines;
+mod text;
 
 pub use corner_edit::{CornerSize, CornerSpec};
 pub use edits::{BreakSpec, CurvePickSpec, EditedSketch, ExtendSpec};
@@ -26,6 +27,7 @@ pub use selectors::{
     CurveQuery, EntityRef, OriginRef, PointRole, PointRoleSel, PointSel, SketchCurveKind, SketchCurveSel, TangentCircleSpec,
 };
 pub use splines::SplineSpec;
+pub use text::{TextFont, TextInfo, TextSpec};
 
 use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
@@ -100,6 +102,8 @@ pub struct SketchInfo {
     /// Remaining degrees of freedom (0 = fully defined) and redundant constraints.
     pub dof: (i32, i32),
     pub contours: Vec<ContourInfo>,
+    /// Native texts, including construction texts and their baked glyph contour counts.
+    pub texts: Vec<TextInfo>,
 }
 
 impl Session {
@@ -225,6 +229,21 @@ impl Session {
             world_frame,
             dof: self.p.sketch_dof(si),
             contours,
+            texts: s
+                .texts
+                .iter()
+                .map(|t| TextInfo {
+                    id: t.id,
+                    text: t.text.clone(),
+                    font: TextFont { path: t.font.path.clone(), index: t.font.index },
+                    family: t.font.family.clone(),
+                    height: t.height,
+                    at: [t.x, t.y],
+                    angle: t.angle,
+                    construction: t.construction,
+                    contours: t.glyphs.len(),
+                })
+                .collect(),
         })
     }
 

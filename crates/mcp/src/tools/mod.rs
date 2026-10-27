@@ -8,6 +8,7 @@ mod features;
 mod history;
 mod output;
 mod params;
+mod print;
 mod sketch;
 mod sketch_edit;
 mod topology;
@@ -108,6 +109,8 @@ fn modelling_tool(name: &str) -> bool {
             | "linear_array"
             | "circular_array"
             | "mirror"
+            | "thread"
+            | "split"
             | "feature_delete"
     )
 }
@@ -211,6 +214,7 @@ impl Registry {
         tools.extend(sketch::tools());
         tools.extend(sketch_edit::tools());
         tools.extend(features::tools());
+        tools.extend(print::tools());
         tools.extend(output::tools());
         tools.extend(history::tools());
         tools.extend(topology::tools());

@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- Native parametric `thread` with size aliases, persistent rim selection, side detection, all numeric formula
+  keys and basic geometry reporting. Default fit is capped to leave the groove exposed; explicit unsafe fits
+  and later parameter/dimension edits are refused, including unsafe recipes opened from the app.
+- Fixed-count `split` on base/datum/face planes, native piece names and every output addressable by id/name.
+  Each piece can be exported alone to STL/3MF/STEP. XZ split offsets point along +Y.
+- Baked sketch text through `sketch_add`, with fixed numeric height/anchor/angle, deterministic Arial or an
+  explicit font file/face and missing-glyph refusal. `sketch_info` lists text records; `sketch_remove` accepts
+  text ids; default extrusion keeps every glyph and its counters. Native app text-height defects remain
+  documented in FINDINGS; recreate text to resize it (ADR 0024).
+
 ## 0.1.1-dev.20261026.2 — closed mesh exports
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.

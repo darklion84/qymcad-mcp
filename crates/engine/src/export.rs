@@ -190,7 +190,7 @@ impl Session {
                     .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?;
                 weld(&mut mesh);
                 mesh.transform(&self.p.body_world_transform(id));
-                report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: Some(mesh.volume()) });
+                report.bodies.push(ExportedBody { id, name: self.body_name(id), mesh_volume_mm3: Some(mesh.volume()) });
                 meshes.push(mesh);
             }
             let written = match format {
@@ -208,7 +208,7 @@ impl Session {
             for &id in ids {
                 let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
                 pairs.push((shape, self.p.body_world_transform(id)));
-                report.bodies.push(ExportedBody { id, name: self.node_name(id), mesh_volume_mm3: None });
+                report.bodies.push(ExportedBody { id, name: self.body_name(id), mesh_volume_mm3: None });
             }
             let _gate = qymcad_kernel::kernel_gate();
             qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
