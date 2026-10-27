@@ -454,7 +454,8 @@ fn a_thread_that_removes_nothing_is_refused_atomically() {
         },
     );
     let error = result.unwrap_err().to_string();
-    assert!(error.contains("The thread did not build") || error.contains("nothing"), "{error}");
+    // A depth this shallow is now refused before native builds it: native would infer the wrong cutter side.
+    assert!(error.contains("The thread did not build") || error.contains("nothing") || error.contains("side"), "{error}");
     assert_eq!(s.info(), before);
 }
 

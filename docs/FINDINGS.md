@@ -2079,3 +2079,26 @@ asserts those exact fractional halves before checking away-from-zero output.
   those records and match volume/bounds of a fresh build. The comparator-disabled production mutation
   reopens the indirect parameter bypass and makes its regression red. F-097 explains why recreation
   is required; these guards cannot prevent subsequent edits in QymCAD.app.
+
+## F-103 Native thread geometry silently replaces several accepted inputs
+
+- **Version:** v0.1.1-dev.20261026, f25f27d. Found by the round-2 review and its audit (2026-10-27).
+- **Source:** `qymcad-core/src/thread.rs`: angle used only when custom and above 1 (:321), half-angle clamped
+  to 1.3 rad (:508), root half-width clamped at zero for deep profiles (:516; the public `profile_overflow`
+  omits fit), crest radius clamped (:529), root radius clamped and snapped to the full radius within 1e-6 P
+  (:554-575), pitch at or below 1e-9 replaced by the standard pitch (:301), buttress built as a symmetric
+  52 degree profile (:75, :350-355). `qymcad-kernel/src/occt_helical.cpp`: the cutter side inferred from
+  profile extents `py1 > -py0` (:222), which flips for profiles shallower than the 0.15 P overshoot and moves
+  the fit relief the wrong way (:248); runouts at or below 1e-6 dropped and runouts above 0.95 of the length
+  scaled (:134-136, :676-677).
+- **Server boundary:** every such input is refused at creation and on every evaluated edit; explicit crest/root
+  radii are checked against the arcs actually built. Tests measure the built profile or mesh.
+
+## F-104 A plain number set on a feature keeps only 4 decimals natively
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **Source:** `qymcad-core/src/model/params.rs:203` writes a plain feature number through `expr::fmt_num`
+  (`expr.rs:346`, `{v:.4}`). 1.234567891234 is stored as 1.2346 and 1e-6 as 0.
+- **Server boundary:** `dimension_set` writes the number as given (after the native target check), as creation
+  already did.
+

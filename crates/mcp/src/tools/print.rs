@@ -18,7 +18,7 @@ struct ThreadArgs {
     /// Size alias: M8, M8x1.25 or Tr16x4. Excludes standard, nominal and pitch; never supplies length.
     #[serde(default)]
     size: Option<String>,
-    /// Native standard: metric_iso (default), trapezoidal_tr, acme, round_rd, buttress or custom. Excludes size.
+    /// Native standard: metric_iso (default), trapezoidal_tr, acme, round_rd or custom. buttress is refused: native builds it as a symmetric 52 degree profile. Excludes size.
     #[serde(default)]
     standard: Option<String>,
     /// Basic nominal diameter, mm (number or expression). Required unless size is supplied.
@@ -35,10 +35,10 @@ struct ThreadArgs {
     /// Modelling fit clearance, mm per side (number or expression). Default 0.2 is lowered to keep radial relief at most 0.13 pitch; explicit values beyond that limit are refused after every edit too. Result reports the fit and reason; no ISO tolerance class is implied.
     #[serde(default)]
     fit: Option<Num>,
-    /// Entry runout length, mm (number or expression). App default 1.5.
+    /// Entry runout length, mm (number or expression). App default 1.5. 0, or above 1e-6; lead_in + lead_out at most 0.95 of length (native would drop or scale them).
     #[serde(default)]
     lead_in: Option<Num>,
-    /// Exit runout length, mm (number or expression). App default 1.5.
+    /// Exit runout length, mm (number or expression). App default 1.5. Same limits as lead_in.
     #[serde(default)]
     lead_out: Option<Num>,
     /// Number of starts (number or expression): an integer 1..64, checked again after every edit. Default 1.
@@ -53,10 +53,10 @@ struct ThreadArgs {
     /// Root rounding radius, mm (number or expression). Default 0 uses the standard profile.
     #[serde(default)]
     root_r: Option<Num>,
-    /// Included flank angle for a custom profile, degrees (number or expression), strictly greater than 1 and less than 180. Default 60; native ignores angles at or below 1.
+    /// Included flank angle, custom profile only, degrees (number or expression): greater than 1 and at most 148.969 (native ignores angles at or below 1 and clamps the half-angle at 1.3 rad). Default 60.
     #[serde(default)]
     angle: Option<Num>,
-    /// Radial depth for a custom profile, mm (number or expression). Default 0 uses the native pitch-based depth.
+    /// Radial depth, custom profile only, mm (number or expression). Default 0 uses the native pitch-based depth. Refused when the profile cannot hold it (the flank angle would change) or when depth plus fit is so shallow that native would cut on the wrong side.
     #[serde(default)]
     depth: Option<Num>,
     /// Name of the new thread feature/body, usable instead of its id later. Names interpreted as numeric ids are refused.

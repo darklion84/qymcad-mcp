@@ -4124,7 +4124,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
         }
       ],
       "default": null,
-      "description": "Included flank angle for a custom profile, degrees (number or expression), strictly greater than 1 and less than 180. Default 60; native ignores angles at or below 1."
+      "description": "Included flank angle, custom profile only, degrees (number or expression): greater than 1 and at most 148.969 (native ignores angles at or below 1 and clamps the half-angle at 1.3 rad). Default 60."
     },
     "body": {
       "anyOf": [
@@ -4159,7 +4159,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
         }
       ],
       "default": null,
-      "description": "Radial depth for a custom profile, mm (number or expression). Default 0 uses the native pitch-based depth."
+      "description": "Radial depth, custom profile only, mm (number or expression). Default 0 uses the native pitch-based depth. Refused when the profile cannot hold it (the flank angle would change) or when depth plus fit is so shallow that native would cut on the wrong side."
     },
     "edge": {
       "anyOf": [
@@ -4213,7 +4213,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
         }
       ],
       "default": null,
-      "description": "Entry runout length, mm (number or expression). App default 1.5."
+      "description": "Entry runout length, mm (number or expression). App default 1.5. 0, or above 1e-6; lead_in + lead_out at most 0.95 of length (native would drop or scale them)."
     },
     "lead_out": {
       "anyOf": [
@@ -4225,7 +4225,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
         }
       ],
       "default": null,
-      "description": "Exit runout length, mm (number or expression). App default 1.5."
+      "description": "Exit runout length, mm (number or expression). App default 1.5. Same limits as lead_in."
     },
     "left": {
       "default": false,
@@ -4290,7 +4290,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
     },
     "standard": {
       "default": null,
-      "description": "Native standard: metric_iso (default), trapezoidal_tr, acme, round_rd, buttress or custom. Excludes size.",
+      "description": "Native standard: metric_iso (default), trapezoidal_tr, acme, round_rd or custom. buttress is refused: native builds it as a symmetric 52 degree profile. Excludes size.",
       "type": [
         "string",
         "null"

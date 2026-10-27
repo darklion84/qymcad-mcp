@@ -3,7 +3,7 @@ use crate::{Element, Error, Id, Num, Rebuild, Result, Sel, Session};
 use qymcad_core::{
     feature::FeatureKind,
     model::{FeatNumber, PlainNumber},
-    thread::{ThreadSpec, ThreadStandard},
+    thread::{ThreadGeom, ThreadSpec, ThreadStandard},
 };
 use serde::Serialize;
 
@@ -218,10 +218,144 @@ fn check_fit(spec: ThreadSpec) -> Result<()> {
 }
 
 fn check_custom_angle(spec: ThreadSpec) -> Result<()> {
-    if spec.standard == ThreadStandard::Custom && spec.custom_angle <= 1.0 {
+    let maximum = (2.0 * 1.3_f64).to_degrees();
+    if spec.standard == ThreadStandard::Custom && (spec.custom_angle <= 1.0 || spec.custom_angle > maximum) {
         return Err(Error::Invalid(format!(
-            "custom thread angle must be greater than 1 degree and less than 180 degrees, got {}; native ignores angles at or below 1 degree",
+            "custom thread angle must be greater than 1 degree and at most {maximum:.12} degrees, got {}; native ignores angles at or below 1 degree and clamps the half-angle above 1.3 radians",
             spec.custom_angle
+        )));
+    }
+    Ok(())
+}
+
+// Public feasibility omits fit in the depth. Check it as well as the actual stock-specific
+// profile: native closes the root at zero width instead of preserving an infeasible flank.
+fn check_profile_depth(spec: ThreadSpec, g: &ThreadGeom) -> Result<()> {
+    if let Some((_, maximum, _)) = spec.profile_overflow() {
+        return Err(Error::Invalid(format!("thread profile is infeasible: native maximum depth {maximum:.12} mm at this angle/pitch/fit")));
+    }
+    let width = ((g.pitch - g.crest_flat) * 0.5 + spec.fit).clamp(0.02 * g.pitch, 0.49 * g.pitch);
+    let maximum = width / (g.angle_deg.to_radians() * 0.5).tan();
+    if g.depth + spec.fit > maximum {
+        return Err(Error::Invalid(format!(
+            "thread profile depth plus fit is infeasible: native maximum depth {maximum:.12} mm including fit; maximum bare depth {:.12} mm",
+            maximum - spec.fit
+        )));
+    }
+    Ok(())
+}
+
+// Reproduce only the pinned kernel's profile sampling (occt_helical.cpp:77-119).
+// Side detection uses these vertices, not the analytic arc extrema. In particular an odd
+// subdivision count can miss a fully rounded root's deepest point.
+fn sampled_profile(g: &ThreadGeom) -> Vec<[f64; 2]> {
+    use qymcad_core::geom::ProfEdge;
+    let mut points = Vec::new();
+    for edge in &g.groove {
+        match edge {
+            ProfEdge::Line { a, .. } => points.push([a.x, a.y]),
+            ProfEdge::Arc { a, b, center, ccw } => {
+                let r = (a.x - center.x).hypot(a.y - center.y);
+                let from = (a.y - center.y).atan2(a.x - center.x);
+                let mut sweep = (b.y - center.y).atan2(b.x - center.x) - from;
+                if *ccw {
+                    while sweep <= 0.0 {
+                        sweep += std::f64::consts::TAU;
+                    }
+                } else {
+                    while sweep >= 0.0 {
+                        sweep -= std::f64::consts::TAU;
+                    }
+                }
+                let step = if r > 0.01 { 2.0 * (1.0 - 0.01 / r).acos() } else { std::f64::consts::PI / 6.0 };
+                let count = (sweep.abs() / step.max(1e-3)).ceil().clamp(2.0, 400.0) as usize;
+                for i in 0..count {
+                    let t = from + sweep * i as f64 / count as f64;
+                    points.push([center.x + r * t.cos(), center.y + r * t.sin()]);
+                }
+            }
+            _ => unreachable!("native thread profiles contain only lines and arcs"),
+        }
+    }
+    points.dedup_by(|a, b| (a[0] - b[0]).hypot(a[1] - b[1]) <= 1e-9);
+    while points.len() > 2 && (points[0][0] - points[points.len() - 1][0]).hypot(points[0][1] - points[points.len() - 1][1]) < 1e-9 {
+        points.pop();
+    }
+    points
+}
+
+fn check_profile_side(spec: ThreadSpec, g: &ThreadGeom) -> Result<()> {
+    let points = sampled_profile(g);
+    let low = points.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
+    let high = points.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
+    if (high > -low) != spec.internal {
+        return Err(Error::Invalid(format!(
+            "thread profile side would be inferred incorrectly by native: sampled radial extents [{low:.12}, {high:.12}] mm; depth plus fit must reach the 0.15 pitch overshoot (strictly exceed it internally)"
+        )));
+    }
+    Ok(())
+}
+
+// Inputs the pinned geometry ignores or replaces (qymcad-core thread.rs:301, 321, 350-355, 529, 554-575).
+// Each would build something other than what is stored, so it is refused rather than passed on.
+fn check_profile_inputs(spec: ThreadSpec, g: &ThreadGeom) -> Result<()> {
+    if spec.standard == ThreadStandard::Buttress {
+        return Err(Error::Invalid(
+            "thread standard buttress is refused: native builds a symmetric 52 degree profile, not the 7/45 degree buttress".into(),
+        ));
+    }
+    if spec.standard != ThreadStandard::Custom && (spec.custom_angle != 60.0 || spec.custom_depth != 0.0) {
+        return Err(Error::Invalid(format!(
+            "thread angle and depth apply only to standard custom; native ignores angle {} and depth {} for this standard",
+            spec.custom_angle, spec.custom_depth
+        )));
+    }
+    if spec.pitch > 0.0 && spec.pitch <= 1e-9 {
+        return Err(Error::Invalid(format!(
+            "thread pitch {} is at or below 1e-9 mm, which native replaces by the standard pitch; use 0 for the standard pitch",
+            spec.pitch
+        )));
+    }
+    if spec.standard == ThreadStandard::Custom && spec.custom_depth > 0.0 && spec.custom_depth <= 1e-9 {
+        return Err(Error::Invalid(format!(
+            "thread depth {} is at or below 1e-9 mm, which native replaces by its default; use 0 for the default",
+            spec.custom_depth
+        )));
+    }
+    let radii: Vec<f64> = g
+        .groove
+        .iter()
+        .filter_map(|e| match e {
+            qymcad_core::geom::ProfEdge::Arc { a, center, .. } => Some((a.x - center.x).hypot(a.y - center.y)),
+            _ => None,
+        })
+        .collect();
+    for (key, asked) in [("crest_r", spec.crest_r), ("root_r", spec.root_r)] {
+        if let Some(r) = asked {
+            if !radii.iter().any(|m| (m - r).abs() <= 1e-9 * r.max(1.0)) {
+                return Err(Error::Invalid(format!(
+                    "thread {key} {r} mm is not built as asked: native clamps or rounds it (built arc radii {radii:?}); choose a radius the profile can hold"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+// The pinned kernel drops a runout at or below 1e-6 mm and scales both runouts down when they
+// exceed .95 of the length (occt_helical.cpp:134-136, 676-677). Either would silently replace the stored value.
+fn check_runout(lead_in: f64, lead_out: f64, length: f64) -> Result<()> {
+    for (key, v) in [("lead_in", lead_in), ("lead_out", lead_out)] {
+        if v > 0.0 && v <= 1e-6 {
+            return Err(Error::Invalid(format!(
+                "thread {key} runout {v} is at or below 1e-6 mm, which native treats as 0; use 0 or a larger runout"
+            )));
+        }
+    }
+    if lead_in + lead_out > 0.95 * length {
+        return Err(Error::Invalid(format!(
+            "thread runouts lead_in {lead_in} + lead_out {lead_out} exceed 0.95 of the length {length} mm ({:.12}); native would scale them down",
+            0.95 * length
         )));
     }
     Ok(())
@@ -278,6 +412,7 @@ impl Session {
                 })
                 .collect::<Result<std::collections::HashMap<_, _>>>()?;
             let length = values["length"];
+            check_runout(values["lead_in"], values["lead_out"], length)?;
             let mi = s.p.mesh_index(src).ok_or_else(|| Error::NotFound(format!("body {src}")))?;
             let mesh = &s.p.bodies[mi].mesh;
             let axis = qymcad_core::geom::axis_along_cylinder(mesh, c, axis, r)
@@ -324,6 +459,10 @@ impl Session {
             };
             check_fit(spec)?;
             check_stock_open(spec, r)?;
+            let g = spec.geometry_in(Some(2.0 * r));
+            check_profile_inputs(spec, &g)?;
+            check_profile_depth(spec, &g)?;
+            check_profile_side(spec, &g)?;
             if let Some(reason) = s.p.thread_refusal(src, (c, axis, r), spec, length) {
                 return Err(Error::Invalid(crate::localization::error(&reason)));
             }
@@ -376,7 +515,7 @@ impl Session {
 
     fn evaluated_thread(&self, id: Id, mut spec: ThreadSpec) -> Result<(ThreadSpec, f64)> {
         let vars = self.p.param_map();
-        let mut length = 0.0;
+        let (mut length, mut lead_in, mut lead_out) = (0.0, 0.0, 0.0);
         for key in ["length", "lead_in", "lead_out", "nominal", "pitch", "fit", "crest_r", "root_r", "angle", "depth", "starts"] {
             let target = qymcad_core::model::DimTarget::Feature { node: id, key: key.into() };
             let v = self
@@ -392,6 +531,8 @@ impl Session {
             validate(key, v)?;
             match key {
                 "length" => length = v,
+                "lead_in" => lead_in = v,
+                "lead_out" => lead_out = v,
                 "nominal" => spec.nominal_d = v,
                 "pitch" => spec.pitch = v,
                 "fit" => spec.fit = v,
@@ -403,8 +544,12 @@ impl Session {
                 _ => (),
             }
         }
+        check_runout(lead_in, lead_out, length)?;
         check_custom_angle(spec)?;
         check_fit(spec)?;
+        check_profile_inputs(spec, &spec.geometry())?;
+        check_profile_depth(spec, &spec.geometry())?;
+        check_profile_side(spec, &spec.geometry())?;
         Ok((spec, length))
     }
 
@@ -434,6 +579,10 @@ impl Session {
                         .ok_or_else(|| Error::Invalid("cannot detect the material side of this thread rim".into()))?;
                     check_fit(spec)?;
                     check_stock_open(spec, rim.radius)?;
+                    let g = spec.geometry_in(Some(2.0 * rim.radius));
+                    check_profile_inputs(spec, &g)?;
+                    check_profile_depth(spec, &g)?;
+                    check_profile_side(spec, &g)?;
                     if let Some(reason) = self.p.thread_refusal(src, (rim.center, axis, rim.radius), spec, length) {
                         return Err(Error::Invalid(crate::localization::error(&reason)));
                     }

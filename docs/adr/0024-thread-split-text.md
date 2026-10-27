@@ -59,6 +59,13 @@ probes through save, load and the app's parameter-edit path.
    lead, and the fit with its radial relief are reported as such. A fit is a modelling clearance, not an ISO
    tolerance class, and is not proof that a printed pair screws together.
 
+6a. **No silent replacement (review round 2).** An input the pinned native geometry would ignore, clamp, round or
+   reinterpret is refused, at creation and on every evaluated edit (F-103): buttress (built symmetric), angle or
+   depth on a standard profile, custom angles at or below 1 or above 148.969 degrees, profiles too deep for their
+   angle and pitch with the fit included, profiles so shallow that native infers the cutter side wrongly, runouts
+   at or below 1e-6 mm or together above 0.95 of the length, crest/root radii not built as asked, pitch or depth
+   at or below 1e-9. A plain number set through `dimension_set` keeps every digit (F-104).
+
 ### Split (`split` tool)
 
 7. **The piece count is fixed at creation.** It is counted on the live B-rep through `ask::split_pieces`,

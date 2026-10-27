@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format follows
 - Refuse split edits that exchange piece identities despite keeping the count, using global geometric
   overlap matching. Ordinary moves with preserved identities remain allowed.
 - Refuse numeric-looking piece, sketch and feature names that the resolver interprets as ids.
+- Thread inputs that native would silently replace are refused: custom angles above 148.969° (half-angle
+  clamp), profiles too deep for their angle and pitch (fit included), shallow profiles whose cutter side native
+  infers wrongly, runouts at or below 1e-6 mm or above 0.95 of the length, crest/root radii native clamps or
+  rounds to a full radius, pitch or depth at or below 1e-9, angle/depth on a standard profile, and buttress
+  (built symmetric by native). Checked at creation and on every edit.
+- `dimension_set` with a plain number on a feature keeps every digit; native would store it with 4 decimals.
+- The split identity guard compares each piece against its own size, so a small unchanged piece beside a large
+  one is no longer refused.
 
 ### Added
 - Native parametric `thread` with size aliases, persistent rim selection, side detection, all numeric formula

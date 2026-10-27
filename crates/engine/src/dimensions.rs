@@ -184,7 +184,14 @@ impl Session {
                     return Err(Error::Invalid(format!("{size} must be positive, got {evaluated}")));
                 }
                 s.p.check_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))?;
-                if !s.p.set_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))? {
+                // Native writes a plain feature number through fmt_num, which keeps 4 decimals (expr.rs:346);
+                // store the number as given instead, the way creation does.
+                if let (DimTarget::Feature { node, key }, Num::Value(_)) = (&native, value) {
+                    if s.p.kept_number(*node, key).is_none() {
+                        return Err(Error::NotFound("dimension target no longer exists".into()));
+                    }
+                    s.p.set_feat_dim(*node, key, text.clone());
+                } else if !s.p.set_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))? {
                     return Err(Error::NotFound("dimension target no longer exists".into()));
                 }
             }

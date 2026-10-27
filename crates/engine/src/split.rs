@@ -169,7 +169,13 @@ impl Session {
                 continue;
             };
             let scores: Vec<Vec<f64>> = split.pieces.iter().map(|(_, old)| after.iter().map(|new| overlap(old, new)).collect()).collect();
-            let changed = uncertain_piece_assignment(&scores);
+            let tolerances: Vec<f64> = split
+                .pieces
+                .iter()
+                .zip(&after)
+                .map(|((_, old), new)| (overlap(old, old).max(overlap(new, new)) * 1e-8).max(1e-9))
+                .collect();
+            let changed = uncertain_piece_assignment(&scores, &tolerances);
             if !changed.is_empty() {
                 let names = changed
                     .iter()
@@ -189,14 +195,15 @@ impl Session {
 /// Certify the native assignment instead of greedily choosing a match per row. Every alternative
 /// permutation decomposes into cycles: gain(i,j)=overlap(i,j)-overlap(i,i). A nonnegative cycle
 /// therefore means a better match or an ambiguous one. Max-plus Floyd-Warshall finds all such cycles.
-fn uncertain_piece_assignment(scores: &[Vec<f64>]) -> Vec<usize> {
+/// Each row contributes its own piece's tolerance, so a cycle's allowance sums only its pieces.
+fn uncertain_piece_assignment(scores: &[Vec<f64>], tolerances: &[f64]) -> Vec<usize> {
     let count = scores.len();
-    let scale = scores.iter().flatten().copied().fold(0.0, f64::max);
-    let tolerance = (scale * 1e-8).max(1e-9) * count as f64;
     let mut gain: Vec<Vec<f64>> = scores
         .iter()
         .enumerate()
-        .map(|(i, row)| row.iter().enumerate().map(|(j, score)| if i == j { f64::NEG_INFINITY } else { score - row[i] }).collect())
+        .map(|(i, row)| {
+            row.iter().enumerate().map(|(j, score)| if i == j { f64::NEG_INFINITY } else { score - row[i] + tolerances[i] }).collect()
+        })
         .collect();
     for k in 0..count {
         for i in 0..count {
@@ -205,7 +212,7 @@ fn uncertain_piece_assignment(scores: &[Vec<f64>]) -> Vec<usize> {
             }
         }
     }
-    (0..count).filter(|&i| scores[i][i] <= tolerance || gain[i][i] >= -tolerance).collect()
+    (0..count).filter(|&i| scores[i][i] <= tolerances[i] || gain[i][i] >= 0.0).collect()
 }
 
 #[cfg(test)]
@@ -214,13 +221,28 @@ mod tests {
 
     #[test]
     fn overlap_matching_is_global_and_refuses_ties() {
+        let assignment = |scores: &[Vec<f64>]| uncertain_piece_assignment(scores, &vec![1e-8; scores.len()]);
         // Offset10->15 in a box: the old upper overlaps both new halves equally;
         // assigning the old lower first proves that native ids still maximize total overlap.
-        assert!(uncertain_piece_assignment(&[vec![4000., 0.], vec![2000., 2000.]]).is_empty());
+        assert!(assignment(&[vec![4000., 0.], vec![2000., 2000.]]).is_empty());
         // A greedy row-best would keep the wrong assignment here: 10 < 9+9.
-        assert_eq!(uncertain_piece_assignment(&[vec![10., 9.], vec![9., 0.]]), vec![0, 1]);
-        assert_eq!(uncertain_piece_assignment(&[vec![1., 1.], vec![1., 1.]]), vec![0, 1]);
+        assert_eq!(assignment(&[vec![10., 9.], vec![9., 0.]]), vec![0, 1]);
+        assert_eq!(assignment(&[vec![1., 1.], vec![1., 1.]]), vec![0, 1]);
         // Three-way swaps must be detected even when no pair alone improves the score.
-        assert_eq!(uncertain_piece_assignment(&[vec![2., 3., 0.], vec![0., 2., 3.], vec![3., 0., 2.]]), vec![0, 1, 2]);
+        assert_eq!(assignment(&[vec![2., 3., 0.], vec![0., 2., 3.], vec![3., 0., 2.]]), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn overlap_tolerance_is_local_to_each_piece_and_competing_cycle() {
+        let large = vec![62_500_000., 0., 0.];
+        // An unchanged 1mm³ piece survives beside a 500mm stock and another small piece.
+        assert!(uncertain_piece_assignment(&[large.clone(), vec![0., 1., 0.], vec![0., 0., 1.]], &[0.625, 1e-8, 1e-8]).is_empty());
+        // Large unrelated stock must not turn a clear small-piece match into an ambiguous cycle.
+        assert!(uncertain_piece_assignment(&[large.clone(), vec![0., 1., 0.99], vec![0., 0.99, 1.]], &[0.625, 1e-8, 1e-8]).is_empty());
+        // A near tie between the small pieces still refuses both, using their own uncertainties.
+        assert_eq!(
+            uncertain_piece_assignment(&[large, vec![0., 1., 1. - 5e-9], vec![0., 1. - 5e-9, 1.]], &[0.625, 1e-8, 1e-8]),
+            vec![1, 2]
+        );
     }
 }
