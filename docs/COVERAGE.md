@@ -54,7 +54,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T6 | Suppress / rollback history | not covered | — | none | — |
 | T7 | Visibility and body color | not covered | Hide a body or sketch; set a body colour (it would reach 3MF) | none | — |
 | T8 | Measurement | partial | No distances or angles between elements | `topology`, `doc_info` | — |
-| I1 | STEP / IGES import | in progress (cover-high) | Import external source files | planned `import` | `FeatureKind::Import` |
+| I1 | STEP / IGES import | covered | Native source-backed part trees, selective solids, literal scale and embedded originals | `import` | `FeatureKind::Import` |
 | I2 | Mesh import | not covered | STL, OBJ, PLY, glTF, 3MF, AMF | none | `FeatureKind::MeshSolid,FeatureKind::MeshPiece` |
 | I3 | DXF / SVG sketch import | not covered | — | none | — |
 | E1 | Export STEP, STL, 3MF, GLB, OBJ | covered | — | `export` | — |

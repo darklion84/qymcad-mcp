@@ -5,7 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Added
+- `import` reads STEP/IGES as native source-backed QymCAD part trees, retaining file names/placements, optional literal scale correction and embedded originals for save/open. Imported bodies remain independently selectable and modifiable (ADR 0028, F-110).
+
 ### Fixed
+- Explicit push-face, fillet and face-sketch/extrude edits on imported parts create nodes in the input's component, avoiding cross-component rebuild failures.
 - Include sketch projection sources in parameter, dimension and sketch rebuild snapshots/retries and stored
   edge-query safety checks. Failed downstream rebuilds restore the exact Project and every original B-rep.
 - Refuse deleting projection sources, including cascades, naming the projecting sketches to delete first;
