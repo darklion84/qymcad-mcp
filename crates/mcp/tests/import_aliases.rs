@@ -144,3 +144,22 @@ fn tools_default_to_the_only_body_when_it_was_imported_into_its_own_part() {
     let error = registry.call("topology", json!({})).unwrap().unwrap_err();
     assert!(error.contains("pass body") && error.contains("Second"), "{error}");
 }
+
+#[test]
+fn a_fillet_on_the_defaulted_imported_body_matches_the_explicit_one() {
+    let mut volumes = Vec::new();
+    for explicit in [false, true] {
+        let (mut registry, imported) = imported();
+        let edge = call(&mut registry, "select", json!({"body":imported["body"],"edges":{"along":"z"}}))["edges"][0]["id"].clone();
+        let mut args = json!({"edges":[edge],"radius":1});
+        if explicit {
+            args["body"] = imported["body"].clone();
+        }
+        let result = call(&mut registry, "fillet", args);
+        assert!(result["rebuild"].get("errors").is_none(), "{result}");
+        let bodies = call(&mut registry, "doc_info", json!({}))["bodies"].clone();
+        assert_eq!(bodies.as_array().unwrap().len(), 1, "{bodies}");
+        volumes.push(bodies[0]["volume_mm3"].as_f64().unwrap());
+    }
+    assert!((volumes[0] - volumes[1]).abs() < 1e-9 && volumes[0] < 500.0, "{volumes:?}");
+}

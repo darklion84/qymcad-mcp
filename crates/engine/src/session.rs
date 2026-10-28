@@ -882,7 +882,8 @@ impl Session {
         let consumed = self.p.consumed_bodies();
         let mut current: Vec<Id> =
             self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).filter(|b| !consumed.contains(b)).collect();
-        current.dedup();
+        let mut seen = HashSet::new();
+        current.retain(|b| seen.insert(*b));
         match current.as_slice() {
             [] => Err(Error::Invalid(empty.into())),
             [only] => Ok(*only),
