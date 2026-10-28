@@ -11,7 +11,7 @@ named parameters — and save them as `.qcad` files you open and edit in the Qym
 > extrude / cut / revolve / sweep / loft; fillet, chamfer, hole, shell, push face; linear / circular arrays and mirror;
 > topology and descriptive selections; atomic modelling batches, feature deletion and undo;
 > export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
-> See [docs/TOOLS.md](docs/TOOLS.md) and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
+> See [docs/TOOLS.md](docs/TOOLS.md), [capability coverage](docs/COVERAGE.md), and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
 > quirks are in [docs/FINDINGS.md](docs/FINDINGS.md).
 
 ## How it works

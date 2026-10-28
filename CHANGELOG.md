@@ -34,6 +34,7 @@ Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
   one is no longer refused.
 
 ### Added
+- Pinned-QymCAD capability matrix in `docs/COVERAGE.md`, guarded against omitted, unknown and duplicate enum variants.
 - Native parametric `thread` with size aliases, persistent rim selection, side detection, all numeric formula
   keys and basic geometry reporting. Default fit is capped to leave the groove exposed; explicit unsafe fits
   and later parameter/dimension edits are refused, including unsafe recipes opened from the app.
