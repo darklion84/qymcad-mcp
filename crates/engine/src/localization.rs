@@ -24,7 +24,7 @@ pub(crate) fn error(error: &CoreError) -> String {
         message.push_str("; the radius may not fit the faces next to the edge (thin wall, short edge, small adjacent fillet); try a smaller radius or fewer edges");
     }
     if matches!(error, CoreError::OpFailed(qymcad_core::errors::Op::SplitBody)) {
-        message.push_str("; the split plane no longer divides the body into its pieces (it misses the body or touches only a face); move the offset back inside the body");
+        message.push_str("; the split failed: most often the plane no longer divides the body into its pieces (it misses the body or only touches a face), and then the offset must move back inside; otherwise the kernel could not cut this geometry");
     }
     message
 }
