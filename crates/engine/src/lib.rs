@@ -12,6 +12,7 @@ mod features;
 mod history;
 #[cfg(test)]
 mod history_tests;
+mod import_tool;
 mod imports;
 mod info;
 mod localization;
@@ -39,6 +40,7 @@ pub use error::{Error, Result};
 pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};
 pub use features::{Direction, Extrude, Op};
 pub use history::{Snapshot, ToolCall, Undone, UNDO_LIMIT};
+pub use import_tool::{ImportResult, ImportedBody};
 pub use info::{DocInfo, NodeInfo};
 pub use modifiers::{Hole, HoleKind, Side};
 pub use params::ParamInfo;

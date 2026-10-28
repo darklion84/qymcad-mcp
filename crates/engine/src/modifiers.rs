@@ -110,7 +110,7 @@ impl Session {
             let r = positive(s, radius, "fillet radius")?;
             let (ids, dropped) = s.edges_now(src, edges)?;
             dropped_seams = dropped;
-            let id = s.p.add_fillet(src, r, ids);
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_fillet(src, r, ids));
             dim(s, id, "radius", radius);
             s.set_node_name(id, name)?;
             Ok(id)
@@ -183,7 +183,7 @@ impl Session {
                 return Err(Error::Invalid("push distance must not be zero".into()));
             }
             let key = s.planar_face(src, face)?;
-            let id = s.p.add_push_face(src, key, d);
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_push_face(src, key, d));
             if !face.is_ids() {
                 let q = s.face_query(face, &[key.id])?;
                 if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {

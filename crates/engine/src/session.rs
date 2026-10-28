@@ -636,6 +636,16 @@ impl Session {
         errors
     }
 
+    /// Create nodes in their input's part, as the app does after entering that part. Restore the user's
+    /// active context before returning; explicit imported-body edits must not redirect later implicit edits.
+    pub(crate) fn in_component<T>(&mut self, owner: Option<Id>, edit: impl FnOnce(&mut Project) -> T) -> T {
+        let saved = self.p.active_component;
+        self.p.set_active_component(owner);
+        let value = edit(&mut self.p);
+        self.p.set_active_component(saved);
+        value
+    }
+
     /// Run `edit`, rebuild, and keep the result only if the nodes it created built cleanly. Otherwise restore
     /// the document as it was and return the errors. Pending edits are rebuilt before the snapshot so the
     /// project and its live shapes describe the same baseline (F-034). Returns the edit's value and report.
@@ -847,6 +857,19 @@ impl Session {
 
     /// Display name of a body. Split outputs use their native piece names; ordinary feature names stay compatible.
     pub fn body_name(&self, id: Id) -> String {
+        let native_component_name =
+            self.p
+                .body_owner(id)
+                .and_then(|owner| self.p.components.iter().find(|component| component.id == owner))
+                .filter(|_| {
+                    self.p.timeline.iter().any(|node| {
+                        matches!(&node.kind, qymcad_core::feature::FeatureKind::Import { .. }) && node.kind.bodies().contains(&id)
+                    })
+                })
+                .map(|component| component.name.clone());
+        if let Some(name) = native_component_name {
+            return crate::localization::name(&name);
+        }
         let named_outputs = self.p.timeline.iter().any(|n| {
             matches!(
                 n.kind,

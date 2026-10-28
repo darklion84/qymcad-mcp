@@ -6,6 +6,7 @@ mod common;
 mod doc;
 mod features;
 mod history;
+mod import;
 mod output;
 mod params;
 mod print;
@@ -112,6 +113,7 @@ fn modelling_tool(name: &str) -> bool {
             | "thread"
             | "body_boolean"
             | "split"
+            | "import"
             | "feature_delete"
     )
 }
@@ -216,6 +218,7 @@ impl Registry {
         tools.extend(sketch_edit::tools());
         tools.extend(features::tools());
         tools.extend(print::tools());
+        tools.extend(import::tools());
         tools.extend(output::tools());
         tools.extend(history::tools());
         tools.extend(topology::tools());

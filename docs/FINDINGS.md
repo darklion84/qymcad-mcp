@@ -2172,6 +2172,14 @@ asserts those exact fractional halves before checking away-from-zero output.
 
   Tr16x4 reports (16.5,14,12) and measures the actual zero-fit root diameter as 16.5000024 mm.
 
+## F-110 Exact imports must keep tree/source semantics and use safe parsing
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **What:** The app reads exact files with `read_exact_tree(format, path, 0.5)`, embeds original bytes, then uses `Project::import_tree_as_parts`. This creates Import bodies inside part components while retaining component names and placements; scale is a literal correction applied to shapes and component offsets, in addition to OCCT unit normalization to mm. IGES without solids may be an app drawing import, but the server's solid import refuses it.
+- **Evidence:** source `qymcad/src/gui/file_doors.rs:223-247`, `qymcad/src/gui/import_scale.rs:123-181,228-257`, `qymcad-core/src/model/assembly/tree.rs:173-238`, `qymcad-kernel/src/shape/exchange.rs:206-271`; verified by `crates/engine/tests/import_tool.rs` and `crates/mcp/tests/protocol.rs::imports_step_through_mcp_and_batch_with_embedded_source`. Tests compare independent server-exported solid metrics, scale 2, topology availability, and reopen after deleting the external path.
+- **How we handle it:** Engine import stages source bytes with exclusive 0600 files and normalized extensions, parses under the kernel gate, embeds bytes, preserves the native tree and component placements, and returns bodies addressable by id/name. Do not call upstream `raise_imports`: it uses predictable staging and parses outside the gate. Import creates separate parts; default modelling stays scoped to the active part, so callers pass imported body references explicitly.
+- **Follow-up regression evidence:** `import_tool` tests save then delete STEP/IGES sources, reopen both stored-B-rep and source-only documents, compare all 6 persistent face and 12 edge ids and resolve each through `select` (F-106). Distinct server-exported boxes prove names, original indices and selective geometry. Imported-body push (+200 mm³), one vertical R1 fillet (−10·(1−π/4) mm³), and a face-hosted 2×3×4 pocket (−24 mm³) are checked analytically and rebuilt after a source-only save/open. Those tests initially failed with `cross-component input` for modifiers and an unresolved sketch frame: native adders use the active component (`qymcad-core/src/model/timeline/add_ops.rs`), so these explicit edits now create nodes in the body/sketch owner's part and restore the previous active context. The app likewise enters the sketch owner's component before extruding (`qymcad-part/src/apply/solids.rs:417-428`). Real IGES MCP and batch tests use a server-built, inch-unit IGES fixture; the server export tool itself has no IGES format.
+
 ## F-107 Sketch projections rebuild consumers outside the native dependency plan
 
 - **Version:** v0.1.1-dev.20261026, f25f27d.

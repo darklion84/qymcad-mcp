@@ -115,8 +115,15 @@ impl Session {
         let sp = self.sketch_plane(plane)?;
         let n = self.p.sketches.len() + 1;
         let name = name.map(str::to_string).unwrap_or_else(|| format!("Sketch {n}"));
-        let sid = self.p.add_sketch(name.clone(), vec![], None);
-        self.p.add_sketch_node(sid, name);
+        let owner = match plane {
+            PlaneRef::Face { body, .. } => self.p.body_owner(*body),
+            _ => self.p.active_component,
+        };
+        let sid = self.in_component(owner, |p| {
+            let sid = p.add_sketch(name.clone(), vec![], None);
+            p.add_sketch_node(sid, name);
+            sid
+        });
         let si = self.sketch_si(sid)?;
         self.p.sketches[si].plane = sp;
         self.track_datum_dependencies(sid);

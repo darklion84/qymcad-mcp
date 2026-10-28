@@ -277,6 +277,7 @@ fn lists_tools_with_object_schemas() {
         "thread",
         "body_boolean",
         "split",
+        "import",
         "feature_delete",
         "undo",
         "batch",
@@ -574,6 +575,91 @@ fn build_box(c: &mut Client) {
     c.ok("sketch_create", json!({ "plane": "XY", "name": "s" }));
     c.ok("sketch_add", json!({ "sketch": "s", "entities": [{ "type": "rect", "w": 20, "h": 10 }] }));
     c.ok("extrude", json!({ "sketch": "s", "height": 5, "name": "box" }));
+}
+
+#[test]
+fn imports_step_through_mcp_and_batch_with_embedded_source() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-import-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("box.step");
+    let mut maker = Client::start();
+    build_box(&mut maker);
+    maker.ok("export", json!({"format":"step","path":source.to_str().unwrap()}));
+
+    let mut client = Client::start();
+    client.init();
+    client.ok("doc_new", json!({}));
+    let imported = client.ok("import", json!({"path":source.to_str().unwrap(),"name":"Imported"}));
+    assert_eq!(imported["bodies"].as_array().unwrap().len(), 1);
+    let body = imported["bodies"][0]["body"].clone();
+    assert!((imported["bodies"][0]["volume_mm3"].as_f64().unwrap() - 1000.0).abs() < 1.0);
+    assert_eq!(imported["bodies"][0]["name"], "Imported");
+    let topology = client.ok("topology", json!({"body":body,"edges":false}));
+    assert_eq!(topology["faces_total"], 6);
+    let face = topology["faces"][0]["id"].clone();
+    let sketch = client.ok("sketch_create", json!({"plane":{"body":body,"face":face},"name":"on-import"}));
+    assert!(sketch["sketch"].as_u64().is_some());
+
+    let batch = client.ok("batch", json!({"steps":[{"tool":"import","args":{"path":source.to_str().unwrap(),"scale":2.0}}]}));
+    assert_eq!(batch["steps"][0]["tool"], "import");
+    assert!((batch["bodies"][1]["volume_mm3"].as_f64().unwrap() - 8000.0).abs() < 1.0);
+
+    let saved = dir.join("imported.qcad");
+    client.ok("doc_save", json!({"path":saved.to_str().unwrap()}));
+    std::fs::remove_file(&source).unwrap();
+    let mut reopened = Client::start();
+    reopened.init();
+    let opened = reopened.ok("doc_open", json!({"path":saved.to_str().unwrap()}));
+    assert_eq!(opened["doc"]["bodies"].as_array().unwrap().len(), 2);
+    assert!((opened["doc"]["bodies"][0]["volume_mm3"].as_f64().unwrap() - 1000.0).abs() < 1.0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn imports_iges_through_mcp() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-iges-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("box.iges");
+    // Server-built 10×10×5 mm box, written by the native IGES writer in inches;
+    // extracted from the verified research probe's embedded-igs.qcad (sources/22.igs).
+    // The server's export tool supports STEP but not IGES. No kernel dependency in the MCP layer.
+    std::fs::write(&source, include_bytes!("../../engine/tests/fixtures/server-box-10x10x5-inch.igs")).unwrap();
+    let mut client = Client::start();
+    client.init();
+    client.ok("doc_new", json!({}));
+    let imported = client.ok("import", json!({"path":source.to_str().unwrap(), "name":"Inch box"}));
+    assert_eq!(imported["bodies"].as_array().unwrap().len(), 1);
+    assert_eq!(imported["bodies"][0]["name"], "Inch box");
+    assert_eq!(imported["bodies"][0]["solid"], 0);
+    assert!((imported["bodies"][0]["volume_mm3"].as_f64().unwrap() - 10.0 * 10.0 * 5.0).abs() < 1e-4);
+    for (actual, expected) in imported["bodies"][0]["bbox"].as_array().unwrap().iter().zip([-5.0, -5.0, 0.0, 5.0, 5.0, 5.0]) {
+        assert!((actual.as_f64().unwrap() - expected).abs() < 1e-4);
+    }
+    let body = imported["bodies"][0]["body"].clone();
+    assert_eq!(client.ok("topology", json!({"body":body}))["faces_total"], 6);
+    // Also verify IGES uses the normal batch handler, source embedding and literal scaling.
+    let batch =
+        client.ok("batch", json!({"verbose":true, "steps":[{"tool":"import", "args":{"path":source.to_str().unwrap(), "scale":2.0}}]}));
+    assert_eq!(batch["steps"][0]["tool"], "import");
+    assert_eq!(batch["bodies"].as_array().unwrap().len(), 2);
+    let mut volumes: Vec<_> = batch["bodies"].as_array().unwrap().iter().map(|b| b["volume_mm3"].as_f64().unwrap()).collect();
+    volumes.sort_by(f64::total_cmp);
+    assert!((volumes[0] - 500.0).abs() < 1e-4);
+    assert!((volumes[1] - 500.0 * 2.0_f64.powi(3)).abs() < 1e-4);
+    let saved = dir.join("iges.qcad");
+    client.ok("doc_save", json!({"path":saved.to_str().unwrap()}));
+    std::fs::remove_file(&source).unwrap();
+    let mut reopened = Client::start();
+    reopened.init();
+    let opened = reopened.ok("doc_open", json!({"path":saved.to_str().unwrap()}));
+    let bodies = opened["doc"]["bodies"].as_array().unwrap();
+    assert_eq!(bodies.len(), 2);
+    let mut reopened_volumes: Vec<_> = bodies.iter().map(|b| b["volume_mm3"].as_f64().unwrap()).collect();
+    reopened_volumes.sort_by(f64::total_cmp);
+    for (actual, expected) in reopened_volumes.into_iter().zip([500.0, 4000.0]) {
+        assert!((actual - expected).abs() < 1e-4);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

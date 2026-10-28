@@ -133,7 +133,7 @@ impl Session {
                     if a.through {
                         return Err(Error::Invalid("`through` needs a body to go through; give a height".into()));
                     }
-                    s.p.add_extrude_multi(a.sketch, profiles, h, reach, 0.0, vec![])
+                    s.in_component(s.p.sketch_owner(a.sketch), |p| p.add_extrude_multi(a.sketch, profiles, h, reach, 0.0, vec![]))
                 }
                 (Op::Cut | Op::Intersect, None) => return Err(Error::Invalid("there is no body to cut or intersect yet".into())),
                 (op, Some(src)) => {
@@ -143,7 +143,7 @@ impl Session {
                         _ => 2,
                     };
                     let span = CombineSpan { height: h, down: 0.0, extent: Extent { through: a.through, reach }, fill: &[] };
-                    s.p.add_combine_multi_op(src, a.sketch, profiles, span, code)
+                    s.in_component(s.p.sketch_owner(a.sketch), |p| p.add_combine_multi_op(src, a.sketch, profiles, span, code))
                 }
             };
             if let (Some(e), false) = (a.height.expr(), a.through) {
