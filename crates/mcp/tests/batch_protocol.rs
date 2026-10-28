@@ -154,6 +154,29 @@ fn batch_builds_named_parametric_geometry_and_undoes_once_over_stdio() {
 }
 
 #[test]
+fn projection_runs_inside_batch_and_one_undo_restores_it() {
+    let args = json!({"steps":[
+        {"tool":"sketch_create","args":{"plane":"XY","name":"profile"}},
+        {"tool":"sketch_add","args":{"sketch":"profile","entities":[{"type":"rect","w":40,"h":30}]}},
+        {"tool":"extrude","args":{"sketch":"profile","height":10,"name":"body"}},
+        {"tool":"sketch_create","args":{"plane":"XY","name":"projection"}},
+        {"tool":"sketch_project","args":{"sketch":"projection","body":"body","edges":{"edges_of":{"facing":"+z"}}}}
+    ],"verbose":true});
+    let responses = run(
+        &[initialized(), tool(2, "doc_new", json!({})), tool(3, "batch", args), tool(4, "undo", json!({})), tool(5, "doc_info", json!({}))],
+        None,
+    );
+    let batch = payload(&responses[2]);
+    assert_eq!(batch["ok"], true);
+    assert_eq!(batch["steps"][4]["result"]["projections"].as_array().unwrap().len(), 4);
+    assert_eq!(payload(&responses[3])["undone"]["tool"], "batch");
+    let after = payload(&responses[4]);
+    for field in ["params", "sketches", "timeline", "bodies"] {
+        assert_eq!(after[field], json!([]), "one undo clears the entire projection batch: {field}");
+    }
+}
+
+#[test]
 fn verbose_200_step_batch_is_one_bounded_call_log_pair() {
     const RECORD_LIMIT: usize = 256 * 1024;
     let temp = TempDir::new();

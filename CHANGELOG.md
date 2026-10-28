@@ -5,6 +5,9 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Added
+- `sketch_project` projects persistent body edge selections or a hosted face outline into sketches, returns constrainable geometry ids and reports projection attachment state in `sketch_info` (F-109, ADR 0027).
+
 ### Fixed
 - Include sketch projection sources in parameter, dimension and sketch rebuild snapshots/retries and stored
   edge-query safety checks. Failed downstream rebuilds restore the exact Project and every original B-rep.

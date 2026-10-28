@@ -43,6 +43,19 @@ pub struct EntityInfo {
     /// Construction geometry (not part of any profile).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub construction: bool,
+    /// Native projection record still owns this curve (also true for unknown sources).
+    pub driven: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection: Option<Id>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// attached / unknown while associated; detached after a release observed in this Session.
+    pub projection_state: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection_body: Option<Id>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -80,42 +93,61 @@ impl Session {
         let si = self.sketch_si(sketch)?;
         let s = &self.p.sketches[si];
         let xy = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
-        let entities = s
-            .entities
-            .iter()
-            .map(|e| {
-                let (kind, r, ccw) = match &e.kind {
-                    EntityKind::Line { .. } => ("line", None, None),
-                    EntityKind::Arc { center, a, ccw, .. } => {
-                        let r = xy(*center).zip(xy(*a)).map(|(c, p)| (p.0 - c.0).hypot(p.1 - c.1));
-                        ("arc", r, Some(*ccw))
-                    }
-                    EntityKind::Circle { r, .. } => ("circle", Some(*r), None),
-                    EntityKind::Ellipse { span, .. } => (
-                        if span.is_some() { "ellipse_arc" } else { "ellipse" },
-                        None,
-                        span.map(|s| s.winding == qymcad_core::feature::Winding::Ccw),
-                    ),
-                    EntityKind::Spline { .. } => ("spline", None, None),
-                };
-                EntityInfo {
-                    id: e.id,
-                    kind,
-                    points: entity_points(e),
-                    r,
-                    ccw,
-                    construction: e.construction,
-                    nodes: match &e.kind {
-                        EntityKind::Spline { nodes, .. } => Some(nodes.clone()),
-                        _ => None,
-                    },
-                    closed: match &e.kind {
-                        EntityKind::Spline { ends, .. } => Some(*ends == qymcad_core::feature::Ends::Closed),
-                        _ => None,
-                    },
+        let projections = &s.projections;
+        let detached = &self.detached_projections;
+        let entities = s.entities.iter().map(|e| {
+            let (kind, r, ccw) = match &e.kind {
+                EntityKind::Line { .. } => ("line", None, None),
+                EntityKind::Arc { center, a, ccw, .. } => {
+                    let r = xy(*center).zip(xy(*a)).map(|(c, p)| (p.0 - c.0).hypot(p.1 - c.1));
+                    ("arc", r, Some(*ccw))
                 }
-            })
-            .collect();
+                EntityKind::Circle { r, .. } => ("circle", Some(*r), None),
+                EntityKind::Ellipse { span, .. } => (if span.is_some() { "ellipse_arc" } else { "ellipse" }, None, span.map(|s| s.winding == qymcad_core::feature::Winding::Ccw)),
+                EntityKind::Spline { .. } => ("spline", None, None),
+            };
+            let projection = projections.iter().find(|p| p.entities.contains(&e.id));
+            let detached_projection = detached.get(&(sketch, e.id));
+            let source = projection.map(|p| (p.id, p.body, p.src))
+                .or_else(|| detached_projection.map(|p| (p.id, p.body, p.source)));
+            let source_label = |src| match src {
+                qymcad_core::model::ProjSource::Edge(id) => format!("edge:{id}"),
+                qymcad_core::model::ProjSource::Face(id) => format!("face:{id}"),
+            };
+            let state = if let Some(p) = projection {
+                let body = crate::dependencies::projection_source(&self.p, sketch, p.body);
+                let live = self.shapes.contains_key(&body) && match p.src {
+                    qymcad_core::model::ProjSource::Edge(id) => self.p.regen_edges.get(&body).is_some_and(|edges| edges.iter().any(|e| e.id == id)),
+                    qymcad_core::model::ProjSource::Face(id) => self.p.regen_faces.get(&body).is_some_and(|faces| faces.iter().any(|f| f.id == id)),
+                };
+                Some(if live { "attached" } else { "unknown" })
+            } else {
+                detached_projection.map(|_| "detached")
+            };
+            let geometry = source.map(|_| match &e.kind {
+                EntityKind::Line { a, b } => serde_json::json!({"start":xy(*a),"end":xy(*b)}),
+                EntityKind::Arc { center, a, b, ccw } => serde_json::json!({"center":xy(*center),"start":xy(*a),"end":xy(*b),"ccw":ccw}),
+                EntityKind::Circle { center, r } => serde_json::json!({"center":xy(*center),"radius":r}),
+                EntityKind::Ellipse { c, ma, mi, span } => serde_json::json!({"center":xy(*c),"major":xy(*ma),"minor":xy(*mi),"span":span}),
+                EntityKind::Spline { nodes, ends, .. } => serde_json::json!({"nodes":nodes.iter().map(|id| xy(*id)).collect::<Vec<_>>(),"closed":ends == &qymcad_core::feature::Ends::Closed}),
+            });
+            EntityInfo {
+                id: e.id,
+                kind,
+                points: entity_points(e),
+                r,
+                ccw,
+                construction: e.construction,
+                driven: projection.is_some(),
+                projection: source.map(|s| s.0),
+                projection_state: state,
+                projection_body: source.map(|s| s.1),
+                projection_source: source.map(|s| source_label(s.2)),
+                geometry,
+                nodes: match &e.kind { EntityKind::Spline { nodes, .. } => Some(nodes.clone()), _ => None },
+                closed: match &e.kind { EntityKind::Spline { ends, .. } => Some(*ends == qymcad_core::feature::Ends::Closed), _ => None },
+            }
+        }).collect();
         let angle_refs: Vec<Id> = s
             .constraints
             .iter()

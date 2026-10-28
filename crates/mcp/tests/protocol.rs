@@ -253,6 +253,7 @@ fn lists_tools_with_object_schemas() {
         "param_delete",
         "sketch_create",
         "sketch_add",
+        "sketch_project",
         "sketch_info",
         "sketch_constrain",
         "sketch_remove",
@@ -670,6 +671,27 @@ fn render_returns_an_image() {
     assert!(is_err);
 }
 
+#[test]
+fn sketch_project_uses_topology_and_returns_constrainable_geometry_over_stdio() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"profile"}));
+    c.ok("sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":40,"h":30}]}));
+    c.ok("extrude", json!({"sketch":"profile","height":10,"name":"body"}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"reference"}));
+    let projected = c.ok("sketch_project", json!({"sketch":"reference","body":"body","edges":{"edges_of":{"facing":"+z"}}}));
+    let entities = projected["entities"].as_array().unwrap();
+    assert_eq!(entities.len(), 4);
+    assert!(entities.iter().all(|e| e["driven"] == true && e["projection_state"] == "attached"));
+    assert!(entities.iter().all(|e| e["geometry"].is_object()));
+    let info = c.ok("sketch_info", json!({"sketch":"reference"}));
+    assert_eq!(info["entities"].as_array().unwrap().len(), 4);
+    assert!(info["entities"].as_array().unwrap().iter().all(|e| e["driven"] == true));
+    let (is_err, _) = c.tool("sketch_project", json!({"sketch":"reference","body":"body","edges":[2147483647]}));
+    assert!(is_err);
+}
+
 /// New entity types and sketch_constrain end to end: a tombstone (polyline + arc), a hexagon pocket and a slot
 /// hole, all parametric; then a free triangle dimensioned with sketch_constrain; a conflict and a bad reference.
 #[test]
@@ -760,4 +782,95 @@ fn sketch_entities_and_constraints_end_to_end() {
     assert!(is_err);
     let (is_err, msg) = c.tool("sketch_add", json!({ "sketch": "tri", "entities": [] }));
     assert!(is_err && msg.as_str().unwrap().contains("empty"), "{msg}");
+}
+
+#[test]
+fn projected_edge_drives_slot_and_cut_after_parameter_edit_over_stdio() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("param_set", json!({"name":"w","value":40}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"profile"}));
+    c.ok("sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":"w","h":30}]}));
+    c.ok("extrude", json!({"sketch":"profile","height":10,"op":"new_body","name":"source"}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"stock"}));
+    c.ok("sketch_add", json!({"sketch":"stock","entities":[{"type":"rect","w":80,"h":30}]}));
+    c.ok("extrude", json!({"sketch":"stock","height":10,"op":"new_body","name":"stock body"}));
+    let plane = c.ok("plane_offset", json!({"base":"XY","dist":10}))["plane"].clone();
+    c.ok("sketch_create", json!({"plane":{"plane":plane},"name":"pocket"}));
+    let topology = c.ok("topology", json!({"body":"source"}));
+    let edge = topology["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| {
+            let a = e["a"].as_array().unwrap();
+            let b = e["b"].as_array().unwrap();
+            a[0].as_f64() == Some(20.0) && b[0].as_f64() == Some(20.0) && a[2].as_f64() == Some(10.0) && b[2].as_f64() == Some(10.0)
+        })
+        .expect("top Y edge at x=w/2")["id"]
+        .clone();
+    let projected = c.ok("sketch_project", json!({"sketch":"pocket","body":"source","edges":edge}));
+    assert_eq!(projected["entities"].as_array().unwrap().len(), 1);
+    let corner = projected["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .min_by(|a, b| a["y"].as_f64().unwrap().total_cmp(&b["y"].as_f64().unwrap()))
+        .unwrap()["id"]
+        .clone();
+    let slot = c.ok(
+        "sketch_add",
+        json!({"sketch":"pocket","entities":[
+            {"type":"slot","x1":17,"y1":-10,"x2":17,"y2":0,"width":2,"dimensioned":false}
+        ]}),
+    );
+    let centers = slot["created"][0]["points"].as_array().unwrap();
+    for (center, dy) in centers.iter().zip([5, 15]) {
+        c.ok("sketch_constrain", json!({"sketch":"pocket","kind":"distance","refs":[corner,center],"axis":"x","value":3}));
+        c.ok("sketch_constrain", json!({"sketch":"pocket","kind":"distance","refs":[corner,center],"axis":"y","value":dy}));
+    }
+    c.ok("sketch_constrain", json!({"sketch":"pocket","kind":"radius","refs":[slot["created"][0]["entities"][1]],"value":1}));
+    let cut = c.ok("extrude", json!({"sketch":"pocket","target":"stock body","height":2,"direction":"reverse","op":"cut","name":"cut"}));
+    let expected = 24000.0 - 2.0 * (20.0 + std::f64::consts::PI);
+    let body = &cut["rebuild"]["bodies"].as_array().unwrap().iter().find(|b| b["name"] == "cut").unwrap();
+    assert!((body["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-6);
+    c.ok("param_set", json!({"name":"w","value":60}));
+    let info = c.ok("sketch_info", json!({"sketch":"pocket"}));
+    for point in projected["points"].as_array().unwrap() {
+        let p = info["points"].as_array().unwrap().iter().find(|p| p["id"] == point["id"]).unwrap();
+        assert_eq!(p["x"], 30.0, "projection at w/2");
+    }
+    for id in centers {
+        let p = info["points"].as_array().unwrap().iter().find(|p| p["id"] == *id).unwrap();
+        assert_eq!(p["x"], 27.0, "slot at w/2-3");
+    }
+    let topo = c.ok("topology", json!({"body":"cut"}));
+    let floor = topo["faces"].as_array().unwrap().iter().find(|f| f["centroid"][2] == 8.0).expect("2 mm pocket floor");
+    assert!((floor["centroid"][0].as_f64().unwrap() - 27.0).abs() < 1e-5);
+}
+
+#[test]
+fn sketch_info_reports_actual_hole_edge_detachment_over_stdio() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"profile"}));
+    let added = c.ok("sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":40,"h":30},{"type":"circle","d":10}]}));
+    c.ok("extrude", json!({"sketch":"profile","height":5,"name":"body"}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"projection"}));
+    let topo = c.ok("topology", json!({"body":"body"}));
+    let edge = topo["edges"].as_array().unwrap().iter().find(|e| e["kind"] == "circle").unwrap()["id"].clone();
+    let projected = c.ok("sketch_project", json!({"sketch":"projection","body":"body","edges":edge}));
+    assert_eq!(projected["entities"][0]["r"], 5.0);
+    c.ok("sketch_remove", json!({"sketch":"profile","entity":added["created"][1]["circle"]}));
+    let info = c.ok("sketch_info", json!({"sketch":"projection"}));
+    let entities = info["entities"].as_array().unwrap();
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0]["projection_state"], "detached");
+    assert_eq!(entities[0]["driven"], false);
+    assert_eq!(entities[0]["projection"], projected["projections"][0]["id"]);
+    assert_eq!(entities[0]["geometry"], projected["entities"][0]["geometry"]);
+    c.ok("undo", json!({}));
+    assert_eq!(c.ok("sketch_info", json!({"sketch":"projection"}))["entities"][0]["projection_state"], "attached");
 }

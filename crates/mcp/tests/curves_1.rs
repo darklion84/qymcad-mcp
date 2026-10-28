@@ -5,6 +5,112 @@ fn call(r: &mut Registry, tool: &str, args: Value) -> Value {
     let c = r.call(tool, args).unwrap().unwrap_or_else(|e| panic!("{tool}: {e}"));
     serde_json::from_str(c[0]["text"].as_str().unwrap()).unwrap()
 }
+
+#[test]
+fn sketch_project_resolves_edge_selection_and_is_batchable() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    call(&mut r, "sketch_create", json!({"plane":"XY","name":"profile"}));
+    call(&mut r, "sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":40,"h":30}]}));
+    call(&mut r, "extrude", json!({"sketch":"profile","height":10,"name":"body"}));
+    call(&mut r, "sketch_create", json!({"plane":"XY","name":"projection"}));
+    let selected = call(&mut r, "select", json!({"body":"body","edges":{"edges_of":{"facing":"+z"}}}));
+    let result = call(&mut r, "sketch_project", json!({"sketch":"projection","body":"body","edges":{"edges_of":{"facing":"+z"}}}));
+    assert_eq!(result["projections"].as_array().unwrap().len(), 4);
+    assert!(result["entities"].as_array().unwrap().iter().all(|e| e["driven"] == true));
+    let again = call(&mut r, "sketch_project", json!({"sketch":"projection","body":"body","edges":{"edges_of":{"facing":"+z"}}}));
+    assert_eq!(again["projections"], result["projections"]);
+    assert_eq!(selected["count"], 4);
+    let before = call(&mut r, "sketch_info", json!({"sketch":"projection"}));
+    for args in [
+        json!({"sketch":"projection","body":"body","edges":1,"face":1}),
+        json!({"sketch":"projection","body":"body","edges":[2147483647]}),
+        json!({"sketch":"missing","body":"body","edges":1}),
+    ] {
+        assert!(r.call("sketch_project", args).unwrap().is_err());
+        assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"projection"})), before);
+    }
+    let batch = call(
+        &mut r,
+        "batch",
+        json!({"steps":[{"tool":"sketch_project","args":{"sketch":"projection","body":"body","edges":{"edges_of":{"facing":"+z"}}}}],"verbose":true}),
+    );
+    assert_eq!(batch["steps"][0]["result"]["projections"].as_array().unwrap().len(), 4);
+    call(&mut r, "undo", json!({}));
+    assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"projection"}))["entities"], before["entities"]);
+}
+#[test]
+fn sketch_project_refusals_and_batch_leave_geometry_and_history_unchanged() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    call(&mut r, "sketch_create", json!({"plane":"XY","name":"profile"}));
+    call(&mut r, "sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":40,"h":30}]}));
+    call(&mut r, "extrude", json!({"sketch":"profile","height":10,"name":"body"}));
+    call(&mut r, "sketch_create", json!({"plane":"XY","name":"projection"}));
+    call(&mut r, "param_set", json!({"name":"history_marker","value":123}));
+    let before = call(&mut r, "sketch_info", json!({"sketch":"projection"}));
+    let doc = call(&mut r, "doc_info", json!({}));
+    let top = call(&mut r, "select", json!({"body":"body","faces":{"facing":"+z"}}))["faces"][0]["id"].clone();
+    for args in [
+        json!({"sketch":"projection"}),
+        json!({"sketch":"projection","edges":[]}),
+        json!({"sketch":"projection","edges":{"kind":"circle"}}),
+        json!({"sketch":"projection","edges":{"edges_of":{"facing":"+z"}},"face":top}),
+        json!({"sketch":"projection","edges":[2147483647]}),
+        json!({"sketch":"missing","edges":{"edges_of":{"facing":"+z"}}}),
+        json!({"sketch":"projection","body":"missing","edges":1}),
+        json!({"sketch":"projection","face":{"kind":"plane"}}),
+        json!({"sketch":"projection","face":top}),
+        json!({"sketch":"projection","edges":1,"typo":true}),
+    ] {
+        assert!(r.call("sketch_project", args.clone()).unwrap().is_err(), "accepted {args}");
+        assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"projection"})), before);
+        assert_eq!(call(&mut r, "doc_info", json!({})), doc);
+    }
+    let failed = r
+        .call(
+            "batch",
+            json!({"steps":[
+                {"tool":"sketch_project","args":{"sketch":"projection","edges":{"edges_of":{"facing":"+z"}}}},
+                {"tool":"sketch_project","args":{"sketch":"projection","edges":[2147483647]}}
+            ]}),
+        )
+        .unwrap()
+        .unwrap_err();
+    assert!(failed.contains("step 2"), "{failed}");
+    assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"projection"})), before);
+    assert_eq!(call(&mut r, "doc_info", json!({})), doc);
+    let undone = call(&mut r, "undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "param_set", "refusals added undo entries");
+    assert_eq!(undone["undone"]["arguments"]["name"], "history_marker");
+    let projected = call(&mut r, "sketch_project", json!({"sketch":"projection","edges":{"edges_of":{"facing":"+z"}}}));
+    assert_eq!(projected["entities"].as_array().unwrap().len(), 4);
+    let undo = call(&mut r, "undo", json!({}));
+    assert_eq!(undo["undone"]["tool"], "sketch_project");
+    assert_eq!(undo["undone"]["label"], "Project sketch geometry");
+    assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"projection"})), before);
+}
+
+#[test]
+fn sketch_project_face_selector_requires_one_hosted_face() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    call(&mut r, "sketch_create", json!({"plane":"XY","name":"profile"}));
+    call(&mut r, "sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":40,"h":30}]}));
+    let body = call(&mut r, "extrude", json!({"sketch":"profile","height":10}))["body"].clone();
+    let top = call(&mut r, "select", json!({"body":body,"faces":{"facing":"+z"}}))["faces"][0]["id"].clone();
+    call(&mut r, "sketch_create", json!({"plane":{"body":body,"face":top},"name":"hosted"}));
+    let before = call(&mut r, "sketch_info", json!({"sketch":"hosted"}));
+    let error = r.call("sketch_project", json!({"sketch":"hosted","face":{"kind":"plane"}})).unwrap().unwrap_err();
+    assert!(error.contains("exactly one face"), "{error}");
+    assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"hosted"})), before);
+    let projected = call(&mut r, "sketch_project", json!({"sketch":"hosted","face":{"facing":"+z"}}));
+    assert_eq!(projected["projections"].as_array().unwrap().len(), 1);
+    assert_eq!(projected["entities"].as_array().unwrap().len(), 4);
+    assert_eq!(projected["points"].as_array().unwrap().len(), 4);
+    assert!(projected["entities"].as_array().unwrap().iter().all(|e| e["type"] == "line" && e["driven"] == true));
+}
+
 #[test]
 fn spline_mcp_is_visible_and_batch_undo_restores_it() {
     let mut r = Registry::new();

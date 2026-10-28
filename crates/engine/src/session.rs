@@ -206,6 +206,13 @@ fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
     })
 }
 
+#[derive(Clone)]
+pub(crate) struct DetachedProjection {
+    pub id: Id,
+    pub body: Id,
+    pub source: qymcad_core::model::ProjSource,
+}
+
 pub struct Session {
     pub(crate) p: Project,
     pub(crate) shapes: HashMap<Id, Shape>,
@@ -218,6 +225,7 @@ pub struct Session {
     pub(crate) tool_edit_active: bool,
     // Originals removed by native sketch deletion, retained once while undo still references them.
     pub(crate) retired_sources: HashMap<Id, qymcad_core::model::SourceFile>,
+    pub(crate) detached_projections: HashMap<(Id, Id), DetachedProjection>,
 }
 
 fn first_body_feature(project: &Project) -> Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)> {
@@ -240,6 +248,7 @@ impl Session {
             undo_limit_reached: false,
             tool_edit_active: false,
             retired_sources: HashMap::new(),
+            detached_projections: HashMap::new(),
         }
     }
 
@@ -282,6 +291,7 @@ impl Session {
             undo_limit_reached: false,
             tool_edit_active: false,
             retired_sources: HashMap::new(),
+            detached_projections: HashMap::new(),
         };
         // Clean documents remain usable even without named edges, but rebuilding with an empty edge pool
         // can silently round every edge of a stored query (F-024).
@@ -436,6 +446,36 @@ impl Session {
         self.rebuild_retrying(None)
     }
 
+    /// Native projection resolution can release a whole record or only part of a face outline.
+    pub(crate) fn projection_provenance(&self) -> HashMap<(Id, Id), DetachedProjection> {
+        self.p
+            .sketches
+            .iter()
+            .flat_map(|s| {
+                s.projections.iter().flat_map(move |p| {
+                    p.entities.iter().map(move |entity| ((s.id, *entity), DetachedProjection { id: p.id, body: p.body, source: p.src }))
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn remember_detached_projections(&mut self, projections_before: HashMap<(Id, Id), DetachedProjection>) {
+        for (key, projection) in projections_before {
+            if let Some(si) = self.p.sketch_index(key.0) {
+                let sketch = &self.p.sketches[si];
+                if sketch.entities.iter().any(|e| e.id == key.1) && !sketch.projections.iter().any(|p| p.entities.contains(&key.1)) {
+                    self.detached_projections.insert(key, projection);
+                }
+            }
+        }
+        self.detached_projections.retain(|(sid, entity), _| {
+            self.p.sketch_index(*sid).is_some_and(|si| {
+                let sketch = &self.p.sketches[si];
+                sketch.entities.iter().any(|e| e.id == *entity) && !sketch.projections.iter().any(|p| p.entities.contains(entity))
+            })
+        });
+    }
+
     /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
     /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
     /// need not be bit-identical — a refused edit must retain the exact old representation (F-034).
@@ -472,12 +512,14 @@ impl Session {
         } else {
             None
         };
+        let projections_before = self.projection_provenance();
         let split_identities = self.split_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
         let shapes = std::mem::take(&mut self.shapes);
         let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
         self.shapes = shapes;
+
         let mut built = report.built;
         let mut errors: Vec<NodeIssue> = report.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         if !errors.is_empty() {
@@ -557,6 +599,7 @@ impl Session {
                 errors.push(issue);
             }
         }
+        self.remember_detached_projections(projections_before);
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
@@ -687,6 +730,7 @@ impl Session {
         }
         let split_identities = self.split_identities();
         let before_warnings = self.advisory_warnings.clone();
+        let before_detached = self.detached_projections.clone();
         let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
         let copies = copy_shapes(
             self.p
@@ -728,6 +772,7 @@ impl Session {
         if result.is_err() {
             self.p = before;
             self.advisory_warnings = before_warnings;
+            self.detached_projections = before_detached;
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
             self.shapes.retain(|id, _| live.contains(id) && before_shape_ids.contains(id));
             self.shapes.extend(saved);
@@ -910,6 +955,266 @@ pub(crate) fn restore_faces(p: &mut Project) {
 mod tests {
     use super::*;
     use crate::test_support as native;
+
+    #[test]
+    fn missing_live_projection_edge_is_reported_detached_in_session_detail() {
+        use crate::{BaseName, Direction, Extrude, Op, PlaneRef};
+        use qymcad_core::model::ProjSource;
+
+        let mut session = Session::new_part();
+        let profile = session.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        session.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+        let hole = session.sketch_circle(profile, &0.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+        let (body, _) = session
+            .extrude(&Extrude {
+                sketch: profile,
+                profiles: None,
+                height: 5.0.into(),
+                op: Op::NewBody,
+                direction: Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+        let sketch = session.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let edge = session.topology(Some(body), false).unwrap().edges.iter().find(|e| e.kind == crate::EdgeKind::Circle).unwrap().id;
+        let (projection, _) = session.sketch_project(sketch, body, &[ProjSource::Edge(edge)]).unwrap();
+        assert_eq!(projection.entities.len(), 1);
+        let before = session.sketch_detail(sketch).unwrap();
+        // A failed edit after native detachment must restore the inspection metadata too.
+        let before_project = serde_json::to_vec(&session.p).unwrap();
+        let before_bytes = {
+            let _gate = qymcad_kernel::kernel_gate();
+            session.shapes[&body].to_brep_bytes().unwrap()
+        };
+        let result: Result<()> = session.with_rebuild_copies(session.p.clone(), &HashSet::from([body]), "test", |s| {
+            s.sketch_edit(profile, |s| s.sketch_remove_entity(profile, hole))?;
+            assert_eq!(s.sketch_detail(sketch)?.entities[0].projection_state, Some("detached"));
+            Err(Error::Invalid("forced failure after detachment".into()))
+        });
+        assert!(result.is_err());
+        assert_eq!(serde_json::to_vec(&session.p).unwrap(), before_project);
+        {
+            let _gate = qymcad_kernel::kernel_gate();
+            assert_eq!(session.shapes[&body].to_brep_bytes().unwrap(), before_bytes);
+        }
+        assert_eq!(session.sketch_detail(sketch).unwrap(), before);
+        assert!(session.detached_projections.is_empty());
+        let mut snapshot = session.begin_tool_edit().unwrap();
+        snapshot.record_call("sketch_remove", serde_json::json!({"entity":hole}));
+        session.sketch_edit(profile, |s| s.sketch_remove_entity(profile, hole)).unwrap();
+        session.finish_tool_edit(snapshot, true);
+        assert!(!session.p.regen_edges[&body].iter().any(|e| e.id == edge), "hole edge really disappeared");
+        assert!(session.p.sketches[session.sketch_si(sketch).unwrap()].projections.is_empty());
+        let detail = session.sketch_detail(sketch).unwrap();
+        assert_eq!(detail.entities.len(), 1);
+        let entity = &detail.entities[0];
+        assert_eq!(entity.id, projection.entities[0]);
+        assert!(!entity.driven);
+        assert_eq!(entity.projection_state, Some("detached"));
+        assert_eq!(entity.projection, Some(projection.projections[0]));
+        assert_eq!(entity.projection_source, Some(format!("edge:{edge}")));
+        assert_eq!(entity.geometry, before.entities[0].geometry);
+        assert_eq!(detail.constraints, before.constraints);
+        session.rebuild();
+        assert_eq!(session.sketch_detail(sketch).unwrap().entities, detail.entities);
+        // Undo must also restore provenance that was pruned after deleting detached geometry.
+        let mut removed = session.begin_tool_edit().unwrap();
+        removed.record_call("sketch_remove", serde_json::json!({"entity":entity.id}));
+        session.sketch_remove_entity(sketch, entity.id).unwrap();
+        assert!(session.rebuild().errors.is_empty());
+        session.finish_tool_edit(removed, true);
+        assert!(session.detached_projections.is_empty());
+        session.undo().unwrap();
+        assert_eq!(session.sketch_detail(sketch).unwrap().entities, detail.entities);
+        session.undo().unwrap();
+        assert_eq!(session.sketch_detail(sketch).unwrap(), before);
+    }
+
+    #[test]
+    fn unbuilt_projection_source_is_unknown_without_marking_ordinary_geometry() {
+        use crate::{BaseName, Direction, Extrude, Op, PlaneRef};
+        use qymcad_core::model::ProjSource;
+        let mut session = Session::new_part();
+        let profile = session.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        session.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+        let (body, _) = session
+            .extrude(&Extrude {
+                sketch: profile,
+                profiles: None,
+                height: 5.0.into(),
+                op: Op::NewBody,
+                direction: Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+        let sketch = session.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let edge = session.p.regen_edges[&body].iter().find(|e| e.a[2] == e.b[2]).unwrap().id;
+        let (projection, _) = session.sketch_project(sketch, body, &[ProjSource::Edge(edge)]).unwrap();
+        let ordinary = session.sketch_circle(sketch, &50.0.into(), &0.0.into(), &2.0.into(), true).unwrap();
+        session.shapes.remove(&body);
+        // Clean source with no live B-rep: native projection resolver retains its association.
+        let report = session.rebuild();
+        assert!(report.errors.is_empty(), "{report:?}");
+        let detail = session.sketch_detail(sketch).unwrap();
+        let entities: Vec<_> = detail.entities.iter().filter(|e| projection.entities.contains(&e.id)).collect();
+        assert_eq!(entities.len(), 1);
+        assert!(entities.iter().all(|e| e.driven && e.projection_state == Some("unknown")));
+        let ordinary = detail.entities.iter().find(|e| e.id == ordinary).unwrap();
+        assert!(!ordinary.driven);
+        assert_eq!(ordinary.projection_state, None);
+        assert_eq!(ordinary.projection_body, None);
+        assert_eq!(ordinary.geometry, None);
+    }
+
+    fn projection_fixture() -> (Session, Id, Id, u32) {
+        use crate::{BaseName, Direction, Extrude, Op, PlaneRef};
+        let mut s = Session::new_part();
+        let profile = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+        let (body, _) = s
+            .extrude(&Extrude {
+                sketch: profile,
+                profiles: None,
+                height: 10.0.into(),
+                op: Op::NewBody,
+                direction: Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap();
+        let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let edge = s.p.regen_edges[&body].iter().find(|e| e.a[2] == e.b[2]).unwrap().id;
+        (s, body, sketch, edge)
+    }
+
+    fn assert_projection_refused(s: &mut Session, sketch: Id, body: Id, sources: &[qymcad_core::model::ProjSource], message: &str) {
+        let before = serde_json::to_vec(&s.p).unwrap();
+        let shapes = {
+            let _gate = qymcad_kernel::kernel_gate();
+            s.shapes.iter().map(|(id, shape)| (*id, shape.to_brep_bytes().unwrap())).collect::<HashMap<_, _>>()
+        };
+        let detail: Vec<_> = s.p.sketches.iter().map(|sk| s.sketch_detail(sk.id).unwrap()).collect();
+        let error = s.sketch_project(sketch, body, sources).unwrap_err();
+        assert!(error.to_string().contains(message), "{message}: {error}");
+        assert_eq!(serde_json::to_vec(&s.p).unwrap(), before, "refusal changed Project");
+        {
+            let _gate = qymcad_kernel::kernel_gate();
+            assert_eq!(s.shapes.len(), shapes.len());
+            for (id, bytes) in shapes {
+                assert_eq!(s.shapes[&id].to_brep_bytes().unwrap(), bytes, "body {id}");
+            }
+        }
+        assert_eq!(s.p.sketches.iter().map(|sk| s.sketch_detail(sk.id).unwrap()).collect::<Vec<_>>(), detail);
+        assert!(s.undo().is_err(), "refusal created a history entry");
+    }
+
+    #[test]
+    fn projection_validation_empty_geometry_and_solve_refuse_atomically() {
+        use qymcad_core::model::{Constraint, ProjSource};
+        let (mut s, body, sketch, edge) = projection_fixture();
+        assert_projection_refused(&mut s, u64::MAX, body, &[ProjSource::Edge(edge)], "sketch");
+        assert_projection_refused(&mut s, sketch, u64::MAX, &[ProjSource::Edge(edge)], "body");
+        assert_projection_refused(&mut s, sketch, body, &[], "nothing");
+        assert_projection_refused(&mut s, sketch, body, &[ProjSource::Edge(edge), ProjSource::Edge(u32::MAX)], "edge");
+        let duplicate = s.p.regen_edges[&body].iter().find(|e| e.id == edge).unwrap().clone();
+        s.p.regen_edges.get_mut(&body).unwrap().push(duplicate);
+        assert_projection_refused(&mut s, sketch, body, &[ProjSource::Edge(edge)], "edge");
+        s.p.regen_edges.get_mut(&body).unwrap().pop();
+        // Cache claims an edge exists, but the actual named B-rep does not contain it.
+        let mut fake = s.p.regen_edges[&body][0].clone();
+        fake.id = u32::MAX;
+        s.p.regen_edges.get_mut(&body).unwrap().push(fake);
+        assert_projection_refused(&mut s, sketch, body, &[ProjSource::Edge(edge), ProjSource::Edge(u32::MAX)], "geometry");
+        s.p.regen_edges.get_mut(&body).unwrap().pop();
+        let shape = s.shapes.remove(&body).unwrap();
+        assert_projection_refused(&mut s, sketch, body, &[ProjSource::Edge(edge)], "built");
+        s.shapes.insert(body, shape);
+        let circle = s.sketch_circle(sketch, &50.0.into(), &0.0.into(), &2.0.into(), true).unwrap();
+        let si = s.sketch_si(sketch).unwrap();
+        let center = s.p.sketches[si].entities.iter().find(|e| e.id == circle).unwrap().kind.as_circle().unwrap().center;
+        s.p.sketches[si].constraints.push(Constraint::Diameter {
+            c: center,
+            d: 7.0,
+            off: 0.0,
+            expr: String::new(),
+            driven: false,
+            diam: true,
+            at: None,
+        });
+        assert_projection_refused(&mut s, sketch, body, &[ProjSource::Edge(edge)], "solve");
+    }
+
+    #[test]
+    fn face_projection_requires_unique_host_face_and_uses_live_host_body() {
+        use crate::{PlaneRef, Sel};
+        use qymcad_core::model::ProjSource;
+        let (mut s, body, sketch, _) = projection_fixture();
+        let top = s.p.regen_faces[&body].iter().find(|f| f.normal[2] > 0.99).unwrap().id;
+        assert_projection_refused(&mut s, sketch, body, &[ProjSource::Face(top)], "hosted");
+        let hosted = s.sketch_create(&PlaneRef::Face { body, face: top }, None).unwrap();
+        let duplicate = s.p.regen_faces[&body].iter().find(|f| f.id == top).unwrap().clone();
+        s.p.regen_faces.get_mut(&body).unwrap().push(duplicate);
+        assert_projection_refused(&mut s, hosted, body, &[ProjSource::Face(top)], "ambiguous");
+        s.p.regen_faces.get_mut(&body).unwrap().pop();
+        assert_projection_refused(&mut s, hosted, body, &[ProjSource::Face(u32::MAX)], "hosted");
+        let (live, _) = s.push_face(Some(body), &Sel::Ids(vec![top]), &1.0.into(), None).unwrap();
+        // Put the consumer above the sketch, as when editing an earlier timeline feature in the app.
+        let node = s.p.timeline.pop().unwrap();
+        let at = s.p.timeline.iter().position(|n| n.id == hosted).unwrap();
+        s.p.timeline.insert(at, node);
+        let top = s.p.regen_faces[&live].iter().find(|f| f.normal[2] > 0.99).unwrap().id;
+        let si = s.sketch_si(hosted).unwrap();
+        if let qymcad_core::feature::SketchPlane::Face(_, mut key) = s.p.sketches[si].plane {
+            key.id = top;
+            s.p.sketches[si].plane = qymcad_core::feature::SketchPlane::Face(body, key);
+        } else {
+            panic!("face host");
+        }
+        assert_projection_refused(&mut s, hosted, body, &[ProjSource::Face(top)], "consumed");
+        let (projected, _) = s.sketch_project(hosted, live, &[ProjSource::Face(top)]).unwrap();
+        assert_eq!(projected.entities.len(), 4);
+        assert!(s.sketch_detail(hosted).unwrap().entities.iter().all(|e| e.driven && e.projection_state == Some("attached")));
+    }
+
+    #[test]
+    fn projection_mixed_duplicates_return_selected_stable_ids() {
+        use qymcad_core::model::ProjSource;
+        let (mut s, body, sketch, edge) = projection_fixture();
+        let other = s.p.regen_edges[&body].iter().find(|e| e.id != edge && e.a[2] == e.b[2]).unwrap().id;
+        let first = s.sketch_project(sketch, body, &[ProjSource::Edge(edge), ProjSource::Edge(edge)]).unwrap().0;
+        assert_eq!(first.projections.len(), 1);
+        assert_eq!(first.entities.len(), 1);
+        let before = serde_json::to_vec(&s.p).unwrap();
+        assert_eq!(s.sketch_project(sketch, body, &[ProjSource::Edge(edge)]).unwrap().0, first);
+        assert_eq!(serde_json::to_vec(&s.p).unwrap(), before);
+        let mixed = s.sketch_project(sketch, body, &[ProjSource::Edge(edge), ProjSource::Edge(other), ProjSource::Edge(edge)]).unwrap().0;
+        assert_eq!(mixed.projections.len(), 2);
+        assert_eq!(mixed.projections[0], first.projections[0]);
+        assert_eq!(mixed.entities.len(), 2);
+        assert!(mixed.entities.contains(&first.entities[0]));
+        assert!(first.points.iter().all(|p| mixed.points.contains(p)));
+        assert_eq!(s.sketch_detail(sketch).unwrap().entities.len(), 2);
+    }
+
+    #[test]
+    fn projection_add_captures_detachment_before_rebuild() {
+        use qymcad_core::model::ProjSource;
+        let (mut s, body, sketch, edge) = projection_fixture();
+        let (old, _) = s.sketch_project(sketch, body, &[ProjSource::Edge(edge)]).unwrap();
+        let si = s.sketch_si(sketch).unwrap();
+        s.p.sketches[si].projections[0].src = ProjSource::Edge(u32::MAX);
+        let other = s.p.regen_edges[&body].iter().find(|e| e.id != edge && e.a[2] == e.b[2]).unwrap().id;
+        s.sketch_project(sketch, body, &[ProjSource::Edge(other)]).unwrap();
+        let detail = s.sketch_detail(sketch).unwrap();
+        let old = detail.entities.iter().find(|e| e.id == old.entities[0]).unwrap();
+        assert!(!old.driven);
+        assert_eq!(old.projection_state, Some("detached"));
+    }
 
     #[test]
     fn import_retessellation_replaces_void_advisories_but_retains_source_warning() {

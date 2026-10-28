@@ -1,10 +1,11 @@
 //! Sketch tools.
 
 use super::common::{err, rebuild_json, ObjRef, PlaneArg};
+use super::topology::SelArg;
 use super::{tool, Tool};
 use qymcad_engine::{
-    ArcSpec, ConstrainSpec, ConstraintKind, DistAxis, EllipseArcSpec, EllipseSpec, Id, LineSpec, Num, PolygonSpec, PolylineSpec, RectSpec,
-    SketchRef, SlotSpec, SplineSpec, TangentCircleSpec, TextFont, TextSpec, Xy,
+    ArcSpec, ConstrainSpec, ConstraintKind, DistAxis, Element, EllipseArcSpec, EllipseSpec, Id, LineSpec, Num, PolygonSpec, PolylineSpec,
+    ProjSource, RectSpec, SketchRef, SlotSpec, SplineSpec, TangentCircleSpec, TextFont, TextSpec, Xy,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
@@ -147,6 +148,22 @@ pub struct AddArgs {
     pub sketch: ObjRef,
     /// Entities to add, all or nothing.
     pub entities: Vec<Entity>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectArgs {
+    /// Sketch id or name receiving the projection.
+    pub sketch: ObjRef,
+    /// Source body id or name; defaults to the latest result body.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// An edge selection (ids or the existing description syntax, such as {\"edges_of\":{\"facing\":\"+z\"}}); exactly one of edges/face.
+    #[serde(default)]
+    pub edges: Option<SelArg>,
+    /// One-face selection; the sketch must be hosted on this face.
+    #[serde(default)]
+    pub face: Option<SelArg>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -319,12 +336,47 @@ pub fn tools() -> Vec<Tool> {
             },
         ),
         tool(
+            "sketch_project",
+            "Project body edges or an entire face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.",
+            |st, a: ProjectArgs| {
+                let s = st.doc()?;
+                let sketch = a.sketch.resolve(s)?;
+                let body = a.body.as_ref().map(|b| b.resolve(s)).transpose()?;
+                let (body, sources) = match (&a.edges, &a.face) {
+                    (Some(edges), None) => {
+                        let body = body.or_else(|| s.result_bodies().last().map(|b| b.id)).ok_or_else(|| "the part has no built body".to_string())?;
+                        let ids = s.select(Some(body), Element::Edges, &edges.resolve(s)?).map_err(err)?.1;
+                        (body, ids.into_iter().map(ProjSource::Edge).collect::<Vec<_>>())
+                    }
+                    (None, Some(face)) => {
+                        let body = body.or_else(|| s.result_bodies().last().map(|b| b.id)).ok_or_else(|| "the part has no built body".to_string())?;
+                        let ids = s.select(Some(body), Element::Faces, &face.resolve(s)?).map_err(err)?.1;
+                        if ids.len() != 1 {
+                            return Err(format!("face selection must resolve to exactly one face; matched {ids:?}"));
+                        }
+                        (body, vec![ProjSource::Face(ids[0])])
+                    }
+                    _ => return Err("give exactly one nonempty `edges` or `face` selection".into()),
+                };
+                if sources.is_empty() { return Err("projection selection resolved to nothing".into()); }
+                let (created, rebuild) = s.sketch_project(sketch, body, &sources).map_err(err)?;
+                let detail = s.sketch_detail(sketch).map_err(err)?;
+                let projections: Vec<_> = s.project().sketch_index(sketch).into_iter().flat_map(|si| &s.project().sketches[si].projections)
+                    .filter(|p| created.projections.contains(&p.id)).map(|p| json!({"id":p.id,"body":p.body,"source":p.src,"entities":p.entities,"points":p.points})).collect();
+                let entities: Vec<_> = detail.entities.iter().filter(|e| created.entities.contains(&e.id)).collect();
+                let points: Vec<_> = detail.points.iter().filter(|p| created.points.contains(&p.id)).collect();
+                let source_label = if matches!(sources.first(), Some(ProjSource::Face(_))) { "face" } else { "edges" };
+                let mut out = json!({"body":body,"source":source_label,"projections":projections,"entities":entities,"points":points,"sketch":detail});
+                if let Some(rebuild) = rebuild { out["rebuild"] = rebuild_json(&rebuild); }
+                Ok(out)
+            },
+        ),
+        tool(
             "sketch_info",
             "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
-             texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction); \
-             points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
-             (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove \
-             take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",
+              texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction, driven, projection id/body/source/state and geometry when projected; detached provenance lasts for this session, already-detached files reopen as ordinary geometry); \
+              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
+              (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",
             |st, a: InfoArgs| {
                 let s = st.doc()?;
                 let id: Id = a.sketch.resolve(s)?;
