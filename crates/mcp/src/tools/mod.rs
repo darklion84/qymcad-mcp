@@ -110,6 +110,7 @@ fn modelling_tool(name: &str) -> bool {
             | "circular_array"
             | "mirror"
             | "thread"
+            | "body_boolean"
             | "split"
             | "feature_delete"
     )

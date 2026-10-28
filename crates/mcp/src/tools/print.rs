@@ -2,7 +2,7 @@
 use super::common::{err, rebuild_json, ObjRef};
 use super::topology::SelArg;
 use super::{tool, Tool};
-use qymcad_engine::{BaseName, Element, Num, PlaneRef, Session, SplitOptions, ThreadOptions};
+use qymcad_engine::{BaseName, BodyBooleanOptions, BooleanOp, Element, Num, PlaneRef, Session, SplitOptions, ThreadOptions};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -66,6 +66,28 @@ struct ThreadArgs {
 
 fn auto() -> String {
     "auto".into()
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BodyBooleanArgs {
+    /// Current base body A, by id or name. Must be distinct from B and in the same part.
+    a: ObjRef,
+    /// Current tool body B, by id or name. Both inputs are consumed by the result.
+    b: ObjRef,
+    /// cut (default, A minus B), union, or intersect. Cut and intersect may return multiple separately addressable bodies.
+    #[serde(default = "default_boolean_op")]
+    op: String,
+    /// Timeline feature name; numeric-looking names are refused.
+    #[serde(default)]
+    name: Option<String>,
+    /// Optional native body names for every output piece, primary first. Later count changes or ambiguous piece identities are refused atomically.
+    #[serde(default)]
+    piece_names: Option<Vec<String>>,
+}
+
+fn default_boolean_op() -> String {
+    "cut".into()
 }
 
 /// Split operation plane: its XZ offset direction follows the native operation's +Y normal.
@@ -135,25 +157,24 @@ pub(super) fn tools() -> Vec<Tool> {
             let session = st.doc()?;
             let body = a.body.as_ref().map(|body| body.resolve(session)).transpose()?;
             let edge = a.edge.resolve(session)?;
-            let options = ThreadOptions {
-                size: a.size,
-                standard: a.standard,
-                nominal: a.nominal,
-                pitch: a.pitch,
-                length: a.length,
-                kind: a.kind,
-                fit: a.fit,
-                lead_in: a.lead_in,
-                lead_out: a.lead_out,
-                starts: a.starts,
-                left: a.left,
-                crest_r: a.crest_r,
-                root_r: a.root_r,
-                angle: a.angle,
-                depth: a.depth,
-                name: a.name,
-            };
+            let options = ThreadOptions { size: a.size, standard: a.standard, nominal: a.nominal, pitch: a.pitch, length: a.length, kind: a.kind,
+                fit: a.fit, lead_in: a.lead_in, lead_out: a.lead_out, starts: a.starts, left: a.left, crest_r: a.crest_r,
+                root_r: a.root_r, angle: a.angle, depth: a.depth, name: a.name };
             let result = session.thread(body, &edge, &options).map_err(err)?;
+            let mut value = json!(&result);
+            value["rebuild"] = rebuild_json(&result.rebuild);
+            Ok(value)
+        },
+    ), tool(
+        "body_boolean",
+        "Apply a native parametric boolean between two current bodies in the same part. Both operands are consumed. cut computes A minus B; union and intersect are explicit. Refuses same/stale bodies, cuts that remove nothing, empty intersections and rebuild errors atomically. Cut/intersect may create multiple named bodies; union remains one body even when it contains multiple solids. Later changes in output body count or ambiguous piece identity are refused atomically; recreate the boolean for topology changes. Returns the feature/body, operation, consumed ids, each output body's volume/bounds and rebuild diagnostics.",
+        |st, a: BodyBooleanArgs| {
+            let session = st.doc()?;
+            let a_id = a.a.resolve(session)?;
+            let b_id = a.b.resolve(session)?;
+            let op = match a.op.as_str() { "cut" => BooleanOp::Cut, "union" => BooleanOp::Union, "intersect" => BooleanOp::Intersect,
+                _ => return Err("op must be cut, union or intersect".into()) };
+            let result = session.body_boolean(&BodyBooleanOptions { a: a_id, b: b_id, op, name: a.name, piece_names: a.piece_names }).map_err(err)?;
             let mut value = json!(&result);
             value["rebuild"] = rebuild_json(&result.rebuild);
             Ok(value)

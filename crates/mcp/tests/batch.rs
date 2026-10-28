@@ -221,6 +221,7 @@ fn limits_allowlist_and_outer_schema() {
         "circular_array",
         "mirror",
         "thread",
+        "body_boolean",
         "split",
         "feature_delete",
     ];

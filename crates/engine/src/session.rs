@@ -473,6 +473,7 @@ impl Session {
             None
         };
         let split_identities = self.split_identities();
+        let boolean_identities = self.boolean_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
         let shapes = std::mem::take(&mut self.shapes);
@@ -548,6 +549,10 @@ impl Session {
             errors.push(self.issue(node, message));
         }
         for (node, message) in self.split_identity_refusals(&split_identities, &rebuilt) {
+            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            errors.push(self.issue(node, message));
+        }
+        for (node, message) in self.boolean_identity_refusals(&boolean_identities, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
         }
@@ -635,6 +640,14 @@ impl Session {
     /// the document as it was and return the errors. Pending edits are rebuilt before the snapshot so the
     /// project and its live shapes describe the same baseline (F-034). Returns the edit's value and report.
     pub(crate) fn atomic<T>(&mut self, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Rebuild)> {
+        self.atomic_with_post(edit, |_, value, _| Ok(value))
+    }
+
+    pub(crate) fn atomic_with_post<T, U>(
+        &mut self,
+        edit: impl FnOnce(&mut Session) -> Result<T>,
+        post: impl FnOnce(&mut Session, T, &mut Rebuild) -> Result<U>,
+    ) -> Result<(U, Rebuild)> {
         if self.p.timeline.iter().any(|n| n.dirty) {
             let baseline = self.rebuild();
             if !baseline.errors.is_empty() {
@@ -654,9 +667,13 @@ impl Session {
             }
         };
         let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
-        let r = self.rebuild_retrying(Some(&new_nodes));
-        let new_errors: Vec<String> =
-            r.errors.iter().filter(|i| !old_nodes.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+        let mut rebuild = self.rebuild_retrying(Some(&new_nodes));
+        let new_errors: Vec<String> = rebuild
+            .errors
+            .iter()
+            .filter(|i| !old_nodes.contains(&i.node))
+            .map(|i| format!("{} ({}): {}", i.name, i.node, i.message))
+            .collect();
         if !new_errors.is_empty() {
             self.p = before;
             self.advisory_warnings = before_warnings;
@@ -664,7 +681,16 @@ impl Session {
             self.shapes.retain(|id, _| live.contains(id));
             return Err(Error::Rebuild(new_errors));
         }
-        Ok((value, r))
+        match post(self, value, &mut rebuild) {
+            Ok(value) => Ok((value, rebuild)),
+            Err(error) => {
+                self.p = before;
+                self.advisory_warnings = before_warnings;
+                let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
+                self.shapes.retain(|id, _| live.contains(id));
+                Err(error)
+            }
+        }
     }
 
     /// Rebuild edits on independent copies of planned live shapes, restoring the original project, handles
@@ -686,6 +712,7 @@ impl Session {
             return Err(error);
         }
         let split_identities = self.split_identities();
+        let boolean_identities = self.boolean_identities();
         let before_warnings = self.advisory_warnings.clone();
         let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
         let copies = copy_shapes(
@@ -719,6 +746,9 @@ impl Session {
             let mut refused = self.check_thread_stock();
             refused.extend(
                 self.split_identity_refusals(&split_identities, nodes).into_iter().map(|(node, message)| self.issue(node, message)),
+            );
+            refused.extend(
+                self.boolean_identity_refusals(&boolean_identities, nodes).into_iter().map(|(node, message)| self.issue(node, message)),
             );
             if !refused.is_empty() {
                 return Err(Error::Rebuild(refused.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect()));
@@ -817,12 +847,13 @@ impl Session {
 
     /// Display name of a body. Split outputs use their native piece names; ordinary feature names stay compatible.
     pub fn body_name(&self, id: Id) -> String {
-        let split = self
-            .p
-            .timeline
-            .iter()
-            .any(|n| matches!(&n.kind, qymcad_core::feature::FeatureKind::SplitBody { .. }) && n.kind.bodies().contains(&id));
-        if split {
+        let named_outputs = self.p.timeline.iter().any(|n| {
+            matches!(
+                n.kind,
+                qymcad_core::feature::FeatureKind::SplitBody { .. } | qymcad_core::feature::FeatureKind::BodyBoolean { op: 0 | 2, .. }
+            ) && n.kind.bodies().contains(&id)
+        });
+        if named_outputs {
             if let Some(mi) = self.p.mesh_index(id) {
                 return self.p.mesh_name(mi);
             }

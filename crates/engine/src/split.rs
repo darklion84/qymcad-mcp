@@ -208,7 +208,7 @@ impl Session {
 /// permutation decomposes into cycles: gain(i,j)=overlap(i,j)-overlap(i,i). A nonnegative cycle
 /// therefore means a better match or an ambiguous one. Max-plus Floyd-Warshall finds all such cycles.
 /// Each row contributes its own piece's tolerance, so a cycle's allowance sums only its pieces.
-fn uncertain_piece_assignment(scores: &[Vec<f64>], tolerances: &[f64]) -> Vec<usize> {
+pub(crate) fn uncertain_piece_assignment(scores: &[Vec<f64>], tolerances: &[f64]) -> Vec<usize> {
     let count = scores.len();
     let mut gain: Vec<Vec<f64>> = scores
         .iter()

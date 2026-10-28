@@ -33,6 +33,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-030, balanced unions and a size/depth budget F-032); `select`; `ensure_topology` after open (F-023; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
 | `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-024), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
+| `body_boolean.rs` | native parametric two-body cut/union/intersect, named outputs and dynamic piece count/identity guard (F-108, ADR 0026) |
 | `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
 | `history.rs` | guarded native deletion with extended dependency closure; Project/original-shape snapshots, 16-entry modelling undo (ADR 0008) |
 | `dependencies.rs` | native dependency reachability extended through sketch projections and the source's consuming lineage above the sketch; shared rebuild snapshots/retries, deletion and F-024 preflight |

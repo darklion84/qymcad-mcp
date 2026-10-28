@@ -23,6 +23,27 @@ fn sorted_volumes(value: &Value) -> Vec<f64> {
 }
 
 #[test]
+fn body_boolean_schema_and_protocol_build() {
+    let registry = Registry::new();
+    let boolean = registry.list().into_iter().find(|tool| tool["name"] == "body_boolean").unwrap();
+    assert_eq!(boolean["inputSchema"]["additionalProperties"], false);
+    assert!(boolean["inputSchema"]["required"].as_array().unwrap().contains(&json!("a")));
+    assert!(boolean["inputSchema"]["required"].as_array().unwrap().contains(&json!("b")));
+    for field in ["a", "b", "op", "name", "piece_names"] {
+        assert!(boolean["inputSchema"]["properties"][field]["description"].as_str().is_some_and(|description| !description.is_empty()));
+    }
+    let mut registry = stock();
+    call(&mut registry, "sketch_create", json!({"plane":"XY","name":"tool sketch"}));
+    call(&mut registry, "sketch_add", json!({"sketch":"tool sketch","entities":[{"type":"rect","cx":10,"cy":0,"w":10,"h":20}]}));
+    call(&mut registry, "extrude", json!({"sketch":"tool sketch","height":20,"op":"new_body","name":"tool"}));
+    let result = call(&mut registry, "body_boolean", json!({"a":"stock","b":"tool","name":"cut result"}));
+    assert_eq!(result["op"], "cut");
+    assert_eq!(result["consumed"].as_array().unwrap().len(), 2);
+    assert_eq!(result["pieces"].as_array().unwrap().len(), 1);
+    assert!((result["pieces"][0]["volume_mm3"].as_f64().unwrap() - 6000.0).abs() < 1e-5);
+}
+
+#[test]
 fn split_schema_requires_plane_and_documents_explicit_body_after_split() {
     let registry = Registry::new();
     let tools = registry.list();

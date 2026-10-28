@@ -5,6 +5,9 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Added
+- `body_boolean` applies native parametric cut, union or intersect between two current bodies. Both inputs are consumed; multi-body cut/intersect outputs have resolvable names and geometry reports. Count or piece-identity-changing edits are refused atomically (F-108, ADR 0026).
+
 ### Fixed
 - Include sketch projection sources in parameter, dimension and sketch rebuild snapshots/retries and stored
   edge-query safety checks. Failed downstream rebuilds restore the exact Project and every original B-rep.
