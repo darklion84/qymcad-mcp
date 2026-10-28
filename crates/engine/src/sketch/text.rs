@@ -100,13 +100,16 @@ impl Session {
                 .ok_or_else(|| Error::Invalid(format!("invalid text font {} face {}", font.path, font.index)))?;
             let mut missing = Vec::new();
             for ch in a.text.chars().filter(|c| !c.is_whitespace()) {
-                if !qymcad_core::text::can_write(&bytes, font.index, &ch.to_string()) && !missing.contains(&ch) {
+                if (!qymcad_core::text::can_write(&bytes, font.index, &ch.to_string())
+                    || qymcad_core::text::text_outline_contours(&bytes, font.index, &ch.to_string(), a.height, 0.0, 0.0).is_empty())
+                    && !missing.contains(&ch)
+                {
                     missing.push(ch);
                 }
             }
             if !missing.is_empty() {
                 return Err(Error::Invalid(format!(
-                    "text font {} cannot write characters: {}",
+                    "text font {} cannot write outline characters: {}",
                     font.path,
                     missing.iter().collect::<String>()
                 )));

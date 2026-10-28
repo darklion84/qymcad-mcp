@@ -87,11 +87,11 @@ pub struct ThreadResult {
     pub pitch: f64,
     /// Lead per turn, mm.
     pub lead: f64,
-    /// Basic major diameter, mm.
+    /// Basic major diameter (internal root reference), mm.
     pub basic_major_diameter: f64,
     /// Basic pitch diameter, mm.
     pub basic_pitch_diameter: f64,
-    /// Basic minor diameter, mm.
+    /// Basic minor diameter (internal crest reference), mm.
     pub basic_minor_diameter: f64,
     /// Modelling clearance per side, mm; no ISO tolerance class is implied.
     pub fit: f64,
@@ -322,19 +322,25 @@ fn check_profile_inputs(spec: ThreadSpec, g: &ThreadGeom) -> Result<()> {
             spec.custom_depth
         )));
     }
-    let radii: Vec<f64> = g
-        .groove
-        .iter()
-        .filter_map(|e| match e {
-            qymcad_core::geom::ProfEdge::Arc { a, center, .. } => Some((a.x - center.x).hypot(a.y - center.y)),
-            _ => None,
-        })
-        .collect();
+    // Native traverses each crest from the overshoot to its flank counterclockwise,
+    // and the root between the two flanks clockwise (thread.rs:579-600).
+    // Internal profiles mirror y AND winding. Keep the two kinds separate even
+    // when their requested radii coincide or one kind has no arc at all.
     for (key, asked) in [("crest_r", spec.crest_r), ("root_r", spec.root_r)] {
         if let Some(r) = asked {
+            let radii: Vec<f64> = g
+                .groove
+                .iter()
+                .filter_map(|e| match e {
+                    qymcad_core::geom::ProfEdge::Arc { a, center, ccw, .. } if (*ccw != spec.internal) == (key == "crest_r") => {
+                        Some((a.x - center.x).hypot(a.y - center.y))
+                    }
+                    _ => None,
+                })
+                .collect();
             if !radii.iter().any(|m| (m - r).abs() <= 1e-9 * r.max(1.0)) {
                 return Err(Error::Invalid(format!(
-                    "thread {key} {r} mm is not built as asked: native clamps or rounds it (built arc radii {radii:?}); choose a radius the profile can hold"
+                    "thread {key} {r} mm is not built as asked: native clamps or rounds it (built {key} arc radii {radii:?}); choose a radius the profile can hold"
                 )));
             }
         }
@@ -377,6 +383,33 @@ fn check_stock_open(spec: ThreadSpec, radius: f64) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+// Standard design/reference diameters, separate from native cutter allowances (F-105).
+fn basic_diameters(spec: ThreadSpec, g: &ThreadGeom) -> [f64; 3] {
+    let (d, p) = (spec.nominal_d, g.pitch);
+    match spec.standard {
+        ThreadStandard::TrapezoidalTr if spec.internal => {
+            // ISO 2904: D4 = d + 2ac; D1 = d - P. Native supplies external d3.
+            let ac = if p <= 1.5 {
+                0.15
+            } else if p <= 5.0 {
+                0.25
+            } else if p <= 12.0 {
+                0.5
+            } else {
+                1.0
+            };
+            [d + 2.0 * ac, d - p / 2.0, d - p]
+        }
+        // ACME basic depth is P/2; native adds .01P backlash to its cutter.
+        ThreadStandard::Acme => [d, d - p / 2.0, d - p],
+        // DIN 405: internal major/minor include .1P diametric crest/root clearance.
+        ThreadStandard::RoundRd if spec.internal => [d + 0.1 * p, d - p / 2.0, d - 0.9 * p],
+        // ISO metric already distinguishes internal D1 and external rounded-root d3.
+        // Custom has no standard: retain its nominal/depth reference definition on both sides.
+        _ => [g.major_d, g.pitch_d, g.minor_d],
+    }
 }
 
 impl Session {
@@ -478,6 +511,7 @@ impl Session {
         })?;
         let (body, edge) = rim_id;
         let g = spec.geometry();
+        let [major, pitch, minor] = basic_diameters(spec, &g);
         Ok(ThreadResult {
             body,
             name: self.node_name(body),
@@ -491,9 +525,9 @@ impl Session {
             nominal: spec.nominal_d,
             pitch: g.pitch,
             lead: g.lead,
-            basic_major_diameter: g.major_d,
-            basic_pitch_diameter: g.pitch_d,
-            basic_minor_diameter: g.minor_d,
+            basic_major_diameter: major,
+            basic_pitch_diameter: pitch,
+            basic_minor_diameter: minor,
             fit: spec.fit,
             fit_reason,
             radial_relief: spec.radial_relief(),
@@ -547,9 +581,17 @@ impl Session {
         check_runout(lead_in, lead_out, length)?;
         check_custom_angle(spec)?;
         check_fit(spec)?;
-        check_profile_inputs(spec, &spec.geometry())?;
-        check_profile_depth(spec, &spec.geometry())?;
-        check_profile_side(spec, &spec.geometry())?;
+        // Only ISO internal profiles depend on the actual bore (native thread.rs:363).
+        // Creation and check_thread_stock validate those with the current source rim.
+        // Before regeneration that rim can itself be stale after a stock-sketch edit;
+        // never refuse using a hypothetical nominal-bore profile. Other profiles
+        // are stock-independent and can still be refused before expensive booleans.
+        if !(spec.internal && spec.standard == ThreadStandard::MetricIso) {
+            let g = spec.geometry();
+            check_profile_inputs(spec, &g)?;
+            check_profile_depth(spec, &g)?;
+            check_profile_side(spec, &g)?;
+        }
         Ok((spec, length))
     }
 

@@ -18,7 +18,7 @@ pub struct SplitOptions {
     pub offset: Num,
     /// Timeline feature name.
     pub name: Option<String>,
-    /// One distinct native body name per measured piece; defaults to feature name plus 1..n.
+    /// One distinct native body name per measured piece; defaults to feature name plus the next unused positive numbers.
     pub piece_names: Option<Vec<String>>,
 }
 
@@ -101,15 +101,27 @@ impl Session {
             s.p.write_feat_formula(&FeatNumber { node: feature, key: "offset" }, &text, PlainNumber::Stands)
                 .map_err(|e| Error::Expr(format!("split offset: {e:?}")))?;
             s.set_node_name(feature, options.name.as_deref())?;
-            let names =
-                options.piece_names.clone().unwrap_or_else(|| (1..=count).map(|i| format!("{} {i}", s.node_name(feature))).collect());
+            let names = options.piece_names.clone().unwrap_or_else(|| {
+                let prefix = s.node_name(feature);
+                let mut next = 1;
+                (0..count)
+                    .map(|_| loop {
+                        let name = format!("{prefix} {next}");
+                        next += 1;
+                        // An ambiguous alias is occupied too; only NotFound is free.
+                        if matches!(s.resolve(&name), Err(Error::NotFound(_))) {
+                            break name;
+                        }
+                    })
+                    .collect()
+            });
             let mut seen = HashSet::new();
             for name in &names {
                 Self::check_object_name(name)?;
                 if name.trim().is_empty() || name != name.trim() || !seen.insert(name) {
                     return Err(Error::Invalid("piece_names must be distinct, nonblank names without surrounding whitespace".into()));
                 }
-                if s.resolve(name).is_ok() {
+                if !matches!(s.resolve(name), Err(Error::NotFound(_))) {
                     return Err(Error::Invalid(format!("piece name `{name}` already names an object; choose distinct piece_names")));
                 }
             }

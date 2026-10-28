@@ -141,6 +141,10 @@ impl Session {
                 crate::value::check_expr(&text)?;
                 // Num validation also rejects NaN/Inf strings before the native numeric fast path.
                 let evaluated = value.eval(&s.p.param_map())?;
+                let plain_number = text.trim().parse::<f64>().is_ok();
+                // Native's numeric fast path accepts exponent notation, but its formula
+                // checker/parser does not. Store the same f64 in round-trippable decimal form.
+                let text = if plain_number { evaluated.to_string() } else { text };
                 // Native item evaluation rounds and clamps polygon counts; preserve the server's strict policy
                 // before imposing a value that could also allocate arbitrarily many vertices.
                 if matches!(&native, DimTarget::Feature { key, .. } if key == "sides")
@@ -186,7 +190,8 @@ impl Session {
                 s.p.check_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))?;
                 // Native writes a plain feature number through fmt_num, which keeps 4 decimals (expr.rs:346);
                 // store the number as given instead, the way creation does.
-                if let (DimTarget::Feature { node, key }, Num::Value(_)) = (&native, value) {
+                // Match native's trimmed parse, including numbers sent as strings.
+                if let (DimTarget::Feature { node, key }, true) = (&native, plain_number) {
                     if s.p.kept_number(*node, key).is_none() {
                         return Err(Error::NotFound("dimension target no longer exists".into()));
                     }

@@ -1931,7 +1931,10 @@ asserts those exact fractional halves before checking away-from-zero output.
   uses `FeatureKind::bodies()`. Resolving ids/names, detecting missing B-reps on open, reporting and selected
   exports must include secondary bodies. The existing native deletion frontier already includes every output
   (`model/timeline/delete.rs:13–38`). The server keeps its existing tip-body default; use an explicit body
-  after a split. Count-changing parameter edits restore all shapes, formulas, names and diagnostics atomically.
+  after a split. Default piece aliases use the feature name and skip occupied positive suffixes;
+  explicit aliases still refuse collisions (including ambiguous aliases). `review_round3_codex` verifies
+  three successive unnamed splits and all six name resolutions plus cylinder piece volumes.
+  Count-changing parameter edits restore all shapes, formulas, names and diagnostics atomically.
 - **Tests:** `golden_split_print` verifies box volume conservation; U volumes1280/400/400 and the y12 edit;
   both count-change directions; native app edits; missing-secondary-B-rep recovery; native names and every id;
   selected STL/3MF/STEP independent volume/bounds readback; cap fillet; deletion and undo. `print_split`
@@ -1945,8 +1948,13 @@ asserts those exact fractional halves before checking away-from-zero output.
 
 - **Version:** v0.1.1-dev.20261026.
 - **Source:** `qymcad-core/src/text.rs:86–118` outlines glyph loops, and silently skips an unsupported letter
-  (`:102`). Public `family_name`/`can_write` (`:132–150`) let the server validate the exact face and list missing
-  glyphs before mutation. The app rotates each baked vertex about the anchor (`qymcad-ui-state/src/text.rs:50–57`)
+  (`:102`). Public `family_name`/`can_write` (`:132–150`) validate the exact face and character mapping only.
+  Mapping does not guarantee outlines: `:104` silently skips mapped bitmap-only glyphs too. The server
+  requires each non-whitespace character to produce contours with the same native outliner; it lists
+  failures before mutation. The synthetic mixed font in `tests/fixtures/glyph-gap.ttf` maps vector A and
+  bitmap-only B; `review_round3_codex::mapped_bitmap_only_glyph_is_refused_atomically` proves AB is refused
+  though `can_write` succeeds and the aggregate outline equals A. Its stdlib generator is adjacent.
+  The app rotates each baked vertex about the anchor (`qymcad-ui-state/src/text.rs:50–57`)
   then calls `add_sketch_text` (`model/sketch/entities.rs:573–595`). `FontRef` and `SketchText` serialize path,
   face, family, literal placement/height and glyphs, without font bytes (`model/sketch_types.rs:484–525`).
 - **Policy:** fixed numeric height, anchor and angle, deterministic Arial face0 at
@@ -2089,16 +2097,54 @@ asserts those exact fractional halves before checking away-from-zero output.
   (:554-575), pitch at or below 1e-9 replaced by the standard pitch (:301), buttress built as a symmetric
   52 degree profile (:75, :350-355). `qymcad-kernel/src/occt_helical.cpp`: the cutter side inferred from
   profile extents `py1 > -py0` (:222), which flips for profiles shallower than the 0.15 P overshoot and moves
-  the fit relief the wrong way (:248); runouts at or below 1e-6 dropped and runouts above 0.95 of the length
+  the fit relief the wrong way (:248) (upstream QymCAD#353); runouts at or below 1e-6 dropped and runouts above 0.95 of the length
   scaled (:134-136, :676-677).
 - **Server boundary:** every such input is refused at creation and on every evaluated edit; explicit crest/root
-  radii are checked against the arcs actually built. Tests measure the built profile or mesh.
+  radii are checked only against arcs of their own kind. In groove traversal (:579–600), crest arcs lie
+  between overshoot walls and flanks (ccw), root arcs between flanks (cw); internal mirroring reverses
+  both y and winding (:615–624). An equal root radius must not validate an absent/clamped crest or vice
+  versa. `review_round3_codex` measures arc positions independently and tests both false acceptances,
+  valid equal radii on both sides, and atomic edit refusal. ISO internal geometry alone depends on the
+  actual bore (:363–370); pre-regeneration checks defer that profile to the current source-rim check
+  after regeneration. M8/P1.25, bore6.75, crest.26 passes and matches fresh native geometry although
+  nominal geometry clamps to .248982303588. Actual crest.3 or bore6.6 clamps are refused. Tests measure
+  the built profile/mesh and compare fresh builds; non-ISO profiles retain early geometry checks.
 
 ## F-104 A plain number set on a feature keeps only 4 decimals natively
 
 - **Version:** v0.1.1-dev.20261026, f25f27d.
 - **Source:** `qymcad-core/src/model/params.rs:203` writes a plain feature number through `expr::fmt_num`
   (`expr.rs:346`, `{v:.4}`). 1.234567891234 is stored as 1.2346 and 1e-6 as 0.
-- **Server boundary:** `dimension_set` writes the number as given (after the native target check), as creation
-  already did.
+- **Numeric strings:** `set_dim_target_text` (:242) trims then parses with `parse::<f64>()`, so numeric
+  strings take the same rounded path. Its separate formula checker rejects exponent notation even though
+  the numeric path accepts it. The server uses exactly that trimmed numeric classification, canonicalizes
+  finite literals to round-trippable decimal text, checks the target, and stores full precision directly.
+  True expressions such as `1/1000000` still use the native formula path. `review_round3_codex` verifies
+  string runout refusal, precise length, whitespace/sign/exponent forms and retained formula text.
 
+## F-105 Native thread cutter diameters are not always the side-specific basic reference diameters
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **Native source:** `qymcad-core/src/thread.rs:324–376` distinguishes internal ISO minor only; Tr reports
+  external d3 on either side, ACME includes .01P cutter backlash in radial depth, and Rd omits internal
+  crest/root clearance. Custom defines depth h (default .6P), pitch d-h, minor d-2h; it has no ISO standard.
+- **Independent references:** [ISO 724:2023 §5](https://cdn.standards.iteh.ai/samples/85104/bd3a2c169cec4db3a4579ae25ff16daf/ISO-PRF-724.pdf),
+  [ISO 2904:2020 §5](https://cdn.standards.iteh.ai/samples/78729/7d158726108b478c889fa887d460ba78/ISO-2904-2020.pdf),
+  [NBS H28 Part III, ACME basic profile and clearance sections](https://nvlpubs.nist.gov/nistpubs/Legacy/hb/nbshandbook28supp1957pt3.pdf),
+  [EMUGE-FRANKEN DIN 405 table §15.15](https://www.emuge-franken-bg.com/attachments/article/97/15%20Gewindetabellen.pdf).
+  With nominal d and pitch P, basic major/pitch/minor references are:
+
+  | Family | External | Internal |
+  | --- | --- | --- |
+  | ISO metric | d, d-3√3P/8, d-17√3P/24 (rounded root d3) | d, d-3√3P/8, d-5√3P/8 (D1) |
+  | ISO Tr | d, d-P/2, d-P-2ac | d+2ac, d-P/2, d-P |
+  | ACME | d, d-P/2, d-P | d, d-P/2, d-P |
+  | DIN Rd | d, d-P/2, d-P | d+.1P, d-.5P, d-.9P |
+  | Custom reference | d, d-h, d-2h | d, d-h, d-2h |
+
+  Tr ac is .15 for P≤1.5, .25 for P≤5, .5 for P≤12, otherwise 1 mm.
+- **Server boundary/evidence:** reporting corrects Tr internal, ACME and Rd internal independently of the
+  pinned native cutter. Internal major means reference root diameter; minor means reference crest diameter.
+  These numbers exclude modelling fit and are not measured cavity limits. `review_round3_diameters` checks
+  all five accepted families on both sides against the formulas; `review_round3_codex` verifies internal
+  Tr16x4 reports (16.5,14,12) and measures the actual zero-fit root diameter as 16.5000024 mm.

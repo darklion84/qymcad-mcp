@@ -61,7 +61,7 @@ pub struct PolygonArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextArgs {
-    /// Text to outline; every non-whitespace glyph must exist in the selected font.
+    /// Text to outline; every non-whitespace character must have outline contours in the selected font; bitmap-only or missing glyphs are refused and listed. Spaces are allowed.
     pub text: String,
     /// Anchor [x, y] in sketch mm, fixed numbers. Native text has no placement formula path.
     #[serde(deserialize_with = "fixed_text_at")]
@@ -227,7 +227,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_add",
-            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or glyphs are refused. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
+            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or non-whitespace characters without outline contours (including bitmap-only glyphs) are refused and listed. Spaces are allowed. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
              dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in \
              QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that \
              coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form \

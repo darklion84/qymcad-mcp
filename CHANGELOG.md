@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Fixed
+- Check explicit thread crest/root radii only against their own arcs, using the actual bore profile for
+  ISO internal threads; valid stock-specific radii pass and actual clamps still refuse atomically.
+- Preserve full precision for numeric strings in `dimension_set`, including exponent notation; formulas stay formulas.
+- Report side-correct basic Tr/Rd diameters and ACME basic minor diameter, excluding native cutter backlash.
+- Successive unnamed splits skip occupied default piece names; explicit name collisions remain errors.
+- Refuse mapped characters without outline contours (including bitmap-only glyphs), listing the characters
+  instead of silently dropping them from mixed vector/bitmap text. Spaces remain allowed.
 - Refuse text-height edits through `dimension_set` and inherited item formulas; preserve existing text
   geometry across parameter/sketch edits and refuse stale height evaluation on open (upstream #347).
 - Refuse undersized ISO internal bores that bury the thread groove, checking current stock again after

@@ -47,10 +47,10 @@ struct ThreadArgs {
     /// Left-hand thread when true. Default false is right-hand.
     #[serde(default)]
     left: bool,
-    /// Crest rounding radius, mm (number or expression). Default 0 uses the standard profile.
+    /// Crest rounding radius, mm (number or expression). Default 0 uses the standard profile. Explicit radii must appear on their own crest/root arcs of the actual stock profile; clamped or missing arcs are refused.
     #[serde(default)]
     crest_r: Option<Num>,
-    /// Root rounding radius, mm (number or expression). Default 0 uses the standard profile.
+    /// Root rounding radius, mm (number or expression). Default 0 uses the standard profile. Explicit radii must appear on their own crest/root arcs of the actual stock profile; clamped or missing arcs are refused.
     #[serde(default)]
     root_r: Option<Num>,
     /// Included flank angle, custom profile only, degrees (number or expression): greater than 1 and at most 148.969 (native ignores angles at or below 1 and clamps the half-angle at 1.3 rad). Default 60.
@@ -117,7 +117,7 @@ struct SplitArgs {
     /// Split feature name, also used as the prefix for default native piece names. Names interpreted as numeric ids are refused.
     #[serde(default)]
     name: Option<String>,
-    /// Distinct native names of every resulting piece, in result order. Names interpreted as numeric ids (including +1 or leading zeroes) are refused. Default: <feature name> 1, <feature name> 2, etc.
+    /// Distinct native names of every resulting piece, in result order. Names interpreted as numeric ids (including +1 or leading zeroes) are refused. Default: <feature name> plus the next unused positive numbers in the document (1, 2, etc.), so successive unnamed splits stay addressable.
     #[serde(default)]
     piece_names: Option<Vec<String>>,
 }
@@ -130,7 +130,7 @@ fn zero() -> Num {
 pub(super) fn tools() -> Vec<Tool> {
     vec![tool(
         "thread",
-        "Cut a native parametric thread from exactly one circular rim of the current stock. Use size M8/M8x1.25/Tr16x4 or canonical standard/nominal/pitch; length is required. The engine detects external/internal material and refuses an explicit kind mismatch, off-size stock, overlong threads and cuts that remove nothing. App print defaults are lead_in/lead_out 1.5 mm and fit 0.2 mm, lowered when necessary so radial relief stays at most 0.13 pitch. ISO internal bores also need diameter at least D1-.26*pitch+2*effective_relief (D1=nominal-1.082532*pitch; effective_relief is radial relief above 1e-6 mm, otherwise zero); external stock remains within nominal +/- max(.05*nominal,.5*pitch). Stock and profile edits recheck the 0.02 pitch groove exposure after regeneration. Custom angle must be >1 and <180 degrees. Explicit fits above the relief limit and later unsafe edits are refused; the result reports the fit used and reason. Every numeric field remains editable through dimension_set's feature/key target. Returns the new body id, persistent rim, detected side, effective pitch/lead, standard basic diameters and fit radial relief, plus the normal rebuild report. Basic diameters are not measured fit-adjusted thread diameters; fit is modelling clearance, not an ISO tolerance class or a printed mating guarantee. Atomic on rebuild failure. Read topology again before selecting edges on the resulting body.",
+        "Cut a native parametric thread from exactly one circular rim of the current stock. Use size M8/M8x1.25/Tr16x4 or canonical standard/nominal/pitch; length is required. The engine detects external/internal material and refuses an explicit kind mismatch, off-size stock, overlong threads and cuts that remove nothing. App print defaults are lead_in/lead_out 1.5 mm and fit 0.2 mm, lowered when necessary so radial relief stays at most 0.13 pitch. ISO internal bores also need diameter at least D1-.26*pitch+2*effective_relief (D1=nominal-1.082532*pitch; effective_relief is radial relief above 1e-6 mm, otherwise zero); external stock remains within nominal +/- max(.05*nominal,.5*pitch). Stock and profile edits recheck the 0.02 pitch groove exposure after regeneration. Custom angle must be >1 and at most 148.969 degrees (half-angle at most 1.3 radians). Explicit fits above the relief limit and later unsafe edits are refused; the result reports the fit used and reason. Every numeric field remains editable through dimension_set's feature/key target; numeric strings retain the same full precision as JSON numbers. Returns the new body id, persistent rim, detected side, effective pitch/lead, standard basic diameters and fit radial relief, plus the normal rebuild report. For internal threads, basic_major_diameter is the reference root diameter, basic_minor_diameter the reference crest diameter, and basic_pitch_diameter the reference pitch cylinder. Tr includes ISO root clearance (Tr16x4 internal: major 16.5, minor 12); Rd includes DIN 405 internal crest/root clearance. ACME reports the basic profile without native cutter backlash. Custom reports nominal, nominal-depth, nominal-2*depth on either side. These are standard/design references, not measured fit-adjusted cavity limits; fit is modelling clearance, not an ISO tolerance class or a printed mating guarantee. Atomic on rebuild failure. Read topology again before selecting edges on the resulting body.",
         |st, a: ThreadArgs| {
             let session = st.doc()?;
             let body = a.body.as_ref().map(|body| body.resolve(session)).transpose()?;

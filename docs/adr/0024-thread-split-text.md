@@ -53,18 +53,26 @@ probes through save, load and the app's parameter-edit path.
 5. **Formulas on every native key.** `length`, `lead_in`, `lead_out`, `nominal`, `pitch`, `fit`, `crest_r`,
    `root_r`, `angle`, `depth` and `starts` are written with the app's `write_feat_formula`. `starts` must
    evaluate to an integer 1..64, and this is checked again on every later edit. Custom angles must be
-   strictly greater than 1° and less than 180°: native silently substitutes 60° at or below 1° (F-101).
+   strictly greater than 1° and at most 2·1.3 radians (148.969°): native silently substitutes 60° at or below 1° (F-101).
    Validation errors retain the thread feature's name and id.
 6. **The result reports basic geometry, not tolerances.** Standard basic diameters, the effective pitch and
-   lead, and the fit with its radial relief are reported as such. A fit is a modelling clearance, not an ISO
-   tolerance class, and is not proof that a printed pair screws together.
+   lead, and the fit with its radial relief are reported as such. Internal major means the reference root diameter,
+   minor the reference crest diameter, and pitch the reference pitch cylinder. ISO Tr internal values are
+   D4=d+2ac, D2=d-P/2, D1=d-P; DIN Rd internal values are d+.1P, d-.5P, d-.9P. ACME basic minor
+   is d-P on either side, excluding native cutter backlash. Custom references remain d, d-depth, d-2depth
+   on either side. These are design references, not measured cavity limits (F-105). A fit is a modelling
+   clearance, not an ISO tolerance class, and is not proof that a printed pair screws together.
 
 6a. **No silent replacement (review round 2).** An input the pinned native geometry would ignore, clamp, round or
    reinterpret is refused, at creation and on every evaluated edit (F-103): buttress (built symmetric), angle or
    depth on a standard profile, custom angles at or below 1 or above 148.969 degrees, profiles too deep for their
    angle and pitch with the fit included, profiles so shallow that native infers the cutter side wrongly, runouts
    at or below 1e-6 mm or together above 0.95 of the length, crest/root radii not built as asked, pitch or depth
-   at or below 1e-9. A plain number set through `dimension_set` keeps every digit (F-104).
+   at or below 1e-9. A plain number, including a numeric string classified by native with trimmed
+   `parse::<f64>()`, set through `dimension_set` keeps every digit (F-104). Explicit crest/root radii must match arcs of their own kind:
+   crest and root traversal directions distinguish them, reversed by internal mirroring. ISO internal
+   radii are checked on the actual bore profile after source regeneration; a nominal-bore precheck must
+   never refuse a radius the actual cutter preserves (F-103).
 
 ### Split (`split` tool)
 
@@ -84,7 +92,10 @@ probes through save, load and the app's parameter-edit path.
    operation plane; it differs from the XZ sketch normal (−Y). A datum plane or a face uses its own normal.
 9. **Pieces are bodies in their own right.** Numeric ids and names resolve to any output body, not only the
    node's first body. Missing-B-rep detection on open walks every output. Piece names are native body names
-   (`set_mesh_name`), given by `piece_names` or defaulting to `<feature name> 1..n`. `export` with `bodies`
+   (`set_mesh_name`), given by `piece_names` or defaulting to `<feature name>` plus the next unused positive
+   numbers in the document.
+   Repeated unnamed splits skip occupied aliases; explicit `piece_names` collisions are still refused.
+   `export` with `bodies`
    writes any piece on its own; one file per call.
    Piece, sketch and feature names whose trimmed strings parse as a native `Id` are refused: `resolve`
    reserves that grammar for ids (including leading zeroes and `+`). This rule applies to all server object
@@ -110,8 +121,10 @@ probes through save, load and the app's parameter-edit path.
     font is an error, with no substitution by family. This intentionally differs from the app's fc-match-first
     default. The glyphs are baked into the file, so it opens without the font. Retyping the text in the app
     needs the recorded path.
-12. **Every glyph or nothing.** Text whose letters the font cannot write is refused, with the missing letters
-    listed. The core outliner would otherwise skip them silently.
+12. **Every glyph or nothing.** Every non-whitespace character must produce contours through the same native
+    outliner used for baking. Missing and mapped-but-outline-less (including bitmap-only) glyphs are refused, with
+    the characters listed. Spaces are allowed. A nonempty aggregate outline alone cannot prove this:
+    a vector A plus bitmap-only B would otherwise bake AB as A (F-096).
 13. **Extrusion through the existing tools.** `extrude` with its usual ops. Profiles default to the glyph
     outlines with their counters kept as holes, never "first contour" or "all contours". Text ids are listed
     by `sketch_info` and removed by `sketch_remove` (`delete_sketch_text`). Text is not given an item name:
