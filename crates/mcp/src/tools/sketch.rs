@@ -337,7 +337,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_project",
-            "Project body edges or an entire face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.",
+            "Project edges or a hosted face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. The source body must belong to the sketch's own part and must be built above the sketch in the timeline, because native regeneration resolves projections in timeline order. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.",
             |st, a: ProjectArgs| {
                 let s = st.doc()?;
                 let sketch = a.sketch.resolve(s)?;

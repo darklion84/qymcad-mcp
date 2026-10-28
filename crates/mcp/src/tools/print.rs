@@ -81,7 +81,7 @@ struct BodyBooleanArgs {
     /// Timeline feature name; numeric-looking names are refused.
     #[serde(default)]
     name: Option<String>,
-    /// Optional native body names for every output piece, primary first. Later count changes or ambiguous piece identities are refused atomically.
+    /// Optional body names for every output piece, primary first. Names are returned and can be used by later tools. Later count/solid changes or ambiguous piece identities are refused atomically.
     #[serde(default)]
     piece_names: Option<Vec<String>>,
 }
@@ -167,7 +167,7 @@ pub(super) fn tools() -> Vec<Tool> {
         },
     ), tool(
         "body_boolean",
-        "Apply a native parametric boolean between two current bodies in the same part. Both operands are consumed. cut computes A minus B; union and intersect are explicit. Refuses same/stale bodies, cuts that remove nothing, empty intersections and rebuild errors atomically. Cut/intersect may create multiple named bodies; union remains one body even when it contains multiple solids. Later changes in output body count or ambiguous piece identity are refused atomically; recreate the boolean for topology changes. Returns the feature/body, operation, consumed ids, each output body's volume/bounds and rebuild diagnostics.",
+        "Apply a native parametric boolean between two distinct current bodies in the same part. Both operands are consumed; the node is created in their owning part without changing the active part. cut computes A minus B; union and intersect are explicit. Refuses same/stale bodies, no-op cuts, empty intersections and rebuild errors atomically. Cut/intersect may create multiple named bodies; union remains one body even when it contains multiple solids. Output names are reported and resolvable; omitted names use the next unused <feature name> N suffix. Later changes in output body count, solid count or ambiguous piece identity are refused atomically; recreate the boolean for topology changes. Returns the feature/body, operation, consumed ids, each output body's volume/bounds and rebuild diagnostics.",
         |st, a: BodyBooleanArgs| {
             let session = st.doc()?;
             let a_id = a.a.resolve(session)?;

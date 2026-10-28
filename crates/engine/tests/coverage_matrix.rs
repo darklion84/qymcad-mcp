@@ -100,3 +100,22 @@ fn every_pinned_enum_variant_has_exactly_one_coverage_row() {
     }
     assert!(problems.is_empty(), "docs/COVERAGE.md must classify every pinned variant exactly once:\n{}", problems.join("\n"));
 }
+
+#[test]
+fn separate_associative_parts_are_classified_as_assembly_operations() {
+    // Pinned FeatureKind::Piece promotes a split/cut body into a separate associative part;
+    // MirrorPart reflects another component's active body into a new independently placed part.
+    // Neither operation is exposed by the server's same-part split/mirror tools.
+    let doc = std::fs::read_to_string(COVERAGE).unwrap();
+    for key in ["FeatureKind::Piece", "FeatureKind::MirrorPart"] {
+        let row = doc
+            .lines()
+            .filter(|line| line.starts_with('|'))
+            .map(|line| line.trim_matches('|').split('|').map(str::trim).collect::<Vec<_>>())
+            .find(|cells| cells.len() == 6 && cells[5].split(',').any(|s| s.trim().trim_matches('`') == key))
+            .unwrap_or_else(|| panic!("missing coverage for {key}"));
+        assert_eq!(row[1], "Assemblies", "{key} creates a separate associative part");
+        assert_eq!(row[2], "out of scope", "{key} has no server modelling tool");
+        assert_eq!(row[4], "none", "{key} must not advertise split or mirror as implementing it");
+    }
+}

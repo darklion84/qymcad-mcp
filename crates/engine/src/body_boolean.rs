@@ -69,32 +69,13 @@ impl Session {
                 if s.p.body_owner(a) != s.p.body_owner(b) {
                     return Err(Error::Invalid("body_boolean operands must belong to the same part".into()));
                 }
-                if matches!(options.op, BooleanOp::Cut | BooleanOp::Intersect) {
-                    qymcad_kernel::ask::boolean_gives_body(s.shapes.get(&a).unwrap(), s.shapes.get(&b).unwrap(), options.op.native())
-                        .map_err(|verdict| Error::Invalid(format!("body_boolean {} refused: {verdict:?}", op_name(options.op))))?;
-                }
-                let feature = s.p.add_body_boolean(a, b, options.op.native());
+                let owner = s.p.body_owner(a);
+                let feature = s.in_component(owner, |p| p.add_body_boolean(a, b, options.op.native()));
                 s.set_node_name(feature, options.name.as_deref())?;
                 Ok((feature, a, b))
             },
             |s, (feature, a, b), rebuild| {
                 let outputs = s.node_outputs(feature);
-                if matches!(options.op, BooleanOp::Cut | BooleanOp::Intersect) && options.piece_names.is_none() {
-                    let prefix = s.node_name(feature);
-                    let mut next = 1;
-                    for id in &outputs {
-                        let generated = loop {
-                            let name = format!("{prefix} {next}");
-                            next += 1;
-                            if matches!(s.resolve(&name), Err(Error::NotFound(_))) {
-                                break name;
-                            }
-                        };
-                        if let Some(index) = s.p.mesh_index(*id) {
-                            s.p.set_mesh_name(index, generated);
-                        }
-                    }
-                }
                 let names = if let Some(names) = &options.piece_names {
                     if names.len() != outputs.len() {
                         return Err(Error::Invalid(format!("piece_names needs exactly {} names for the boolean result", outputs.len())));
@@ -229,11 +210,4 @@ impl Session {
 
 fn boolean_overlap(a: &[f64; 6], b: &[f64; 6]) -> f64 {
     (0..3).map(|axis| (a[axis + 3].min(b[axis + 3]) - a[axis].max(b[axis])).max(0.0)).product()
-}
-fn op_name(op: BooleanOp) -> &'static str {
-    match op {
-        BooleanOp::Cut => "cut",
-        BooleanOp::Union => "union",
-        BooleanOp::Intersect => "intersect",
-    }
 }

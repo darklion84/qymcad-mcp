@@ -6,11 +6,12 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
-- `body_boolean` applies native parametric cut, union or intersect between two current bodies. Both inputs are consumed; multi-body cut/intersect outputs have resolvable names and geometry reports. Count or piece-identity-changing edits are refused atomically (F-108, ADR 0026).
+- `body_boolean` applies native parametric cut, union or intersect between two distinct current bodies in the same part; node creation enters the owner part and restores the active part. Both inputs are consumed; every output is named and reported. No-op refusals use the native rebuild check with exact rollback; output count, solid count or ambiguous identity changes are refused atomically (F-108, ADR 0026).
 - `import` reads STEP/IGES as native source-backed QymCAD part trees, retaining file names/placements, optional literal scale correction and embedded originals for save/open. Imported bodies remain independently selectable and modifiable (ADR 0028, F-110).
 - `sketch_project` projects persistent body edge selections or a hosted face outline into sketches, returns constrainable geometry ids and reports projection attachment state in `sketch_info` (F-109, ADR 0027).
 
 ### Fixed
+- `sketch_project` refuses forward-timeline and cross-part sources; opening a reordered projection with a forward reference is refused. Imported body names now resolve across topology, select, fillet, body_boolean and batch, retaining ambiguity errors. Body booleans create nodes in their operands' part and restore the active part; default piece names no longer skip suffixes and union piece names are reported.
 - Explicit push-face, fillet and face-sketch/extrude edits on imported parts create nodes in the input's component, avoiding cross-component rebuild failures.
 - Include sketch projection sources in parameter, dimension and sketch rebuild snapshots/retries and stored
   edge-query safety checks. Failed downstream rebuilds restore the exact Project and every original B-rep.

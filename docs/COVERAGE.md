@@ -16,10 +16,10 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P10 | Thread | partial | Auger mode | `thread` | `FeatureKind::Thread,FeatureKind::Auger,PartTool::Thread` |
 | P11 | Push face | covered | — | `push_face` | `FeatureKind::PushFace,PartTool::PushFace` |
 | P12 | Remove face | not covered | Heal body after face removal | none | `FeatureKind::RemoveFace,PartTool::RemoveFace` |
-| P13 | Split body | covered | — | `split` | `FeatureKind::SplitBody,FeatureKind::Piece,PartTool::SplitBody` |
+| P13 | Split body | covered | — | `split` | `FeatureKind::SplitBody,PartTool::SplitBody` |
 | P14 | Split faces | not covered | Split a face without splitting the body | none | `FeatureKind::SplitFace,PartTool::SplitFace` |
 | P15 | Thicken | not covered | Thicken from a face | none | `FeatureKind::Thicken,PartTool::Thicken` |
-| P16 | Mirror body | covered | — | `mirror` | `FeatureKind::Mirror,FeatureKind::MirrorPart,PartTool::Mirror` |
+| P16 | Mirror body | covered | — | `mirror` | `FeatureKind::Mirror,PartTool::Mirror` |
 | P17 | Linear pattern | partial | Third direction | `linear_array` | `FeatureKind::LinearArray,PartTool::LinearPattern` |
 | P18 | Circular pattern | covered | — | `circular_array` | `FeatureKind::CircularArray,PartTool::CircularPattern` |
 | P19 | Primitives | not covered | Box, cylinder, sphere, cone, torus, prism primitives not exposed directly | none | `FeatureKind::Box3,FeatureKind::Cylinder,FeatureKind::Sphere,FeatureKind::Cone,FeatureKind::Torus,FeatureKind::Prism,PartTool::Box,PartTool::Cylinder,PartTool::Sphere,PartTool::Cone,PartTool::Torus,PartTool::Prism` |
@@ -60,6 +60,6 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | E1 | Export STEP, STL, 3MF, GLB, OBJ | covered | — | `export` | — |
 | E2 | Export IGES, PLY, AMF | not covered | — | none | — |
 | E3 | Export sketch DXF / SVG | not covered | — | none | — |
-| X1 | Assemblies | out of scope | Not decided by the user; ADR 0022 deferred it as a separate project | none | `FeatureKind::PartInstance,FeatureKind::ComponentPattern` |
+| X1 | Assemblies | out of scope | ADR 0022 deferred assemblies; Piece promotes a split/cut body into its own associative part, and MirrorPart creates an associative mirrored part with independent placement | none | `FeatureKind::PartInstance,FeatureKind::ComponentPattern,FeatureKind::Piece,FeatureKind::MirrorPart` |
 | X2 | Part library | out of scope | Part of assemblies scope | none | — |
 | X3 | GUI interface | out of scope | GUI-only languages, icons, layout, shortcuts, reports, updates and view | none | — |

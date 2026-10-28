@@ -293,6 +293,12 @@ impl Session {
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
         };
+        // Files may be externally edited or reordered. Reject any stored projection with a forward source reference.
+        for sketch in &sess.p.sketches {
+            for projection in &sketch.projections {
+                sess.check_projection_order(sketch.id, projection.body)?;
+            }
+        }
         // Clean documents remain usable even without named edges, but rebuilding with an empty edge pool
         // can silently round every edge of a stored query (F-024).
         if let Err(e) = sess.restore_edges() {
@@ -900,7 +906,7 @@ impl Session {
         Ok(())
     }
 
-    /// Display name of a body. Split outputs use their native piece names; ordinary feature names stay compatible.
+    /// Display name of a body. Split and all boolean outputs use native piece names; ordinary features keep their names.
     pub fn body_name(&self, id: Id) -> String {
         let native_component_name =
             self.p
@@ -916,10 +922,8 @@ impl Session {
             return crate::localization::name(&name);
         }
         let named_outputs = self.p.timeline.iter().any(|n| {
-            matches!(
-                n.kind,
-                qymcad_core::feature::FeatureKind::SplitBody { .. } | qymcad_core::feature::FeatureKind::BodyBoolean { op: 0 | 2, .. }
-            ) && n.kind.bodies().contains(&id)
+            matches!(n.kind, qymcad_core::feature::FeatureKind::SplitBody { .. } | qymcad_core::feature::FeatureKind::BodyBoolean { .. })
+                && n.kind.bodies().contains(&id)
         });
         if named_outputs {
             if let Some(mi) = self.p.mesh_index(id) {
@@ -929,7 +933,7 @@ impl Session {
         self.node_name(id)
     }
 
-    /// Resolve a timeline/sketch id or name, or any output-body id/native name. Current native names take precedence
+    /// Resolve a timeline/sketch id or name, or any output-body id/native/imported-part name. Current body aliases take precedence
     /// over inherited historical body names; different live objects sharing an alias require an explicit id.
     pub fn resolve(&self, r: &str) -> Result<Id> {
         let r = r.trim();
@@ -941,7 +945,17 @@ impl Session {
             return Err(Error::NotFound(format!("no object with id {id}")));
         }
         let consumed = self.p.consumed_bodies();
-        let native: Vec<Id> = self.p.bodies.iter().filter(|b| bodies.contains(&b.id) && b.name == r).map(|b| b.id).collect();
+        let mut native: Vec<Id> = self.p.bodies.iter().filter(|b| bodies.contains(&b.id) && b.name == r).map(|b| b.id).collect();
+        let imported_aliases: Vec<Id> = self
+            .p
+            .timeline
+            .iter()
+            .filter(|node| matches!(node.kind, qymcad_core::feature::FeatureKind::Import { .. }))
+            .flat_map(|node| node.kind.bodies())
+            .filter(|body| self.body_name(*body) == r)
+            .collect();
+        // Import part aliases remain below native current-body names and ahead of historical aliases.
+        native.extend(imported_aliases);
         let current: Vec<Id> = native.iter().copied().filter(|id| !consumed.contains(id)).collect();
         let mut hits: Vec<Id> =
             self.p.timeline.iter().filter(|n| n.name == r || crate::localization::name(&n.name) == r).map(|n| n.id).collect();

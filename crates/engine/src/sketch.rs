@@ -175,6 +175,19 @@ impl Session {
         }
     }
 
+    /// A source must already exist when native regeneration visits the sketch (run.rs:580).
+    /// Missing sources retain native Unknown inspection behavior when opening older documents.
+    pub(crate) fn check_projection_order(&self, sketch: Id, body: Id) -> Result<()> {
+        let source = self.p.timeline.iter().position(|node| node.kind.bodies().contains(&body));
+        let target = self.p.timeline.iter().position(|node| node.id == sketch);
+        if let (Some(source), Some(target)) = (source, target) {
+            if source >= target {
+                return Err(Error::Invalid(format!("body {body}: body must be built above the sketch {sketch} in the timeline")));
+            }
+        }
+        Ok(())
+    }
+
     /// Project body geometry into a sketch and rebuild its consumers as one atomic edit.
     pub fn sketch_project(
         &mut self,
@@ -188,6 +201,10 @@ impl Session {
         let si = self.sketch_si(sketch)?;
         if !self.p.timeline.iter().any(|node| node.kind.bodies().contains(&body)) {
             return Err(Error::NotFound(format!("body {body}")));
+        }
+        self.check_projection_order(sketch, body)?;
+        if self.p.body_owner(body) != self.p.sketch_owner(sketch) {
+            return Err(Error::Invalid("project only bodies of the sketch's own part".into()));
         }
         if !self.shapes.contains_key(&body) {
             return Err(Error::Invalid(format!("body {body} has no built shape")));

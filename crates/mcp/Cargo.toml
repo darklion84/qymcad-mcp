@@ -21,5 +21,9 @@ schemars.workspace = true
 # `dup2` to move OCCT's stdout chatter off the protocol channel (ADR 0005). Already in the tree via qymcad-io.
 libc = "0.2"
 
+[dev-dependencies]
+# Compare saved recipe/B-rep bytes through MCP without importing QymCAD APIs. Already used by engine/io.
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
 [lints]
 workspace = true

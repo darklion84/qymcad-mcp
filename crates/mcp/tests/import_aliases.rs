@@ -1,0 +1,84 @@
+use qymcad_mcp::tools::Registry;
+use serde_json::{json, Value};
+
+fn call(registry: &mut Registry, tool: &str, args: Value) -> Value {
+    let content = registry.call(tool, args).unwrap().unwrap_or_else(|error| panic!("{tool}: {error}"));
+    serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap()
+}
+
+fn fixture() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine/tests/fixtures/server-box-10x10x5-inch.igs")
+}
+
+fn imported() -> (Registry, Value) {
+    let mut registry = Registry::new();
+    call(&mut registry, "doc_new", json!({}));
+    let imported = call(&mut registry, "import", json!({"path":fixture(),"name":"Imported"}));
+    assert_eq!(imported["bodies"][0]["name"], "Imported");
+    (registry, imported["bodies"][0].clone())
+}
+
+#[test]
+fn reported_import_name_resolves_in_topology_select_and_fillet() {
+    let (mut registry, imported) = imported();
+    let name = &imported["name"];
+    let info = call(&mut registry, "doc_info", json!({}));
+    assert_eq!(info["bodies"][0]["name"], *name);
+    let topology = call(&mut registry, "topology", json!({"body":name}));
+    assert_eq!(topology["faces"].as_array().unwrap().len(), 6);
+    let selected = call(&mut registry, "select", json!({"body":name,"edges":{"along":"z"}}));
+    assert_eq!(selected["body"], imported["body"]);
+    assert_eq!(selected["count"], 4);
+    let edge = selected["edges"][0]["id"].clone();
+    let result = call(&mut registry, "fillet", json!({"body":name,"edges":[edge],"radius":1,"name":"Rounded import"}));
+    assert!(result["rebuild"].get("errors").is_none());
+    // One vertical R1 edge removes (1 - pi/4) * 5 from the 500 mm³ fixture.
+    let expected = 500.0 - (1.0 - std::f64::consts::PI / 4.0) * 5.0;
+    let volume = call(&mut registry, "doc_info", json!({}))["bodies"][0]["volume_mm3"].as_f64().unwrap();
+    assert!((volume - expected).abs() < 1e-4, "{volume} != {expected}");
+}
+
+#[test]
+fn reported_import_name_resolves_in_boolean_in_its_own_part() {
+    let (mut registry, imported) = imported();
+    let name = &imported["name"];
+    // Obtain the top face by id first so the failing-before observation specifically reaches
+    // boolean operand resolution rather than an earlier inspection call.
+    let top = call(&mut registry, "select", json!({"body":imported["body"],"faces":{"facing":"+z"}}))["faces"][0]["id"].clone();
+    call(&mut registry, "sketch_create", json!({"plane":{"body":imported["body"],"face":top},"name":"import profile"}));
+    call(&mut registry, "sketch_add", json!({"sketch":"import profile","entities":[{"type":"rect","w":2,"h":2}]}));
+    call(&mut registry, "extrude", json!({"sketch":"import profile","height":2,"op":"new_body","name":"Boss"}));
+    let result = call(&mut registry, "body_boolean", json!({"a":name,"b":"Boss","op":"union","name":"Joined"}));
+    assert!(result["rebuild"].get("errors").is_none());
+    assert_eq!(result["pieces"].as_array().unwrap().len(), 1);
+    assert!((result["pieces"][0]["volume_mm3"].as_f64().unwrap() - 508.0).abs() < 1e-4);
+    assert_eq!(call(&mut registry, "select", json!({"body":"Joined","faces":"largest"}))["body"], result["body"]);
+}
+
+#[test]
+fn batch_can_immediately_target_reported_import_name() {
+    let mut registry = Registry::new();
+    call(&mut registry, "doc_new", json!({}));
+    let result = call(
+        &mut registry,
+        "batch",
+        json!({"verbose":true,"steps":[
+            {"tool":"import","args":{"path":fixture(),"name":"Imported"}},
+            {"tool":"fillet","args":{"body":"Imported","edges":{"along":"z"},"radius":1,"name":"Rounded import"}}
+        ]}),
+    );
+    assert_eq!(result["steps"][0]["result"]["bodies"][0]["name"], "Imported");
+    assert_eq!(result["errors"], json!([]));
+    assert_eq!(result["bodies"].as_array().unwrap().len(), 1);
+    let expected = 500.0 - 4.0 * (1.0 - std::f64::consts::PI / 4.0) * 5.0;
+    assert!((result["bodies"][0]["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-4);
+}
+
+#[test]
+fn imported_alias_conflicting_with_timeline_name_requires_an_id() {
+    let (mut registry, imported) = imported();
+    call(&mut registry, "sketch_create", json!({"plane":"XY","name":imported["name"]}));
+    let error = registry.call("topology", json!({"body":imported["name"]})).unwrap().unwrap_err();
+    assert!(error.contains("several objects") && error.contains("use the id"), "{error}");
+    assert_eq!(call(&mut registry, "topology", json!({"body":imported["body"]}))["faces"].as_array().unwrap().len(), 6);
+}

@@ -1709,7 +1709,7 @@ Delete one entity (with the points only it used and the constraints on them), on
 
 ## sketch_project
 
-Project body edges or an entire face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.
+Project edges or a hosted face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. The source body must belong to the sketch's own part and must be built above the sketch in the timeline, because native regeneration resolves projections in timeline order. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.
 
 ```json
 {
@@ -4434,7 +4434,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
 
 ## body_boolean
 
-Apply a native parametric boolean between two current bodies in the same part. Both operands are consumed. cut computes A minus B; union and intersect are explicit. Refuses same/stale bodies, cuts that remove nothing, empty intersections and rebuild errors atomically. Cut/intersect may create multiple named bodies; union remains one body even when it contains multiple solids. Later changes in output body count or ambiguous piece identity are refused atomically; recreate the boolean for topology changes. Returns the feature/body, operation, consumed ids, each output body's volume/bounds and rebuild diagnostics.
+Apply a native parametric boolean between two distinct current bodies in the same part. Both operands are consumed; the node is created in their owning part without changing the active part. cut computes A minus B; union and intersect are explicit. Refuses same/stale bodies, no-op cuts, empty intersections and rebuild errors atomically. Cut/intersect may create multiple named bodies; union remains one body even when it contains multiple solids. Output names are reported and resolvable; omitted names use the next unused <feature name> N suffix. Later changes in output body count, solid count or ambiguous piece identity are refused atomically; recreate the boolean for topology changes. Returns the feature/body, operation, consumed ids, each output body's volume/bounds and rebuild diagnostics.
 
 ```json
 {
@@ -4478,7 +4478,7 @@ Apply a native parametric boolean between two current bodies in the same part. B
     },
     "piece_names": {
       "default": null,
-      "description": "Optional native body names for every output piece, primary first. Later count changes or ambiguous piece identities are refused atomically.",
+      "description": "Optional body names for every output piece, primary first. Names are returned and can be used by later tools. Later count/solid changes or ambiguous piece identities are refused atomically.",
       "items": {
         "type": "string"
       },
@@ -4648,7 +4648,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
 
 ## import
 
-Import exact STEP or IGES solids as QymCAD parts using the file's component tree, names and placements. Units are normalized by OCCT to mm; scale is an additional literal correction (default 1), and scales the entire import about the file origin. The original bytes are embedded, so the external file is not needed after import. `solids` selects zero-based source solid indexes; default imports all. Imported bodies remain individually addressable by id/name for topology, sketch-on-face, push_face, fillet, export and doc_info. Returns source id, tree root feature, each body/name/index/scale/volume/bbox, warnings and rebuild diagnostics.
+Import exact STEP or IGES solids as QymCAD parts using the file's component tree, names and placements. Units are normalized by OCCT to mm; scale is an additional literal correction (default 1), and scales the entire import about the file origin. The original bytes are embedded, so the external file is not needed after import. `solids` selects zero-based source solid indexes; default imports all. Imported bodies remain individually addressable by id/name for topology, select, fillet, body_boolean, batch, sketch-on-face, push_face, export and doc_info. The reported body name resolves as an alias; if it conflicts with another object, use the body id. Returns source id, tree root feature, each body/name/index/scale/volume/bbox, warnings and rebuild diagnostics.
 
 ```json
 {

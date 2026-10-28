@@ -9,8 +9,8 @@ QymCAD v0.1.1-dev.20261026 exposes `Project::add_body_boolean(a, b, op)`: cut, u
 
 ## Decisions
 
-1. Add `body_boolean({a,b,op,name?,piece_names?})` as a separate modelling tool. `a` and `b` are required object references, must be distinct current bodies in the same part, and `op` is `cut`, `union` or `intersect` with `cut` as the default.
-2. Call the native self-gating `ask::boolean_gives_body` for cut/intersect before the recipe mutation, never while holding `kernel_gate`. Native rebuild errors are failures even when QymCAD leaves a pass-through shape.
+1. Add `body_boolean({a,b,op,name?,piece_names?})` as a separate modelling tool. `a` and `b` are required object references, must be distinct current bodies in the same part, and `op` is `cut`, `union` or `intersect` with `cut` as the default. Create the node in the operands' owning part with the existing active-context helper, then restore the user's prior active part.
+2. Rely on native regeneration to validate booleans; do not call `ask::boolean_gives_body` as a separate self-gating preflight. Source trace shows `run.rs` calls the same `Shape::boolean_checked` operation that `ask::boolean_gives_body` delegates to, so the preflight duplicates kernel work. `atomic_with_post` rejects native rebuild errors and restores the pre-edit Project and shapes, including pass-through no-op shapes. Always inspect `RegenReport.errors`.
 3. Preserve the native recipe and dynamic output semantics. Both operands are consumed. Output `BodyInfo` entries include every native output body; union remains one body even when it has multiple solids.
 4. Output piece names are assigned atomically. Explicit `piece_names` must match the measured output count and be distinct, nonblank, nonnumeric and unused. Unnamed outputs receive the feature name plus the next unused positive suffix.
 5. The server refuses later edits that change output-body count, change result solid count, or make surviving piece identity ambiguous under global bounding-box overlap matching. The refusal is atomic and tells the caller to recreate the boolean. This is a server safety policy; QymCAD.app's native dynamic allocation remains unchanged.
