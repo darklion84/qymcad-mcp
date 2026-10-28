@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Fixed
+- Restore persistent face/edge names when opening STEP/IGES imports whose saved B-reps are absent (F-106).
 - A split edit whose plane no longer divides the body says so, and a rebuild error names each failing node once.
 - Check explicit thread crest/root radii only against their own arcs, using the actual bore profile for
   ISO internal threads; valid stock-specific radii pass and actual clamps still refuse atomically.
