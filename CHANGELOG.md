@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Fixed
+- A split edit whose plane no longer divides the body says so, and a rebuild error names each failing node once.
 - Check explicit thread crest/root radii only against their own arcs, using the actual bore profile for
   ISO internal threads; valid stock-specific radii pass and actual clamps still refuse atomically.
 - Preserve full precision for numeric strings in `dimension_set`, including exponent notation; formulas stay formulas.

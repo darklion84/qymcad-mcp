@@ -25,7 +25,20 @@ impl fmt::Display for Error {
             Error::Invalid(s) => write!(f, "invalid request: {s}"),
             Error::Expr(s) => write!(f, "expression error: {s}"),
             Error::Io(s) => write!(f, "i/o error: {s}"),
-            Error::Rebuild(lines) => write!(f, "the model did not rebuild (operation rolled back): {}", lines.join("; ")),
+            Error::Rebuild(lines) => {
+                // A node can be reported by more than one pass of the same rebuild; say each line once.
+                let mut unique: Vec<&String> = Vec::new();
+                for line in lines {
+                    if !unique.contains(&line) {
+                        unique.push(line);
+                    }
+                }
+                write!(
+                    f,
+                    "the model did not rebuild (operation rolled back): {}",
+                    unique.iter().map(|l| l.as_str()).collect::<Vec<_>>().join("; ")
+                )
+            }
         }
     }
 }

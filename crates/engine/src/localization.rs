@@ -23,5 +23,8 @@ pub(crate) fn error(error: &CoreError) -> String {
     if matches!(error, CoreError::FilletRadiusTooBig { .. }) {
         message.push_str("; the radius may not fit the faces next to the edge (thin wall, short edge, small adjacent fillet); try a smaller radius or fewer edges");
     }
+    if matches!(error, CoreError::OpFailed(qymcad_core::errors::Op::SplitBody)) {
+        message.push_str("; the split plane no longer divides the body into its pieces (it misses the body or touches only a face); move the offset back inside the body");
+    }
     message
 }

@@ -112,3 +112,37 @@ fn a_preexisting_split_error_cannot_exempt_an_identity_swap() {
     assert!(s.current_rebuild().errors.is_empty(), "safe split repair must remain possible");
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_split_edit_that_misses_the_body_says_why_once() {
+    let mut s = Session::new_part();
+    s.param_set("h", &10.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &10.0.into(), &10.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
+    let src = s
+        .extrude(&Extrude {
+            sketch: sk,
+            profiles: None,
+            height: 20.0.into(),
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        })
+        .unwrap()
+        .0;
+    s.split(&SplitOptions {
+        body: Some(src),
+        plane: PlaneRef::Base(BaseName::XY),
+        offset: "h".into(),
+        name: Some("divide".into()),
+        piece_names: None,
+    })
+    .unwrap();
+    let before = s.info();
+    let text = s.param_set("h", &45.0.into()).unwrap_err().to_string();
+    assert!(text.contains("no longer divides the body"), "{text}");
+    assert_eq!(text.matches("divide (").count(), 1, "the failing node is named once: {text}");
+    assert_eq!(s.info(), before);
+}
