@@ -188,6 +188,12 @@ impl Session {
         Ok(())
     }
 
+    /// Native projection reads source-part local geometry without applying component placement.
+    /// Share this owner comparison between creation policy and stored-projection diagnostics.
+    pub(crate) fn projection_cross_part(&self, sketch: Id, body: Id) -> bool {
+        self.p.body_owner(body) != self.p.sketch_owner(sketch)
+    }
+
     /// Project body geometry into a sketch and rebuild its consumers as one atomic edit.
     pub fn sketch_project(
         &mut self,
@@ -203,7 +209,7 @@ impl Session {
             return Err(Error::NotFound(format!("body {body}")));
         }
         self.check_projection_order(sketch, body)?;
-        if self.p.body_owner(body) != self.p.sketch_owner(sketch) {
+        if self.projection_cross_part(sketch, body) {
             return Err(Error::Invalid("project only bodies of the sketch's own part".into()));
         }
         if !self.shapes.contains_key(&body) {

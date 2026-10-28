@@ -54,7 +54,7 @@ Start a new document with one empty part (replaces the open document; save it fi
 
 ## doc_open
 
-Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry. Both doc.bodies and rebuild.bodies report the geometry after opening and rebuilding; stored-file metrics appear only in stored-versus-rebuilt mismatch warnings.
+Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry. Both doc.bodies and rebuild.bodies report the geometry after opening and rebuilding; stored-file metrics appear only in stored-versus-rebuilt mismatch warnings. Stored forward-timeline projections are refused. Stored cross-part projections are accepted with a rebuild warning per projection identifying sketch, source body and owner parts: projected in the source part's local coordinates; its placement is ignored, as in the QymCAD app. sketch_info marks their entities cross_part:true.
 
 ```json
 {
@@ -1709,7 +1709,7 @@ Delete one entity (with the points only it used and the constraints on them), on
 
 ## sketch_project
 
-Project edges or a hosted face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. The source body must belong to the sketch's own part and must be built above the sketch in the timeline, because native regeneration resolves projections in timeline order. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.
+Project edges or a hosted face outline into a sketch. Give exactly one of edges or face; face mode requires the sketch to be hosted on that face. The source body must belong to the sketch's own part and must be built above the sketch in the timeline, because native regeneration resolves projections in timeline order. Existing cross-part projections loaded by doc_open remain in the source part's local coordinates, ignoring placement as in QymCAD; doc_open warns and sketch_info marks them cross_part. Selections accept topology ids or descriptions (see select tool syntax). Returns projection id(s), source, body, projected entity ids/geometry and point ids. Projected entities are driven; constrain them with sketch_constrain. Duplicate sources are idempotent.
 
 ```json
 {
@@ -1821,7 +1821,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
 
 ## sketch_info
 
-A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction, driven, projection id/body/source/state and geometry when projected; detached provenance lasts for this session, already-detached files reopen as ordinary geometry); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.
+A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction, driven, projection id/body/source/state and geometry when projected; cross_part:true on associated projections from another part (source-local coordinates, placement ignored as in QymCAD); detached provenance lasts for this session, already-detached files reopen as ordinary geometry); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.
 
 ```json
 {
@@ -4648,7 +4648,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
 
 ## import
 
-Import exact STEP or IGES solids as QymCAD parts using the file's component tree, names and placements. Units are normalized by OCCT to mm; scale is an additional literal correction (default 1), and scales the entire import about the file origin. The original bytes are embedded, so the external file is not needed after import. `solids` selects zero-based source solid indexes; default imports all. Imported bodies remain individually addressable by id/name for topology, select, fillet, body_boolean, batch, sketch-on-face, push_face, export and doc_info. The reported body name resolves as an alias; if it conflicts with another object, use the body id. Returns source id, tree root feature, each body/name/index/scale/volume/bbox, warnings and rebuild diagnostics.
+Import exact STEP or IGES solids as QymCAD parts using the file's component tree, names and placements. Units are normalized by OCCT to mm; scale is an additional literal correction (default 1), and scales the entire import about the file origin. The original bytes are embedded, so the external file is not needed after import. `solids` selects zero-based source solid indexes; default imports all. Imported bodies remain individually addressable by id/name for topology, select, fillet, body_boolean, batch, sketch-on-face, push_face, export and doc_info. Explicit and file-derived object names must be nonnumeric and without leading/trailing whitespace (a blank name means the default); invalid names refuse the import atomically. The reported body name resolves as an alias; if it conflicts with another object, use the body id. Returns source id, tree root feature, each body/name/index/scale/volume/bbox, warnings and rebuild diagnostics.
 
 ```json
 {
@@ -4656,7 +4656,7 @@ Import exact STEP or IGES solids as QymCAD parts using the file's component tree
   "properties": {
     "name": {
       "default": null,
-      "description": "Optional import group/part name. Numeric-looking names are refused.",
+      "description": "Optional import group/part name; empty or blank means the file's name. Numeric-looking names and leading/trailing whitespace are refused; internal spaces are allowed.",
       "type": [
         "string",
         "null"

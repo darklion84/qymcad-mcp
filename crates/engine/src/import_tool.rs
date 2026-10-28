@@ -133,6 +133,7 @@ fn prune_nodes(nodes: &mut Vec<ImportNode>, allowed: &HashSet<u32>) -> bool {
 
 impl Session {
     pub fn import(&mut self, path: &Path, scale: f64, solids: Option<&[u32]>, name: Option<&str>) -> Result<ImportResult> {
+        let name = name.filter(|n| !n.trim().is_empty());
         let parsed = stage_and_parse(path)?;
         if !(scale.is_finite() && scale > 0.0) {
             return Err(Error::Invalid(format!("scale must be finite and positive, got {scale}")));
@@ -206,6 +207,11 @@ impl Session {
                 }
             }
             session.p.name_apart(&components, &crate::localization::name);
+            // File-derived part/tree names become resolver aliases too. Validate after native naming,
+            // inside the transaction so a bad source name restores the recipe and original shapes.
+            for component in session.p.components.iter().filter(|c| components.contains(&c.id)) {
+                Self::check_object_name(&crate::localization::name(&component.name))?;
+            }
             for index in &body_indexes {
                 if let Some((body, _)) = built_by_solid.get(index) {
                     session.p.set_import_scale(*body, scale);

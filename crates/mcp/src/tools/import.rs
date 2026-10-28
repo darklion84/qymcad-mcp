@@ -15,7 +15,7 @@ pub struct ImportArgs {
     /// Zero-based source solid indexes to import; default imports every solid. Names, tree structure and placements are preserved.
     #[serde(default)]
     pub solids: Option<Vec<u32>>,
-    /// Optional import group/part name. Numeric-looking names are refused.
+    /// Optional import group/part name; empty or blank means the file's name. Numeric-looking names and leading/trailing whitespace are refused; internal spaces are allowed.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -27,7 +27,7 @@ fn one() -> f64 {
 pub fn tools() -> Vec<Tool> {
     vec![tool(
         "import",
-        "Import exact STEP or IGES solids as QymCAD parts using the file's component tree, names and placements. Units are normalized by OCCT to mm; scale is an additional literal correction (default 1), and scales the entire import about the file origin. The original bytes are embedded, so the external file is not needed after import. `solids` selects zero-based source solid indexes; default imports all. Imported bodies remain individually addressable by id/name for topology, select, fillet, body_boolean, batch, sketch-on-face, push_face, export and doc_info. The reported body name resolves as an alias; if it conflicts with another object, use the body id. Returns source id, tree root feature, each body/name/index/scale/volume/bbox, warnings and rebuild diagnostics.",
+        "Import exact STEP or IGES solids as QymCAD parts using the file's component tree, names and placements. Units are normalized by OCCT to mm; scale is an additional literal correction (default 1), and scales the entire import about the file origin. The original bytes are embedded, so the external file is not needed after import. `solids` selects zero-based source solid indexes; default imports all. Imported bodies remain individually addressable by id/name for topology, select, fillet, body_boolean, batch, sketch-on-face, push_face, export and doc_info. Explicit and file-derived object names must be nonnumeric and without leading/trailing whitespace (a blank name means the default); invalid names refuse the import atomically. The reported body name resolves as an alias; if it conflicts with another object, use the body id. Returns source id, tree root feature, each body/name/index/scale/volume/bbox, warnings and rebuild diagnostics.",
         |st, a: ImportArgs| {
             let path = checked_path(&a.path, &["step", "stp", "iges", "igs"])?;
             let s = st.doc()?;

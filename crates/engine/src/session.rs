@@ -614,6 +614,7 @@ impl Session {
         let mut warnings: Vec<NodeIssue> =
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
+        warnings.extend(self.cross_part_projection_warnings());
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
         Rebuild { errors, warnings, bodies, ..Default::default() }
@@ -883,17 +884,48 @@ impl Session {
         let errors = self.p.regen_errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         let mut warnings: Vec<_> = self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
+        warnings.extend(self.cross_part_projection_warnings());
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
         Rebuild { errors, warnings, bodies, ..Default::default() }
     }
 
-    /// Keep object aliases distinct from the numeric syntax reserved by `resolve`.
+    /// Keep object aliases addressable by `resolve`, which trims requests and reserves numeric ids.
     pub(crate) fn check_object_name(name: &str) -> Result<()> {
         if name.trim().parse::<Id>().is_ok() {
             return Err(Error::Invalid(format!("object name `{name}` is interpreted as an id; choose a nonnumeric name")));
         }
+        // A blank name is the client leaving the field empty: the default name is used, as before.
+        if !name.trim().is_empty() && name != name.trim() {
+            return Err(Error::Invalid(format!("object name `{name}` must not have leading or trailing whitespace")));
+        }
         Ok(())
+    }
+
+    /// Derived from current records so rebuilds retain the warning and deletion cannot leave stale diagnostics.
+    pub(crate) fn cross_part_projection_warnings(&self) -> Vec<NodeIssue> {
+        let part = |owner: Option<Id>| match owner {
+            Some(id) => {
+                let name = self.p.components.iter().find(|c| c.id == id).map(|c| crate::localization::name(&c.name)).unwrap_or_default();
+                format!("{name} ({id})")
+            }
+            None => "unowned part (none)".into(),
+        };
+        let mut warnings = Vec::new();
+        for sketch in &self.p.sketches {
+            for p in sketch.projections.iter().filter(|p| self.projection_cross_part(sketch.id, p.body)) {
+                let name = crate::localization::name(&sketch.name);
+                warnings.push(NodeIssue {
+                    node: sketch.id,
+                    name: name.clone(),
+                    message: format!(
+                        "projection {}: sketch {name} ({}) in part {}, body {} ({}) in part {} is projected in the source part's local coordinates; its placement is ignored, as in the QymCAD app",
+                        p.id, sketch.id, part(self.p.sketch_owner(sketch.id)), self.body_name(p.body), p.body, part(self.p.body_owner(p.body)),
+                    ),
+                });
+            }
+        }
+        warnings
     }
 
     pub(crate) fn set_node_name(&mut self, id: Id, name: Option<&str>) -> Result<()> {

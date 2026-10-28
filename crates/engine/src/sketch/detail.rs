@@ -52,6 +52,9 @@ pub struct EntityInfo {
     pub projection_state: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projection_body: Option<Id>,
+    /// Associated projection reads another part's local coordinates and ignores its placement.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cross_part: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projection_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,6 +145,7 @@ impl Session {
                 projection: source.map(|s| s.0),
                 projection_state: state,
                 projection_body: source.map(|s| s.1),
+                cross_part: projection.is_some_and(|p| self.projection_cross_part(sketch, p.body)),
                 projection_source: source.map(|s| source_label(s.2)),
                 geometry,
                 nodes: match &e.kind { EntityKind::Spline { nodes, .. } => Some(nodes.clone()), _ => None },

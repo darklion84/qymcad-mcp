@@ -43,6 +43,7 @@ impl Session {
             let w = w.issue();
             format!("{} ({}): {}", w.name, w.node, w.message)
         }));
+        warnings.extend(self.cross_part_projection_warnings().iter().map(|w| format!("{} ({}): {}", w.name, w.node, w.message)));
         warnings.extend(
             bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| format!("{} ({}): {message}", b.name, b.id))),
         );

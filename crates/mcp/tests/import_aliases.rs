@@ -1,5 +1,6 @@
 use qymcad_mcp::tools::Registry;
 use serde_json::{json, Value};
+use std::{collections::BTreeMap, io::Read, path::Path};
 
 fn call(registry: &mut Registry, tool: &str, args: Value) -> Value {
     let content = registry.call(tool, args).unwrap().unwrap_or_else(|error| panic!("{tool}: {error}"));
@@ -16,6 +17,44 @@ fn imported() -> (Registry, Value) {
     let imported = call(&mut registry, "import", json!({"path":fixture(),"name":"Imported"}));
     assert_eq!(imported["bodies"][0]["name"], "Imported");
     (registry, imported["bodies"][0].clone())
+}
+
+fn saved_state(registry: &mut Registry, path: &Path) -> BTreeMap<String, Vec<u8>> {
+    call(registry, "doc_save", json!({"path":path}));
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+    let mut entries = BTreeMap::new();
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).unwrap();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        entries.insert(entry.name().to_owned(), bytes);
+    }
+    assert!(entries.contains_key("document.ron"));
+    assert!(entries.iter().any(|(name, bytes)| name.starts_with("brep/") && !bytes.is_empty()));
+    entries
+}
+
+#[test]
+fn invalid_import_and_sketch_names_preserve_saved_state_and_undo_history() {
+    let (mut registry, _) = imported();
+    let path = std::env::temp_dir().join(format!("qymcad-invalid-object-names-{}.qcad", std::process::id()));
+    let before = saved_state(&mut registry, &path);
+    let doc = call(&mut registry, "doc_info", json!({}));
+    for name in [" Imported ", "\u{2003}Imported"] {
+        for (tool, args) in [("import", json!({"path":fixture(),"name":name})), ("sketch_create", json!({"plane":"XY","name":name}))] {
+            let error = registry.call(tool, args).unwrap().expect_err("invalid object names must be refused");
+            assert!(
+                error.contains("name") && (error.contains("whitespace") || error.contains("empty") || error.contains("blank")),
+                "{error}"
+            );
+            assert_eq!(call(&mut registry, "doc_info", json!({})), doc, "{tool} with {name:?} changed document state");
+            assert_eq!(saved_state(&mut registry, &path), before, "{tool} with {name:?} changed recipe, source or B-reps");
+        }
+    }
+    let undone = call(&mut registry, "undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "import", "refusals added undo entries");
+    assert_eq!(call(&mut registry, "doc_info", json!({}))["bodies"], json!([]));
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -81,4 +120,14 @@ fn imported_alias_conflicting_with_timeline_name_requires_an_id() {
     let error = registry.call("topology", json!({"body":imported["name"]})).unwrap().unwrap_err();
     assert!(error.contains("several objects") && error.contains("use the id"), "{error}");
     assert_eq!(call(&mut registry, "topology", json!({"body":imported["body"]}))["faces"].as_array().unwrap().len(), 6);
+}
+
+#[test]
+fn a_blank_import_name_uses_the_default_name_which_resolves() {
+    let mut registry = Registry::new();
+    call(&mut registry, "doc_new", json!({}));
+    let imported = call(&mut registry, "import", json!({"path":fixture(),"name":"  "}));
+    let name = imported["bodies"][0]["name"].as_str().unwrap().to_string();
+    assert!(!name.trim().is_empty() && name == name.trim(), "blank name reported as {name:?}");
+    assert_eq!(call(&mut registry, "topology", json!({"body":name}))["faces"].as_array().unwrap().len(), 6);
 }

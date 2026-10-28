@@ -44,7 +44,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "doc_open",
-            "Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry. Both doc.bodies and rebuild.bodies report the geometry after opening and rebuilding; stored-file metrics appear only in stored-versus-rebuilt mismatch warnings.",
+            "Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry. Both doc.bodies and rebuild.bodies report the geometry after opening and rebuilding; stored-file metrics appear only in stored-versus-rebuilt mismatch warnings. Stored forward-timeline projections are refused. Stored cross-part projections are accepted with a rebuild warning per projection identifying sketch, source body and owner parts: projected in the source part's local coordinates; its placement is ignored, as in the QymCAD app. sketch_info marks their entities cross_part:true.",
             |st, a: OpenArgs| {
                 let path = checked_path(&a.path, &["qcad"])?;
                 let (s, r) = Session::open(&path).map_err(err)?;

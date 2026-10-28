@@ -110,6 +110,7 @@ impl Session {
                         .collect()
                 };
                 for (id, name) in outputs.iter().zip(names) {
+                    Self::check_object_name(&name)?;
                     if let Some(index) = s.p.mesh_index(*id) {
                         s.p.set_mesh_name(index, name);
                     }
