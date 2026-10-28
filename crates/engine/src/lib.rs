@@ -3,6 +3,7 @@
 //! This crate is the ONLY place that touches the QymCAD API. When QymCAD is upgraded, the changes land here
 //! and nowhere else (see docs/ARCHITECTURE.md and docs/UPGRADING.md).
 
+mod dependencies;
 mod dimensions;
 mod error;
 mod export;

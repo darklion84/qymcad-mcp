@@ -101,12 +101,7 @@ impl Session {
         }
         // Propagation has dirtied every affected node. Preserve their original handles and rebuild on
         // independent B-rep copies, like sketch_edit: rollback must retain the original representation (F-034).
-        let mut nodes: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
-        for sketch in &self.p.sketches {
-            if nodes.contains(&sketch.id) {
-                nodes.extend(self.p.dependents(sketch.id));
-            }
-        }
+        let nodes = crate::dependencies::rebuild_nodes(&self.p);
         // A node that already failed (e.g. a fillet refused on open, F-074) does not block an unrelated edit;
         // only nodes this edit breaks roll it back, as in sketch_edit.
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();

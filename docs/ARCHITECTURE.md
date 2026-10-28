@@ -35,6 +35,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
 | `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
 | `history.rs` | guarded native deletion with extended dependency closure; Project/original-shape snapshots, 16-entry modelling undo (ADR 0008) |
+| `dependencies.rs` | native dependency reachability extended through sketch projections and the source's consuming lineage above the sketch; shared rebuild snapshots/retries, deletion and F-024 preflight |
 | `info.rs` | `DocInfo` snapshot for the agent |
 | `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-031) |
 | `error.rs` | `Error` with agent-oriented messages |
@@ -54,6 +55,11 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 `sketch_edit` and `param_set` share `with_rebuild_copies`: retain planned original live handles, regenerate
 on independent B-rep copies, and restore Project/handles/diagnostics on failure. Callers keep their own retry
 plan and error policy (F-034).
+
+Parameter, dimension and sketch rebuild plans include consumers reached through `Sketch.projections[].body`.
+Native regeneration follows those projections even when its plan omits them; the extended closure keeps
+their bodies inside snapshots, scoped retries and F-024 safety checks (F-107). Deleting a projection source
+is refused even with `cascade=true`; the error identifies the projecting sketches to delete first (ADR 0025).
 
 - `atomic(edit)` — features: rebuild pending dirty nodes first, refusing the new edit if that baseline fails;
   snapshot the clean `Project`, apply, rebuild (retrying only new nodes); if a node created by the edit has an

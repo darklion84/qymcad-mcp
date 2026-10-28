@@ -399,7 +399,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
   `stored_edge_query_is_safe_to_inspect_and_edit_after_open`; before the fix, `topology` alone removed 105.5 mm³).
   When live edges cannot be restored, a clean document can still open, but every rebuild path refuses planned
   stored edge queries (`!edges.query.is_pick_list()`, source `qymcad-core/src/refs.rs:202-208`) that depend on that
-  body. Transitive ancestry uses `Project::dependents` (`model/timeline.rs:20-51`). This also refuses a query when
+  body. Transitive ancestry extends `Project::dependents` with sketch projections (F-107). This also refuses a query when
   its unnamed ancestor would rebuild earlier in the same pass; obtaining names by regeneration does not bypass
   the safety check. An unrelated successful edit remains allowed. A full retry can introduce additional query
   nodes, so it is checked before dirtying them. If that retry could be unsafe, the first pass runs on independent
@@ -2148,3 +2148,34 @@ asserts those exact fractional halves before checking away-from-zero output.
   These numbers exclude modelling fit and are not measured cavity limits. `review_round3_diameters` checks
   all five accepted families on both sides against the formulas; `review_round3_codex` verifies internal
   Tr16x4 reports (16.5,14,12) and measures the actual zero-fit root diameter as 16.5000024 mm.
+
+## F-107 Sketch projections rebuild consumers outside the native dependency plan
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **What:** `Project::dependents` omits `Sketch.projections[].body`
+  (`qymcad-core/src/model/timeline/delete.rs:13–42`). Native regeneration nevertheless follows projections
+  unconditionally in timeline order and dirties consumers when projected geometry moves
+  (`model/regen/run.rs:580–594`); `regen_plan` does not account for that edge (`:122–160`). Thus a successful
+  parameter edit can move the cut correctly while a failed edit restores its Project but leaves changed B-reps.
+  Projections see the source's consuming lineage **above** the sketch, rather than just the stored body id
+  (`model/projection.rs:245–263`, private `body_seen_from`).
+- **Disappearance is conditional:** a missing edge on a live source is `Gone`, releasing the association while
+  retaining geometry and constraints. No live source edge geometry is `Unknown`: the association stays,
+  including when the source feature was deleted and its B-rep removed. Source comments suggesting every
+  deleted body detaches are broader than the implementation (`projection.rs:189–213,299–323`).
+  `golden_projections::native_missing_edge_detaches_but_absent_body_retains_projection` observes both cases.
+- **Engine policy:** `dependencies` extends native reachability through projections to a fixed point, including
+  stored sources, effective source lineage, all native outputs and consumers. Parameter, sketch and dimension
+  snapshot/retry plans and both halves of F-024 preflight use it. Deletion's structural closure uses it too;
+  deleting a projection source refuses before changing anything, even with `cascade=true`, naming projecting
+  sketches to delete explicitly first (ADR 0025).
+- **Evidence:** `crates/engine/tests/golden_projections.rs` builds a public `Project::add_sketch_projection`
+  of A's top Y-edge onto a fixed datum sketch. A constrained radius-1, centre-span-10 slot cuts 2 mm into
+  independent 80×30×10 stock B: V = 24000 − 2(20 + π). Changing A's centred width 40→60 moves projected
+  points, slot centres and pocket floor x=17→27. Save/open plus `common::gui_edit_param_faces` reproduces
+  native app-path pocket movement and volume. A cached downstream extrusion with zero height forces failure
+  after that cut rebuilds. Parameter, sketch and dimension regressions compared exact serialized Project and
+  every live B-rep; each failed on B-rep bytes before the fix. Another regression edits a consuming push-face
+  operation above the projection while its stored source remains A. F-024 regression refuses a stored fillet
+  query over the cut when A has unnamed live edges. Source deletion tests both cascade modes and exact state.
+  Commands, failing-before output and independent restored mutations: `tasks/cover-1-evidence.md`.

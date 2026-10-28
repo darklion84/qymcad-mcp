@@ -594,16 +594,7 @@ impl Session {
     /// this guard before exposing the feature; checking only Fillet/Chamfer would leave them unrestorable.
     fn edge_query_rebuild_errors(&self, p: &Project) -> Vec<NodeIssue> {
         use qymcad_core::feature::FeatureKind;
-        let mut planned: HashSet<Id> = p.regen_plan().nodes.into_iter().collect();
-        // regen_plan omits dirty sketch outputs, while regenerate inserts the sketch into its dirty set
-        // (regen.rs:1159). Include consumers that will become dirty during that pass.
-        for node in &p.timeline {
-            if planned.contains(&node.id) {
-                if let FeatureKind::Sketch { sketch } = node.kind {
-                    planned.extend(p.dependents(sketch));
-                }
-            }
-        }
+        let planned = crate::dependencies::rebuild_nodes(p);
         let queries: Vec<Id> = p
             .timeline
             .iter()
@@ -626,7 +617,7 @@ impl Session {
             if edges.is_empty() || edges.iter().any(|e| e.id != 0 && e.poly.len() >= 2) {
                 continue;
             }
-            let dependents = p.dependents(body);
+            let dependents = crate::dependencies::closure(p, HashSet::from([body]));
             for &node in queries.iter().filter(|node| dependents.contains(node)) {
                 errors.push(self.issue(
                     node,

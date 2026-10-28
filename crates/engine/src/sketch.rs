@@ -364,12 +364,10 @@ impl Session {
     /// rebuilt; if a feature that built before fails now, the edit is rolled back and the errors returned.
     pub fn sketch_edit<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<(T, Option<Rebuild>)> {
         let before = self.p.clone();
-        // regen_plan includes transitive sketch dependents and any already dirty nodes.
+        // Include pending dirty nodes and consumers reached through sketch projections.
         let mut planned = before.clone();
         planned.mark_sketch_dirty(sketch);
-        let mut nodes: HashSet<Id> = planned.regen_plan().nodes.into_iter().collect();
-        // regen_plan omits dirty sketch outputs; regenerate still rebuilds their consumers (F-023).
-        nodes.extend(before.dependents(sketch));
+        let nodes = crate::dependencies::closure(&planned, planned.regen_plan().nodes.into_iter().chain([sketch]).collect());
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         let copies = if before.dependents_of(sketch).is_empty() { HashSet::new() } else { nodes.clone() };
         self.with_rebuild_copies(before, &copies, "sketch edit", |s| {

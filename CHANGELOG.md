@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- Include sketch projection sources in parameter, dimension and sketch rebuild snapshots/retries and stored
+  edge-query safety checks. Failed downstream rebuilds restore the exact Project and every original B-rep.
+- Refuse deleting projection sources, including cascades, naming the projecting sketches to delete first;
+  native source disappearance does not reliably detach the association (F-107, ADR 0025).
+
 ## 0.1.1-dev.20261026.3 — threads, splits and text for printing (ADR 0024)
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.

@@ -269,12 +269,7 @@ impl Session {
             }
             Ok(())
         })?;
-        let mut nodes: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
-        for sketch in &self.p.sketches {
-            if nodes.contains(&sketch.id) {
-                nodes.extend(self.p.dependents(sketch.id));
-            }
-        }
+        let nodes = crate::dependencies::rebuild_nodes(&self.p);
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         self.with_rebuild_copies(before, &nodes, "dimension edit", |s| {
             let rebuild = s.rebuild_retrying(Some(&nodes));

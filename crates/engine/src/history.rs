@@ -159,9 +159,7 @@ impl Session {
         let mut gone = HashSet::from([root]);
         loop {
             let before = gone.len();
-            for id in gone.clone() {
-                gone.extend(self.p.dependents(id));
-            }
+            gone = crate::dependencies::closure(&self.p, gone);
             for sketch in &self.p.sketches {
                 if matches!(sketch.plane, SketchPlane::Datum(id) | SketchPlane::Face(id, _) if gone.contains(&id)) {
                     gone.insert(sketch.id);
@@ -208,11 +206,32 @@ impl Session {
 
     /// Delete a timeline node; cascade explicitly deletes its transitive dependents first.
     /// The native operation cleanup restores the consumed source body as the current result.
+    /// Projection sources refuse in either mode; explicitly delete the projecting sketches first.
     pub fn feature_delete(&mut self, feature: Id, cascade: bool) -> Result<Rebuild> {
         if !self.p.timeline.iter().any(|n| n.id == feature) {
             return Err(Error::NotFound(format!("no feature {feature}")));
         }
         let gone = self.deletion_closure(feature);
+        // Native deletion cannot reliably distinguish a detached source from an unbuilt one. Refuse
+        // before touching state, including cascades: callers must explicitly delete projecting sketches.
+        let projections: Vec<_> = self
+            .p
+            .sketches
+            .iter()
+            .filter(|sketch| {
+                sketch.projections.iter().any(|pr| {
+                    gone.contains(&pr.body) || gone.contains(&crate::dependencies::projection_source(&self.p, sketch.id, pr.body))
+                })
+            })
+            .map(|sketch| format!("{} ({})", self.node_name(sketch.id), sketch.id))
+            .collect();
+        if !projections.is_empty() {
+            return Err(Error::Invalid(format!(
+                "feature {} is a source of sketch projections in {}; delete those sketches first (also with cascade=true)",
+                self.node_name(feature),
+                projections.join(", ")
+            )));
+        }
         let dependents: Vec<_> = self
             .p
             .timeline
