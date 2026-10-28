@@ -204,6 +204,7 @@ fn limits_allowlist_and_outer_schema() {
         "param_delete",
         "sketch_create",
         "sketch_add",
+        "sketch_project",
         "sketch_constrain",
         "sketch_remove",
         "sketch_edit",

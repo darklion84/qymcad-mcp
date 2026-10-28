@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `body_boolean` applies native parametric cut, union or intersect between two current bodies. Both inputs are consumed; multi-body cut/intersect outputs have resolvable names and geometry reports. Count or piece-identity-changing edits are refused atomically (F-108, ADR 0026).
 - `import` reads STEP/IGES as native source-backed QymCAD part trees, retaining file names/placements, optional literal scale correction and embedded originals for save/open. Imported bodies remain independently selectable and modifiable (ADR 0028, F-110).
+- `sketch_project` projects persistent body edge selections or a hosted face outline into sketches, returns constrainable geometry ids and reports projection attachment state in `sketch_info` (F-109, ADR 0027).
 
 ### Fixed
 - Explicit push-face, fillet and face-sketch/extrude edits on imported parts create nodes in the input's component, avoiding cross-component rebuild failures.

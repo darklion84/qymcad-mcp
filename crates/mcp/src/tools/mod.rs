@@ -56,7 +56,11 @@ where
         f(st, a).map(|v| {
             // Creation responses return their node id under body, plane or sketch. Capture it before
             // serialization so undo labels follow the returned feature rather than auxiliary nodes.
-            st.created_node = ["body", "plane", "sketch"].iter().find_map(|key| v[*key].as_u64());
+            st.created_node = if name == "sketch_project" {
+                None // Projection returns its source body and target sketch; neither node was created.
+            } else {
+                ["body", "plane", "sketch"].iter().find_map(|key| v[*key].as_u64())
+            };
             vec![json!({ "type": "text", "text": v.to_string() })]
         })
     })
@@ -94,6 +98,7 @@ fn modelling_tool(name: &str) -> bool {
             | "param_delete"
             | "sketch_create"
             | "sketch_add"
+            | "sketch_project"
             | "sketch_constrain"
             | "sketch_remove"
             | "sketch_edit"

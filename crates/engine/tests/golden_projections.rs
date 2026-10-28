@@ -69,22 +69,18 @@ fn fixture(label: &str, broken: bool) -> Fixture {
         .unwrap();
     let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &10.0.into(), None).unwrap();
     let sketch = s.sketch_create(&PlaneRef::Plane(plane), Some("projected pocket")).unwrap();
-    let mut p = s.project().clone();
-    let si = p.sketch_index(sketch).unwrap();
-    let kernel = OcctKernel { shapes: RefCell::new(restore_shapes(bytes(&s))), ..Default::default() };
-    let edge = p.regen_edges[&source]
+    let edge = s.project().regen_edges[&source]
         .iter()
         .find(|e| {
             (e.a[0] - 20.0).abs() < 1e-6 && (e.b[0] - 20.0).abs() < 1e-6 && (e.a[2] - 10.0).abs() < 1e-6 && (e.b[2] - 10.0).abs() < 1e-6
         })
         .expect("top edge along Y")
         .id;
-    let projection = {
-        let _gate = qymcad_kernel::kernel_gate();
-        p.add_sketch_projection(si, source, ProjSource::Edge(edge), &kernel)
-    };
-    assert_ne!(projection, 0);
-    assert_eq!(p.sketches[si].projections[0].entities.len(), 1);
+    let projection = s.sketch_project(sketch, source, &[ProjSource::Edge(edge)]).unwrap().0;
+    assert_eq!(projection.entities.len(), 1);
+    let mut p = s.project().clone();
+    let si = p.sketch_index(sketch).unwrap();
+    let kernel = OcctKernel { shapes: RefCell::new(restore_shapes(bytes(&s))), ..Default::default() };
     let corner = *p.sketches[si].projections[0]
         .points
         .iter()
@@ -156,6 +152,89 @@ fn assert_pocket(faces: &[qymcad_core::geom::MeshFace], x: f64) {
 }
 
 #[test]
+fn engine_projection_api_projects_face_outline_and_is_idempotent() {
+    use qymcad_core::model::ProjSource;
+    let mut s = Session::new_part();
+    let profile = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+    let (body, _) = s
+        .extrude(&Extrude {
+            sketch: profile,
+            profiles: None,
+            height: 10.0.into(),
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        })
+        .unwrap();
+    let top = s.topology(Some(body), false).unwrap().faces.iter().find(|f| f.normal.is_some_and(|n| n[2] > 0.99)).unwrap().id;
+    let face_sketch = s.sketch_create(&PlaneRef::Face { body, face: top }, None).unwrap();
+    let result = s.sketch_project(face_sketch, body, &[ProjSource::Face(top)]).unwrap().0;
+    assert_eq!(result.projections.len(), 1);
+    assert_eq!(result.entities.len(), 4);
+    let detail = s.sketch_detail(face_sketch).unwrap();
+    let mut lengths: Vec<f64> = detail
+        .entities
+        .iter()
+        .filter(|e| result.entities.contains(&e.id))
+        .map(|e| {
+            let [a, b] = e.points.as_slice() else { panic!("outline edge should be a line") };
+            let a = detail.points.iter().find(|p| p.id == *a).unwrap();
+            let b = detail.points.iter().find(|p| p.id == *b).unwrap();
+            (a.x - b.x).hypot(a.y - b.y)
+        })
+        .collect();
+    lengths.sort_by(f64::total_cmp);
+    assert_eq!(lengths, vec![30.0, 30.0, 40.0, 40.0]);
+    let before_repeat = serde_json::to_vec(s.project()).unwrap();
+    let repeated = s.sketch_project(face_sketch, body, &[ProjSource::Face(top)]).unwrap().0;
+    assert_eq!(serde_json::to_vec(s.project()).unwrap(), before_repeat, "duplicate does not change recipe");
+    let mut previous_entities = result.entities.clone();
+    let mut repeated_entities = repeated.entities.clone();
+    previous_entities.sort_unstable();
+    repeated_entities.sort_unstable();
+    assert_eq!(repeated.projections, result.projections);
+    assert_eq!(repeated_entities, previous_entities);
+    assert!(detail.entities.iter().filter(|e| result.entities.contains(&e.id)).all(|e| e.driven && e.projection_state == Some("attached")));
+    assert!(detail.entities.iter().filter(|e| result.entities.contains(&e.id)).all(|e| e.projection.is_some()));
+}
+
+#[test]
+fn engine_projection_api_projects_a_circular_edge_at_the_hole_radius() {
+    use qymcad_core::model::ProjSource;
+    let mut s = Session::new_part();
+    let profile = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+    s.sketch_circle(profile, &0.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+    let (body, _) = s
+        .extrude(&Extrude {
+            sketch: profile,
+            profiles: None,
+            height: 10.0.into(),
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        })
+        .unwrap();
+    let topology = s.topology(Some(body), false).unwrap();
+    let hole = topology
+        .edges
+        .iter()
+        .find(|edge| edge.kind == EdgeKind::Circle && edge.radius.is_some_and(|radius| (radius - 5.0).abs() < 1e-6))
+        .unwrap();
+    let plane = s.plane_offset(&PlaneRef::Base(BaseName::XY), &10.0.into(), None).unwrap().0;
+    let sketch = s.sketch_create(&PlaneRef::Plane(plane), None).unwrap();
+    let projection = s.sketch_project(sketch, body, &[ProjSource::Edge(hole.id)]).unwrap().0;
+    let entity = s.sketch_detail(sketch).unwrap().entities.into_iter().find(|e| projection.entities.contains(&e.id)).unwrap();
+    assert_eq!(entity.kind, "circle");
+    assert_close(entity.r.unwrap(), 5.0, 1e-6, "projected hole radius");
+}
+
+#[test]
 fn parameter_moves_projection_and_independent_cut_in_server_and_app() {
     let mut f = fixture("movement", false);
     assert!(!f.s.project().dependents(f.source).contains(&f.cut), "characterize native missing projection dependency");
@@ -171,7 +250,7 @@ fn parameter_moves_projection_and_independent_cut_in_server_and_app() {
         let b = after.points.iter().find(|q| q.id == *id).unwrap();
         assert_close(b.x - a.x, 10.0, 1e-6, "projected point moves");
     }
-    for id in f.centers {
+    for &id in &f.centers {
         let a = before.points.iter().find(|q| q.id == id).unwrap();
         let b = after.points.iter().find(|q| q.id == id).unwrap();
         assert_close(b.x - a.x, 10.0, 1e-6, "constrained slot follows");
@@ -183,7 +262,17 @@ fn parameter_moves_projection_and_independent_cut_in_server_and_app() {
     let mut p = loaded.project;
     p.delete_feature_op(f.fail);
     save(&p, &restore_shapes(loaded.breps), &path);
-    let (v, _, faces) = gui_edit_param_faces(&path, "w", "60");
+    let (v, _, faces, app) = gui_edit_param_model(&path, "w", "60");
+    let app_sketch = &app.sketches[app.sketch_index(f.sketch).unwrap()];
+    assert_eq!(app_sketch.projections[0].entities, before.projections[0].entities);
+    for id in &before.projections[0].points {
+        let point = app_sketch.points.iter().find(|p| p.id == *id).unwrap();
+        assert_close(point.x, 30.0, 1e-6, "app projected edge at w/2");
+    }
+    for id in &f.centers {
+        let point = app_sketch.points.iter().find(|p| p.id == *id).unwrap();
+        assert_close(point.x, 27.0, 1e-6, "app slot centre at w/2-3");
+    }
     assert_close(v, 24000.0 - 2.0 * (20.0 + std::f64::consts::PI), 1e-6, "app pocket volume");
     assert_pocket(&faces, 27.0);
 }
@@ -269,6 +358,13 @@ fn native_missing_edge_detaches_but_absent_body_retains_projection() {
         p.resolve_sketch_projections(si, &kernel);
     }
     assert_eq!(p.sketches[si].projections.len(), 1, "absent B-rep is Unknown, even after source deletion");
+    let path = scratch("projection-detached-info.qcad");
+    save(&p, &kernel.shapes.borrow(), &path);
+    let (session, _) = Session::open(&path).unwrap();
+    let unknown = session.sketch_detail(f.sketch).unwrap();
+    let projected: Vec<_> = unknown.entities.iter().filter(|e| e.projection.is_some()).collect();
+    assert_eq!(projected.len(), 1);
+    assert!(projected.iter().all(|e| e.driven && e.projection_state == Some("unknown")));
     kernel.shapes.borrow_mut().insert(f.source, source_shape);
     p.sketches[si].projections[0].src = ProjSource::Edge(u32::MAX);
     {
@@ -278,6 +374,28 @@ fn native_missing_edge_detaches_but_absent_body_retains_projection() {
     assert!(p.sketches[si].projections.is_empty(), "missing edge on a live source detaches");
     assert_eq!(serde_json::to_vec(&p.sketches[si].entities).unwrap(), geometry);
     assert_eq!(serde_json::to_vec(&p.sketches[si].constraints).unwrap(), constraints);
+    let detached_path = scratch("projection-detached-info.qcad");
+    save(&p, &kernel.shapes.borrow(), &detached_path);
+    let (detached_session, _) = Session::open(&detached_path).unwrap();
+    let detail = detached_session.sketch_detail(f.sketch).unwrap();
+    // Native release deliberately serializes ordinary geometry only. Session provenance cannot
+    // be recovered after opening a file already detached outside this Session.
+    assert_eq!(detail.entities.len(), p.sketches[si].entities.len());
+    assert!(detail.entities.iter().all(|e| !e.driven && e.projection.is_none()));
+}
+
+#[test]
+fn session_projection_api_refuses_invalid_selection_without_changes() {
+    let mut f = fixture("projection-api-invalid", false);
+    let before = serde_json::to_vec(f.s.project()).unwrap();
+    let missing = f.s.sketch_project(f.sketch, f.source, &[ProjSource::Edge(u32::MAX)]).unwrap_err();
+    assert!(missing.to_string().contains("edge"), "{missing}");
+    assert_eq!(serde_json::to_vec(f.s.project()).unwrap(), before);
+    let (plane, _) = f.s.plane_offset(&PlaneRef::Base(BaseName::XY), &10.0.into(), None).unwrap();
+    let wrong_plane = f.s.sketch_create(&PlaneRef::Plane(plane), None).unwrap();
+    let top = f.s.topology(Some(f.source), false).unwrap().faces.iter().find(|f| f.normal.is_some_and(|n| n[2] > 0.99)).unwrap().id;
+    let wrong_host = f.s.sketch_project(wrong_plane, f.source, &[ProjSource::Face(top)]).unwrap_err();
+    assert!(wrong_host.to_string().contains("hosted"), "{wrong_host}");
 }
 
 #[test]
@@ -342,4 +460,18 @@ fn edit_of_consuming_source_above_projection_rolls_back_exactly() {
     assert!(error.to_string().contains(&f.fail.to_string()), "{error}");
     assert!(serde_json::to_vec(f.s.project()).unwrap() == before, "lineage refusal changed Project");
     assert!(bytes(&f.s) == shapes, "lineage refusal changed B-reps");
+}
+
+#[test]
+fn projection_rebuild_failure_restores_recipe_shapes_and_inspection() {
+    let mut f = fixture("project-rebuild-failure", true);
+    let source = f.s.project().sketches[f.s.project().sketch_index(f.sketch).unwrap()].projections[0].src;
+    let project = serde_json::to_vec(f.s.project()).unwrap();
+    let shapes = bytes(&f.s);
+    let detail = f.s.sketch_detail(f.sketch).unwrap();
+    let error = f.s.sketch_project(f.sketch, f.source, &[source]).unwrap_err();
+    assert!(error.to_string().contains(&f.fail.to_string()), "{error}");
+    assert_eq!(serde_json::to_vec(f.s.project()).unwrap(), project);
+    assert!(bytes(&f.s) == shapes, "projection refusal changed B-reps");
+    assert_eq!(f.s.sketch_detail(f.sketch).unwrap(), detail);
 }

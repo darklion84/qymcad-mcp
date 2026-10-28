@@ -34,6 +34,16 @@ pub fn gui_edit_param_body(path: &std::path::Path, name: &str, expr: &str) -> (f
 
 /// Native GUI rebuild geometry, without any engine propagation or repair.
 pub fn gui_edit_param_faces(path: &std::path::Path, name: &str, expr: &str) -> (f64, [f64; 6], Vec<qymcad_core::geom::MeshFace>) {
+    let (volume, bbox, faces, _) = gui_edit_param_model(path, name, expr);
+    (volume, bbox, faces)
+}
+
+/// Same native app path, retaining its Project to inspect projected points and dependent geometry.
+pub fn gui_edit_param_model(
+    path: &std::path::Path,
+    name: &str,
+    expr: &str,
+) -> (f64, [f64; 6], Vec<qymcad_core::geom::MeshFace>, qymcad_core::model::Project) {
     let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     project.ensure_document();
     // finish_project_load: faces stored in the bodies go back into `regen_faces` (edges are not restored).
@@ -65,7 +75,7 @@ pub fn gui_edit_param_faces(path: &std::path::Path, name: &str, expr: &str) -> (
     assert!(report.errors.is_empty(), "GUI-path rebuild errors: {:?}", report.errors);
     let consumed = project.consumed_bodies();
     let last = project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).expect("a body");
-    (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]), project.regen_faces[&last].clone())
+    (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]), project.regen_faces[&last].clone(), project)
 }
 
 /// Check an open rectangular top pocket, including placement that volume/bbox alone cannot establish.

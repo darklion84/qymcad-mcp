@@ -42,7 +42,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | S4 | Sketch constraints | covered | All 12 GUI constraint actions represented | `sketch_constrain` | `ConstraintKind::Coincident,ConstraintKind::Horizontal,ConstraintKind::Vertical,ConstraintKind::Parallel,ConstraintKind::Perpendicular,ConstraintKind::Equal,ConstraintKind::Fix,ConstraintKind::Collinear,ConstraintKind::Concentric,ConstraintKind::Tangent,ConstraintKind::Symmetric,ConstraintKind::Midpoint` |
 | S5 | Sketch edits | covered | Trim, extend, break, corner, offset, mirror | `sketch_edit` | — |
 | S6 | Sketch point | not covered | Point node tool | none | `SketchShape::Point` |
-| S7 | Project body geometry into sketch | in progress (cover-high) | Associative projection | planned `sketch_project` | — |
+| S7 | Project body geometry into sketch | covered | — | `sketch_project` | — |
 | S8 | Move / copy / rotate sketch curves | not covered | — | none | — |
 | S9 | Sketch arrays | not covered | Linked linear and circular copies | none | — |
 | S10 | Delete sketch geometry | covered | — | `sketch_remove` | — |

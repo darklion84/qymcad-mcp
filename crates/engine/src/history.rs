@@ -17,6 +17,7 @@ pub struct Snapshot {
     project: Project,
     shapes: HashMap<Id, Shape>,
     warnings: Vec<AdvisoryWarning>,
+    detached_projections: HashMap<(Id, Id), crate::session::DetachedProjection>,
     call: Option<ToolCall>,
     created_node: Option<Id>,
 }
@@ -45,6 +46,7 @@ impl Snapshot {
             "param_delete" => "Delete parameter".into(),
             "sketch_create" => "Create sketch".into(),
             "sketch_add" => "Add sketch geometry".into(),
+            "sketch_project" => "Project sketch geometry".into(),
             "sketch_constrain" => "Constrain sketch".into(),
             "sketch_remove" => "Remove sketch geometry".into(),
             "sketch_edit" => "Edit sketch curves".into(),
@@ -74,6 +76,7 @@ impl Session {
             project: self.p.clone_without_source_data(),
             shapes: std::mem::replace(&mut self.shapes, copies),
             warnings: self.advisory_warnings.clone(),
+            detached_projections: self.detached_projections.clone(),
             call: None,
             created_node: None,
         })
@@ -121,6 +124,7 @@ impl Session {
         self.p = snapshot.project;
         self.shapes = snapshot.shapes;
         self.advisory_warnings = snapshot.warnings;
+        self.detached_projections = snapshot.detached_projections;
     }
 
     /// Restore the last successful modelling tool call, without regenerating the retained geometry.

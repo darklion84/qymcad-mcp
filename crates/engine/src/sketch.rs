@@ -38,6 +38,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProjectionResult {
+    pub projections: Vec<Id>,
+    pub entities: Vec<Id>,
+    pub points: Vec<Id>,
+}
+
 /// Where a sketch (or an offset plane) sits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -166,6 +173,108 @@ impl Session {
                 self.p.set_feat_dim(sid, &key, expr);
             }
         }
+    }
+
+    /// Project body geometry into a sketch and rebuild its consumers as one atomic edit.
+    pub fn sketch_project(
+        &mut self,
+        sketch: Id,
+        body: Id,
+        sources: &[qymcad_core::model::ProjSource],
+    ) -> Result<(ProjectionResult, Option<Rebuild>)> {
+        if sources.is_empty() {
+            return Err(Error::Invalid("projection selection resolved to nothing".into()));
+        }
+        let si = self.sketch_si(sketch)?;
+        if !self.p.timeline.iter().any(|node| node.kind.bodies().contains(&body)) {
+            return Err(Error::NotFound(format!("body {body}")));
+        }
+        if !self.shapes.contains_key(&body) {
+            return Err(Error::Invalid(format!("body {body} has no built shape")));
+        }
+        if self.p.consumed_bodies().contains(&body) {
+            return Err(Error::Invalid(format!("body {body} is consumed; re-read current topology")));
+        }
+        let mut unique_sources = Vec::new();
+        for source in sources {
+            if !unique_sources.contains(source) {
+                unique_sources.push(*source);
+            }
+        }
+        for source in &unique_sources {
+            match source {
+                qymcad_core::model::ProjSource::Edge(edge) => {
+                    if self.p.regen_edges.get(&body).is_none_or(|edges| edges.iter().filter(|candidate| candidate.id == *edge).count() != 1)
+                    {
+                        return Err(Error::NotFound(format!("edge {edge} of body {body} (re-read topology after each rebuild)")));
+                    }
+                }
+                qymcad_core::model::ProjSource::Face(face) => {
+                    let hosted = matches!(self.p.sketches[si].plane, qymcad_core::feature::SketchPlane::Face(host, key) if self.p.live_body(host) == body && key.id == *face);
+                    if !hosted {
+                        return Err(Error::Invalid(format!(
+                            "face projection requires sketch {sketch} to be hosted on face {face} of body {body}"
+                        )));
+                    }
+                    if self.p.regen_faces.get(&body).is_none_or(|faces| faces.iter().filter(|candidate| candidate.id == *face).count() != 1)
+                    {
+                        return Err(Error::NotFound(format!("face {face} of body {body} (missing or ambiguous; re-read topology)")));
+                    }
+                }
+            }
+        }
+        let before = self.p.clone();
+        self.p.mark_sketch_dirty(sketch);
+        let nodes = crate::dependencies::rebuild_nodes(&self.p);
+        self.with_rebuild_copies(before, &nodes, "sketch projection", |session| {
+            let si = session.sketch_si(sketch)?;
+            let provenance = session.projection_provenance();
+            let kernel =
+                qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut session.shapes)), ..Default::default() };
+            let mut projections = Vec::new();
+            {
+                let _gate = qymcad_kernel::kernel_gate();
+                for source in &unique_sources {
+                    let id = session.p.add_sketch_projection(si, body, *source, &kernel);
+                    let projection = session.p.sketches[si].projections.iter().find(|p| p.id == id && !p.entities.is_empty());
+                    if projection.filter(|_| id != 0).is_none() {
+                        session.shapes = kernel.shapes.into_inner();
+                        return Err(Error::Invalid(format!("projection source {source:?} yielded no geometry")));
+                    }
+                    projections.push(id);
+                }
+            }
+            session.shapes = kernel.shapes.into_inner();
+            session.remember_detached_projections(provenance);
+            let residual = session.solve_settled(si);
+            session.p.mark_sketch_dirty(sketch);
+            if residual > 1e-6 {
+                return Err(Error::Invalid(format!("sketch {sketch} does not solve after projection (residual {residual:.3e})")));
+            }
+            let report = session.rebuild_retrying(Some(&nodes));
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            let mut created_entities = std::collections::BTreeSet::new();
+            let mut created_points = std::collections::BTreeSet::new();
+            for id in &projections {
+                let projection = session.p.sketches[si]
+                    .projections
+                    .iter()
+                    .find(|p| p.id == *id && !p.entities.is_empty())
+                    .ok_or_else(|| Error::Invalid("projection lost its geometry during rebuild".into()))?;
+                created_entities.extend(projection.entities.iter().copied());
+                created_points.extend(projection.points.iter().copied());
+            }
+            Ok((
+                ProjectionResult {
+                    projections,
+                    entities: created_entities.into_iter().collect(),
+                    points: created_points.into_iter().collect(),
+                },
+                Some(report),
+            ))
+        })
     }
 
     /// Add a rectangle centred at (`cx`, `cy`) of size `w` × `h` in sketch coordinates. Returns its four line
