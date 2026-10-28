@@ -28,7 +28,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P22 | Patch | not covered | Surface operation | none | `FeatureKind::Patch,PartTool::Patch` |
 | P23 | Stitch | not covered | Surface operation | none | `FeatureKind::Stitch,PartTool::Stitch` |
 | P24 | Surface trim | not covered | Surface operation | none | `FeatureKind::Trim,PartTool::Trim` |
-| P25 | Boolean between bodies | in progress (cover-high) | Cut / union / intersect | planned `body_boolean` | `FeatureKind::BodyBoolean` |
+| P25 | Boolean between bodies | covered | — | `body_boolean` | `FeatureKind::BodyBoolean` |
 | P26 | Recognise mesh as body | not covered | Requires mesh import (I1) | none | `FeatureKind::MeshRecognised,PartTool::Recognise` |
 | P27 | Offset surface | not covered | Surface operation | none | `FeatureKind::OffsetSurface,PartTool::OffsetSurface` |
 | P28 | Move / rotate body | not covered | — | none | `FeatureKind::Move` |
