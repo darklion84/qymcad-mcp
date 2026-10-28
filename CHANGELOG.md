@@ -3,7 +3,9 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.3 — threads, splits and text for printing (ADR 0024)
+
+Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Fixed
 - A split edit whose plane no longer divides the body says so, and a rebuild error names each failing node once.
@@ -41,6 +43,12 @@ All notable changes to this project are documented here. The format follows
   explicit font file/face and missing-glyph refusal. `sketch_info` lists text records; `sketch_remove` accepts
   text ids; default extrusion keeps every glyph and its counters. Native app text-height defects remain
   documented in FINDINGS; recreate text to resize it (ADR 0024).
+
+### Known limits
+- Text height is fixed after creation; remove and recreate the text to resize it (upstream #347).
+- Split piece identity is guarded only for edits made through this server; in the app, a same-count edit can still
+  swap pieces (upstream #350). A shallow custom thread profile is refused rather than built wrong (upstream #353).
+- The release was not checked by hand in QymCAD.app; the app's open/edit/rebuild path was emulated on the check files.
 
 ## 0.1.1-dev.20261026.2 — closed mesh exports
 
