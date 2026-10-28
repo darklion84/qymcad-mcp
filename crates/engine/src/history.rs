@@ -88,7 +88,8 @@ impl Session {
         if success {
             if let Some(call) = &mut snapshot.call {
                 if let Some(node) = snapshot.created_node.and_then(|id| self.p.timeline.iter().find(|node| node.id == id)) {
-                    if !node.name.trim().is_empty() {
+                    let blank_name = call.arguments["name"].as_str().is_some_and(|name| Self::optional_object_name(Some(name)).is_none());
+                    if !blank_name && !node.name.trim().is_empty() {
                         call.label = crate::localization::name(&node.name);
                     }
                 }
@@ -154,6 +155,7 @@ impl Session {
             .map(|(&node, e)| NodeIssue { node, name: self.node_name(node), message: crate::localization::error(e) })
             .collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
+        warnings.extend(self.cross_part_projection_warnings());
         Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies(), ..Default::default() } })
     }
 

@@ -108,6 +108,49 @@ fn saved_cross_part_projection_warns_for_every_record_and_keeps_local_geometry()
 }
 
 #[test]
+fn undo_restores_all_four_cross_part_projection_warnings() {
+    let (path, sketch, _, _) = fixture("undo-cross-part");
+    for edit in ["extrude", "batch", "delete sketch"] {
+        let (mut s, opened) = Session::open(&path).unwrap();
+        assert_eq!(opened.warnings.len(), 4);
+        let mut snapshot = s.begin_tool_edit().unwrap();
+        snapshot.record_call(edit, serde_json::json!({}));
+        if edit == "delete sketch" {
+            s.feature_delete(sketch, false).unwrap();
+            assert!(s.current_rebuild().warnings.is_empty());
+        } else {
+            if edit == "batch" {
+                s.param_set("probe", &7.0.into()).unwrap();
+            }
+            let (body, rebuild) = s
+                .extrude(&Extrude {
+                    sketch,
+                    profiles: None,
+                    height: 2.0.into(),
+                    op: Op::NewBody,
+                    direction: Direction::Normal,
+                    through: false,
+                    target: None,
+                    name: None,
+                })
+                .unwrap();
+            assert_eq!(rebuild.warnings.len(), 4);
+            assert_close(rebuild.bodies.iter().find(|b| b.id == body).unwrap().volume, 200.0, 1e-5, "local cross-part extrusion");
+        }
+        s.finish_tool_edit(snapshot, true);
+        let undone = s.undo().unwrap();
+        assert_eq!(undone.rebuild.warnings.len(), 4, "{edit}: undo must restore per-record warnings");
+        assert_eq!(
+            serde_json::to_value(&undone.rebuild.warnings).unwrap(),
+            serde_json::to_value(&s.current_rebuild().warnings).unwrap(),
+            "undo and current rebuild must agree"
+        );
+        assert_eq!(s.current_rebuild().warnings.len(), 4, "warnings must not accumulate");
+        assert_eq!(s.sketch_detail(sketch).unwrap().entities.len(), 4);
+    }
+}
+
+#[test]
 fn saved_cross_part_projection_is_marked_in_sketch_info() {
     let (path, sketch, _, _) = fixture("cross-part-inspection");
     let (s, _) = Session::open(&path).unwrap();

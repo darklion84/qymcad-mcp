@@ -95,7 +95,7 @@ fn invalid_split_and_boolean_piece_names_are_refused_atomically() {
     let a = box_body(&mut s, 0.0, "A");
     let b = box_body(&mut s, 5.0, "B");
     let before = snapshot(&s);
-    for name in [" Piece ", "", "Piece\u{a0}"] {
+    for name in [" Piece ", "Piece\u{a0}"] {
         name_error(
             s.split(&SplitOptions {
                 body: Some(a),

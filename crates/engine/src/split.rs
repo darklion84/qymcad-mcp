@@ -89,9 +89,6 @@ impl Session {
             let count = qymcad_kernel::ask::split_pieces(shape, at)
                 .filter(|n| *n >= 2)
                 .ok_or_else(|| Error::Invalid("split plane cuts nothing: it must divide the body into at least two pieces".into()))?;
-            if options.piece_names.as_ref().is_some_and(|names| names.len() != count) {
-                return Err(Error::Invalid(format!("piece_names needs exactly {count} names for the measured pieces")));
-            }
             let ids = s.p.add_split_body(src, plane, datum, offset, count);
             let feature = ids[0]; // count>=2 checked before the native adder's assertion.
             if let Some((body, key)) = face {
@@ -101,30 +98,7 @@ impl Session {
             s.p.write_feat_formula(&FeatNumber { node: feature, key: "offset" }, &text, PlainNumber::Stands)
                 .map_err(|e| Error::Expr(format!("split offset: {e:?}")))?;
             s.set_node_name(feature, options.name.as_deref())?;
-            let names = options.piece_names.clone().unwrap_or_else(|| {
-                let prefix = s.node_name(feature);
-                let mut next = 1;
-                (0..count)
-                    .map(|_| loop {
-                        let name = format!("{prefix} {next}");
-                        next += 1;
-                        // An ambiguous alias is occupied too; only NotFound is free.
-                        if matches!(s.resolve(&name), Err(Error::NotFound(_))) {
-                            break name;
-                        }
-                    })
-                    .collect()
-            });
-            let mut seen = HashSet::new();
-            for name in &names {
-                Self::check_object_name(name)?;
-                if name.trim().is_empty() || name != name.trim() || !seen.insert(name) {
-                    return Err(Error::Invalid("piece_names must be distinct, nonblank names without surrounding whitespace".into()));
-                }
-                if !matches!(s.resolve(name), Err(Error::NotFound(_))) {
-                    return Err(Error::Invalid(format!("piece name `{name}` already names an object; choose distinct piece_names")));
-                }
-            }
+            let names = s.piece_names(feature, count, options.piece_names.as_deref())?;
             Ok((ids, names, offset))
         })?;
         // Rebuild has now created every native mesh. Names live on Body, not on the feature node.

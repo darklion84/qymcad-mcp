@@ -133,7 +133,7 @@ fn prune_nodes(nodes: &mut Vec<ImportNode>, allowed: &HashSet<u32>) -> bool {
 
 impl Session {
     pub fn import(&mut self, path: &Path, scale: f64, solids: Option<&[u32]>, name: Option<&str>) -> Result<ImportResult> {
-        let name = name.filter(|n| !n.trim().is_empty());
+        let name = Self::optional_object_name(name);
         let parsed = stage_and_parse(path)?;
         if !(scale.is_finite() && scale > 0.0) {
             return Err(Error::Invalid(format!("scale must be finite and positive, got {scale}")));

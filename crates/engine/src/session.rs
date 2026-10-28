@@ -890,12 +890,17 @@ impl Session {
         Rebuild { errors, warnings, bodies, ..Default::default() }
     }
 
+    /// Empty optional object names request the native/default name, including Unicode whitespace.
+    pub(crate) fn optional_object_name(name: Option<&str>) -> Option<&str> {
+        name.filter(|name| !name.trim().is_empty())
+    }
+
     /// Keep object aliases addressable by `resolve`, which trims requests and reserves numeric ids.
     pub(crate) fn check_object_name(name: &str) -> Result<()> {
         if name.trim().parse::<Id>().is_ok() {
             return Err(Error::Invalid(format!("object name `{name}` is interpreted as an id; choose a nonnumeric name")));
         }
-        // A blank name is the client leaving the field empty: the default name is used, as before.
+        // Optional names pass through optional_object_name before storage.
         if !name.trim().is_empty() && name != name.trim() {
             return Err(Error::Invalid(format!("object name `{name}` must not have leading or trailing whitespace")));
         }
@@ -929,13 +934,49 @@ impl Session {
     }
 
     pub(crate) fn set_node_name(&mut self, id: Id, name: Option<&str>) -> Result<()> {
-        if let Some(name) = name {
+        if let Some(name) = Self::optional_object_name(name) {
             Self::check_object_name(name)?;
             if let Some(n) = self.p.timeline.iter_mut().find(|n| n.id == id) {
                 n.name = name.to_string();
             }
         }
         Ok(())
+    }
+
+    /// Reserve explicit piece aliases first so blank entries can choose unused default suffixes.
+    pub(crate) fn piece_names(&self, feature: Id, count: usize, requested: Option<&[String]>) -> Result<Vec<String>> {
+        if requested.is_some_and(|names| names.len() != count) {
+            return Err(Error::Invalid(format!("piece_names needs exactly {count} names for the result")));
+        }
+        let mut reserved = HashSet::new();
+        for name in requested.into_iter().flatten().filter_map(|name| Self::optional_object_name(Some(name))) {
+            Self::check_object_name(name)?;
+            if !reserved.insert(name.to_string()) {
+                return Err(Error::Invalid("piece_names must be distinct names without surrounding whitespace".into()));
+            }
+            if !matches!(self.resolve(name), Err(Error::NotFound(_))) {
+                return Err(Error::Invalid(format!("piece name `{name}` already names an object; choose distinct piece_names")));
+            }
+        }
+        let prefix = self.node_name(feature);
+        let mut next = 1;
+        (0..count)
+            .map(|index| {
+                if let Some(name) = Self::optional_object_name(requested.map(|names| names[index].as_str())) {
+                    return Ok(name.to_string());
+                }
+                loop {
+                    let name = format!("{prefix} {next}");
+                    next += 1;
+                    // Ambiguous aliases and explicit names later in this list are occupied too.
+                    if !reserved.contains(&name) && matches!(self.resolve(&name), Err(Error::NotFound(_))) {
+                        Self::check_object_name(&name)?;
+                        reserved.insert(name.clone());
+                        break Ok(name);
+                    }
+                }
+            })
+            .collect()
     }
 
     /// Display name of a body. Split and all boolean outputs use native piece names; ordinary features keep their names.

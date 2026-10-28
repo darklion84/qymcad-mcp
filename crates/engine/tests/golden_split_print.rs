@@ -309,7 +309,7 @@ fn split_refuses_noncutting_planes_bad_references_and_bad_names_atomically() {
         assert!(err.contains("cut") || err.contains("split"), "clear no-cut reason: {err}");
         assert_eq!(s.info(), before);
     }
-    for names in [vec!["one"], vec!["same", "same"], vec!["good", ""]] {
+    for names in [vec!["one"], vec!["same", "same"], vec!["good", " bad "]] {
         let mut args = opts(body, PlaneRef::Base(BaseName::XY), 10.0.into());
         args.piece_names = Some(names.into_iter().map(str::to_owned).collect());
         let before = s.info();
