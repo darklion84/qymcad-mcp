@@ -1024,7 +1024,7 @@ impl Session {
     fn topo_body(&self, body: Option<Id>) -> Result<Id> {
         let b = match body {
             Some(b) => b,
-            None => self.tip_body().ok_or_else(|| Error::Invalid("the part has no body yet".into()))?,
+            None => self.default_body("the part has no body yet")?,
         };
         if !self.p.regen_faces.contains_key(&b) {
             return Err(Error::NotFound(format!("body {b} has no topology (not a built body, or not rebuilt yet)")));
@@ -1037,7 +1037,7 @@ impl Session {
     pub(crate) fn source_body(&self, body: Option<Id>) -> Result<Id> {
         let b = match body {
             Some(b) => b,
-            None => self.tip_body().ok_or_else(|| Error::Invalid("the part has no body yet; extrude or revolve first".into()))?,
+            None => self.default_body("the part has no body yet; extrude or revolve first")?,
         };
         if !self.p.timeline.iter().any(|n| n.kind.bodies().contains(&b)) {
             return Err(Error::NotFound(format!("{b} is not a body")));

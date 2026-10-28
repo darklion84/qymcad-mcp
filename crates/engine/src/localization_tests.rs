@@ -15,7 +15,7 @@ fn names_errors_warnings_and_undo_use_english_catalogue_words() {
     assert_eq!(info.timeline.iter().find(|n| n.id == sketch).unwrap().name, "Cut with a sketch");
     assert_eq!(info.errors[0].name, "Cut with a sketch");
     assert!(info.errors[0].message.contains("The cut removed nothing"), "{:?}", info.errors);
-    assert!(info.errors[0].message.contains("check direction (reverse) or height"), "{:?}", info.errors);
+    assert!(info.errors[0].message.contains("its direction (reverse) or height"), "{:?}", info.errors);
     assert!(info.warnings.iter().any(|w| w.contains("Cut with a sketch") && !w.contains("feat-name-")), "{:?}", info.warnings);
     let refusal = session.render(View::Iso, 100, 100, None).err().unwrap().to_string();
     assert!(refusal.contains(&info.errors[0].message) && !refusal.contains("error-cut-removed-nothing"), "{refusal}");

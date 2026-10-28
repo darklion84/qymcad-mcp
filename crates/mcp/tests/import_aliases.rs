@@ -131,3 +131,16 @@ fn a_blank_import_name_uses_the_default_name_which_resolves() {
     assert!(!name.trim().is_empty() && name == name.trim(), "blank name reported as {name:?}");
     assert_eq!(call(&mut registry, "topology", json!({"body":name}))["faces"].as_array().unwrap().len(), 6);
 }
+
+#[test]
+fn tools_default_to_the_only_body_when_it_was_imported_into_its_own_part() {
+    let (mut registry, imported) = imported();
+    let topology = call(&mut registry, "topology", json!({}));
+    assert_eq!(topology["body"], imported["body"], "{topology}");
+    let selected = call(&mut registry, "select", json!({"edges":{"along":"z"}}));
+    assert_eq!(selected["body"], imported["body"]);
+    // A second body in another part makes the default ambiguous: the refusal names the candidates.
+    call(&mut registry, "import", json!({"path":fixture(),"name":"Second"}));
+    let error = registry.call("topology", json!({})).unwrap().unwrap_err();
+    assert!(error.contains("pass body") && error.contains("Second"), "{error}");
+}

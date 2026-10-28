@@ -64,7 +64,7 @@ impl Session {
             AxisRef::FaceAxis { body, face } => {
                 let body = &match body {
                     Some(b) => *b,
-                    None => self.tip_body().ok_or_else(|| Error::Invalid("the part has no body yet".into()))?,
+                    None => self.default_body("the part has no body yet")?,
                 };
                 let ok = self.p.regen_faces.get(body).is_some_and(|fs| fs.iter().any(|f| f.id == *face));
                 if !ok {

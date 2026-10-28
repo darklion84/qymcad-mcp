@@ -11,6 +11,8 @@ All notable changes to this project are documented here. The format follows
 - `sketch_project` projects persistent body edge selections or a hosted face outline into sketches, returns constrainable geometry ids and reports projection attachment state in `sketch_info` (F-109, ADR 0027).
 
 ### Fixed
+- When the active part has no body, tools that default to the current body (topology, select, finishing features, face axes) use the document's only current body, e.g. a lone import; with several, the refusal lists them.
+- The "cut removed nothing" hint no longer names extrude-only settings for `body_boolean`.
 - Opening saved cross-part sketch projections and undoing later edits report a warning for every record; associated entities are marked `cross_part` in `sketch_info`, retaining native source-local geometry and ignoring component placement as in QymCAD.
 - Reject object names with leading/trailing whitespace through shared validation, including imported file-derived part names; blank/whitespace-only optional object and piece names use defaults. Failed import, sketch, plane, feature and piece naming preserves the document.
 - `sketch_project` refuses forward-timeline and cross-part sources; opening a reordered projection with a forward reference is refused. Imported body names now resolve across topology, select, fillet, body_boolean and batch, retaining ambiguity errors. Body booleans create nodes in their operands' part and restore the active part; default piece names no longer skip suffixes and union piece names are reported.

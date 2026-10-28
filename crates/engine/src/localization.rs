@@ -18,7 +18,9 @@ pub(crate) fn error(error: &CoreError) -> String {
         native
     };
     if matches!(error, CoreError::CutRemovedNothing) {
-        message.push_str("; the cut does not reach the body; check direction (reverse) or height");
+        message.push_str(
+            "; the cut does not reach the body; check where the tool body is, and for an extruded cut its direction (reverse) or height",
+        );
     }
     if matches!(error, CoreError::FilletRadiusTooBig { .. }) {
         message.push_str("; the radius may not fit the faces next to the edge (thin wall, short edge, small adjacent fillet); try a smaller radius or fewer edges");

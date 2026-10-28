@@ -58,7 +58,12 @@ fn a_cut_that_misses_stock_has_an_english_reason_and_direction_hint() {
     let error = session.extrude(&extrusion(tool, Op::Cut)).unwrap_err().to_string();
     // Stock spans x∈[-10,10], tool x∈[90,110]: disjoint cuts remove exactly zero volume.
     assert!(error.contains("Cut with a sketch") && error.contains("The cut removed nothing"), "{error}");
-    assert!(error.contains("the cut does not reach the body; check direction (reverse) or height"), "{error}");
+    assert!(
+        error.contains(
+            "the cut does not reach the body; check where the tool body is, and for an extruded cut its direction (reverse) or height"
+        ),
+        "{error}"
+    );
     assert!(!error.contains("feat-name-") && !error.contains("error-cut-removed-nothing"), "{error}");
     assert_eq!(session.result_bodies(), before, "failed cut remains atomic");
 }

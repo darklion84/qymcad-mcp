@@ -873,6 +873,26 @@ impl Session {
         tips.last().copied()
     }
 
+    /// The body a tool uses when none is given: the active part's current body, else the document's only current body
+    /// (an import lives in its own part). Several bodies elsewhere are listed so the caller can pick one.
+    pub(crate) fn default_body(&self, empty: &str) -> Result<Id> {
+        if let Some(b) = self.tip_body() {
+            return Ok(b);
+        }
+        let consumed = self.p.consumed_bodies();
+        let mut current: Vec<Id> =
+            self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).filter(|b| !consumed.contains(b)).collect();
+        current.dedup();
+        match current.as_slice() {
+            [] => Err(Error::Invalid(empty.into())),
+            [only] => Ok(*only),
+            many => {
+                let names: Vec<String> = many.iter().map(|b| format!("{} ({b})", self.body_name(*b))).collect();
+                Err(Error::Invalid(format!("the active part has no body; pass body: one of {}", names.join(", "))))
+            }
+        }
+    }
+
     /// Localized timeline node name for creation results and diagnostics.
     pub fn node_name(&self, id: Id) -> String {
         self.p.timeline.iter().find(|n| n.id == id).map(|n| crate::localization::name(&n.name)).unwrap_or_default()
