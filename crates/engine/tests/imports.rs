@@ -19,6 +19,7 @@ struct Fixture {
     body: Id,
     source: Id,
     parametric: Option<Id>,
+    names: (Vec<u32>, Vec<u32>),
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -78,14 +79,14 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
     let body = p.add_mesh(mesh);
     p.import_tree_as_parts(vec![ImportNode { name: "imported cube".into(), body: Some(body), ..Default::default() }], source, "cube")
         .unwrap();
-    let live = qymcad_kernel::exact_solids(format, input.to_str().unwrap()).unwrap().remove(0);
+    let imported = qymcad_kernel::exact_solids(format, input.to_str().unwrap()).unwrap().remove(0);
     if let qymcad_core::feature::FeatureKind::Import { scale: value, .. } = &mut p.timeline.iter_mut().find(|n| n.id == body).unwrap().kind
     {
         *value = scale;
     }
     let breps = own.into_iter().map(|id| (id, s.shape(id).unwrap().to_brep_bytes().unwrap())).collect();
     drop(_gate);
-    let live = qymcad_kernel::imports::scaled(&live, scale).unwrap();
+    let live = qymcad_kernel::imports::scaled(&imported, scale).unwrap();
     let mut shapes: HashMap<Id, Shape> = common::restore_shapes(breps);
     shapes.insert(body, live);
     let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut p, shapes);
@@ -94,12 +95,28 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
     for (id, faces) in report.built {
         p.set_body_faces(id, faces);
     }
+    let names = {
+        let mut faces: Vec<_> = p.regen_faces[&body].iter().map(|face| face.id).collect();
+        let mut edges = shapes[&body].edges_with_ids().1;
+        faces.sort_unstable();
+        edges.sort_unstable();
+        (faces, edges)
+    };
     let _gate = qymcad_kernel::kernel_gate();
     let breps: Vec<_> = shapes.iter().filter(|(id, _)| stored || **id != body).map(|(&id, sh)| (id, sh.to_brep_bytes().unwrap())).collect();
     qymcad_io::save_project_guarded_with_brep(&p, path.to_str().unwrap(), &breps).unwrap();
     // All later restoration must use the embedded source, never the original pathname.
     std::fs::remove_file(input).unwrap();
-    Fixture { _lock: lock, dir, path, body, source, parametric: own }
+    Fixture { _lock: lock, dir, path, body, source, parametric: own, names }
+}
+
+fn persistent_names(s: &Session, body: Id) -> (Vec<u32>, Vec<u32>) {
+    let shape = s.shape(body).unwrap();
+    let mut faces: Vec<_> = s.project().regen_faces[&body].iter().map(|face| face.id).collect();
+    let mut edges = shape.edges_with_ids().1;
+    faces.sort_unstable();
+    edges.sort_unstable();
+    (faces, edges)
 }
 
 fn check_import(s: &Session, f: &Fixture) {
@@ -137,6 +154,37 @@ fn missing_brep(format: ExactFormat) {
     let (s, report) = Session::open(&f.path).unwrap();
     assert!(report.errors.is_empty(), "open: {:?}", report.errors);
     check_import(&s, &f);
+}
+
+fn missing_brep_preserves_persistent_names(format: ExactFormat) {
+    let f = fixture(format, false, false);
+    let expected = f.names.clone();
+    assert!(expected.0.iter().all(|id| qymcad_core::names::NameTable::is_named(*id)));
+    assert!(expected.1.iter().all(|id| qymcad_core::names::NameTable::is_named(*id)));
+
+    let (mut opened, report) = Session::open(&f.path).unwrap();
+    assert!(report.errors.is_empty(), "open: {:?}", report.errors);
+    check_import(&opened, &f);
+    assert_eq!(persistent_names(&opened, f.body), expected, "{format:?} restore changed persistent names");
+
+    for (element, ids) in [(Element::Faces, &expected.0), (Element::Edges, &expected.1)] {
+        for id in ids {
+            assert!(
+                opened.select(Some(f.body), element, &Sel::Ids(vec![*id])).is_ok(),
+                "{format:?} saved {element:?} id {id} did not resolve"
+            );
+        }
+    }
+}
+
+#[test]
+fn s2_missing_step_brep_preserves_persistent_names_and_selections() {
+    missing_brep_preserves_persistent_names(ExactFormat::Step);
+}
+
+#[test]
+fn s2_missing_iges_brep_preserves_persistent_names_and_selections() {
+    missing_brep_preserves_persistent_names(ExactFormat::Iges);
 }
 #[test]
 fn s2_missing_step_brep_restores_from_embedded_source() {
@@ -301,6 +349,10 @@ fn stored_import_with_readable_source(stored_solid: u32) {
     assert!(report.errors.is_empty(), "open: {:?}", report.errors);
     assert!(report.warnings.is_empty(), "readable source with stored B-rep: {:?}", report.warnings);
     assert_close(s.shape(earlier).unwrap().volume(), 1000.0, 1.0, "earlier restored import volume");
+    // Never named in the document: like upstream `unminted`, its ids stay positional, never descriptors the
+    // document's name table does not hold.
+    let (_, edges) = s.shape(earlier).unwrap().edges_with_ids();
+    assert!(edges.iter().all(|id| !qymcad_core::names::NameTable::is_named(*id)), "unknown names leaked: {edges:?}");
     check_import(&s, &f);
 }
 

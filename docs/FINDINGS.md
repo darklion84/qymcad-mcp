@@ -2147,4 +2147,25 @@ asserts those exact fractional halves before checking away-from-zero output.
   pinned native cutter. Internal major means reference root diameter; minor means reference crest diameter.
   These numbers exclude modelling fit and are not measured cavity limits. `review_round3_diameters` checks
   all five accepted families on both sides against the formulas; `review_round3_codex` verifies internal
-  Tr16x4 reports (16.5,14,12) and measures the actual zero-fit root diameter as 16.5000024 mm.
+   Tr16x4 reports (16.5,14,12) and measures the actual zero-fit root diameter as 16.5000024 mm.
+
+## F-106 Source-restored imports must be named before topology is exposed
+
+- **Version:** v0.1.1-dev.20261026, f25f27d.
+- **What:** exact STEP/IGES parsing returns positional face/edge ids. If an import body has no saved B-rep,
+  restoring the shape directly from its embedded source leaves saved selections unmatched (and can direct a
+  modifier at the wrong edge). The bridge's silent naming assigns face names from their places in the document
+  name table and edge names from adjacent named faces.
+- **Evidence:** upstream source `crates/qymcad-kernel/src/imports.rs:86-106` calls
+  `naming::silent` after source/solid/scale restoration; `naming.rs:77-92` derives placed faces and edges.
+  The engine reproduces upstream `named_as_they_came_in` without calling `raise_imports`: that public helper stages
+  the source with `fs::write` under a predictable temporary name, takes the file extension from the document and
+  parses and scales outside the gate (a crash risk with concurrent kernel use, F-069). The engine keeps its own
+  staging (`create_new`, 0600, normalized extension, parse under the gate) and then names each restored body with
+  `OcctKernel::name_silent` under one gate of its own. Upstream's private `unminted` step (names the document does
+  not hold go back to positional numbers) cannot be called; instead, a body whose names the document does not hold
+  keeps its parsed positional ids, with an advisory warning when the document knew some of them.
+  `crates/engine/tests/imports.rs` STEP/IGES source-only regressions compare saved face
+  and edge ids and resolve each through `Session::select`. Before the fix each format restored edges as 1..12
+  rather than the saved 16106127xx names; after the fix both pass. ADR 0019 source validation, warnings, and
+   stored-B-rep authority remain unchanged.
