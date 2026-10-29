@@ -376,7 +376,7 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
 
 ## sketch_add
 
-Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or non-whitespace characters without outline contours (including bitmap-only glyphs) are refused and listed. Spaces are allowed. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form contours; a contour inside another becomes a hole when the outer one is extruded. Returns the new entity and point ids and the sketch (entities, points, constraints, contours, dof; dof [0, 0] = fully defined). Features built from the sketch are rebuilt.
+Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or non-whitespace characters without outline contours (including bitmap-only glyphs) are refused and listed. Spaces are allowed. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in QymCAD (`dimensioned: false` leaves point/line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that coincide with existing ones are joined (a polyline end and an arc end become one point). A point returns point:id and reused:true when coincident; reused points receive no new constraints. Native points add no contours or material; their x/y default to 0 and dimensioned defaults true. Closed shapes form contours; a contour inside another becomes a hole when the outer one is extruded. Returns the new entity and point ids and the sketch (entities, points, constraints, contours, dof; dof [0, 0] = fully defined). Features built from the sketch are rebuilt.
 
 ```json
 {
@@ -436,6 +436,35 @@ Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, p
     "Entity": {
       "description": "A sketch entity. Coordinates are in the sketch plane (XY: x=X, y=Y; XZ: x=X, y=Z; YZ: x=Y, y=Z), mm, from\nthe sketch origin. Curve dimensions accept expressions; text geometry uses fixed numbers.",
       "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Native isolated point; coincident geometry points are reused without adding constraints.",
+          "properties": {
+            "dimensioned": {
+              "default": true,
+              "description": "Pin coordinates with independently nameable dimensions (default true).",
+              "type": "boolean"
+            },
+            "type": {
+              "const": "point",
+              "type": "string"
+            },
+            "x": {
+              "$ref": "#/$defs/Num",
+              "default": 0.0,
+              "description": "Point x in sketch mm, number or expression (default 0)."
+            },
+            "y": {
+              "$ref": "#/$defs/Num",
+              "default": 0.0,
+              "description": "Point y in sketch mm, number or expression (default 0)."
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
         {
           "additionalProperties": false,
           "description": "Baked text outlines with a deterministic font and fixed numeric height, anchor and angle.",
@@ -1654,7 +1683,7 @@ Add a geometric constraint or a driving dimension between existing points/entiti
 
 ## sketch_remove
 
-Delete one entity (with the points only it used and the constraints on them), one text id from sketch_info.texts (using entity), or one constraint (by index) from a sketch. Give exactly one of `entity`, `constraint`. Returns the sketch; features built from it are rebuilt (refused if one would break).
+Delete one entity (with the points only it used and the constraints on them), one text id from sketch_info.texts (using entity), one isolated non-system point (using point), or one constraint (by index) from a sketch. Give exactly one of `entity`, `point`, `constraint`. Returns the sketch; features built from it are rebuilt (refused if one would break).
 
 ```json
 {
@@ -1688,6 +1717,16 @@ Delete one entity (with the points only it used and the constraints on them), on
     "entity": {
       "default": null,
       "description": "A curve entity id (with its unused points and constraints) or a text id from sketch_info.texts.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "point": {
+      "default": null,
+      "description": "An isolated non-system point id from sketch_info.isolated_points. Refuses points used by any entity. Exclusive with entity and constraint.",
       "format": "uint64",
       "minimum": 0,
       "type": [
@@ -1821,7 +1860,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
 
 ## sketch_info
 
-A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction, driven, projection id/body/source/state and geometry when projected; cross_part:true on associated projections from another part (source-local coordinates, placement ignored as in QymCAD); detached provenance lasts for this session, already-detached files reopen as ordinary geometry); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.
+A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction, driven, projection id/body/source/state and geometry when projected; cross_part:true on associated projections from another part (source-local coordinates, placement ignored as in QymCAD); detached provenance lasts for this session, already-detached files reopen as ordinary geometry); isolated_points (id, x, y, dimensioned: whether native dimensions fix the coordinates; omitted when empty); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.
 
 ```json
 {
@@ -2578,7 +2617,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
 
 ## extrude
 
-Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. Optional down gives native Two sides with independent positive lengths: normal spans [-down, height], reverse [-height, down]. Both lengths stay parametric; down must remain finite and greater than 1e-9, including later edits, and cannot be combined with symmetric or through. Recreate the feature to return to one side. Two-sided cuts use their exact ends without one-sided entry clearance. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -2660,6 +2699,18 @@ Extrude sketch contours: add material (the first add creates the part's body), c
       "$ref": "#/$defs/Direction",
       "default": "normal",
       "description": "normal (default), reverse, symmetric — relative to the sketch plane's normal (XY +Z, XZ −Y, YZ +X, face: outward)."
+    },
+    "down": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Second-side length in mm (number or expression), finite and greater than 1e-9. Gives native Two sides: normal spans [-down, height], reverse [-height, down]. Excludes symmetric and through; later parameter/dimension edits must keep it positive. Omit for one side."
     },
     "height": {
       "anyOf": [

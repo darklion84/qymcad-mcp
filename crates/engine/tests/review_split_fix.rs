@@ -25,6 +25,7 @@ fn u_part() -> (Session, SplitResult) {
     .unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 10.0.into(),
@@ -121,6 +122,7 @@ fn a_split_edit_that_misses_the_body_says_why_once() {
     s.sketch_rect(sk, &10.0.into(), &10.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),

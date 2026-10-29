@@ -9,6 +9,7 @@ fn box_body(session: &mut Session, center: [f64; 2], size: [f64; 3]) -> Id {
     session.sketch_rect(sketch, &center[0].into(), &center[1].into(), &size[0].into(), &size[1].into(), false).unwrap();
     let (body, report) = session
         .extrude(&Extrude {
+            down: None,
             sketch,
             profiles: None,
             height: size[2].into(),
@@ -244,6 +245,7 @@ fn imported_modelling(operation: &str) {
                 session.sketch_rect(sketch, &x.into(), &y.into(), &2.0.into(), &3.0.into(), false).unwrap();
                 let (body, report) = session
                     .extrude(&Extrude {
+                        down: None,
                         sketch,
                         profiles: None,
                         height: 4.0.into(),

@@ -14,7 +14,17 @@ fn n(expr: &str) -> Num {
 
 fn extrude(s: &mut Session, sketch: Id, height: Num, op: Op, direction: Direction, name: &str) {
     let (_, report) = s
-        .extrude(&Extrude { sketch, profiles: None, height, op, direction, through: false, target: None, name: Some(name.into()) })
+        .extrude(&Extrude {
+            down: None,
+            sketch,
+            profiles: None,
+            height,
+            op,
+            direction,
+            through: false,
+            target: None,
+            name: Some(name.into()),
+        })
         .unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
 }

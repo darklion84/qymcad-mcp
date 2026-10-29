@@ -390,6 +390,7 @@ mod tests {
             let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
             s.sketch_rect(sk, &0.0.into(), &0.0.into(), &Num::Expr(expr.into()), &3.0.into(), false).unwrap();
             s.extrude(&Extrude {
+                down: None,
                 sketch: sk,
                 profiles: None,
                 height: 2.0.into(),
@@ -524,6 +525,7 @@ mod tests {
                 assert!(s.p.add_named_dim(driver.into(), sk, refs));
             }
             s.extrude(&Extrude {
+                down: None,
                 sketch: sk,
                 profiles: None,
                 height: 2.0.into(),
@@ -573,6 +575,7 @@ mod tests {
             s.solve_settled(si);
             assert!(s.p.add_named_dim(name.into(), sk, refs));
             s.extrude(&Extrude {
+                down: None,
                 sketch: sk,
                 profiles: None,
                 height: 2.0.into(),

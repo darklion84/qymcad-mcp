@@ -43,6 +43,7 @@ fn fixture(label: &str, broken: bool) -> Fixture {
     s.sketch_rect(base, &0.0.into(), &0.0.into(), &Num::Expr("w".into()), &30.0.into(), false).unwrap();
     let (source, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: base,
             profiles: None,
             height: 10.0.into(),
@@ -57,6 +58,7 @@ fn fixture(label: &str, broken: bool) -> Fixture {
     s.sketch_rect(stock_sketch, &0.0.into(), &0.0.into(), &80.0.into(), &30.0.into(), false).unwrap();
     let (stock, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: stock_sketch,
             profiles: None,
             height: 10.0.into(),
@@ -159,6 +161,7 @@ fn engine_projection_api_projects_face_outline_and_is_idempotent() {
     s.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
     let (body, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: profile,
             profiles: None,
             height: 10.0.into(),
@@ -210,6 +213,7 @@ fn engine_projection_api_projects_a_circular_edge_at_the_hole_radius() {
     s.sketch_circle(profile, &0.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
     let (body, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: profile,
             profiles: None,
             height: 10.0.into(),

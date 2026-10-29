@@ -15,6 +15,7 @@ fn fixture(internal: bool) -> (Session, Id, Sel) {
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &8.0.into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),

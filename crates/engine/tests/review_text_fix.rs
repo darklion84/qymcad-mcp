@@ -12,6 +12,7 @@ fn text_part_with_depth(height: f64, depth: f64) -> (Session, Id, Id) {
         .unwrap();
     let (body, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: depth.into(),

@@ -51,11 +51,11 @@ pub use render::{Rendered, View, RENDER_BACKGROUND, RENDER_MAX_SIDE, RENDER_MIN_
 pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{
-    Added, ArcSpec, BaseName, BreakSpec, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, CornerSize, CornerSpec,
-    CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, ExtendSpec, FrameRef, LineSpec,
-    MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel, PointSel, PolygonSpec, PolylineSpec, ProjectionResult,
-    RectAnchor, RectSpec, SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchOffsetSpec, SketchRef, SketchWorldFrame,
-    SlotSpec, SplineSpec, TangentCircleSpec, TextFont, TextInfo, TextSpec, Xy,
+    Added, AddedPoint, ArcSpec, BaseName, BreakSpec, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, CornerSize,
+    CornerSpec, CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, ExtendSpec,
+    FrameRef, IsolatedPointInfo, LineSpec, MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel, PointSel, PolygonSpec,
+    PolylineSpec, ProjectionResult, RectAnchor, RectSpec, SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo, SketchOffsetSpec,
+    SketchRef, SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec, TextFont, TextInfo, TextSpec, Xy,
 };
 pub use split::{SplitOptions, SplitResult};
 pub use sweep::{Loft, LoftSection, Sweep, SweepPath};

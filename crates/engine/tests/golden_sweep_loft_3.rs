@@ -98,6 +98,7 @@ fn a_sweep_along_a_body_edge_follows_the_edge_when_the_body_changes() {
     s.sketch_rect(stock, &v(20.), &v(15.), &v(40.), &v(30.), false).unwrap();
     let (block, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: stock,
             profiles: None,
             height: e("T"),
@@ -207,6 +208,7 @@ fn points_pick_the_innermost_contour_around_them() {
     assert_eq!(picked.len(), 2, "the two centre points pick the same contour once");
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: Some(picked),
             height: e("h"),
@@ -235,6 +237,7 @@ fn a_hole_offset_from_the_face_centre_follows_its_formulas() {
     let sk = sketch(&mut s, PlaneRef::Base(BaseName::XY));
     s.sketch_rect(sk, &v(20.), &v(15.), &v(40.), &v(30.), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: v(10.),

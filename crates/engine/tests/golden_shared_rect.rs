@@ -29,6 +29,7 @@ fn rectangle_on_pinned_corners() -> (Session, Id) {
     assert_eq!(d.summary.dof, (0, 0), "shared pins must not over-constrain the rectangle");
     let (_, rebuild) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(3.0),

@@ -24,6 +24,7 @@ fn box_body(s: &mut Session, width: Num, depth: f64, height: f64, cx: f64) -> Id
 
 fn extrude(s: &mut Session, sketch: Id, height: f64) -> Id {
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: height.into(),

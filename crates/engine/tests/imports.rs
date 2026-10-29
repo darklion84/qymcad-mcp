@@ -44,6 +44,7 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
         s.sketch_rect(sketch, &30.0.into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
         Some(
             s.extrude(&Extrude {
+                down: None,
                 sketch,
                 profiles: None,
                 height: Num::Expr("h".into()),

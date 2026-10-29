@@ -32,6 +32,7 @@ fn build(mode: &str) -> Session {
     let sketch = s.sketch_create(&PlaneRef::Plane(p), None).unwrap();
     s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &W.into(), &L.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: H.into(),

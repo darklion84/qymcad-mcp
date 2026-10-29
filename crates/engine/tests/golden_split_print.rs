@@ -11,6 +11,7 @@ fn opts(body: Id, plane: PlaneRef, offset: Num) -> SplitOptions {
 
 fn solid(s: &mut Session, sketch: Id, height: f64, name: &str) -> Id {
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: height.into(),

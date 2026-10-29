@@ -19,6 +19,7 @@ fn edge_query_box_with_array(path: &std::path::Path, dirty: bool, missing: bool,
     s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
     let (body, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),
@@ -181,6 +182,7 @@ fn unsafe_full_retry_restores_the_first_pass_project_and_shapes() {
     let lines = opened.sketch_rect(sketch, &40.0.into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
     opened
         .extrude(&Extrude {
+            down: None,
             sketch,
             profiles: None,
             height: 10.0.into(),

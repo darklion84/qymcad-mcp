@@ -27,6 +27,7 @@ fn spec(ids: Vec<Id>, toward: [f64; 2], name: Option<&str>) -> SketchOffsetSpec 
 fn extrude(s: &mut Session, sk: Id) -> f64 {
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(3.0),

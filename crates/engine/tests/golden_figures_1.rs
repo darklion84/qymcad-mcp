@@ -15,6 +15,7 @@ fn sketch(s: &mut Session) -> Id {
 fn extrude(s: &mut Session, sk: Id) -> Id {
     let (body, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: n(3.0),

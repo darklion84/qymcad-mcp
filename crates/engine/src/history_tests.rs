@@ -7,6 +7,7 @@ fn stock() -> Session {
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 20.0.into(),
@@ -92,6 +93,7 @@ fn native_thicken_join_depends_on_the_target_body() {
     s.sketch_rect(sk, &30.0.into(), &0.0.into(), &4.0.into(), &6.0.into(), false).unwrap();
     let (source, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 2.0.into(),

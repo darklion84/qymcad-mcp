@@ -35,6 +35,7 @@ fn trim_circle_to_half_disk_tracks_boundary_and_radius_in_app() {
     line(&mut s, sk, [v(a.x), v(a.y)], [v(b.x), v(b.y)], false, false);
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(2.),
@@ -100,6 +101,7 @@ fn break_line_keeps_original_id_and_reports_free_cut_point() {
 fn extrude_volume(s: &mut Session, sk: Id) -> f64 {
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(2.),

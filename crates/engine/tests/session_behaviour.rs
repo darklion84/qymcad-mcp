@@ -15,6 +15,7 @@ fn block() -> (Session, Id) {
     s.sketch_rect(sk, &0.0.into(), &0.0.into(), &n("a"), &n("a"), false).unwrap();
     let (b, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: n("a"),
@@ -35,6 +36,7 @@ fn cut_without_a_body_is_refused() {
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
     let e = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 5.0.into(),
@@ -57,6 +59,7 @@ fn a_failing_feature_leaves_the_document_unchanged() {
     s.sketch_circle(sk, &100.0.into(), &100.0.into(), &5.0.into(), false).unwrap();
     let e = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 5.0.into(),

@@ -309,6 +309,7 @@ impl Session {
         let before_evaluation = sess.p.clone_without_source_data();
         sess.p.eval_parameters();
         sess.check_fixed_text_geometry(&before_evaluation)?;
+        sess.check_extrude_down().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.check_thread_dimensions().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         let sketches: Vec<Id> = sess.p.sketches.iter().map(|s| s.id).collect();
         for sid in sketches {
@@ -488,7 +489,7 @@ impl Session {
     /// F-005 still holds: a datum created by the edit is one of its nodes.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
-        if let Err((id, e)) = self.check_thread_dimensions() {
+        if let Err((id, e)) = self.check_extrude_down().and_then(|()| self.check_thread_dimensions()) {
             return Rebuild { errors: vec![self.issue(id, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
         }
         let blocked = self.edge_query_rebuild_errors(&self.p);
@@ -801,7 +802,7 @@ impl Session {
             self.check_fixed_text_geometry(&before)?;
             // Callers allow unrelated native errors that existed before an edit. That exemption must
             // never hide a new safety refusal on the same node (e.g. a previously overlong thread).
-            if let Err((id, error)) = self.check_thread_dimensions() {
+            if let Err((id, error)) = self.check_extrude_down().and_then(|()| self.check_thread_dimensions()) {
                 return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
             }
             let mut refused = self.check_thread_stock();
@@ -1129,6 +1130,7 @@ mod tests {
         let hole = session.sketch_circle(profile, &0.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
         let (body, _) = session
             .extrude(&Extrude {
+                down: None,
                 sketch: profile,
                 profiles: None,
                 height: 5.0.into(),
@@ -1203,6 +1205,7 @@ mod tests {
         session.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
         let (body, _) = session
             .extrude(&Extrude {
+                down: None,
                 sketch: profile,
                 profiles: None,
                 height: 5.0.into(),
@@ -1239,6 +1242,7 @@ mod tests {
         s.sketch_rect(profile, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
         let (body, _) = s
             .extrude(&Extrude {
+                down: None,
                 sketch: profile,
                 profiles: None,
                 height: 10.0.into(),

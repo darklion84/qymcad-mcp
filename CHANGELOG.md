@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- `extrude` accepts optional `down` for native Two sides, with independent global/named height and down drivers. Normal spans [-down,height]; reverse swaps the sides. Explicit down must stay finite and greater than 1e-9 mm on creation and later edits; symmetric/through combinations and zero-down edits are refused (ADR 0029, F-111).
+- `sketch_add` accepts native Point items with optional parametric x/y coordinates and independently nameable axis dimensions. Reused points retain their id without extra constraints. `sketch_info` exposes isolated point dimension status; `sketch_remove point` deletes isolated non-system points safely. Points add no profile material (ADR 0030, F-112).
+
 ## 0.1.1-dev.20261026.4 — body booleans, STEP/IGES import and sketch projections (ADR 0025–0028)
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.

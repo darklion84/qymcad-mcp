@@ -10,6 +10,7 @@ fn conical_seat(sign: f64) -> Session {
     let stock = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(stock, &0.0.into(), &0.0.into(), &30.0.into(), &30.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: stock,
         profiles: None,
         height: 10.0.into(),

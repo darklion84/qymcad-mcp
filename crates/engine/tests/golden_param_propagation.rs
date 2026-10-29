@@ -7,6 +7,7 @@ use qymcad_engine::*;
 
 fn extrude(s: &mut Session, sketch: Id, height: Num) -> Id {
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height,

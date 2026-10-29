@@ -30,6 +30,7 @@ fn part(params: &[(&str, f64)]) -> (Session, Id) {
 fn extrude(s: &mut Session, sk: Id, h: Num) -> f64 {
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: h,

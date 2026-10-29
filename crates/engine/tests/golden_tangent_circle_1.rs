@@ -38,6 +38,7 @@ fn tangent_circle_radius_and_support_formulas_rebuild_after_open_and_in_app() {
     centre(&s, sk, &a, 12.0, 12.0, 2.0);
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(3.0),

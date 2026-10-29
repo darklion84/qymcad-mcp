@@ -62,6 +62,7 @@ fn check_mode(mode: usize) {
     s.dimension_set(&DimensionTarget::Sketch { sketch: sk, constraint: result.dimensions[0] }, None, Some("Size")).unwrap();
     let (body, report) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: n(2.0),
@@ -282,6 +283,7 @@ fn a_corner_of_an_offset_outline_is_cut_without_redundancy() {
         let ring = |g: f64| ((20.0 + 2.0 * g) * (10.0 + 2.0 * g) - g * g * (1.0 - std::f64::consts::PI / 4.0) - 200.0) * 2.0;
         let (body, report) = s
             .extrude(&Extrude {
+                down: None,
                 sketch: sk,
                 profiles: None,
                 height: n(2.0),

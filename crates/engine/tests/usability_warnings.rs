@@ -10,6 +10,7 @@ fn rect(s: &mut Session, plane: PlaneRef, w: f64, l: f64) -> Id {
 }
 fn extrude(s: &mut Session, sketch: Id, height: f64, op: Op, direction: Direction, name: &str) -> (Id, Rebuild) {
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: height.into(),
@@ -151,6 +152,7 @@ fn sealed_plate(dist: Num) -> (Session, Id, Id) {
     s.param_set("t", &10.0.into()).unwrap();
     let stock = rect(&mut s, PlaneRef::Base(BaseName::XY), 60.0, 40.0);
     s.extrude(&Extrude {
+        down: None,
         sketch: stock,
         profiles: None,
         height: Num::Expr("t".into()),

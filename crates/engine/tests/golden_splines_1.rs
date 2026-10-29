@@ -30,6 +30,7 @@ fn fixture(closed: bool) -> (Session, Id, Added) {
 fn solid(s: &mut Session, sk: Id) -> f64 {
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(3.0),

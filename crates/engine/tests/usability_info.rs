@@ -6,7 +6,7 @@ use qymcad_engine::*;
 use serde_json::{json, Value};
 
 fn extrude(sketch: Id, height: Num, op: Op) -> Extrude {
-    Extrude { sketch, profiles: None, height, op, direction: Direction::Normal, through: false, target: None, name: None }
+    Extrude { down: None, sketch, profiles: None, height, op, direction: Direction::Normal, through: false, target: None, name: None }
 }
 
 fn stock() -> (Session, Id) {

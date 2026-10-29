@@ -2,7 +2,17 @@
 use qymcad_engine::*;
 
 fn ex(sketch: Id, height: Num) -> Extrude {
-    Extrude { sketch, profiles: None, height, op: Op::Add, direction: Direction::Normal, through: false, target: None, name: None }
+    Extrude {
+        down: None,
+        sketch,
+        profiles: None,
+        height,
+        op: Op::Add,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    }
 }
 fn stock() -> (Session, Id) {
     let mut s = Session::new_part();

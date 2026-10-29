@@ -101,6 +101,18 @@ fn fixed_text_at<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[f64; 2],
 #[derive(Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Entity {
+    /// Native isolated point; coincident geometry points are reused without adding constraints.
+    Point {
+        /// Point x in sketch mm, number or expression (default 0).
+        #[serde(default = "zero")]
+        x: Num,
+        /// Point y in sketch mm, number or expression (default 0).
+        #[serde(default = "zero")]
+        y: Num,
+        /// Pin coordinates with independently nameable dimensions (default true).
+        #[serde(default = "yes")]
+        dimensioned: bool,
+    },
     /// Baked text outlines with a deterministic font and fixed numeric height, anchor and angle.
     Text(TextArgs),
     /// Native rectangle figure, with centre/corner anchor and formula-driven turn.
@@ -211,6 +223,9 @@ pub struct RemoveArgs {
     /// A curve entity id (with its unused points and constraints) or a text id from sketch_info.texts.
     #[serde(default)]
     pub entity: Option<Id>,
+    /// An isolated non-system point id from sketch_info.isolated_points. Refuses points used by any entity. Exclusive with entity and constraint.
+    #[serde(default)]
+    pub point: Option<Id>,
     /// A constraint index to delete (later indices shift down by one).
     #[serde(default)]
     pub constraint: Option<usize>,
@@ -244,10 +259,10 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_add",
-            "Add entities to a sketch (all or nothing): rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or non-whitespace characters without outline contours (including bitmap-only glyphs) are refused and listed. Spaces are allowed. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
+            "Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, line, polyline, spline, arc, ellipse, ellipse_arc, polygon, slot, text. Text uses fixed numeric height, at and angle; remove and recreate it to change height, placement, angle, font or characters because edits can swap glyph/counter contour ids. Text height edits through dimension_set and indirect parameter/item formulas are refused. Its default font is Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts or non-whitespace characters without outline contours (including bitmap-only glyphs) are refused and listed. Spaces are allowed. Baked glyphs reopen without the font; retyping in the app needs its recorded path. Curves are fully \
              dimensioned from the sketch origin with the given numbers/expressions, so it stays parametric and editable in \
-             QymCAD (`dimensioned: false` leaves line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that \
-             coincide with existing ones are joined (a polyline end and an arc end become one point). Closed shapes form \
+             QymCAD (`dimensioned: false` leaves point/line/polyline/spline/arc/ellipse/ellipse_arc/polygon/slot free for sketch_constrain). Ellipse/rectangle turn formulas must stay strictly between 0 and 180 degrees (literal 0/180 allowed); ellipse-arc eccentric endpoint angles must stay strictly between 0 and 180. Polygon sides accept integral formulas in 3..=64. Points that \
+             coincide with existing ones are joined (a polyline end and an arc end become one point). A point returns point:id and reused:true when coincident; reused points receive no new constraints. Native points add no contours or material; their x/y default to 0 and dimensioned defaults true. Closed shapes form \
              contours; a contour inside another becomes a hole when the outer one is extruded. Returns the new entity and \
              point ids and the sketch (entities, points, constraints, contours, dof; dof [0, 0] = fully defined). Features \
              built from the sketch are rebuilt.",
@@ -263,6 +278,10 @@ pub fn tools() -> Vec<Tool> {
                         for e in &a.entities {
                             let added = |kind: &str, x: qymcad_engine::Added| json!({ "type": kind, "entities": x.entities, "points": x.points });
                             out.push(match e {
+                                Entity::Point { x, y, dimensioned } => {
+                                    let p = s.sketch_point(sketch, x, y, *dimensioned)?;
+                                    json!({ "type": "point", "point": p.point, "reused": p.reused })
+                                }
                                 Entity::Text(t) => json!({ "type": "text", "text": s.sketch_text(sketch, &TextSpec {
                                     text: t.text.clone(), at: t.at, height: t.height, angle: t.angle,
                                     font: t.font.clone(), construction: t.construction,
@@ -320,16 +339,17 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "sketch_remove",
-            "Delete one entity (with the points only it used and the constraints on them), one text id from sketch_info.texts (using entity), or one constraint (by index) \
-             from a sketch. Give exactly one of `entity`, `constraint`. Returns the sketch; features built from it are \
+            "Delete one entity (with the points only it used and the constraints on them), one text id from sketch_info.texts (using entity), one isolated non-system point (using point), or one constraint (by index) \
+             from a sketch. Give exactly one of `entity`, `point`, `constraint`. Returns the sketch; features built from it are \
              rebuilt (refused if one would break).",
             |st, a: RemoveArgs| {
                 let s = st.doc()?;
                 let sketch = a.sketch.resolve(s)?;
-                let ((), r) = match (a.entity, a.constraint) {
-                    (Some(e), None) => s.sketch_edit(sketch, |s| s.sketch_remove_entity(sketch, e)),
-                    (None, Some(i)) => s.sketch_edit(sketch, |s| s.sketch_remove_constraint(sketch, i)),
-                    _ => return Err("give exactly one of `entity` or `constraint`".into()),
+                let ((), r) = match (a.entity, a.constraint, a.point) {
+                    (Some(e), None, None) => s.sketch_edit(sketch, |s| s.sketch_remove_entity(sketch, e)),
+                    (None, Some(i), None) => s.sketch_edit(sketch, |s| s.sketch_remove_constraint(sketch, i)),
+                    (None, None, Some(p)) => s.sketch_edit(sketch, |s| s.sketch_remove_point(sketch, p)),
+                    _ => return Err("give exactly one of `entity`, `point` or `constraint`".into()),
                 }
                 .map_err(err)?;
                 sketch_result(s, sketch, r.as_ref())
@@ -375,7 +395,7 @@ pub fn tools() -> Vec<Tool> {
             "sketch_info",
             "A sketch's plane (named datums show name and plane id) and world_frame (origin mm, x_axis, y_axis, normal; null for an unresolved host; coordinates/directions use 4 decimal places for presentation); dof [free, redundant] ([0, 0] = fully defined); contours (id, parent contour, area mm²); \
               texts (id, text, resolved font path/index and family, fixed height/at/angle, construction, baked contour count); entities (id, type line/arc/circle/ellipse/ellipse_arc/spline, point ids (ordered spline nodes), spline nodes/closed, r for circles and arcs, ccw for arcs, construction, driven, projection id/body/source/state and geometry when projected; cross_part:true on associated projections from another part (source-local coordinates, placement ignored as in QymCAD); detached provenance lasts for this session, already-detached files reopen as ordinary geometry); \
-              points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
+              isolated_points (id, x, y, dimensioned: whether native dimensions fix the coordinates; omitted when empty); points (id, x, y; special points have a role: origin, frame, x_axis, y_axis, angle_reference). Origin/frame/axis points appear only when geometry or constraints need them, usually after the first sketch_add; constraints \
               (index, kind, point ids, value, expr, reference). Ids and indices are what sketch_constrain and sketch_remove take. Radii and constraint values retain full precision for reuse as inputs. Contour areas are tessellation-based and can be below analytic; errors can reach up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound. Use analytic dimensions for exact areas.",
             |st, a: InfoArgs| {
                 let s = st.doc()?;

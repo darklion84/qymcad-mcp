@@ -18,6 +18,7 @@ fn kind_selected_fillet_survives_server_and_gui_parameter_edits() {
     let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &20.0.into(), &16.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: "h".into(),
@@ -67,6 +68,7 @@ fn kind_face_modifier(tool: &str) {
     let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &20.0.into(), &16.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: "h".into(),

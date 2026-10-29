@@ -17,7 +17,7 @@ fn n(v: f64) -> Num {
 }
 
 fn extrude(sketch: Id, h: f64, op: Op, direction: Direction, name: &str) -> Extrude {
-    Extrude { sketch, profiles: None, height: n(h), op, direction, through: false, target: None, name: Some(name.into()) }
+    Extrude { down: None, sketch, profiles: None, height: n(h), op, direction, through: false, target: None, name: Some(name.into()) }
 }
 
 /// Returns the session and the ids of (plate body, block body or 0).

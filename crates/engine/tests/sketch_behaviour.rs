@@ -38,6 +38,7 @@ fn free_triangle() -> (Session, Id, Vec<Id>, Vec<Id>) {
 fn extrude(s: &mut Session, sk: Id) -> f64 {
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: v(2.0),

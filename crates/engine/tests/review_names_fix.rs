@@ -5,6 +5,7 @@ fn stock(s: &mut Session) -> Id {
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sk, &10.0.into(), &10.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 20.0.into(),
@@ -67,6 +68,7 @@ fn numeric_feature_names_are_refused_atomically() {
         let before = s.info();
         let err = s
             .extrude(&Extrude {
+                down: None,
                 sketch: sk,
                 profiles: None,
                 height: 10.0.into(),

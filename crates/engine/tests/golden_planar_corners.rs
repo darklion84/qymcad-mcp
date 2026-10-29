@@ -6,7 +6,17 @@ use qymcad_engine::*;
 
 fn extrude(s: &mut Session, sketch: Id, height: f64, op: Op, direction: Direction) {
     let (_, report) = s
-        .extrude(&Extrude { sketch, profiles: None, height: height.into(), op, direction, through: false, target: None, name: None })
+        .extrude(&Extrude {
+            down: None,
+            sketch,
+            profiles: None,
+            height: height.into(),
+            op,
+            direction,
+            through: false,
+            target: None,
+            name: None,
+        })
         .unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
 }

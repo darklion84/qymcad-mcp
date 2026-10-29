@@ -29,6 +29,7 @@ fn every_accepted_standard_reports_basic_diameters_for_both_sides() {
             s.sketch_circle(sk, &0.0.into(), &0.0.into(), &rim_d.into(), false).unwrap();
             let src = s
                 .extrude(&Extrude {
+                    down: None,
                     sketch: sk,
                     profiles: None,
                     height: 20.0.into(),

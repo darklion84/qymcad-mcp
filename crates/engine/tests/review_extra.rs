@@ -5,6 +5,7 @@ fn cylinder(s: &mut Session) -> Id {
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &8.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 20.0.into(),
@@ -129,6 +130,7 @@ fn review_rim_becomes_arc() {
     .unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),
@@ -163,6 +165,7 @@ fn review_split_small_piece_false_refusal() {
     s.sketch_rect(sk, &600.5.into(), &0.5.into(), &1.0.into(), &1.0.into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 500.0.into(),

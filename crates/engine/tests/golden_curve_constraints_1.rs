@@ -108,6 +108,7 @@ fn constrain(s: &mut Session, sk: Id, kind: ConstraintKind, a: Id, b: Id, value:
 fn extrude_circle(s: &mut Session, sk: Id) {
     let (_, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: Num::Value(2.0),

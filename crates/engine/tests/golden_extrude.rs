@@ -15,7 +15,8 @@ fn rectangle(s: &mut Session, plane: PlaneRef, x: f64, width: f64, depth: f64) -
 }
 
 fn extrude(s: &mut Session, sketch: u64, height: Num, op: Op, direction: Direction, through: bool) {
-    let (_, report) = s.extrude(&Extrude { sketch, profiles: None, height, op, direction, through, target: None, name: None }).unwrap();
+    let (_, report) =
+        s.extrude(&Extrude { down: None, sketch, profiles: None, height, op, direction, through, target: None, name: None }).unwrap();
     assert!(report.errors.is_empty(), "extrusion rebuild errors: {:?}", report.errors);
     assert_eq!(report.bodies.len(), 1);
 }

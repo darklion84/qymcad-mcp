@@ -438,6 +438,7 @@ mod hint_tests {
         s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &16.0.into(), false).unwrap();
         let (src, _) = s
             .extrude(&crate::Extrude {
+                down: None,
                 sketch: sk,
                 profiles: None,
                 height: 10.0.into(),

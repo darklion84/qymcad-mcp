@@ -9,6 +9,7 @@ fn build(top: bool) -> Session {
     let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &20.0.into(), &30.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: 20.0.into(),
@@ -24,6 +25,7 @@ fn build(top: bool) -> Session {
     let sketch = s.sketch_create(&PlaneRef::Plane(plane), None).unwrap();
     s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &4.0.into(), &6.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: Num::Expr("depth".into()),

@@ -14,6 +14,7 @@ fn stock_side(internal: bool) -> (Session, Id, Sel) {
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &8.0.into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),
@@ -170,6 +171,7 @@ fn stock_specific_valid_crest_radius_matches_fresh_native_build() {
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &"Bore".into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),
@@ -245,6 +247,7 @@ fn internal_tr_reports_iso2904_basic_diameters() {
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &12.0.into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 40.0.into(),

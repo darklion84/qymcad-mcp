@@ -9,7 +9,17 @@ fn rectangular_sketch(session: &mut Session, cx: f64) -> Id {
 }
 
 fn extrusion(sketch: Id, op: Op) -> Extrude {
-    Extrude { sketch, profiles: None, height: 8.0.into(), op, direction: Direction::Normal, through: false, target: None, name: None }
+    Extrude {
+        down: None,
+        sketch,
+        profiles: None,
+        height: 8.0.into(),
+        op,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    }
 }
 
 #[test]

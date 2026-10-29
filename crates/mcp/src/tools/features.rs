@@ -38,6 +38,9 @@ pub struct ExtrudeArgs {
     /// Distance, mm (number or expression). Not needed with `through`.
     #[serde(default)]
     pub height: Option<Num>,
+    /// Second-side length in mm (number or expression), finite and greater than 1e-9. Gives native Two sides: normal spans [-down, height], reverse [-height, down]. Excludes symmetric and through; later parameter/dimension edits must keep it positive. Omit for one side.
+    #[serde(default)]
+    pub down: Option<Num>,
     /// add (default; creates the first body), cut, intersect, new_body.
     #[serde(default)]
     pub op: Op,
@@ -445,6 +448,7 @@ pub fn tools() -> Vec<Tool> {
                  returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. \
                  On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. \
                  For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. \
+                 Optional down gives native Two sides with independent positive lengths: normal spans [-down, height], reverse [-height, down]. Both lengths stay parametric; down must remain finite and greater than 1e-9, including later edits, and cannot be combined with symmetric or through. Recreate the feature to return to one side. Two-sided cuts use their exact ends without one-sided entry clearance. \
                  Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane.",
                 stale!()
             ),
@@ -462,6 +466,7 @@ pub fn tools() -> Vec<Tool> {
                 };
                 let profiles = picked_profiles(s, sketch, a.profiles, a.profiles_at)?;
                 let x = Extrude {
+                    down: a.down,
                     sketch,
                     profiles,
                     height,

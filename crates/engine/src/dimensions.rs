@@ -141,6 +141,12 @@ impl Session {
                 crate::value::check_expr(&text)?;
                 // Num validation also rejects NaN/Inf strings before the native numeric fast path.
                 let evaluated = value.eval(&s.p.param_map())?;
+                if matches!(&native, DimTarget::Feature { node, key } if key == "down"
+                    && s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Extrude { .. } | FeatureKind::Combine { .. })))
+                    && evaluated <= 1e-9
+                {
+                    return Err(Error::Invalid(format!("down must be finite and greater than 1e-9, got {evaluated}; recreate the feature to return to one side")));
+                }
                 let plain_number = text.trim().parse::<f64>().is_ok();
                 // Native's numeric fast path accepts exponent notation, but its formula
                 // checker/parser does not. Store the same f64 in round-trippable decimal form.
@@ -245,6 +251,7 @@ impl Session {
                 }
             }
             s.check_array_limits()?;
+            s.check_extrude_down().map_err(|(_, e)| e)?;
             if let DimTarget::Feature { node, key } = &native {
                 let item = !s.p.timeline.iter().any(|n| n.id == *node);
                 if item && value.is_some() {

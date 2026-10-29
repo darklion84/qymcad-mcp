@@ -4,7 +4,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 
 | ID | Capability | Status | Missing / reason | MCP tool(s) | keys |
 |---|---|---|---|---|---|
-| P1 | Extrude | partial | Two different side lengths | `extrude` | `FeatureKind::Extrude,FeatureKind::Combine,PartTool::Extrude` |
+| P1 | Extrude | covered | — | `extrude` | `FeatureKind::Extrude,FeatureKind::Combine,PartTool::Extrude` |
 | P2 | Revolve | covered | — | `revolve` | `FeatureKind::Revolve,PartTool::Revolve` |
 | P3 | Sweep | covered | — | `sweep` | `FeatureKind::Sweep,PartTool::Sweep` |
 | P4 | Loft | covered | — | `loft` | `FeatureKind::Loft,PartTool::Loft` |
@@ -41,7 +41,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | S3 | Dimensions | covered | Linear, angular, radius, diameter | `dimension_set`, `sketch_constrain` | — |
 | S4 | Sketch constraints | covered | All 12 GUI constraint actions represented | `sketch_constrain` | `ConstraintKind::Coincident,ConstraintKind::Horizontal,ConstraintKind::Vertical,ConstraintKind::Parallel,ConstraintKind::Perpendicular,ConstraintKind::Equal,ConstraintKind::Fix,ConstraintKind::Collinear,ConstraintKind::Concentric,ConstraintKind::Tangent,ConstraintKind::Symmetric,ConstraintKind::Midpoint` |
 | S5 | Sketch edits | covered | Trim, extend, break, corner, offset, mirror | `sketch_edit` | — |
-| S6 | Sketch point | not covered | Point node tool | none | `SketchShape::Point` |
+| S6 | Sketch point | covered | — | `sketch_add`, `sketch_info`, `sketch_remove` | `SketchShape::Point` |
 | S7 | Project body geometry into sketch | covered | — | `sketch_project` | — |
 | S8 | Move / copy / rotate sketch curves | not covered | — | none | — |
 | S9 | Sketch arrays | not covered | Linked linear and circular copies | none | — |

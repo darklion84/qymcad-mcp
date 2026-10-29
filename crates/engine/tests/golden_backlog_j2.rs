@@ -48,6 +48,7 @@ fn cylinder() -> Session {
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 10.0.into(),

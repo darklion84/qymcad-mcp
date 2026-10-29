@@ -26,6 +26,7 @@ fn block(w: f64, l: f64, h: f64) -> (Session, Id) {
 
 fn extrude(sketch: Id, h: Num, op: Op) -> Extrude {
     Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: h,
@@ -685,6 +686,7 @@ fn extrude_target_must_be_a_current_body() {
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &5.0.into(), false).unwrap();
     let cut = |target, op| Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 5.0.into(),

@@ -42,6 +42,7 @@ fn build_impl(mode: &str, pocket_dimensions: bool) -> Session {
     }
     let (body, r) = s
         .extrude(&Extrude {
+            down: None,
             sketch: plate,
             profiles: None,
             height: n("t"),
@@ -77,6 +78,7 @@ fn build_impl(mode: &str, pocket_dimensions: bool) -> Session {
     let (pw, pl) = if pocket_dimensions { (n("pw"), n("pl")) } else { (PW.into(), PL.into()) };
     s.sketch_rect(pocket, &0.0.into(), &0.0.into(), &pw, &pl, false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: pocket,
         profiles: None,
         height: n("pd"),
@@ -120,6 +122,7 @@ fn gui_param_edit_rebuilds_from_an_uppercase_name() {
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sk, &0.0.into(), &0.0.into(), &W.into(), &L.into(), false).unwrap();
     let extrude = Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: n("T"),

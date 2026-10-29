@@ -139,6 +139,15 @@ pub mod native;
 /// Emulate QymCAD 0.1.1 `Act::SetDriver` (params.rs:260–286), then `apply_param_edit`
 /// and changed-name rebuild scheduling. A literal driver explicitly solves and dirties its own sketch.
 pub fn gui_edit_driver(path: &std::path::Path, name: &str, text: &str) -> f64 {
+    gui_edit_driver_model(path, name, text).0
+}
+
+/// Native named-driver edit, retaining placement and recipe for independent assertions.
+pub fn gui_edit_driver_model(
+    path: &std::path::Path,
+    name: &str,
+    text: &str,
+) -> (f64, [f64; 6], Vec<qymcad_core::geom::MeshFace>, qymcad_core::model::Project) {
     let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     project.ensure_document();
     for i in 0..project.bodies.len() {
@@ -173,5 +182,5 @@ pub fn gui_edit_driver(path: &std::path::Path, name: &str, text: &str) -> f64 {
     assert!(report.errors.is_empty(), "GUI SetDriver rebuild errors: {:?}", report.errors);
     let consumed = project.consumed_bodies();
     let last = project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).expect("a body");
-    shapes[&last].volume()
+    (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]), project.regen_faces[&last].clone(), project)
 }

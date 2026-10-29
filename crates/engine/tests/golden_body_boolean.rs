@@ -6,6 +6,7 @@ fn box_body(s: &mut Session, cx: Num, cy: Num, width: Num, height: Num, name: &s
     let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some(&format!("{name} sketch"))).unwrap();
     s.sketch_rect(sketch, &cx, &cy, &width, &height, false).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch,
         profiles: None,
         height: 20.0.into(),

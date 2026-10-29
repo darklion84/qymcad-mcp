@@ -11,6 +11,7 @@ fn stock() -> (Session, Id, DimensionTarget, Id) {
     let target = DimensionTarget::Sketch { sketch: sk, constraint: ci };
     let (feature, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 2.0.into(),
@@ -122,6 +123,7 @@ fn free_ellipse_item_formula_follows_globals_but_app_named_item_driver_keeps_old
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
     s.dimension_set(&target, Some(&"R*2".into()), None).unwrap();
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 2.0.into(),

@@ -18,6 +18,7 @@ fn mirror(s: &mut Session, sk: Id, curves: Vec<Id>) -> EditedSketch {
 fn extrude(s: &mut Session, sk: Id) -> Id {
     let (body, report) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: n(3.0),
@@ -218,6 +219,7 @@ fn point_mirrored_profile_keeps_f074_fillet_acceptance() {
         .id;
     let (body, report) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: Some(vec![mirrored]),
             height: n(20.0),

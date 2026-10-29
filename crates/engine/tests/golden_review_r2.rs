@@ -89,6 +89,7 @@ fn saved_cross_part_projection_warns_for_every_record_and_keeps_local_geometry()
     assert_close(detail.points.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max), 5.0, 1e-6, "local projected max X");
     let (result, rebuild) = s
         .extrude(&Extrude {
+            down: None,
             sketch,
             profiles: None,
             height: 2.0.into(),
@@ -124,6 +125,7 @@ fn undo_restores_all_four_cross_part_projection_warnings() {
             }
             let (body, rebuild) = s
                 .extrude(&Extrude {
+                    down: None,
                     sketch,
                     profiles: None,
                     height: 2.0.into(),

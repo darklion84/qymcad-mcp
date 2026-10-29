@@ -7,6 +7,7 @@ fn cylinder(s: &mut Session, diameter: f64, bore: Option<f64>) -> Id {
         s.sketch_circle(sk, &0.0.into(), &0.0.into(), &bore.into(), false).unwrap();
     }
     s.extrude(&Extrude {
+        down: None,
         sketch: sk,
         profiles: None,
         height: 20.0.into(),
@@ -217,6 +218,7 @@ fn thread_stock_and_profile_edits_recheck_open_margin_atomically() {
     s.sketch_circle(sk, &0.0.into(), &0.0.into(), &"bore".into(), false).unwrap();
     let src = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),

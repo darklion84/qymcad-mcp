@@ -18,6 +18,7 @@ fn stock(s: &mut Session, diameter: Num, height: Num, bore: Option<Num>) -> Id {
     }
     let (body, report) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height,
@@ -372,6 +373,7 @@ fn a_circular_arc_is_not_a_full_thread_rim() {
     .unwrap();
     let (src, _) = s
         .extrude(&Extrude {
+            down: None,
             sketch: sk,
             profiles: None,
             height: 20.0.into(),

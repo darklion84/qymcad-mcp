@@ -45,6 +45,23 @@ pub struct ProjectionResult {
     pub points: Vec<Id>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct AddedPoint {
+    pub point: Id,
+    pub reused: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct IsolatedPointInfo {
+    pub id: Id,
+    #[serde(serialize_with = "crate::session::serialize_coordinate")]
+    pub x: f64,
+    #[serde(serialize_with = "crate::session::serialize_coordinate")]
+    pub y: f64,
+    /// Whether native constraints leave this point no freedom to move.
+    pub dimensioned: bool,
+}
+
 /// Where a sketch (or an offset plane) sits.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -109,11 +126,86 @@ pub struct SketchInfo {
     /// Remaining degrees of freedom (0 = fully defined) and redundant constraints.
     pub dof: (i32, i32),
     pub contours: Vec<ContourInfo>,
+    /// Non-system points that belong to no entity.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub isolated_points: Vec<IsolatedPointInfo>,
     /// Native texts, including construction texts and their baked glyph contour counts.
     pub texts: Vec<TextInfo>,
 }
 
 impl Session {
+    /// Add a native isolated point or reuse an existing non-system point within 1e-6 mm.
+    pub fn sketch_point(&mut self, sketch: Id, x: &Num, y: &Num, dimensioned: bool) -> Result<AddedPoint> {
+        self.transaction(|s| {
+            let si = s.sketch_si(sketch)?;
+            let vars = s.p.param_map();
+            let (vx, vy) = (x.eval(&vars)?, y.eval(&vars)?);
+            let count = s.p.sketches[si].points.len();
+            let point = s.p.sketch_point_at(si, vx, vy, 1e-6);
+            let reused = s.p.sketches[si].points.len() == count;
+            if reused {
+                return Ok(AddedPoint { point, reused });
+            }
+            if dimensioned {
+                // Reverse the y axis so positive x has a positive signed DistancePL driver. The two
+                // reference sets are distinct, unlike origin Distance{axis}, so native names are unique.
+                let (ya, yb) = s.p.ensure_axis(si, 1);
+                let (xa, xb) = s.p.ensure_axis(si, 0);
+                for (coordinate, value, a, b) in [(x, vx, yb, ya), (y, vy, xa, xb)] {
+                    let constraint = if coordinate.expr().is_none() && value == 0.0 {
+                        Constraint::PointOnLine { p: point, a, b }
+                    } else {
+                        // Native preserves side with `d < 0`, which loses a negative side at zero.
+                        // Encode the side in the axis orientation instead: d always stays nonnegative,
+                        // including after save/load and the app's own parameter/driver edits.
+                        let (a, b) = if value < 0.0 { (b, a) } else { (a, b) };
+                        Constraint::DistancePL {
+                            p: point,
+                            a,
+                            b,
+                            d: value.abs(),
+                            off: 0.0,
+                            // Numeric strings can use exponent notation; the native formula parser cannot.
+                            // Keep them as editable decimal formulas, including a string evaluating to zero.
+                            expr: if coordinate.expr().is_some_and(|e| e.parse::<f64>().is_ok()) {
+                                value.abs().to_string()
+                            } else {
+                                coordinate.magnitude_expr(value)?
+                            },
+                            driven: false,
+                            at: None,
+                        }
+                    };
+                    s.p.add_constraint_if_independent(si, constraint);
+                }
+            }
+            s.finish_sketch_edit(si)?;
+            Ok(AddedPoint { point, reused })
+        })
+    }
+
+    /// Delete only an isolated non-system point, preserving any entity incident to a refused point.
+    pub fn sketch_remove_point(&mut self, sketch: Id, point: Id) -> Result<()> {
+        self.transaction(|s| {
+            let si = s.sketch_si(sketch)?;
+            let sk = &s.p.sketches[si];
+            if !sk.points.iter().any(|p| p.id == point) {
+                return Err(Error::NotFound(format!("point {point} in sketch {sketch} (see sketch_info)")));
+            }
+            if sk.system_ids().contains(&point) {
+                return Err(Error::Invalid(format!("point {point} anchors the sketch's origin/axes and cannot be removed")));
+            }
+            if let Some(entity) = sk.entities.iter().find(|e| entity_points(e).contains(&point)) {
+                return Err(Error::Invalid(format!(
+                    "point {point} belongs to entity {}; remove that entity with sketch_remove instead",
+                    entity.id
+                )));
+            }
+            s.p.delete_points(si, &[point]);
+            s.finish_sketch_edit(si)
+        })
+    }
+
     /// Create an empty sketch on `plane`. Returns the sketch id (also its timeline node id).
     pub fn sketch_create(&mut self, plane: &PlaneRef, name: Option<&str>) -> Result<Id> {
         let name = Self::optional_object_name(name);
@@ -365,6 +457,15 @@ impl Session {
             let f = self.p.sketch_owner(sketch).map(|owner| f.transformed(&self.p.world_transform(owner))).unwrap_or(f);
             SketchWorldFrame { origin: f.origin, x_axis: f.x, y_axis: f.y, normal: f.normal() }
         });
+        let isolated: HashSet<Id> = self.p.sketch_hole_point_ids(sketch).into_iter().collect();
+        let free = self.p.sketch_free_points(si);
+        let isolated_points = s
+            .points
+            .iter()
+            .zip(free)
+            .filter(|(p, _)| isolated.contains(&p.id))
+            .map(|(p, free)| IsolatedPointInfo { id: p.id, x: p.x, y: p.y, dimensioned: !free })
+            .collect();
         Ok(SketchInfo {
             id: s.id,
             name: crate::localization::name(&s.name),
@@ -372,6 +473,7 @@ impl Session {
             world_frame,
             dof: self.p.sketch_dof(si),
             contours,
+            isolated_points,
             texts: s
                 .texts
                 .iter()
@@ -529,6 +631,24 @@ impl Session {
     /// the repeated calls of F-040 are gone). Its own "solved" bar is 1e-4 while edits here are refused above 1e-6,
     /// so a solve that stops in between gets one more before a refusal. A wrong branch is checked below.
     pub(crate) fn solve_settled(&mut self, si: usize) -> f64 {
+        // Native DistancePL silently takes abs(expr), unlike the origin Distance coordinate pins. Keep
+        // the same coordinate-side contract for axis-pinned points, including ones later reused by
+        // entities: a magnitude formula cannot turn negative.
+        let sketch = &self.p.sketches[si];
+        let vars = self.p.param_map();
+        if sketch.constraints.iter().any(|c| match c {
+            Constraint::DistancePL { p, a, b, expr, driven: false, .. }
+                if !expr.trim().is_empty()
+                    && !sketch.system_ids().contains(p)
+                    && sketch.system_ids().contains(a)
+                    && sketch.system_ids().contains(b) =>
+            {
+                !Num::Expr(expr.clone()).eval(&vars).is_ok_and(|value| value >= 0.0)
+            }
+            _ => false,
+        }) {
+            return f64::INFINITY;
+        }
         let mut residual = self.p.solve_sketch(si);
         if residual > 1e-6 {
             residual = self.p.solve_sketch(si);
