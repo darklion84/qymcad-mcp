@@ -148,10 +148,10 @@ impl Session {
         }
         for (node, dims) in &self.p.feat_dims {
             let is_sketch = self.p.sketch_index(*node).is_some();
-            if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_dist_") && mentions(e, name)) {
+            if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_") && mentions(e, name)) {
                 out.push(format!("datum dependency of sketch {} `{}`", node, self.node_name(*node)));
             }
-            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_dist_")) && mentions(e, name)) {
+            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_")) && mentions(e, name)) {
                 out.push(format!("feature {} `{}`", node, self.node_name(*node)));
             }
         }
@@ -167,6 +167,7 @@ impl Session {
     /// Rebuild scheduling retains blanket native dirtying and face-derived datum barriers (F-002, F-017).
     /// Names match exactly, as QymCAD evaluates them. Returns reached sketches left unsolved.
     pub(crate) fn propagate_params(&mut self, before: &std::collections::HashMap<String, f64>) -> Result<Vec<(Id, f64)>> {
+        self.reconcile_datum_dependencies();
         let mut previous = before.clone();
         let mut unsolved = Vec::new();
         // Each solve round can expose the next named reference dimension. Bound imported cycles, and

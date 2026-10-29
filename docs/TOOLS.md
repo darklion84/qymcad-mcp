@@ -116,7 +116,7 @@ The whole document: parameters, sketches (world_frame, contours, degrees of free
 
 ## dimension_set
 
-Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Text height edits and changes to existing text through imported formulas are refused: remove and recreate text to change its height, position, angle, font or characters. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.
+Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Chamfer dist/d2 metadata reports mode and unit; d2 is degrees in dist_angle, mm in two_dist, and refused in symmetric. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Text height edits and changes to existing text through imported formulas are refused: remove and recreate text to change its height, position, angle, font or characters. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.
 
 ```json
 {
@@ -153,7 +153,7 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
               "description": "Feature id/name, or sketch item's centre/id (items have no native names)."
             },
             "key": {
-              "description": "Native numeric key, e.g. `height`, `sides`, `w`, `h`, `turn` (ellipse axes are full sizes).",
+              "description": "Native numeric key, e.g. `height`, `sides`, `w`, `h`, `turn` (ellipse axes are full sizes). Chamfer `d2` is degrees for Leg and angle, mm for TwoDist, and refused for symmetric.",
               "type": "string"
             }
           },
@@ -227,7 +227,7 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
 
 ## param_set
 
-Create or change a named parameter and rebuild everything that depends on it. Use parameters for every dimension the user may want to change, then refer to them in expressions. If the model no longer builds, the change is rolled back and the error returned. Edits that change existing text geometry through imported item formulas are refused; remove and recreate the text instead. After GUI structural edits (re-hosting a datum sketch, creating a new datum sketch, or replacing a datum distance expression), reopen and save through the server before further GUI parameter edits so its persisted datum dependencies are refreshed (ADR 0007).
+Create or change a named parameter and rebuild everything that depends on it. Use parameters for every dimension the user may want to change, then refer to them in expressions. If the model no longer builds, the change is rolled back and the error returned. Edits that change existing text geometry through imported item formulas are refused; remove and recreate the text instead. After GUI structural edits (re-hosting a datum sketch, creating a new datum sketch, or replacing a datum distance/angle formula or driver name), reopen and save through the server before further GUI parameter edits so its persisted datum dependencies are refreshed (ADR 0007).
 
 ```json
 {
@@ -2510,7 +2510,7 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
 
 ## plane_offset
 
-Create a datum plane parallel to a base or datum plane at a distance (e.g. the top face level for a pocket: {"base": "XY", "dist": "t"}). Returns its id; sketch on it with {"plane": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.
+Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. Returns plane/rebuild; sketch on it with {"plane": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.
 
 ```json
 {
@@ -2596,7 +2596,7 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
     },
     "dist": {
       "$ref": "#/$defs/Num",
-      "description": "Distance along the base plane's normal, mm (number or expression)."
+      "description": "Distance along the base plane's normal, mm (number or expression), finite within ±100000. Later evaluated edits retain this limit."
     },
     "name": {
       "default": null,
@@ -2605,6 +2605,21 @@ Create a datum plane parallel to a base or datum plane at a distance (e.g. the t
         "string",
         "null"
       ]
+    },
+    "tilt_x": {
+      "$ref": "#/$defs/Num",
+      "default": 0.0,
+      "description": "Native Tilt X in degrees (number or expression), finite within ±360. Default 0; no angle normalization. Also checked on later evaluated edits."
+    },
+    "tilt_y": {
+      "$ref": "#/$defs/Num",
+      "default": 0.0,
+      "description": "Native Tilt Y in degrees (number or expression), finite within ±360. Default 0; applied after Tilt X around the original plane axes."
+    },
+    "turn": {
+      "$ref": "#/$defs/Num",
+      "default": 0.0,
+      "description": "Native Turn about the tilted normal in degrees (number or expression), finite within ±360. Default 0. A child datum inherits its parent's normal, without inheriting Turn."
     }
   },
   "required": [
@@ -3425,7 +3440,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
 
 ## chamfer
 
-Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks differ. `edges` as for fillet. QymCAD places `dist` on its first adjacent face in native traversal order, which is not reported. Inspect adjacent face setbacks before/after; on straight rectangular faces, lost area / edge length gives the setback. Topology's sorted face ids do not indicate this order. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. The native d2 dimension is mm in Two distances and degrees in Leg and angle. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -3458,6 +3473,18 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
   },
   "additionalProperties": false,
   "properties": {
+    "angle": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Native Leg and angle, degrees (number or expression), strictly between 0 and 90 on creation and every evaluated edit. Excludes d2; stored as native dimension key d2, whose unit is degrees in this mode."
+    },
     "body": {
       "anyOf": [
         {
@@ -3479,7 +3506,7 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
         }
       ],
       "default": null,
-      "description": "Second setback on the other face, mm: an asymmetric chamfer. QymCAD chooses which adjacent face takes\n`dist` for each edge by its native traversal order; the side cannot be selected or reported. Inspect\nadjacent face setbacks before/after chamfer; for straight rectangular faces, lost area / edge length\ngives the setback. Topology's sorted face ids do not indicate this order."
+      "description": "Second positive setback on the other face, mm: native Two distances. Excludes angle. Stored as native dimension key d2."
     },
     "dist": {
       "$ref": "#/$defs/Num",
@@ -3510,6 +3537,11 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
       ],
       "description": "The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.\nSeam edges are automatically dropped with a result note; a selection containing only seams is refused."
     },
+    "flip": {
+      "default": false,
+      "description": "Swap the native automatic adjacent-face choice (default false). Allowed with d2 or angle. An explicit reference_face overrides the automatic choice.",
+      "type": "boolean"
+    },
     "name": {
       "default": null,
       "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
@@ -3517,6 +3549,39 @@ Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks dif
         "string",
         "null"
       ]
+    },
+    "reference_face": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "items": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "enum": [
+                "largest"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "object"
+            }
+          ],
+          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), and fallback facet normals can require about 20–30 degrees. Bare corner and positive `and` previews count omitted uncertain candidates; an `and` requiring both signs matches no edge and reports no omission. Other compositions report the uncertain body total: corner filters treat those edges as neither concave nor convex; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's classification. In hole/shell/push_face, any selection containing a kind freezes its whole resolved face set as persistent picks at creation; it does not rediscover faces after edits. Selections without kinds stay dynamic. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Exactly one face adjacent to every selected non-seam edge; dist lies on that face. Stored as its persistent id. Allowed with d2 or angle; lost adjacency after an upstream edit refuses atomically."
     }
   },
   "required": [

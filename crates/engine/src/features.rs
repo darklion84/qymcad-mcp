@@ -5,8 +5,8 @@ use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::sketch::PlaneRef;
 use crate::value::Num;
-use qymcad_core::feature::{Extent, FeatureKind, Reach};
-use qymcad_core::model::{CombineSpan, Id};
+use qymcad_core::feature::{Extent, FeatureKind, PlaneTilt, Reach};
+use qymcad_core::model::{CombineSpan, FeatNumber, Id, PlainNumber, PlaneDef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -82,10 +82,23 @@ pub struct Extrude {
 }
 
 impl Session {
-    /// A datum plane parallel to a base plane or another datum plane, at distance `dist` along its normal.
-    pub fn plane_offset(&mut self, base: &PlaneRef, dist: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
+    /// Datum offset with the native Tilt X, Tilt Y and Turn fields, in degrees.
+    pub fn plane_offset_tilt(
+        &mut self,
+        base: &PlaneRef,
+        dist: &Num,
+        tilt_x: &Num,
+        tilt_y: &Num,
+        turn: &Num,
+        name: Option<&str>,
+    ) -> Result<(Id, Rebuild)> {
         self.atomic(|s| {
-            let d = dist.eval(&s.p.param_map())?;
+            let vars = s.p.param_map();
+            let values = [dist.eval(&vars)?, tilt_x.eval(&vars)?, tilt_y.eval(&vars)?, turn.eval(&vars)?];
+            for (key, value) in ["dist", "tilt_x", "tilt_y", "turn"].into_iter().zip(values) {
+                check_datum_value(key, value)?;
+            }
+            let [d, x, y, t] = values;
             let id = match base {
                 PlaneRef::Base(b) => s.p.add_offset_plane((*b).into(), d),
                 PlaneRef::Plane(src) => {
@@ -98,12 +111,54 @@ impl Session {
                     return Err(Error::Invalid("an offset from a face is not supported yet; use a base or datum plane".into()))
                 }
             };
-            if let Some(e) = dist.expr() {
-                s.p.set_feat_dim(id, "dist", e);
+            let plane = s.p.planes.iter_mut().find(|plane| plane.id == id).expect("new datum");
+            plane.tilt = PlaneTilt { about_x: x, about_y: y };
+            plane.rot_deg = t;
+            for ((key, input), value) in ["dist", "tilt_x", "tilt_y", "turn"].into_iter().zip([dist, tilt_x, tilt_y, turn]).zip(values) {
+                // Absent angles in the compatibility API remain absent in legacy archives. Nonzero literals
+                // and expressions use the same public formula door as the app's datum bar.
+                if input.expr().is_some() || (key != "dist" && value != 0.0) {
+                    let text = input.expr().filter(|e| e.parse::<f64>().is_err()).unwrap_or_else(|| value.to_string());
+                    s.p.write_feat_formula(&FeatNumber { node: id, key }, &text, PlainNumber::Stands)
+                        .map_err(|e| Error::Expr(format!("datum {key}: {e:?}")))?;
+                }
             }
             s.set_node_name(id, name)?;
             Ok(id)
         })
+    }
+
+    /// A datum parallel to a base or datum plane, preserving the legacy zero-angle behavior.
+    pub fn plane_offset(&mut self, base: &PlaneRef, dist: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
+        self.plane_offset_tilt(base, dist, &0.0.into(), &0.0.into(), &0.0.into(), name)
+    }
+
+    /// Validate evaluated values before native geometry can alias an out-of-range angle.
+    pub(crate) fn check_datum_values(&self) -> std::result::Result<(), (Id, Error)> {
+        let vars = self.p.param_map();
+        for plane in &self.p.planes {
+            let distance = match plane.def {
+                PlaneDef::OffsetBase { dist, .. } | PlaneDef::OffsetPlane { dist, .. } | PlaneDef::OffsetFace { dist, .. } => Some(dist),
+                _ => None,
+            };
+            for (key, stored) in [
+                ("dist", distance),
+                ("tilt_x", Some(plane.tilt.about_x)),
+                ("tilt_y", Some(plane.tilt.about_y)),
+                ("turn", Some(plane.rot_deg)),
+            ] {
+                let Some(stored) = stored else { continue };
+                let checked = (|| {
+                    let value = match self.p.feat_dim(plane.id, key) {
+                        Some(expr) => Num::Expr(expr.into()).eval(&vars)?,
+                        None => stored,
+                    };
+                    check_datum_value(key, value)
+                })();
+                checked.map_err(|e| (plane.id, e))?;
+            }
+        }
+        Ok(())
     }
 
     /// Extrude sketch profiles into a solid, or cut/add/intersect with the part's body. Returns the new body id.
@@ -202,6 +257,17 @@ impl Session {
     }
 }
 
+fn check_datum_value(key: &str, value: f64) -> Result<()> {
+    let limit = if key == "dist" { 100000.0 } else { 360.0 };
+    if !value.is_finite() || value.abs() > limit {
+        return Err(Error::Invalid(format!(
+            "datum {key} must be finite within ±{limit} {}, got {value}",
+            if key == "dist" { "mm" } else { "degrees" }
+        )));
+    }
+    Ok(())
+}
+
 /// Native takes abs() and silently drops lengths at or below its threshold; never promise those values.
 fn check_down(value: f64) -> Result<()> {
     if !value.is_finite() || value <= 1e-9 {
@@ -249,6 +315,33 @@ mod two_sides_tests {
             assert!(s.param_set("back", &value.into()).is_err(), "prior error hid down={value}");
             assert_eq!(ron::ser::to_string(&s.p).unwrap(), before);
             assert_eq!(s.result_bodies()[0].volume, volume);
+        }
+    }
+}
+
+#[cfg(test)]
+mod datum_tests {
+    use super::*;
+    use crate::BaseName;
+
+    #[test]
+    fn rebuild_refuses_bad_evaluated_datums_before_touching_shapes() {
+        let mut s = Session::new_part();
+        let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &7.0.into(), None).unwrap();
+        let sketch = s.sketch_create(&PlaneRef::Plane(plane), None).unwrap();
+        s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &10.0.into(), &6.0.into(), false).unwrap();
+        s.extrude(&serde_json::from_value(serde_json::json!({"sketch":sketch,"height":4})).unwrap()).unwrap();
+        let volume = s.result_bodies()[0].volume;
+        let bbox = s.result_bodies()[0].bbox;
+        for (key, value) in [("dist", "100001"), ("tilt_x", "361"), ("tilt_y", "-361"), ("turn", "1e400")] {
+            let before = s.p.clone();
+            s.p.set_feat_dim(plane, key, value.into());
+            let report = s.rebuild();
+            assert!(!report.errors.is_empty(), "rebuild must refuse {key}={value}");
+            assert_eq!(report.errors[0].node, plane);
+            assert_eq!(s.result_bodies()[0].volume, volume);
+            assert_eq!(s.result_bodies()[0].bbox, bbox);
+            s.p = before;
         }
     }
 }

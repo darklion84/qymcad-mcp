@@ -309,12 +309,8 @@ impl Session {
         let before_evaluation = sess.p.clone_without_source_data();
         sess.p.eval_parameters();
         sess.check_fixed_text_geometry(&before_evaluation)?;
-        sess.check_extrude_down().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
-        sess.check_thread_dimensions().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
-        let sketches: Vec<Id> = sess.p.sketches.iter().map(|s| s.id).collect();
-        for sid in sketches {
-            sess.track_datum_dependencies(sid);
-        }
+        sess.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        sess.reconcile_datum_dependencies();
         if missing {
             sess.p.mark_all_dirty();
         }
@@ -322,6 +318,7 @@ impl Session {
         // Planned nodes are checked by the rebuild itself; the rest are checked below (F-074).
         let planned: HashSet<Id> = sess.p.regen_plan().nodes.into_iter().collect();
         let mut r = sess.rebuild();
+        sess.check_chamfer_references().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         for (&id, old) in &stored {
             let Some(sh) = sess.shapes.get(&id) else { continue };
             let new = BodyMetrics::of(sh);
@@ -483,13 +480,22 @@ impl Session {
         });
     }
 
+    /// Refuse native coercions before regeneration and on every evaluated edit, even on a previously failed node.
+    pub(crate) fn check_evaluated_features(&self) -> std::result::Result<(), (Id, Error)> {
+        self.check_extrude_down()?;
+        self.check_thread_dimensions()?;
+        self.check_datum_values()?;
+        self.check_chamfer_values()
+    }
+
     /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
     /// it created: rebuilding the whole timeline would replace every old body's shape with a fresh rebuild, which
     /// need not be bit-identical — a refused edit must retain the exact old representation (F-034).
     /// F-005 still holds: a datum created by the edit is one of its nodes.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
-        if let Err((id, e)) = self.check_extrude_down().and_then(|()| self.check_thread_dimensions()) {
+        self.reconcile_datum_dependencies();
+        if let Err((id, e)) = self.check_evaluated_features() {
             return Rebuild { errors: vec![self.issue(id, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
         }
         let blocked = self.edge_query_rebuild_errors(&self.p);
@@ -604,6 +610,13 @@ impl Session {
         for (node, message) in self.boolean_identity_refusals(&boolean_identities, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
+        }
+        if let Err((id, error)) = self.check_chamfer_references() {
+            let message = error.to_string();
+            self.p.regen_errors.insert(id, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            if !errors.iter().any(|e| e.node == id) {
+                errors.push(self.issue(id, message));
+            }
         }
         for issue in self.check_thread_stock() {
             if !errors.iter().any(|e| e.node == issue.node) {
@@ -802,7 +815,10 @@ impl Session {
             self.check_fixed_text_geometry(&before)?;
             // Callers allow unrelated native errors that existed before an edit. That exemption must
             // never hide a new safety refusal on the same node (e.g. a previously overlong thread).
-            if let Err((id, error)) = self.check_extrude_down().and_then(|()| self.check_thread_dimensions()) {
+            if let Err((id, error)) = self.check_evaluated_features() {
+                return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
+            }
+            if let Err((id, error)) = self.check_chamfer_references() {
                 return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
             }
             let mut refused = self.check_thread_stock();

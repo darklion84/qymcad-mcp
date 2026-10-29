@@ -39,6 +39,38 @@ pub enum HoleKind {
     Countersink,
 }
 
+/// Native chamfer options. `angle` is stored as native `d2` in degrees.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Chamfer {
+    /// Current source body, or the current body when omitted.
+    pub body: Option<Id>,
+    /// Edges resolved to persistent picks; seam edges are dropped.
+    pub edges: Sel,
+    /// First setback in millimetres, positive.
+    pub dist: Num,
+    /// Second setback in millimetres, exclusive with `angle`.
+    pub d2: Option<Num>,
+    /// Angle in degrees, strictly between zero and ninety, exclusive with `d2`.
+    pub angle: Option<Num>,
+    /// Exactly one source face adjacent to every selected non-seam edge.
+    pub reference_face: Option<Sel>,
+    /// Native automatic reference-side switch, overridden by an explicit reference face.
+    pub flip: bool,
+    /// Name of the new native feature.
+    pub name: Option<String>,
+}
+
+/// The retained native mode and reference side of a chamfer.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ChamferInfo {
+    /// `symmetric`, `two_dist` or `dist_angle`.
+    pub mode: String,
+    /// Persistent manually selected face, or native automatic selection.
+    pub reference_face: Option<u32>,
+    /// Retained native side switch.
+    pub flip: bool,
+}
+
 /// Arguments of `Session::hole`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hole {
@@ -90,6 +122,13 @@ fn positive(s: &Session, n: &Num, what: &str) -> Result<f64> {
     Ok(v)
 }
 
+fn chamfer_angle(v: f64) -> Result<f64> {
+    if !(v.is_finite() && v > 0.0 && v < 90.0) {
+        return Err(Error::Invalid(format!("chamfer angle must satisfy 0 < angle < 90 degrees, got {v}")));
+    }
+    Ok(v)
+}
+
 /// Store the expression of `n` (if any) as feature dimension `key` of `node`.
 pub(crate) fn dim(s: &mut Session, node: Id, key: &str, n: &Num) {
     if let Some(e) = n.expr() {
@@ -98,6 +137,169 @@ pub(crate) fn dim(s: &mut Session, node: Id, key: &str, n: &Num) {
 }
 
 impl Session {
+    /// Recheck evaluated native dimensions before regeneration (native angles otherwise alias modulo 180°).
+    pub(crate) fn check_chamfer_values(&self) -> std::result::Result<(), (Id, Error)> {
+        let vars = self.p.param_map();
+        for node in &self.p.timeline {
+            if let FeatureKind::Chamfer { dist, d2, mode, ref_face, flip, .. } = node.kind {
+                let check = || -> Result<()> {
+                    let eval = |key: &str, seed: f64| {
+                        self.p.feat_dim(node.id, key).filter(|e| !e.is_empty()).map_or(Ok(seed), |e| Num::from(e).eval(&vars))
+                    };
+                    let d = eval("dist", dist)?;
+                    if !(d.is_finite() && d > 0.0) {
+                        return Err(Error::Invalid(format!("chamfer distance must be positive, got {d}")));
+                    }
+                    match mode {
+                        ChamferMode::DistAngle => {
+                            chamfer_angle(eval("d2", d2)?)?;
+                        }
+                        ChamferMode::TwoDist => {
+                            let d = eval("d2", d2)?;
+                            if !(d.is_finite() && d > 0.0) {
+                                return Err(Error::Invalid(format!("chamfer d2 must be positive, got {d}")));
+                            }
+                        }
+                        ChamferMode::Symmetric if ref_face != 0 || flip => {
+                            return Err(Error::Invalid("symmetric chamfer does not accept reference_face or flip".into()))
+                        }
+                        _ => {}
+                    }
+                    Ok(())
+                };
+                check().map_err(|e| (node.id, e))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Recheck retained manual support-face adjacency against the current source geometry.
+    pub(crate) fn check_chamfer_references(&self) -> std::result::Result<(), (Id, Error)> {
+        for node in &self.p.timeline {
+            if let FeatureKind::Chamfer { src, ref edges, ref_face, mode, .. } = node.kind {
+                if mode == ChamferMode::Symmetric {
+                    continue;
+                }
+                let ids = match &edges.query {
+                    qymcad_core::refs::Query::Id(id) => vec![*id],
+                    qymcad_core::refs::Query::Ids(ids) => ids.clone(),
+                    _ if ref_face == 0 => continue,
+                    _ => return Err((node.id, Error::Invalid("reference-face chamfer requires persistent edge picks".into()))),
+                };
+                self.chamfer_adjacency(src, &ids, ref_face, true).map_err(|e| (node.id, e))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn chamfer_adjacency(&self, src: Id, ids: &[u32], reference: u32, asymmetric: bool) -> Result<()> {
+        if !asymmetric {
+            return Ok(());
+        }
+        let shape = self.shapes.get(&src).ok_or_else(|| Error::NotFound(format!("chamfer source body {src} has no shape")))?;
+        let pairs = crate::session::edge_face_pairs(shape)?;
+        if reference != 0 && !self.p.regen_faces.get(&src).is_some_and(|faces| faces.iter().any(|f| f.id == reference)) {
+            return Err(Error::Invalid(format!("chamfer reference face {reference} no longer exists on source body {src}")));
+        }
+        for id in ids {
+            let Some((_, a, b)) = pairs.iter().find(|(e, _, _)| e == id) else {
+                // The public pair API omits one-sided sheet boundaries altogether.
+                let present = {
+                    let _gate = qymcad_kernel::kernel_gate();
+                    shape.edges_info().iter().any(|e| e.id == *id)
+                };
+                if present {
+                    return Err(Error::Invalid(format!("asymmetric chamfer edge {id} must have two distinct adjacent faces")));
+                }
+                if reference == 0 {
+                    continue;
+                }
+                return Err(Error::Invalid(format!("chamfer selected edge {id} no longer exists next to reference face {reference}")));
+            };
+            if *a == 0 || *b == 0 || a == b {
+                return Err(Error::Invalid(format!("asymmetric chamfer edge {id} must have two distinct adjacent faces")));
+            }
+            if reference != 0 && reference != *a && reference != *b {
+                return Err(Error::Invalid(format!("chamfer reference face {reference} is not adjacent to selected edge {id}")));
+            }
+        }
+        Ok(())
+    }
+
+    /// Bevel persistent picked edges using the native app adder and formula write path.
+    pub fn chamfer_ex(&mut self, a: &Chamfer) -> Result<(Id, Rebuild)> {
+        if a.angle.is_some() && a.d2.is_some() {
+            return Err(Error::Invalid("chamfer angle and d2 are mutually exclusive".into()));
+        }
+        let mode = if a.angle.is_some() {
+            ChamferMode::DistAngle
+        } else if a.d2.is_some() {
+            ChamferMode::TwoDist
+        } else {
+            ChamferMode::Symmetric
+        };
+        if mode == ChamferMode::Symmetric && (a.reference_face.is_some() || a.flip) {
+            return Err(Error::Invalid("symmetric chamfer does not accept reference_face or flip".into()));
+        }
+        self.ensure_topology()?;
+        let mut revolve_source = false;
+        let mut dropped_seams = 0;
+        self.atomic(|s| {
+            let src = s.source_body(a.body)?;
+            revolve_source = s.body_ancestors(src).iter().any(|n| matches!(n.kind, FeatureKind::Revolve { .. }));
+            let dist = positive(s, &a.dist, "chamfer distance")?;
+            let d2 = match (&a.angle, &a.d2) {
+                (Some(n), _) => chamfer_angle(n.eval(&s.p.param_map())?)?,
+                (_, Some(n)) => positive(s, n, "chamfer d2")?,
+                _ => 0.0,
+            };
+            let (ids, dropped) = s.edges_now(src, &a.edges)?;
+            dropped_seams = dropped;
+            let reference = a.reference_face.as_ref().map(|face| s.one_face(src, face).map(|f| f.id)).transpose()?.unwrap_or(0);
+            s.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
+            let id = s.in_component(s.p.body_owner(src), |p| {
+                p.add_chamfer_ex(src, dist, ChamferShape { mode, d2, flip: a.flip, ref_face: reference }, ids)
+            });
+            // Same write door as app store_cmd_exprs; keep precise literal strings (F-104).
+            for (key, n) in [("dist", Some(&a.dist)), ("d2", a.angle.as_ref().or(a.d2.as_ref()))] {
+                if let Some(n) = n {
+                    if let Some(text) = n.expr() {
+                        // Rust accepts exponent literals; the native expression parser does not.
+                        let text = text.parse::<f64>().map(|value| value.to_string()).unwrap_or(text);
+                        s.p.write_feat_formula(
+                            &qymcad_core::model::FeatNumber { node: id, key },
+                            &text,
+                            qymcad_core::model::PlainNumber::Stands,
+                        )
+                        .map_err(|e| Error::Expr(format!("chamfer {key}: {e:?}")))?;
+                    }
+                }
+            }
+            s.set_node_name(id, a.name.as_deref())?;
+            Ok(id)
+        })
+        .map(|result| seam_note(result, dropped_seams))
+        .map_err(|error| chamfer_failure_advice(error, revolve_source))
+    }
+
+    /// Inspect the native retained chamfer mode and reference side.
+    pub fn chamfer_info(&self, id: Id) -> Result<ChamferInfo> {
+        let n = self.p.timeline.iter().find(|n| n.id == id).ok_or_else(|| Error::NotFound(format!("chamfer {id}")))?;
+        if let FeatureKind::Chamfer { mode, ref_face, flip, .. } = n.kind {
+            Ok(ChamferInfo {
+                mode: match mode {
+                    ChamferMode::Symmetric => "symmetric",
+                    ChamferMode::TwoDist => "two_dist",
+                    ChamferMode::DistAngle => "dist_angle",
+                }
+                .into(),
+                reference_face: (ref_face != 0).then_some(ref_face),
+                flip,
+            })
+        } else {
+            Err(Error::Invalid(format!("node {id} is not a chamfer")))
+        }
+    }
     /// Round edges of a body. The selection (ids or a description) is resolved now and stored as a pick list of
     /// persistent edge names: QymCAD re-binds them across upstream edits (F-010) and warns `EdgesDropped` when
     /// some vanish. A stored edge *query* is not used: after the document is reopened in QymCAD.app it
@@ -121,27 +323,16 @@ impl Session {
     /// Bevel edges of a body: symmetric (`dist`), or two distances (`dist` on one face, `d2` on the other).
     /// Edges are stored as a pick list, like `fillet`.
     pub fn chamfer(&mut self, body: Option<Id>, edges: &Sel, dist: &Num, d2: Option<&Num>, name: Option<&str>) -> Result<(Id, Rebuild)> {
-        self.ensure_topology()?;
-        let mut revolve_source = false;
-        let mut dropped_seams = 0;
-        self.atomic(|s| {
-            let src = s.source_body(body)?;
-            revolve_source = s.body_ancestors(src).iter().any(|n| matches!(n.kind, FeatureKind::Revolve { .. }));
-            let d = positive(s, dist, "chamfer distance")?;
-            let d2v = d2.map(|n| positive(s, n, "chamfer d2")).transpose()?;
-            let (ids, dropped) = s.edges_now(src, edges)?;
-            dropped_seams = dropped;
-            let mode = if d2v.is_some() { ChamferMode::TwoDist } else { ChamferMode::Symmetric };
-            let id = s.p.add_chamfer_ex(src, d, ChamferShape { mode, d2: d2v.unwrap_or(0.0), flip: false, ref_face: 0 }, ids);
-            dim(s, id, "dist", dist);
-            if let Some(n) = d2 {
-                dim(s, id, "d2", n);
-            }
-            s.set_node_name(id, name)?;
-            Ok(id)
+        self.chamfer_ex(&Chamfer {
+            body,
+            edges: edges.clone(),
+            dist: dist.clone(),
+            d2: d2.cloned(),
+            angle: None,
+            reference_face: None,
+            flip: false,
+            name: name.map(str::to_owned),
         })
-        .map(|result| seam_note(result, dropped_seams))
-        .map_err(|error| chamfer_failure_advice(error, revolve_source))
     }
 
     /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
@@ -431,6 +622,50 @@ fn chamfer_failure_advice(mut error: Error, revolve_source: bool) -> Error {
 #[cfg(test)]
 mod hint_tests {
     use super::*;
+    #[test]
+    fn p6_prior_native_error_cannot_exempt_a_new_angle_guard() {
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&crate::PlaneRef::Base(crate::BaseName::XY), None).unwrap();
+        s.sketch_rect(sk, &0.0.into(), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+        let src = s
+            .extrude(&crate::Extrude {
+                sketch: sk,
+                profiles: None,
+                height: 10.0.into(),
+                down: None,
+                op: crate::Op::Add,
+                direction: crate::Direction::Normal,
+                through: false,
+                target: None,
+                name: None,
+            })
+            .unwrap()
+            .0;
+        let topo = s.topology(None, true).unwrap();
+        let edge = topo.edges.iter().find(|e| (e.a[2] - e.b[2]).abs() > 9.9).unwrap().id;
+        let (id, _) = s
+            .chamfer_ex(&Chamfer {
+                body: Some(src),
+                edges: Sel::Ids(vec![edge]),
+                dist: 2.0.into(),
+                d2: None,
+                angle: Some(30.0.into()),
+                reference_face: None,
+                flip: false,
+                name: None,
+            })
+            .unwrap();
+        // Simulate an already failing native operation retained in the live session.
+        s.p.regen_errors.insert(id, qymcad_core::errors::CoreError::Kernel("prior native error".into()));
+        s.p.set_feat_dim(id, "d2", "181".into());
+        let before = ron::ser::to_string(&s.p).unwrap();
+        let volumes: Vec<_> = s.result_bodies().into_iter().map(|b| b.volume).collect();
+        assert!(s.param_set("unrelated", &1.0.into()).is_err());
+        assert_eq!(ron::ser::to_string(&s.p).unwrap(), before);
+        assert_eq!(s.result_bodies().into_iter().map(|b| b.volume).collect::<Vec<_>>(), volumes);
+        let r = s.rebuild();
+        assert!(r.errors.iter().any(|e| e.node == id && e.message.contains("angle")));
+    }
     #[test]
     fn kind_shell_refuses_partial_loss_of_frozen_faces() {
         let mut s = Session::new_part();

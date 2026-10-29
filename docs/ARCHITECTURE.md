@@ -19,19 +19,19 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 |---|---|
 | `session.rs` | `Session` (one `Project` + live `Shape`s + path); `rebuild()`; `atomic()` / `transact()`; result bodies; name/id resolution |
 | `params.rs` | parameters: case-sensitive names with case-twin refusal (ADR 0021), evaluation, propagation to sketches and features (F-002), usage lookup |
-| `sketch.rs` | sketches on base/datum planes or faces; persisted datum-distance dependencies (F-017, ADR 0007); rect/circle; driven edge/face projections and state inspection (F-109); pinning; `sketch_edit` (rebuild dependents); settled solve |
+| `sketch.rs` | sketches on base/datum planes or faces; persisted datum placement/ancestor-driver dependencies (F-017/F-113, ADR 0007/0031); rect/circle; driven edge/face projections and state inspection (F-109); pinning; `sketch_edit` (rebuild dependents); settled solve |
 | `sketch/entities.rs` | line, polyline, arc, polygon, slot: QymCAD adders + independent driving dimensions |
 | `sketch/constrain.rs` | `sketch_constrain` (constraints, dimensions, over-constraint refusal), entity/constraint removal |
 | `sketch/detail.rs` | `SketchDetail`: entities, points (frame roles), constraints for the agent |
 | `sketch/splines.rs`, `sketch/figures.rs` | native interpolation splines, ellipses/arcs and rotated rectangle figures, with independent formula dimensions |
 | `sketch/selectors.rs` | strict sketch curve/point selectors and native radius-driven tangent-circle creation |
 | `dimensions.rs` | atomic native dimension editing/naming, target ambiguity checks and named-driver discovery |
-| `features.rs` | datum planes; extrude/cut/add/intersect |
+| `features.rs` | datum planes with native Tilt X/Y/Turn and evaluated bounds; extrude/cut/add/intersect |
 | `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-020) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
 | `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
 | `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-030, balanced unions and a size/depth budget F-032); `select`; `ensure_topology` after open (F-023; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
-| `modifiers.rs` | fillet, chamfer (edges stored as pick lists, F-024), shell, push face, hole |
+| `modifiers.rs` | fillet, chamfer (symmetric/TwoDist/DistAngle, support adjacency guards, picked edges F-024), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
 | `body_boolean.rs` | native parametric two-body cut/union/intersect, named outputs and dynamic piece count/identity guard (F-108, ADR 0026) |
 | `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
@@ -42,6 +42,8 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `error.rs` | `Error` with agent-oriented messages |
 
 ## The regenerate pipeline (`Session::rebuild`)
+
+Before regeneration, reconcile persisted datum ancestry barriers and check evaluated feature domains (including datum bounds and chamfer angle/setbacks). Recheck explicit asymmetric chamfer support adjacency against the current rebuilt source after regeneration; violations enter the existing rebuild/atomic rollback path. Guards also run after edits despite an existing error on the same node (F-103/F-104, ADR 0031/0032).
 1. `regenerate_dirty_with_shapes` with the live shapes (only dirty nodes rebuild, like the GUI).
 2. If there were errors: mark everything dirty and run once more (F-005: datum planes resolve during
    regenerate; `retryable()` errors).

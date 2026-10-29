@@ -1,7 +1,7 @@
 //! Edit and discover native sketch, feature and sketch-item driving dimensions.
 use crate::{Error, Id, Num, Rebuild, Result, Session};
 use qymcad_core::{
-    feature::FeatureKind,
+    feature::{ChamferMode, FeatureKind},
     model::{Constraint, DimTarget, Project},
 };
 use serde::Serialize;
@@ -42,6 +42,12 @@ pub struct DimensionInfo {
     pub expression: Option<String>,
     /// Remaining degrees of freedom and redundant constraints of the owning sketch.
     pub dof: Option<(i32, i32)>,
+    /// Chamfer branch for dist/d2 targets; d2 is effective only in asymmetric modes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    /// Unit of a chamfer numeric target: mm, or deg for DistAngle d2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
 }
 
 /// The edited dimension and the dependent geometry rebuilt atomically with it.
@@ -219,6 +225,7 @@ impl Session {
                 }
                 s.p.mark_sketch_dirty(*sketch);
             }
+            s.reconcile_datum_dependencies();
             // apply_param_edit: item-value formulas count as named sketch inputs, too.
             if let Some((what, err)) = s.p.eval_parameters().into_iter().next() {
                 return Err(Error::Expr(crate::value::formula_failed(&what, &err, s.p.param_map().keys())));
@@ -251,7 +258,7 @@ impl Session {
                 }
             }
             s.check_array_limits()?;
-            s.check_extrude_down().map_err(|(_, e)| e)?;
+            s.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", s.node_name(id))))?;
             if let DimTarget::Feature { node, key } = &native {
                 let item = !s.p.timeline.iter().any(|n| n.id == *node);
                 if item && value.is_some() {
@@ -314,6 +321,15 @@ impl Session {
                 Ok(target)
             }
             DimensionTarget::Feature { feature, key } => {
+                if key == "d2"
+                    && self
+                        .p
+                        .timeline
+                        .iter()
+                        .any(|n| n.id == *feature && matches!(n.kind, FeatureKind::Chamfer { mode: ChamferMode::Symmetric, .. }))
+                {
+                    return Err(Error::Invalid("a symmetric chamfer has no effective d2; recreate it with d2 or angle".into()));
+                }
                 if self.p.kept_number(*feature, key).is_none() {
                     return Err(Error::NotFound(format!("no numeric dimension `{key}` on feature or sketch item {feature}")));
                 }
@@ -373,7 +389,28 @@ impl Session {
                 s.points.iter().any(|p| p.id == *node) || s.patterns.iter().any(|p| p.id == *node) || s.texts.iter().any(|p| p.id == *node)
             }),
         };
+        let branch = match target {
+            DimTarget::Feature { node, key } if key == "dist" || key == "d2" => {
+                self.p.timeline.iter().find(|n| n.id == *node).and_then(|n| {
+                    if let FeatureKind::Chamfer { mode, .. } = n.kind {
+                        Some((
+                            match mode {
+                                ChamferMode::Symmetric => "symmetric",
+                                ChamferMode::TwoDist => "two_dist",
+                                ChamferMode::DistAngle => "dist_angle",
+                            },
+                            if key == "d2" && mode == ChamferMode::DistAngle { "deg" } else { "mm" },
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            }
+            _ => None,
+        };
         DimensionInfo {
+            mode: branch.map(|(mode, _)| mode.to_string()),
+            unit: branch.map(|(_, unit)| unit.to_string()),
             target: self.dimension_selector(target),
             references: match target {
                 DimTarget::Sketch { refs, .. } => refs.clone(),

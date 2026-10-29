@@ -232,15 +232,22 @@ impl Session {
 
     /// Native feature dimensions make a datum sketch dirty before parallel preparation (F-017).
     /// The pinned scheduler otherwise misses the datum dependency and can capture an old sketch frame.
-    /// Persist one expression per ancestor: the GUI's parameter marking then provides the same barrier.
+    /// Persist every placement formula and named driver of every ancestor. A child's normal can change
+    /// without the native scheduler seeing its ancestor's tilt (D2); the guards retain the app barrier.
     pub(crate) fn track_datum_dependencies(&mut self, sid: Id) {
         let Some(si) = self.p.sketch_index(sid) else { return };
         let mut desired = HashMap::new();
         if let SketchPlane::Datum(mut plane) = self.p.sketches[si].plane {
             // Bound traversal even for malformed cycles in externally produced documents.
             for _ in 0..self.p.planes.len() {
-                if let Some(expr) = self.p.feat_dim(plane, "dist") {
-                    desired.insert(format!("datum_dist_{plane}"), expr.to_string());
+                for key in ["dist", "tilt_x", "tilt_y", "turn"] {
+                    if let Some(expr) = self.p.feat_dim(plane, key) {
+                        desired.insert(format!("datum_{key}_{plane}"), expr.to_string());
+                    }
+                    let name = self.p.name_of_target(&qymcad_core::model::DimTarget::Feature { node: plane, key: key.into() });
+                    if !name.is_empty() {
+                        desired.insert(format!("datum_driver_{key}_{plane}"), name);
+                    }
                 }
                 match self.p.planes.iter().find(|p| p.id == plane).map(|p| &p.def) {
                     Some(PlaneDef::OffsetPlane { plane: parent, .. }) => plane = *parent,
@@ -255,7 +262,7 @@ impl Session {
             .get(&sid)
             .into_iter()
             .flat_map(|m| m.keys())
-            .filter(|k| k.starts_with("datum_dist_") && !desired.contains_key(*k))
+            .filter(|k| is_datum_guard(k) && !desired.contains_key(*k))
             .cloned()
             .collect();
         for key in obsolete {
@@ -265,6 +272,14 @@ impl Session {
             if self.p.feat_dim(sid, &key) != Some(expr.as_str()) {
                 self.p.set_feat_dim(sid, &key, expr);
             }
+        }
+    }
+
+    /// Refresh persisted barriers after a formula, driver name or host changes, including after open.
+    pub(crate) fn reconcile_datum_dependencies(&mut self) {
+        let sketches: Vec<Id> = self.p.sketches.iter().map(|sketch| sketch.id).collect();
+        for sketch in sketches {
+            self.track_datum_dependencies(sketch);
         }
     }
 
@@ -684,6 +699,10 @@ impl Session {
         }
         Ok(())
     }
+}
+
+fn is_datum_guard(key: &str) -> bool {
+    ["datum_dist_", "datum_tilt_x_", "datum_tilt_y_", "datum_turn_", "datum_driver_"].iter().any(|prefix| key.starts_with(prefix))
 }
 
 pub(crate) fn dist(a: Id, b: Id, axis: u8, d: f64, expr: String) -> Constraint {

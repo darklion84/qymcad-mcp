@@ -5,7 +5,7 @@ use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::topology::{AxisArg, SelArg};
 use super::{tool, Tool};
 use qymcad_engine::{
-    ArrayDir, Direction, Extrude, Hole, HoleKind, Id, Loft, LoftSection, Num, Op, Revolve, Session, Side, Sweep, SweepPath,
+    ArrayDir, Chamfer, Direction, Extrude, Hole, HoleKind, Id, Loft, LoftSection, Num, Op, Revolve, Session, Side, Sweep, SweepPath,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -16,8 +16,17 @@ use serde_json::json;
 pub struct PlaneOffsetArgs {
     /// A base plane ("XY", "XZ", "YZ") or {"plane": <datum plane>}.
     pub base: PlaneArg,
-    /// Distance along the base plane's normal, mm (number or expression).
+    /// Distance along the base plane's normal, mm (number or expression), finite within ±100000. Later evaluated edits retain this limit.
     pub dist: Num,
+    /// Native Tilt X in degrees (number or expression), finite within ±360. Default 0; no angle normalization. Also checked on later evaluated edits.
+    #[serde(default = "zero")]
+    pub tilt_x: Num,
+    /// Native Tilt Y in degrees (number or expression), finite within ±360. Default 0; applied after Tilt X around the original plane axes.
+    #[serde(default = "zero")]
+    pub tilt_y: Num,
+    /// Native Turn about the tilted normal in degrees (number or expression), finite within ±360. Default 0. A child datum inherits its parent's normal, without inheriting Turn.
+    #[serde(default = "zero")]
+    pub turn: Num,
     /// Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
@@ -212,12 +221,18 @@ pub struct ChamferArgs {
     pub edges: SelArg,
     /// Setback, mm (number or expression). Alone: a symmetric 45° chamfer.
     pub dist: Num,
-    /// Second setback on the other face, mm: an asymmetric chamfer. QymCAD chooses which adjacent face takes
-    /// `dist` for each edge by its native traversal order; the side cannot be selected or reported. Inspect
-    /// adjacent face setbacks before/after chamfer; for straight rectangular faces, lost area / edge length
-    /// gives the setback. Topology's sorted face ids do not indicate this order.
+    /// Second positive setback on the other face, mm: native Two distances. Excludes angle. Stored as native dimension key d2.
     #[serde(default)]
     pub d2: Option<Num>,
+    /// Native Leg and angle, degrees (number or expression), strictly between 0 and 90 on creation and every evaluated edit. Excludes d2; stored as native dimension key d2, whose unit is degrees in this mode.
+    #[serde(default)]
+    pub angle: Option<Num>,
+    /// Exactly one face adjacent to every selected non-seam edge; dist lies on that face. Stored as its persistent id. Allowed with d2 or angle; lost adjacency after an upstream edit refuses atomically.
+    #[serde(default)]
+    pub reference_face: Option<SelArg>,
+    /// Swap the native automatic adjacent-face choice (default false). Allowed with d2 or angle. An explicit reference_face overrides the automatic choice.
+    #[serde(default)]
+    pub flip: bool,
     /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
     #[serde(default)]
     pub name: Option<String>,
@@ -431,12 +446,11 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             "plane_offset",
-            "Create a datum plane parallel to a base or datum plane at a distance (e.g. the top face level for a pocket: \
-             {\"base\": \"XY\", \"dist\": \"t\"}). Returns its id; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",
+            "Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. Returns plane/rebuild; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",
             |st, a: PlaneOffsetArgs| {
                 let s = st.doc()?;
                 let base = a.base.resolve(s)?;
-                let (id, r) = s.plane_offset(&base, &a.dist, a.name.as_deref()).map_err(err)?;
+                let (id, r) = s.plane_offset_tilt(&base, &a.dist, &a.tilt_x, &a.tilt_y, &a.turn, a.name.as_deref()).map_err(err)?;
                 Ok(json!({ "plane": id, "rebuild": rebuild_json(&r) }))
             },
         ),
@@ -580,14 +594,25 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "chamfer",
             concat!(
-                "Bevel edges of a body: `dist` alone is symmetric; with `d2` the two setbacks differ. `edges` as for \
-             fillet. QymCAD places `dist` on its first adjacent face in native traversal order, which is not reported. Inspect adjacent face setbacks before/after; on straight rectangular faces, lost area / edge length gives the setback. Topology's sorted face ids do not indicate this order. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
+                "Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. The native d2 dimension is mm in Two distances and degrees in Leg and angle. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
                 stale!()
             ),
             |st, a: ChamferArgs| {
                 let s = st.doc()?;
                 let (body, edges) = (opt_body(s, &a.body)?, a.edges.resolve(s)?);
-                feature_json(s.chamfer(body, &edges, &a.dist, a.d2.as_ref(), a.name.as_deref()))
+                let reference_face = a.reference_face.as_ref().map(|face| face.resolve(s)).transpose()?;
+                let (id, r) = s.chamfer_ex(&Chamfer {
+                    body,
+                    edges,
+                    dist: a.dist,
+                    d2: a.d2,
+                    angle: a.angle,
+                    reference_face,
+                    flip: a.flip,
+                    name: a.name,
+                }).map_err(err)?;
+                let chamfer = s.chamfer_info(id).map_err(err)?;
+                Ok(json!({ "body": id, "rebuild": rebuild_json(&r), "chamfer": chamfer }))
             },
         ),
         tool(

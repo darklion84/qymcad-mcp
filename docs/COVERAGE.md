@@ -9,7 +9,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P3 | Sweep | covered | — | `sweep` | `FeatureKind::Sweep,PartTool::Sweep` |
 | P4 | Loft | covered | — | `loft` | `FeatureKind::Loft,PartTool::Loft` |
 | P5 | Fillet | partial | Variable radius at vertices | `fillet` | `FeatureKind::Fillet,PartTool::Fillet` |
-| P6 | Chamfer | partial | Leg-and-angle mode; support face for asymmetric chamfer | `chamfer` | `FeatureKind::Chamfer,PartTool::Chamfer` |
+| P6 | Chamfer | covered | Symmetric, TwoDist and Leg-and-angle; adjacent support face, evaluated angle/association guards (ADR 0032) | `chamfer` | `FeatureKind::Chamfer,PartTool::Chamfer` |
 | P7 | Shell | covered | — | `shell` | `FeatureKind::Shell,PartTool::Shell` |
 | P8 | Hole | partial | By-sketch points | `hole` | `FeatureKind::Hole,PartTool::Hole` |
 | P9 | Draft | not covered | Face draft up to 60° | none | `FeatureKind::Draft,PartTool::Draft` |
@@ -33,7 +33,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P27 | Offset surface | not covered | Surface operation | none | `FeatureKind::OffsetSurface,PartTool::OffsetSurface` |
 | P28 | Move / rotate body | not covered | — | none | `FeatureKind::Move` |
 | D1 | Datum plane with offset | covered | — | `plane_offset` | `FeatureKind::Plane,PartTool::DatumPlane` |
-| D2 | Tilted datum plane | not covered | Tilt X/Y and turn | none | — |
+| D2 | Tilted datum plane | covered | Tilt X/Y and Turn; ancestry barriers and global/named drivers (ADR 0031) | `plane_offset` | — |
 | D3 | Datum axis | partial | Axis only inline in revolve and circular array; no standalone datum axis | `revolve`, `circular_array` | `FeatureKind::DatumAxis,PartTool::DatumAxis` |
 | D4 | Datum point | not covered | Coordinates or vertex reference | none | `FeatureKind::DatumPoint,PartTool::DatumPoint` |
 | S1 | Sketch geometry | covered | Line, rect, circle, arc, polygon, slot, ellipse, spline, text | `sketch_add` | `FeatureKind::Sketch,SketchShape::Line,SketchShape::Rect,SketchShape::Circle,SketchShape::Arc,SketchShape::Polygon,SketchShape::Slot,SketchShape::Ellipse,SketchShape::Spline,SketchShape::Text` |

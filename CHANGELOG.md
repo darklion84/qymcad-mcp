@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `plane_offset` accepts native parametric `tilt_x`, `tilt_y` and `turn` in degrees, with persisted ancestor barriers for saved global/named driver edits. Angles stay within ±360° and distance within ±100000 mm on creation and every evaluated edit/open (ADR 0031, F-113).
+- `chamfer` accepts Leg and angle (`angle`, native `d2` degrees), an adjacent `reference_face` and native `flip`. Angle aliases and lost support adjacency are refused atomically; results report mode/reference/flip. `dimension_set d2` reports degrees or mm by branch and refuses symmetric d2 (ADR 0032, F-114/F-115).
 - `extrude` accepts optional `down` for native Two sides, with independent global/named height and down drivers. Normal spans [-down,height]; reverse swaps the sides. Explicit down must stay finite and greater than 1e-9 mm on creation and later edits; symmetric/through combinations and zero-down edits are refused (ADR 0029, F-111).
 - `sketch_add` accepts native Point items with optional parametric x/y coordinates and independently nameable axis dimensions. Reused points retain their id without extra constraints. `sketch_info` exposes isolated point dimension status; `sketch_remove point` deletes isolated non-system points safely. Points add no profile material (ADR 0030, F-112).
 

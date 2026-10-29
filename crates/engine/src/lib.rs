@@ -42,7 +42,7 @@ pub use features::{Direction, Extrude, Op};
 pub use history::{Snapshot, ToolCall, Undone, UNDO_LIMIT};
 pub use import_tool::{ImportResult, ImportedBody};
 pub use info::{DocInfo, NodeInfo};
-pub use modifiers::{Hole, HoleKind, Side};
+pub use modifiers::{Chamfer, ChamferInfo, Hole, HoleKind, Side};
 pub use params::ParamInfo;
 pub use patterns::{ArrayDir, AxisRef};
 pub use qymcad_core::model::Id;
