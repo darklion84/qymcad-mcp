@@ -147,7 +147,10 @@ fn tools_default_to_the_only_body_when_it_was_imported_into_its_own_part() {
 
 #[test]
 fn a_fillet_on_the_defaulted_imported_body_matches_the_explicit_one() {
-    let mut volumes = Vec::new();
+    // Not a volume: every vertical R1 edge of the box removes the same volume. The stored recipe (edge reference,
+    // owner part, restored active part) and the resulting topology tell them apart. Saved B-rep bytes are not
+    // compared: two identical runs already write different bytes.
+    let mut saved = Vec::new();
     for explicit in [false, true] {
         let (mut registry, imported) = imported();
         let edge = call(&mut registry, "select", json!({"body":imported["body"],"edges":{"along":"z"}}))["edges"][0]["id"].clone();
@@ -159,7 +162,12 @@ fn a_fillet_on_the_defaulted_imported_body_matches_the_explicit_one() {
         assert!(result["rebuild"].get("errors").is_none(), "{result}");
         let bodies = call(&mut registry, "doc_info", json!({}))["bodies"].clone();
         assert_eq!(bodies.as_array().unwrap().len(), 1, "{bodies}");
-        volumes.push(bodies[0]["volume_mm3"].as_f64().unwrap());
+        assert!(bodies[0]["volume_mm3"].as_f64().unwrap() < 500.0, "{bodies}");
+        let path = std::env::temp_dir().join(format!("qymcad-default-fillet-{explicit}-{}.qcad", std::process::id()));
+        let recipe = String::from_utf8(saved_state(&mut registry, &path).remove("document.ron").unwrap()).unwrap();
+        std::fs::remove_file(path).unwrap();
+        saved.push((recipe, call(&mut registry, "topology", json!({"body":bodies[0]["id"]}))));
     }
-    assert!((volumes[0] - volumes[1]).abs() < 1e-9 && volumes[0] < 500.0, "{volumes:?}");
+    assert_eq!(saved[0].0, saved[1].0, "the defaulted fillet saved a different recipe than the explicit one");
+    assert_eq!(saved[0].1, saved[1].1, "the defaulted fillet made different topology than the explicit one");
 }

@@ -3,7 +3,9 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.4 — body booleans, STEP/IGES import and sketch projections (ADR 0025–0028)
+
+Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Added
 - `body_boolean` applies native parametric cut, union or intersect between two distinct current bodies in the same part; node creation enters the owner part and restores the active part. Both inputs are consumed; every output is named and reported. No-op refusals use the native rebuild check with exact rollback; output count, solid count or ambiguous identity changes are refused atomically (F-108, ADR 0026).
@@ -21,6 +23,12 @@ All notable changes to this project are documented here. The format follows
   edge-query safety checks. Failed downstream rebuilds restore the exact Project and every original B-rep.
 - Refuse deleting projection sources, including cascades, naming the projecting sketches to delete first;
   native source disappearance does not reliably detach the association (F-107, ADR 0025).
+
+### Known limits
+- New cross-part projections are refused. Stored ones keep the app's behaviour, source-local coordinates with the part placement ignored, and every rebuild warns about them (upstream #355).
+- Body boolean piece identity is guarded only for edits made through this server; in the app a same-count edit can still swap pieces, as with splits (upstream #350).
+- In the app's tree a union made right after the extrusion of its tool body shares that extrusion's row; it is listed as the extrusion's dependent. Display only (F-108).
+- Checked by hand in QymCAD.app on three files: open, parameter edits and rebuild without errors.
 
 ## 0.1.1-dev.20261026.3 — threads, splits and text for printing (ADR 0024)
 
