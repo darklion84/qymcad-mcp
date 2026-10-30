@@ -645,6 +645,50 @@ impl Session {
         })
     }
 
+    pub(crate) fn is_point_coordinate(&self, si: usize, c: &Constraint) -> bool {
+        if let Constraint::DistancePL { p, a, b, driven: false, .. } = c {
+            let system = self.p.sketches[si].system_ids();
+            return !system.contains(p) && system.contains(a) && system.contains(b);
+        }
+        false
+    }
+
+    /// DistancePL values are magnitudes; axis orientation retains a Point's coordinate side, even at zero.
+    /// Check before native SetDriver, which otherwise clears the expression and irreversibly takes abs().
+    pub(crate) fn check_point_coordinate_value(&self, si: usize, c: &Constraint, value: f64) -> Result<()> {
+        let sketch = &self.p.sketches[si];
+        if let Constraint::DistancePL { p, .. } = c {
+            if self.is_point_coordinate(si, c) && (!value.is_finite() || value < 0.0) {
+                return Err(Error::Invalid(format!(
+                    "sketch {} point {p}: coordinate magnitude {value} would change sign; dimensions keep their stored side (zero is allowed)",
+                    sketch.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn check_sketch_point_coordinates(&self, si: usize) -> Result<()> {
+        let vars = self.p.param_map();
+        for c in &self.p.sketches[si].constraints {
+            if let Constraint::DistancePL { expr, .. } = c {
+                if !expr.trim().is_empty() {
+                    // An unevaluable magnitude cannot establish its side either.
+                    let value = Num::Expr(expr.clone()).eval(&vars).unwrap_or(f64::NAN);
+                    self.check_point_coordinate_value(si, c, value)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_point_coordinates(&self) -> std::result::Result<(), (Id, Error)> {
+        for (si, sketch) in self.p.sketches.iter().enumerate() {
+            self.check_sketch_point_coordinates(si).map_err(|e| (sketch.id, e))?;
+        }
+        Ok(())
+    }
+
     /// Solve sketch `si` and return the residual. QymCAD 0.1.1 settles angle-dimension arms in one solve (c899ea7;
     /// the repeated calls of F-040 are gone). Its own "solved" bar is 1e-4 while edits here are refused above 1e-6,
     /// so a solve that stops in between gets one more before a refusal. A wrong branch is checked below.
@@ -652,19 +696,7 @@ impl Session {
         // Native DistancePL silently takes abs(expr), unlike the origin Distance coordinate pins. Keep
         // the same coordinate-side contract for axis-pinned points, including ones later reused by
         // entities: a magnitude formula cannot turn negative.
-        let sketch = &self.p.sketches[si];
-        let vars = self.p.param_map();
-        if sketch.constraints.iter().any(|c| match c {
-            Constraint::DistancePL { p, a, b, expr, driven: false, .. }
-                if !expr.trim().is_empty()
-                    && !sketch.system_ids().contains(p)
-                    && sketch.system_ids().contains(a)
-                    && sketch.system_ids().contains(b) =>
-            {
-                !Num::Expr(expr.clone()).eval(&vars).is_ok_and(|value| value >= 0.0)
-            }
-            _ => false,
-        }) {
+        if self.check_sketch_point_coordinates(si).is_err() {
             return f64::INFINITY;
         }
         let mut residual = self.p.solve_sketch(si);
@@ -815,5 +847,61 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("does not solve"), "{err}");
         assert_eq!(s.sketch_detail(sk).unwrap(), before, "the flipped branch must roll back");
+    }
+}
+
+#[cfg(test)]
+mod r1_point_guards {
+    use super::*;
+
+    fn archive(s: &mut Session, label: &str) -> std::collections::BTreeMap<String, Vec<u8>> {
+        let path = std::env::temp_dir().join(format!("qymcad-r1-{}-{label}.qcad", std::process::id()));
+        s.save_with_options(Some(&path), true).unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+        let entries = (0..zip.len())
+            .map(|i| {
+                let mut file = zip.by_index(i).unwrap();
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut file, &mut bytes).unwrap();
+                (file.name().to_owned(), bytes)
+            })
+            .collect();
+        std::fs::remove_file(path).unwrap();
+        entries
+    }
+
+    fn fixture() -> (Session, Id, Id) {
+        let mut s = Session::new_part();
+        s.param_set("px", &8.0.into()).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        let pt = s.sketch_point(sk, &"px".into(), &6.0.into(), true).unwrap().point;
+        (s, sk, pt)
+    }
+
+    #[test]
+    fn rebuild_refuses_negative_point_formula_before_native_solve() {
+        let (mut s, sk, pt) = fixture();
+        s.p.parameters.iter_mut().find(|p| p.name == "px").unwrap().expr = "-12".into();
+        s.p.eval_parameters();
+        s.p.mark_sketch_dirty(sk);
+        let before = archive(&mut s, "rebuild");
+        let r = s.rebuild();
+        let e = r.errors.iter().find(|e| e.node == sk).expect("rebuild must reject point side");
+        assert!(e.message.contains(&pt.to_string()) && e.message.contains("sign"), "{e:?}");
+        assert_eq!(archive(&mut s, "rebuild"), before, "refused rebuild does not mutate archive");
+    }
+
+    #[test]
+    fn parameter_edit_cannot_hide_point_guard_behind_existing_sketch_failure() {
+        let (mut s, sk, pt) = fixture();
+        let si = s.p.sketch_index(sk).unwrap();
+        // Existing contradictory constraint makes this sketch a permitted repair baseline.
+        let origin = s.p.sketches[si].points[0].id;
+        s.p.sketches[si].constraints.push(Constraint::Coincident { a: pt, b: origin });
+        s.p.regen_errors.insert(sk, qymcad_core::errors::CoreError::Kernel("prior failure".into()));
+        let before = archive(&mut s, "prior-error");
+        let e = s.param_set("px", &(-12.0).into()).unwrap_err().to_string();
+        assert!(e.contains(&sk.to_string()) && e.contains(&format!("point {pt}")) && e.contains("sign"), "{e}");
+        assert_eq!(archive(&mut s, "prior-error"), before);
     }
 }

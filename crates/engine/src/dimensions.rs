@@ -157,6 +157,13 @@ impl Session {
                 crate::value::check_expr(&text)?;
                 // Num validation also rejects NaN/Inf strings before the native numeric fast path.
                 let evaluated = value.eval(&s.p.param_map())?;
+                let point_coordinate = if let DimensionTarget::Sketch { sketch, constraint } = target {
+                    let si = s.sketch_si(*sketch)?;
+                    s.check_point_coordinate_value(si, &s.p.sketches[si].constraints[*constraint], evaluated)?;
+                    s.is_point_coordinate(si, &s.p.sketches[si].constraints[*constraint]).then_some((si, *constraint))
+                } else {
+                    None
+                };
                 if matches!(&native, DimTarget::Feature { node, key } if key == "down"
                     && s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Extrude { .. } | FeatureKind::Combine { .. })))
                     && evaluated <= 1e-9
@@ -213,7 +220,14 @@ impl Session {
                 // Native writes a plain feature number through fmt_num, which keeps 4 decimals (expr.rs:346);
                 // store the number as given instead, the way creation does.
                 // Match native's trimmed parse, including numbers sent as strings.
-                if let (DimTarget::Feature { node, key }, true) = (&native, plain_number) {
+                if let Some((si, ci)) = point_coordinate {
+                    // Native SetDriver takes abs() and clears the expression. The guard above has
+                    // established the magnitude; write it without coercion, retaining legacy side flags.
+                    if let Constraint::DistancePL { d, expr, .. } = &mut s.p.sketches[si].constraints[ci] {
+                        *d = if *d < 0.0 { -evaluated } else { evaluated };
+                        *expr = if plain_number { String::new() } else { text.clone() };
+                    }
+                } else if let (DimTarget::Feature { node, key }, true) = (&native, plain_number) {
                     if s.p.kept_number(*node, key).is_none() {
                         return Err(Error::NotFound("dimension target no longer exists".into()));
                     }

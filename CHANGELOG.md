@@ -23,6 +23,9 @@ Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 - `sketch_project` projects persistent body edge selections or a hosted face outline into sketches, returns constrainable geometry ids and reports projection attachment state in `sketch_info` (F-109, ADR 0027).
 
 ### Fixed
+- Point coordinate magnitude edits reject negative literals and numeric strings before native coercion; open/rebuild and parameter edits also reject opposite-side formulas with sketch/point diagnostics.
+- Named coordinate sources enter sketch/hole dependency closure, so source deletion refuses with dependent names or cascades them, including Point sketches without holes.
+- Sketch-hole size inputs accept scientific-notation numeric strings through canonical full-precision formulas.
 - When the active part has no body, tools that default to the current body (topology, select, finishing features, face axes) use the document's only current body, e.g. a lone import; with several, the refusal lists them.
 - The "cut removed nothing" hint no longer names extrude-only settings for `body_boolean`.
 - Opening saved cross-part sketch projections and undoing later edits report a warning for every record; associated entities are marked `cross_part` in `sketch_info`, retaining native source-local geometry and ignoring component placement as in QymCAD.

@@ -1,9 +1,9 @@
 //! Native hole placement at isolated sketch points and persisted parameter dependencies.
-use crate::modifiers::{dim, THROUGH_DEPTH};
+use crate::modifiers::THROUGH_DEPTH;
 use crate::{Error, HoleKind, Id, Num, Rebuild, Result, Session};
 use qymcad_core::{
     feature::{FeatureKind, SketchPlane},
-    model::{DimTarget, HoleTool, PlaneDef, Project},
+    model::{DimTarget, FeatNumber, HoleTool, PlainNumber, PlaneDef, Project},
     names::Role,
 };
 use std::collections::{HashMap, HashSet};
@@ -89,17 +89,20 @@ impl Session {
                 let id = s.in_component(s.p.body_owner(src), |p| {
                     p.add_hole_from_sketch(src, a.sketch, HoleTool { kind, diameter, depth, dia2, depth2 }, a.flip)
                 });
-                dim(s, id, "diameter", &a.diameter);
-                if let Some(n) = &a.depth {
-                    dim(s, id, "depth", n);
-                } else {
+                for (key, input, value) in [
+                    ("diameter", Some(&a.diameter), diameter),
+                    ("depth", a.depth.as_ref(), depth),
+                    ("dia2", a.dia2.as_ref(), dia2),
+                    ("depth2", a.depth2.as_ref(), depth2),
+                ] {
+                    if let Some(input) = input {
+                        let text = input.expr().filter(|e| e.parse::<f64>().is_err()).unwrap_or_else(|| value.to_string());
+                        s.p.write_feat_formula(&FeatNumber { node: id, key }, &text, PlainNumber::Stands)
+                            .map_err(|e| Error::Expr(format!("hole {key}: {e:?}")))?;
+                    }
+                }
+                if a.depth.is_none() {
                     s.p.set_feat_dim(id, "sketch_through", "1".into());
-                }
-                if let Some(n) = &a.dia2 {
-                    dim(s, id, "dia2", n);
-                }
-                if let Some(n) = &a.depth2 {
-                    dim(s, id, "depth2", n);
                 }
                 s.reconcile_hole_dependencies();
                 s.set_node_name(id, a.name.as_deref())?;
@@ -364,8 +367,12 @@ pub(crate) fn sketch_sources(p: &Project, sketch: Id) -> HashSet<Id> {
         if let Some(n) = p.timeline.iter().find(|n| n.id == id) {
             pending.extend(n.kind.inputs());
         }
+        if let Some(dims) = p.feat_dims.get(&id) {
+            pending.extend(crate::dependencies::expression_sources(p, dims.values().cloned()));
+        }
         if let Some(si) = p.sketch_index(id) {
             let sk = &p.sketches[si];
+            pending.extend(crate::dependencies::expression_sources(p, sk.constraints.iter().filter_map(|c| c.expr().map(str::to_string))));
             match sk.plane {
                 SketchPlane::Datum(id) | SketchPlane::Face(id, _) => pending.push(id),
                 _ => {}

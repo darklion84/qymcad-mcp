@@ -73,6 +73,11 @@ impl Session {
             self.p = before;
             return Err(e);
         }
+        if let Err((id, error)) = self.check_point_coordinates() {
+            let message = format!("{} ({id}): {error}", self.node_name(id));
+            self.p = before;
+            return Err(Error::Invalid(message));
+        }
         let propagated = match self.propagate_params(&before.param_map()) {
             Ok(unsolved) => unsolved,
             Err(e) => {

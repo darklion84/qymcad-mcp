@@ -75,9 +75,7 @@ fn site_body(p: &qymcad_core::model::Project, body: Id, feature: Id, point: Id, 
 }
 fn archive(s: &mut Session) -> Vec<(String, Vec<u8>)> {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    // Match feature atomicity: its snapshot is taken after the pending baseline rebuild.
-    let report = s.rebuild();
-    assert!(report.errors.is_empty(), "archive baseline: {:?}", report.errors);
+    // Observe the immediate state: rebuilding here could conceal a failed rollback.
     let path = scratch(&format!("hole-sketch-archive-{}.qcad", NEXT.fetch_add(1, Ordering::Relaxed)));
     s.save_with_options(Some(&path), true).unwrap();
     let mut zip = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
@@ -310,8 +308,12 @@ fn used_point_and_sketch_deletion_and_ignored_offsets_obey_atomic_guards() {
 fn evaluated_coordinate_and_feature_failures_restore_every_archive_entry() {
     let (mut s, _, _, id, _) = driven();
     let before = archive(&mut s);
-    assert!(s.param_set("px", &30.0.into()).is_err());
-    assert!(archive(&mut s) == before, "refusal must preserve every saved archive entry byte for byte");
+    for value in [30., -3.] {
+        assert!(s.param_set("px", &value.into()).is_err());
+        assert!(archive(&mut s) == before, "immediate refusal must preserve every saved archive entry byte for byte");
+    }
+    assert!(s.rebuild().errors.is_empty());
+    assert!(archive(&mut s) == before, "separate post-rebuild archive remains unchanged");
     for key in ["diameter", "depth"] {
         assert!(s.dimension_set(&DimensionTarget::Feature { feature: id, key: key.into() }, Some(&(-1.0).into()), None).is_err());
         assert!(archive(&mut s) == before, "refusal must preserve every saved archive entry byte for byte");
@@ -838,7 +840,7 @@ fn existing_hole_error_never_exempts_new_missing_site_edits_and_can_be_repaired(
     qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
     let (mut loaded, report) = Session::open(&path).unwrap();
     assert!(report.errors.iter().any(|e| e.node == hole));
-    // Unlike archive(), this snapshot must preserve an intentionally broken baseline without rebuilding it.
+    // Preserve an intentionally broken baseline without rebuilding it.
     let current_archive = |s: &mut Session| {
         s.save_with_options(Some(&path), true).unwrap();
         let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();

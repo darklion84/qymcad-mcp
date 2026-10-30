@@ -489,6 +489,7 @@ impl Session {
 
     /// Refuse native coercions before regeneration and on every evaluated edit, even on a previously failed node.
     pub(crate) fn check_evaluated_features(&self) -> std::result::Result<(), (Id, Error)> {
+        self.check_point_coordinates()?;
         self.check_extrude_down()?;
         self.check_thread_dimensions()?;
         self.check_datum_values()?;
