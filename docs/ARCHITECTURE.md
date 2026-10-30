@@ -31,6 +31,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
 | `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
 | `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-030, balanced unions and a size/depth budget F-032); `select`; `ensure_topology` after open (F-023; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
+| `hole_sketch.rs` | Native sketch-point holes, persisted coordinate/name dependency reads, bounded support ordering, directed through span and per-site bore acceptance (F-118/F-119, ADR 0034) |
 | `modifiers.rs` | fillet, chamfer (symmetric/TwoDist/DistAngle, support adjacency guards, picked edges F-024), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
 | `body_boolean.rs` | native parametric two-body cut/union/intersect, named outputs and dynamic piece count/identity guard (F-108, ADR 0026) |
@@ -60,7 +61,7 @@ Before regeneration, reconcile persisted datum ancestry barriers and check evalu
 on independent B-rep copies, and restore Project/handles/diagnostics on failure. Callers keep their own retry
 plan and error policy (F-034).
 
-Parameter, dimension and sketch rebuild plans include consumers reached through `Sketch.projections[].body`.
+Parameter, dimension and sketch rebuild plans include consumers reached through `Sketch.projections[].body` and sketch-hole marker/placement dependencies. Persisted `sketch_dep_*` expressions bridge saved native global/named coordinate edits; unnamed literal/structural app sketch edits remain stale until engine open/rebuild (ADR 0034). Engine regeneration repeats holes/consumers after dirty fixed supports settle; parameterized/named datum, projected and independent face supports are refused because native saved-app scheduling cannot order them.
 Native regeneration follows those projections even when its plan omits them; the extended closure keeps
 their bodies inside snapshots, scoped retries and F-024 safety checks (F-107). Deleting a projection source
 is refused even with `cascade=true`; the error identifies the projecting sketches to delete first (ADR 0025).

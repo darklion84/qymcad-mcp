@@ -5,8 +5,8 @@ use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::topology::{AxisArg, SelArg};
 use super::{tool, Tool};
 use qymcad_engine::{
-    ArrayDir, Axis, Chamfer, Direction, Extrude, Hole, HoleKind, Id, Loft, LoftSection, Move, Num, Op, Revolve, Rotation, Session, Side,
-    Sweep, SweepPath,
+    ArrayDir, Axis, Chamfer, Direction, Extrude, Hole, HoleKind, HoleSketch, Id, Loft, LoftSection, Move, Num, Op, Revolve, Rotation,
+    Session, Side, Sweep, SweepPath,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -246,26 +246,41 @@ pub struct HoleArgs {
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// The planar face to drill into; must match exactly one face, e.g. {"facing": "+z"} or a face id. The hole
-    /// goes into the body, against the face's outward normal.
-    pub face: SelArg,
+    /// goes into the body, against the face's outward normal. Give exactly one of face or sketch.
+    #[serde(default)]
+    pub face: Option<SelArg>,
+    /// Sketch id or name: drills every isolated point along the negative sketch normal. Excludes face, at and offset.
+    /// Saved dependency metadata rebuilds global/named coordinate edits; unnamed in-app dimension edits leave holes stale.
+    #[serde(default)]
+    pub sketch: Option<ObjRef>,
+    /// Isolated point ids of the sketch. Default every eligible point. Native drilling uses all points: an explicit
+    /// list must contain every currently eligible id exactly once; subsets, duplicates and foreign ids are refused.
+    #[serde(default)]
+    pub points: Option<Vec<Id>>,
+    /// Sketch placement only: reverse the drilling direction to the positive sketch normal. Default false;
+    /// even an explicit false is refused with face placement.
+    #[serde(default)]
+    pub flip: Option<bool>,
     /// Hole centre in WORLD coordinates [x, y, z], mm; projected onto the face along its normal, so only the
     /// in-plane position matters. Default: the face centroid. Plain numbers (QymCAD does not store a hole's
-    /// position parametrically; for parametric hole patterns cut sketch circles with extrude instead).
+    /// position parametrically; use sketch points for parametric positions). Face placement only.
     #[serde(default)]
     pub at: Option<[f64; 3]>,
     /// Hole centre as a shift [u, v] from the face's area centroid (as the face stands: other cut-outs in it move
     /// the centroid) along the face's axes, mm, numbers or expressions; it
     /// follows parameters (QymCAD's off_u/off_v). Axes: on a face facing ±Z, u = +X and v = +Y on a top face (−Y
-    /// on a bottom face); otherwise u is horizontal (Z × normal) and v = normal × u. Excludes `at`.
+    /// on a bottom face); otherwise u is horizontal (Z × normal) and v = normal × u. Excludes `at` and sketch placement.
     #[serde(default)]
     pub offset: Option<[Num; 2]>,
     /// Diameter, mm (number or expression).
     pub diameter: Num,
-    /// Depth from the face, mm (number or expression). Give `depth` or `through`.
+    /// Depth from the face or sketch marker plane, mm (number or expression). Give `depth` or `through`.
     #[serde(default)]
     pub depth: Option<Num>,
     /// Stored as a fixed 10000 mm depth (the app's own maximum; QymCAD holes have no through-all). Creation is
-    /// refused if the body's bbox diagonal exceeds 10000 mm. Growing the stock beyond this depth can make it blind.
+    /// refused if the face-branch body's bbox diagonal exceeds 10000 mm, or the sketch branch's full directed span
+    /// from its marker plane over all eight source bbox corners exceeds 10000 mm. Engine sketch edits recheck this bound;
+    /// later native app stock growth can make it blind. Explicit depth edits switch to blind.
     #[serde(default)]
     pub through: bool,
     /// plain (default), counterbore (dia2 × depth2 at the face), countersink (cone from dia2 at the face down to
@@ -681,11 +696,14 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "hole",
             concat!(
-                "Drill a hole into a planar face: plain, counterbore or countersink; blind (`depth`) or `through`. \
+                "Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or countersink; blind (`depth`) or `through`. \
+             Sketch placement supports world/fixed datum frames and stock-lineage face hosts; parameterized/named datum, projected marker or independent face support is refused. Uses every isolated point along the negative sketch normal (`flip` reverses). Optional `points` must list ALL eligible ids exactly once; native subsets are unsupported. \
+             Every requested point must retain a nonzero bore face or the call refuses atomically, naming the missing point. `at`/`offset` are face-only; `points`/`flip` are sketch-only. \
+             Persisted sketch dependency metadata bridges global and named coordinate edits in the engine and app; unnamed in-app sketch dimension edits leave holes stale until an upstream fix. Reopen/save through the engine after app structural sketch edits to refresh metadata. \
              The face may be described ({\"facing\": \"+z\"}, {\"of_feature\": \"plate\", \"role\": \"cap_end\"}): \
              such a description is stored and keeps working after upstream edits. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. `at` is a world point. \
-             `through` stores a fixed 10000 mm depth; creation is refused when the body's bbox diagonal exceeds \
-             10000 mm. Later stock growth beyond that depth can make the hole blind.",
+             `through` stores a fixed 10000 mm depth: face creation checks the body bbox diagonal; sketch creation checks the full directed span from the marker plane over all eight source bbox corners. \
+             A span over 10000 mm refuses, rechecked on engine sketch-hole edits/open/rebuild. Later native app stock growth can make the hole blind. Explicit depth edits switch to blind. Sketch holes refuse off_u/off_v dimension edits.",
                 stale!()
             ),
             |st, a: HoleArgs| {
@@ -695,19 +713,29 @@ pub fn tools() -> Vec<Tool> {
                     (None, false) => return Err("give `depth` or `through: true`".into()),
                     (d, _) => d,
                 };
-                let h = Hole {
-                    body: opt_body(s, &a.body)?,
-                    face: a.face.resolve(s)?,
-                    at: a.at,
-                    offset: a.offset,
-                    diameter: a.diameter,
-                    depth,
-                    kind: a.kind,
-                    dia2: a.dia2,
-                    depth2: a.depth2,
-                    name: a.name,
-                };
-                feature_json(s.hole(&h))
+                match (a.face, a.sketch) {
+                    (Some(face), None) => {
+                        if a.points.is_some() || a.flip.is_some() {
+                            return Err("`points` and `flip` require sketch placement".into());
+                        }
+                        let h = Hole {
+                            body: opt_body(s, &a.body)?, face: face.resolve(s)?, at: a.at, offset: a.offset,
+                            diameter: a.diameter, depth, kind: a.kind, dia2: a.dia2, depth2: a.depth2, name: a.name,
+                        };
+                        feature_json(s.hole(&h))
+                    }
+                    (None, Some(sketch)) => {
+                        if a.at.is_some() || a.offset.is_some() {
+                            return Err("`at` and `offset` require face placement".into());
+                        }
+                        let h = HoleSketch {
+                            body: opt_body(s, &a.body)?, sketch: sketch.resolve(s)?, points: a.points, flip: a.flip.unwrap_or(false),
+                            diameter: a.diameter, depth, kind: a.kind, dia2: a.dia2, depth2: a.depth2, name: a.name,
+                        };
+                        feature_json(s.hole_by_sketch(&h))
+                    }
+                    _ => Err("give exactly one of `face` or `sketch`".into()),
+                }
             },
         ),
         tool(

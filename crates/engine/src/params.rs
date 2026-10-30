@@ -168,6 +168,7 @@ impl Session {
     /// Names match exactly, as QymCAD evaluates them. Returns reached sketches left unsolved.
     pub(crate) fn propagate_params(&mut self, before: &std::collections::HashMap<String, f64>) -> Result<Vec<(Id, f64)>> {
         self.reconcile_datum_dependencies();
+        self.reconcile_hole_dependencies();
         let mut previous = before.clone();
         let mut unsolved = Vec::new();
         // Each solve round can expose the next named reference dimension. Bound imported cycles, and

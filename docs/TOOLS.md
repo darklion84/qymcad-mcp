@@ -3742,7 +3742,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
 
 ## hole
 
-Drill a hole into a planar face: plain, counterbore or countersink; blind (`depth`) or `through`. The face may be described ({"facing": "+z"}, {"of_feature": "plate", "role": "cap_end"}): such a description is stored and keeps working after upstream edits. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. `at` is a world point. `through` stores a fixed 10000 mm depth; creation is refused when the body's bbox diagonal exceeds 10000 mm. Later stock growth beyond that depth can make the hole blind. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or countersink; blind (`depth`) or `through`. Sketch placement supports world/fixed datum frames and stock-lineage face hosts; parameterized/named datum, projected marker or independent face support is refused. Uses every isolated point along the negative sketch normal (`flip` reverses). Optional `points` must list ALL eligible ids exactly once; native subsets are unsupported. Every requested point must retain a nonzero bore face or the call refuses atomically, naming the missing point. `at`/`offset` are face-only; `points`/`flip` are sketch-only. Persisted sketch dependency metadata bridges global and named coordinate edits in the engine and app; unnamed in-app sketch dimension edits leave holes stale until an upstream fix. Reopen/save through the engine after app structural sketch edits to refresh metadata. The face may be described ({"facing": "+z"}, {"of_feature": "plate", "role": "cap_end"}): such a description is stored and keeps working after upstream edits. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. `at` is a world point. `through` stores a fixed 10000 mm depth: face creation checks the body bbox diagonal; sketch creation checks the full directed span from the marker plane over all eight source bbox corners. A span over 10000 mm refuses, rechecked on engine sketch-hole edits/open/rebuild. Later native app stock growth can make the hole blind. Explicit depth edits switch to blind. Sketch holes refuse off_u/off_v dimension edits. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -3797,7 +3797,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
   "properties": {
     "at": {
       "default": null,
-      "description": "Hole centre in WORLD coordinates [x, y, z], mm; projected onto the face along its normal, so only the\nin-plane position matters. Default: the face centroid. Plain numbers (QymCAD does not store a hole's\nposition parametrically; for parametric hole patterns cut sketch circles with extrude instead).",
+      "description": "Hole centre in WORLD coordinates [x, y, z], mm; projected onto the face along its normal, so only the\nin-plane position matters. Default: the face centroid. Plain numbers (QymCAD does not store a hole's\nposition parametrically; use sketch points for parametric positions). Face placement only.",
       "items": {
         "format": "double",
         "type": "number"
@@ -3830,7 +3830,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
         }
       ],
       "default": null,
-      "description": "Depth from the face, mm (number or expression). Give `depth` or `through`."
+      "description": "Depth from the face or sketch marker plane, mm (number or expression). Give `depth` or `through`."
     },
     "depth2": {
       "anyOf": [
@@ -3863,27 +3863,43 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
     "face": {
       "anyOf": [
         {
-          "items": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "type": "array"
-        },
-        {
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "enum": [
-            "largest"
+          "anyOf": [
+            {
+              "items": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "enum": [
+                "largest"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "object"
+            }
           ],
-          "type": "string"
+          "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), and fallback facet normals can require about 20–30 degrees. Bare corner and positive `and` previews count omitted uncertain candidates; an `and` requiring both signs matches no edge and reports no omission. Other compositions report the uncertain body total: corner filters treat those edges as neither concave nor convex; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's classification. In hole/shell/push_face, any selection containing a kind freezes its whole resolved face set as persistent picks at creation; it does not rediscover faces after edits. Selections without kinds stay dynamic. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
         },
         {
-          "type": "object"
+          "type": "null"
         }
       ],
-      "description": "The planar face to drill into; must match exactly one face, e.g. {\"facing\": \"+z\"} or a face id. The hole\ngoes into the body, against the face's outward normal."
+      "description": "The planar face to drill into; must match exactly one face, e.g. {\"facing\": \"+z\"} or a face id. The hole\ngoes into the body, against the face's outward normal. Give exactly one of face or sketch."
+    },
+    "flip": {
+      "default": null,
+      "description": "Sketch placement only: reverse the drilling direction to the positive sketch normal. Default false;\neven an explicit false is refused with face placement.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "kind": {
       "$ref": "#/$defs/HoleKind",
@@ -3900,7 +3916,7 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
     },
     "offset": {
       "default": null,
-      "description": "Hole centre as a shift [u, v] from the face's area centroid (as the face stands: other cut-outs in it move\nthe centroid) along the face's axes, mm, numbers or expressions; it\nfollows parameters (QymCAD's off_u/off_v). Axes: on a face facing ±Z, u = +X and v = +Y on a top face (−Y\non a bottom face); otherwise u is horizontal (Z × normal) and v = normal × u. Excludes `at`.",
+      "description": "Hole centre as a shift [u, v] from the face's area centroid (as the face stands: other cut-outs in it move\nthe centroid) along the face's axes, mm, numbers or expressions; it\nfollows parameters (QymCAD's off_u/off_v). Axes: on a face facing ±Z, u = +X and v = +Y on a top face (−Y\non a bottom face); otherwise u is horizontal (Z × normal) and v = normal × u. Excludes `at` and sketch placement.",
       "items": {
         "$ref": "#/$defs/Num"
       },
@@ -3911,14 +3927,37 @@ Drill a hole into a planar face: plain, counterbore or countersink; blind (`dept
         "null"
       ]
     },
+    "points": {
+      "default": null,
+      "description": "Isolated point ids of the sketch. Default every eligible point. Native drilling uses all points: an explicit\nlist must contain every currently eligible id exactly once; subsets, duplicates and foreign ids are refused.",
+      "items": {
+        "format": "uint64",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "sketch": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Sketch id or name: drills every isolated point along the negative sketch normal. Excludes face, at and offset.\nSaved dependency metadata rebuilds global/named coordinate edits; unnamed in-app dimension edits leave holes stale."
+    },
     "through": {
       "default": false,
-      "description": "Stored as a fixed 10000 mm depth (the app's own maximum; QymCAD holes have no through-all). Creation is\nrefused if the body's bbox diagonal exceeds 10000 mm. Growing the stock beyond this depth can make it blind.",
+      "description": "Stored as a fixed 10000 mm depth (the app's own maximum; QymCAD holes have no through-all). Creation is\nrefused if the face-branch body's bbox diagonal exceeds 10000 mm, or the sketch branch's full directed span\nfrom its marker plane over all eight source bbox corners exceeds 10000 mm. Engine sketch edits recheck this bound;\nlater native app stock growth can make it blind. Explicit depth edits switch to blind.",
       "type": "boolean"
     }
   },
   "required": [
-    "face",
     "diameter"
   ],
   "type": "object"

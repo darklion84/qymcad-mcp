@@ -201,6 +201,9 @@ impl Session {
                     entity.id
                 )));
             }
+            if s.p.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Hole { sketch: sid, .. } if sid == sketch)) {
+                return Err(Error::Invalid(format!("point {point} is used by a sketch hole; delete the hole first")));
+            }
             s.p.delete_points(si, &[point]);
             s.finish_sketch_edit(si)
         })
@@ -626,10 +629,10 @@ impl Session {
         planned.mark_sketch_dirty(sketch);
         let nodes = crate::dependencies::closure(&planned, planned.regen_plan().nodes.into_iter().chain([sketch]).collect());
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
-        let copies = if before.dependents_of(sketch).is_empty() { HashSet::new() } else { nodes.clone() };
+        let copies = if crate::dependencies::closure(&before, HashSet::from([sketch])).len() <= 1 { HashSet::new() } else { nodes.clone() };
         self.with_rebuild_copies(before, &copies, "sketch edit", |s| {
             let value = edit(s)?;
-            if s.p.dependents_of(sketch).is_empty() {
+            if crate::dependencies::closure(&s.p, HashSet::from([sketch])).len() <= 1 {
                 return Ok((value, None));
             }
             let r = s.rebuild_retrying(Some(&nodes));

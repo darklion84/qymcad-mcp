@@ -87,6 +87,11 @@ impl Session {
             return Err(Error::Invalid("dimension_set needs value or name (an empty name clears the name)".into()));
         }
         let native = self.native_dimension_target(target)?;
+        if matches!(&native, DimTarget::Feature { node, key } if ["off_u", "off_v"].contains(&key.as_str())
+            && self.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Hole { sketch, .. } if sketch != 0)))
+        {
+            return Err(Error::Invalid("off_u/off_v do not apply to sketch holes; edit the sketch point coordinates".into()));
+        }
         if value.is_some()
             && matches!(&native, DimTarget::Feature { node, .. }
                 if self.p.sketches.iter().any(|sk| sk.texts.iter().any(|t| t.id == *node)))
@@ -95,6 +100,11 @@ impl Session {
                 "text geometry is fixed: text height edits can exchange glyph/counter contour ids; remove and recreate the text instead"
                     .into(),
             ));
+        }
+        if matches!(&native, DimTarget::Feature { node, key } if ["dia2", "depth2"].contains(&key.as_str())
+            && self.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Hole { sketch, kind: 0, .. } if sketch != 0)))
+        {
+            return Err(Error::Invalid("plain sketch hole excludes dia2 and depth2".into()));
         }
         let before = self.p.clone();
         let before_scope = before.param_map();
@@ -225,7 +235,15 @@ impl Session {
                 }
                 s.p.mark_sketch_dirty(*sketch);
             }
+            if value.is_some() {
+                if let DimTarget::Feature { node, key } = &native {
+                    if key == "depth" && s.p.feat_dim(*node, "sketch_through").is_some() {
+                        s.p.set_feat_dim(*node, "sketch_through", String::new());
+                    }
+                }
+            }
             s.reconcile_datum_dependencies();
+            s.reconcile_hole_dependencies();
             // apply_param_edit: item-value formulas count as named sketch inputs, too.
             if let Some((what, err)) = s.p.eval_parameters().into_iter().next() {
                 return Err(Error::Expr(crate::value::formula_failed(&what, &err, s.p.param_map().keys())));

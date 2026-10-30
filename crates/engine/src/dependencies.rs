@@ -36,6 +36,13 @@ pub(crate) fn closure(p: &Project, mut reached: HashSet<Id>) -> HashSet<Id> {
                 reached.extend(node.kind.declares());
             }
         }
+        for node in &p.timeline {
+            if matches!(node.kind, qymcad_core::feature::FeatureKind::Hole { sketch, .. } if sketch != 0
+                && crate::hole_sketch::sketch_sources(p, sketch).iter().any(|id| reached.contains(id)))
+            {
+                reached.insert(node.id);
+            }
+        }
         for sketch in &p.sketches {
             if sketch.projections.iter().any(|pr| reached.contains(&pr.body) || reached.contains(&projection_source(p, sketch.id, pr.body)))
             {
@@ -47,4 +54,19 @@ pub(crate) fn closure(p: &Project, mut reached: HashSet<Id>) -> HashSet<Id> {
 
 pub(crate) fn rebuild_nodes(p: &Project) -> HashSet<Id> {
     closure(p, p.regen_plan().nodes.into_iter().collect())
+}
+
+#[cfg(test)]
+mod hole_tests {
+    use super::*;
+    use qymcad_core::model::HoleTool;
+
+    #[test]
+    fn hole_sketch_edge_enters_extended_plan() {
+        let mut p = Project::default();
+        let sketch = p.add_sketch("marks", vec![], None);
+        p.add_sketch_node(sketch, "marks");
+        let hole = p.add_hole_from_sketch(0, sketch, HoleTool { kind: 0, diameter: 2., depth: 10., dia2: 0., depth2: 0. }, false);
+        assert!(closure(&p, HashSet::from([sketch])).contains(&hole), "missing Hole -> sketch dependency");
+    }
 }

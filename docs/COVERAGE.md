@@ -11,7 +11,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P5 | Fillet | partial | Variable radius at vertices | `fillet` | `FeatureKind::Fillet,PartTool::Fillet` |
 | P6 | Chamfer | covered | Symmetric, TwoDist and Leg-and-angle; adjacent support face, evaluated angle/association guards (ADR 0032) | `chamfer` | `FeatureKind::Chamfer,PartTool::Chamfer` |
 | P7 | Shell | covered | — | `shell` | `FeatureKind::Shell,PartTool::Shell` |
-| P8 | Hole | partial | By-sketch points | `hole` | `FeatureKind::Hole,PartTool::Hole` |
+| P8 | Hole | partial | Sketch-point dependency bridge for global/named edits; unnamed/structural in-app edits can leave holes stale. Native recipe requires all isolated points; dynamic datum/projection or independent face support refused (ADR 0034) | `hole` | `FeatureKind::Hole,PartTool::Hole` |
 | P9 | Draft | not covered | Face draft up to 60° | none | `FeatureKind::Draft,PartTool::Draft` |
 | P10 | Thread | partial | Auger mode | `thread` | `FeatureKind::Thread,FeatureKind::Auger,PartTool::Thread` |
 | P11 | Push face | covered | — | `push_face` | `FeatureKind::PushFace,PartTool::PushFace` |

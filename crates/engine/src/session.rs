@@ -311,6 +311,13 @@ impl Session {
         sess.check_fixed_text_geometry(&before_evaluation)?;
         sess.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.reconcile_datum_dependencies();
+        sess.reconcile_hole_dependencies();
+        // A native unnamed app edit can save stale cached hole geometry despite a clean timeline.
+        for node in &mut sess.p.timeline {
+            if matches!(node.kind, qymcad_core::feature::FeatureKind::Hole { sketch, .. } if sketch != 0) {
+                node.dirty = true;
+            }
+        }
         if missing {
             sess.p.mark_all_dirty();
         }
@@ -485,7 +492,8 @@ impl Session {
         self.check_extrude_down()?;
         self.check_thread_dimensions()?;
         self.check_datum_values()?;
-        self.check_chamfer_values()
+        self.check_chamfer_values()?;
+        self.check_hole_values()
     }
 
     /// `rebuild`, with the retry pass limited to the nodes in `only` when given. An edit retries only the nodes
@@ -495,6 +503,7 @@ impl Session {
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
         self.reconcile_datum_dependencies();
+        self.reconcile_hole_dependencies();
         if let Err((id, e)) = self.check_evaluated_features() {
             return Rebuild { errors: vec![self.issue(id, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
         }
@@ -525,14 +534,14 @@ impl Session {
         } else {
             None
         };
+        // Dirtying also marks native consumers: preserve the preflight/snapshot state first.
+        self.dirty_hole_dependents();
         let projections_before = self.projection_provenance();
         let split_identities = self.split_identities();
         let boolean_identities = self.boolean_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
-        let shapes = std::mem::take(&mut self.shapes);
-        let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
-        self.shapes = shapes;
+        let report = self.regenerate_hole_ordered();
 
         let mut built = report.built;
         let mut errors: Vec<NodeIssue> = report.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
@@ -547,9 +556,7 @@ impl Session {
             let blocked = self.edge_query_rebuild_errors(&retry);
             if blocked.is_empty() {
                 self.p = retry;
-                let shapes = std::mem::take(&mut self.shapes);
-                let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
-                self.shapes = shapes;
+                let again = self.regenerate_hole_ordered();
                 built.extend(again.built);
                 errors = again.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
             } else {
@@ -622,6 +629,12 @@ impl Session {
             if !errors.iter().any(|e| e.node == issue.node) {
                 self.p.regen_errors.insert(issue.node, qymcad_core::errors::CoreError::Kernel(issue.message.clone()));
                 errors.push(issue);
+            }
+        }
+        for (id, message) in self.hole_site_refusals() {
+            self.p.regen_errors.insert(id, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            if !errors.iter().any(|e| e.node == id) {
+                errors.push(self.issue(id, message));
             }
         }
         self.remember_detached_projections(projections_before);
@@ -822,6 +835,7 @@ impl Session {
                 return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
             }
             let mut refused = self.check_thread_stock();
+            refused.extend(self.hole_site_refusals().into_iter().map(|(id, message)| self.issue(id, message)));
             refused.extend(
                 self.split_identity_refusals(&split_identities, nodes).into_iter().map(|(node, message)| self.issue(node, message)),
             );
