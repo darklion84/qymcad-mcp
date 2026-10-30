@@ -312,9 +312,14 @@ impl Session {
         sess.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.reconcile_datum_dependencies();
         sess.reconcile_hole_dependencies();
-        // A native unnamed app edit can save stale cached hole geometry despite a clean timeline.
+        // Native app edits can save stale reference-consuming features despite a clean timeline (F-120).
+        // Hole caches additionally need repair after unnamed native sketch edits (F-118).
+        let named_sources = crate::dependencies::expression_sources(&sess.p, sess.p.named_dims.iter().map(|d| d.name.clone()));
+        let named_consumers = crate::dependencies::closure(&sess.p, named_sources);
         for node in &mut sess.p.timeline {
-            if matches!(node.kind, qymcad_core::feature::FeatureKind::Hole { sketch, .. } if sketch != 0) {
+            if named_consumers.contains(&node.id)
+                || matches!(node.kind, qymcad_core::feature::FeatureKind::Hole { sketch, .. } if sketch != 0)
+            {
                 node.dirty = true;
             }
         }
@@ -324,7 +329,8 @@ impl Session {
         let stored: HashMap<Id, BodyMetrics> = sess.shapes.iter().map(|(&id, sh)| (id, BodyMetrics::of(sh))).collect();
         // Planned nodes are checked by the rebuild itself; the rest are checked below (F-074).
         let planned: HashSet<Id> = sess.p.regen_plan().nodes.into_iter().collect();
-        let mut r = sess.rebuild();
+        let mut r = sess.try_rebuild_retrying(None).map_err(|i| Error::Invalid(format!("{} ({}): {}", i.name, i.node, i.message)))?;
+        sess.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.check_chamfer_references().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         for (&id, old) in &stored {
             let Some(sh) = sess.shapes.get(&id) else { continue };
@@ -503,15 +509,70 @@ impl Session {
     /// F-005 still holds: a datum created by the edit is one of its nodes.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub(crate) fn rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> Rebuild {
+        match self.try_rebuild_retrying(only) {
+            Ok(report) => report,
+            Err(issue) => Rebuild { errors: vec![issue], bodies: self.result_bodies(), ..Default::default() },
+        }
+    }
+
+    /// Safety failures must bypass callers' exemptions for pre-existing native errors.
+    pub(crate) fn rebuild_for_edit(&mut self, only: Option<&HashSet<Id>>) -> Result<Rebuild> {
+        self.try_rebuild_retrying(only).map_err(|i| Error::Rebuild(vec![format!("{} ({}): {}", i.name, i.node, i.message)]))
+    }
+
+    fn try_rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> std::result::Result<Rebuild, NodeIssue> {
+        let before = self.p.clone();
         self.reconcile_datum_dependencies();
         self.reconcile_hole_dependencies();
-        if let Err((id, e)) = self.check_evaluated_features() {
-            return Rebuild { errors: vec![self.issue(id, e.to_string())], bodies: self.result_bodies(), ..Default::default() };
+        if let Err((id, error)) = self.check_evaluated_features() {
+            let issue = self.issue(id, error.to_string());
+            self.p = before;
+            return Err(issue);
         }
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {
-            return Rebuild { errors: blocked, bodies: self.result_bodies(), ..Default::default() };
+            self.p = before;
+            return Ok(Rebuild { errors: blocked, bodies: self.result_bodies(), ..Default::default() });
         }
+        // Standalone/open rebuilds own their rollback handles. Scoped edits already retain originals
+        // in with_rebuild_copies or atomic_with_post; leave unrelated handles untouched (F-034).
+        let originals = if only.is_none() {
+            let copies = match copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh))) {
+                Ok(copies) => copies,
+                Err(id) => {
+                    self.p = before;
+                    return Err(self.issue(id, format!("cannot snapshot body {id} before a guarded rebuild")));
+                }
+            };
+            Some(std::mem::replace(&mut self.shapes, copies))
+        } else {
+            None
+        };
+        match self.rebuild_passes(only) {
+            Ok((mut report, rebuilt)) => {
+                if let Some(originals) = originals {
+                    // A B-rep round-trip need not preserve bytes. Successful no-op/partial rebuilds
+                    // must keep originals of bodies that were never built, too (F-034).
+                    for (id, shape) in originals {
+                        if !rebuilt.contains(&id) {
+                            self.shapes.insert(id, shape);
+                        }
+                    }
+                    report.bodies = self.result_bodies();
+                }
+                Ok(report)
+            }
+            Err(issue) => {
+                self.p = before;
+                if let Some(originals) = originals {
+                    self.shapes = originals;
+                }
+                Err(issue)
+            }
+        }
+    }
+
+    fn rebuild_passes(&mut self, only: Option<&HashSet<Id>>) -> std::result::Result<(Rebuild, HashSet<Id>), NodeIssue> {
         // A safe first pass may fail on an unrelated node, expanding the retry into a blocked query.
         // Preserve original handles only in that case, so refusing the retry also undoes the first pass.
         let saved = if only.is_none() && !self.p.regen_plan().nodes.is_empty() {
@@ -524,11 +585,14 @@ impl Session {
                 match copies {
                     Ok(copies) => Some((self.p.clone(), std::mem::replace(&mut self.shapes, copies))),
                     Err(body) => {
-                        return Rebuild {
-                            errors: vec![self.issue(body, format!("cannot snapshot body {body} before a guarded rebuild"))],
-                            bodies: self.result_bodies(),
-                            ..Default::default()
-                        }
+                        return Ok((
+                            Rebuild {
+                                errors: vec![self.issue(body, format!("cannot snapshot body {body} before a guarded rebuild"))],
+                                bodies: self.result_bodies(),
+                                ..Default::default()
+                            },
+                            HashSet::new(),
+                        ))
                     }
                 }
             }
@@ -542,7 +606,7 @@ impl Session {
         let boolean_identities = self.boolean_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
-        let report = self.regenerate_hole_ordered();
+        let report = self.regenerate_hole_ordered().map_err(|(id, error)| self.issue(id, error.to_string()))?;
 
         let mut built = report.built;
         let mut errors: Vec<NodeIssue> = report.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
@@ -557,7 +621,7 @@ impl Session {
             let blocked = self.edge_query_rebuild_errors(&retry);
             if blocked.is_empty() {
                 self.p = retry;
-                let again = self.regenerate_hole_ordered();
+                let again = self.regenerate_hole_ordered().map_err(|(id, error)| self.issue(id, error.to_string()))?;
                 built.extend(again.built);
                 errors = again.errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
             } else {
@@ -565,7 +629,7 @@ impl Session {
                 if let Some((project, shapes)) = saved {
                     self.p = project;
                     self.shapes = shapes;
-                    return Rebuild { errors, bodies: self.result_bodies(), ..Default::default() };
+                    return Ok((Rebuild { errors, bodies: self.result_bodies(), ..Default::default() }, HashSet::new()));
                 }
             }
         }
@@ -645,7 +709,7 @@ impl Session {
         warnings.extend(self.cross_part_projection_warnings());
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
-        Rebuild { errors, warnings, bodies, ..Default::default() }
+        Ok((Rebuild { errors, warnings, bodies, ..Default::default() }, rebuilt))
     }
 
     /// Fillet nodes picked by `check` whose built result fails `modifiers::fillet_acceptance` (F-074), with the reason.
@@ -746,39 +810,34 @@ impl Session {
         }
         let before = self.p.clone();
         let before_warnings = self.advisory_warnings.clone();
+        let before_detached = self.detached_projections.clone();
+        let copies = copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh)))
+            .map_err(|id| Error::Io(format!("cannot snapshot body {id} before a feature edit")))?;
+        let original_shapes = std::mem::replace(&mut self.shapes, copies);
         let old_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let value = match edit(self) {
-            Ok(v) => v,
-            Err(e) => {
-                self.p = before;
-                return Err(e);
+        let result = (|| {
+            let value = edit(self)?;
+            let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
+            let mut rebuild = self.rebuild_for_edit(Some(&new_nodes))?;
+            let new_errors: Vec<String> = rebuild
+                .errors
+                .iter()
+                .filter(|i| !old_nodes.contains(&i.node))
+                .map(|i| format!("{} ({}): {}", i.name, i.node, i.message))
+                .collect();
+            if !new_errors.is_empty() {
+                return Err(Error::Rebuild(new_errors));
             }
-        };
-        let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
-        let mut rebuild = self.rebuild_retrying(Some(&new_nodes));
-        let new_errors: Vec<String> = rebuild
-            .errors
-            .iter()
-            .filter(|i| !old_nodes.contains(&i.node))
-            .map(|i| format!("{} ({}): {}", i.name, i.node, i.message))
-            .collect();
-        if !new_errors.is_empty() {
+            let value = post(self, value, &mut rebuild)?;
+            Ok((value, rebuild))
+        })();
+        if result.is_err() {
             self.p = before;
             self.advisory_warnings = before_warnings;
-            let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
-            self.shapes.retain(|id, _| live.contains(id));
-            return Err(Error::Rebuild(new_errors));
+            self.detached_projections = before_detached;
+            self.shapes = original_shapes;
         }
-        match post(self, value, &mut rebuild) {
-            Ok(value) => Ok((value, rebuild)),
-            Err(error) => {
-                self.p = before;
-                self.advisory_warnings = before_warnings;
-                let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
-                self.shapes.retain(|id, _| live.contains(id));
-                Err(error)
-            }
-        }
+        result
     }
 
     /// Rebuild edits on independent copies of planned live shapes, restoring the original project, handles
@@ -1549,3 +1608,7 @@ mod tests {
         assert!(s.shapes.is_empty(), "the failed closure leaked a body absent from the restored recipe");
     }
 }
+
+#[cfg(test)]
+#[path = "session_r3_tests.rs"]
+mod r3_tests;

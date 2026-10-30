@@ -385,7 +385,7 @@ impl Session {
             if residual > 1e-6 {
                 return Err(Error::Invalid(format!("sketch {sketch} does not solve after projection (residual {residual:.3e})")));
             }
-            let report = session.rebuild_retrying(Some(&nodes));
+            let report = session.rebuild_for_edit(Some(&nodes))?;
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
@@ -635,7 +635,7 @@ impl Session {
             if crate::dependencies::closure(&s.p, HashSet::from([sketch])).len() <= 1 {
                 return Ok((value, None));
             }
-            let r = s.rebuild_retrying(Some(&nodes));
+            let r = s.rebuild_for_edit(Some(&nodes))?;
             let broken: Vec<String> =
                 r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
             if !broken.is_empty() {

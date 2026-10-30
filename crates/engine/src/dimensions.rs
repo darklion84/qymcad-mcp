@@ -318,7 +318,7 @@ impl Session {
         let nodes = crate::dependencies::rebuild_nodes(&self.p);
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         self.with_rebuild_copies(before, &nodes, "dimension edit", |s| {
-            let rebuild = s.rebuild_retrying(Some(&nodes));
+            let rebuild = s.rebuild_for_edit(Some(&nodes))?;
             let broken = rebuild
                 .errors
                 .iter()

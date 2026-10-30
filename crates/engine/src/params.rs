@@ -111,7 +111,7 @@ impl Session {
         // only nodes this edit breaks roll it back, as in sketch_edit.
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         self.with_rebuild_copies(before, &nodes, "parameter rebuild", |s| {
-            let r = s.rebuild_retrying(Some(&nodes));
+            let r = s.rebuild_for_edit(Some(&nodes))?;
             let broken: Vec<String> =
                 r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
             if !broken.is_empty() {

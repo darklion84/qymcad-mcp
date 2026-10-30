@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
 - `sketch_add` accepts native Point items with optional parametric x/y coordinates and independently nameable axis dimensions. Reused points retain their id without extra constraints. `sketch_info` exposes isolated point dimension status; `sketch_remove point` deletes isolated non-system points safely. Points add no profile material (ADR 0030, F-112).
 
 ### Fixed
+- Open and every rebuild path recheck evaluated feature domains after regeneration changes named reference measurements; invalid down, datum angles and chamfer angles refuse with exact edit rollback.
+- Feature formulas reading changed reference measurements now settle through bounded engine regeneration, including Move, extrusion height/down and datum tilt. Non-convergence refuses atomically; the pinned app may need a second regeneration (F-120).
+- Sketch holes refuse transitive named coordinate sources solved after their marker in the native sketch array, including otherwise supported world-plane sources. Creation, edits and open/rebuild apply the same bound; earlier sources retain saved native associativity.
 - Deleting a named dimension’s owner now detects all feature recipe consumers, including independent Move translations and extrusion distances; non-cascade refuses with dependent names and cascade removes them with undo support. Global parameters retain their existing separate cleanup contract.
 - Sketch holes refuse unsupported projected/datum/face sources reached transitively through named coordinate expressions, including reference measurements and global aliases, at creation and evaluated edits/open/rebuild. Refusals identify the source and preserve the saved archive.
 

@@ -45,10 +45,13 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 
 ## The regenerate pipeline (`Session::rebuild`)
 
-Before regeneration, reconcile persisted datum ancestry barriers and check evaluated feature domains (including datum bounds and chamfer angle/setbacks). Recheck explicit asymmetric chamfer support adjacency against the current rebuilt source after regeneration; violations enter the existing rebuild/atomic rollback path. Guards also run after edits despite an existing error on the same node (F-103/F-104, ADR 0031/0032).
+Before regeneration, reconcile persisted datum ancestry barriers and check evaluated feature domains (including datum bounds and chamfer angle/setbacks). Recheck the same centralized evaluated guards against the post-regeneration scope on open and every rebuild path: native regeneration can change named reference measurements. Recheck explicit asymmetric chamfer support adjacency against the current rebuilt source too; violations enter the existing rebuild/atomic rollback path. Guards also run after edits despite an existing error on the same node (F-103/F-104, ADR 0031/0032).
 1. `regenerate_dirty_with_shapes` with the live shapes (only dirty nodes rebuild, like the GUI).
 2. If there were errors: mark everything dirty and run once more (F-005: datum planes resolve during
    regenerate; `retryable()` errors).
+   Compare evaluated scopes across regeneration and repeat timeline consumers whose expressions read changed
+   named values, using the shared expression/dependency closure. Settle supports and sketch-hole consumers too.
+   Bound settling to four passes; non-convergence is a rebuild error (F-120).
 3. Copy `report.built` faces into the bodies (F-007), so saved files have faces like GUI-saved ones.
 4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
    Check every rebuilt fillet: a non-tangent join between the blends of two edges that share no vertex
@@ -61,14 +64,15 @@ Before regeneration, reconcile persisted datum ancestry barriers and check evalu
 on independent B-rep copies, and restore Project/handles/diagnostics on failure. Callers keep their own retry
 plan and error policy (F-034).
 
-Parameter, dimension and sketch rebuild plans include consumers reached through `Sketch.projections[].body` and sketch-hole marker/placement dependencies. Persisted `sketch_dep_*` expressions bridge saved native global/named coordinate edits; unnamed literal/structural app sketch edits remain stale until engine open/rebuild (ADR 0034). Engine regeneration repeats holes/consumers after dirty fixed supports settle; parameterized/named datum, projected and independent face supports are refused because native saved-app scheduling cannot order them.
+Parameter, dimension and sketch rebuild plans include consumers reached through `Sketch.projections[].body` and sketch-hole marker/placement dependencies. Persisted `sketch_dep_*` expressions bridge saved native global/named coordinate edits; unnamed literal/structural app sketch edits remain stale until engine open/rebuild (ADR 0034). Engine regeneration repeats all timeline expression consumers after named reference values change, until the scope settles within four passes; the app may need a second regeneration (F-120). Sketch holes additionally require every transitive source sketch to precede the marker in the native sketch array; timeline order alone is insufficient. Parameterized/named datum, projected and independent face supports remain refused because native saved-app scheduling cannot order them. Evaluated guard and non-convergence failures restore the exact pre-edit recipe, original live B-reps and diagnostics without a repair rebuild; open refuses the archive. Open refreshes the named dependency closure even for clean saved timelines, which may contain native stale caches.
 Native regeneration follows those projections even when its plan omits them; the extended closure keeps
 their bodies inside snapshots, scoped retries and F-024 safety checks (F-107). Deleting a projection source
 is refused even with `cascade=true`; the error identifies the projecting sketches to delete first (ADR 0025).
 
 - `atomic(edit)` — features: rebuild pending dirty nodes first, refusing the new edit if that baseline fails;
-  snapshot the clean `Project`, apply, rebuild (retrying only new nodes); if a node created by the edit has an
-  error, restore the snapshot, drop shapes of removed bodies and return `Error::Rebuild`.
+  retain the clean `Project`, diagnostics and original live B-rep handles, then apply/rebuild on copies
+  (retrying only new nodes). An edit, checked rebuild, new-node native error or post-acceptance refusal restores
+  those originals without regeneration and returns the error.
   If pending dirty nodes cannot rebuild, feature calls remain refused until parameter or sketch edits repair
   the document. Those repair paths bypass `atomic` and can edit a failing baseline.
 - `sketch_edit` — retain the original live shapes of bodies in the sketch's dirty rebuild plan; rebuild on

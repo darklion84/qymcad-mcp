@@ -236,43 +236,71 @@ impl Session {
         Ok(())
     }
 
-    /// Native Hole does not wait for its marker support. Resolve upstream dirty placement first,
-    /// then repeat the hole/consumer portion on the settled frames, retaining upstream errors.
-    pub(crate) fn regenerate_hole_ordered(&mut self) -> qymcad_core::feature::RegenReport {
+    /// Settle native reference measurements and their expression consumers after geometry refresh.
+    /// Native feature preparation snapshots scope before refreshing projected sketches (F-120).
+    pub(crate) fn regenerate_hole_ordered(&mut self) -> std::result::Result<qymcad_core::feature::RegenReport, (Id, Error)> {
         let planned: HashSet<_> = self.p.regen_plan().nodes.into_iter().collect();
-        let roots: HashSet<_> = self
+        let roots = self
             .p
             .timeline
             .iter()
             .filter_map(|n| match n.kind {
-                FeatureKind::Hole { sketch, .. } if sketch != 0 => {
-                    let sources = sketch_sources(&self.p, sketch);
-                    sources
-                        .iter()
-                        .any(|id| *id != sketch && planned.contains(id) && self.p.timeline.iter().any(|n| n.id == *id))
-                        .then_some(n.id)
-                }
+                FeatureKind::Hole { sketch, .. } if sketch != 0 => sketch_sources(&self.p, sketch)
+                    .iter()
+                    .any(|id| *id != sketch && planned.contains(id) && self.p.timeline.iter().any(|n| n.id == *id))
+                    .then_some(n.id),
                 _ => None,
             })
             .collect();
-        let repeat = crate::dependencies::closure(&self.p, roots);
-        let shapes = std::mem::take(&mut self.shapes);
-        let (mut report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
-        self.shapes = shapes;
-        if !repeat.is_empty() {
+        let mut repeat = crate::dependencies::closure(&self.p, roots);
+        let mut report = qymcad_core::feature::RegenReport::default();
+        for pass in 0..4 {
+            let before = self.p.param_map();
+            let rebuilding: HashSet<_> = self.p.regen_plan().nodes.into_iter().collect();
+            let shapes = std::mem::take(&mut self.shapes);
+            let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
+            self.shapes = shapes;
+            report.errors.retain(|(id, _)| !rebuilding.contains(id));
+            report.errors.extend(again.errors);
+            report.built.extend(again.built);
+            self.check_evaluated_features()?;
+            let after = self.p.param_map();
+            let changed: Vec<_> = self
+                .p
+                .named_dims
+                .iter()
+                .filter(|d| match (before.get(&d.name), after.get(&d.name)) {
+                    (Some(a), Some(b)) => a != b,
+                    (None, None) => false,
+                    _ => true,
+                })
+                .map(|d| d.name.clone())
+                .collect();
+            // Resolve changed names to owners, then include every expression/structural consumer,
+            // including globals aliased through those names and sketch-item formulas.
+            let sources = crate::dependencies::expression_sources(&self.p, changed);
+            let reached = crate::dependencies::closure(&self.p, sources);
+            repeat.extend(reached);
+            if repeat.is_empty() {
+                return Ok(report);
+            }
+            if pass == 3 {
+                let id = self.p.timeline.iter().find(|n| repeat.contains(&n.id)).map_or(0, |n| n.id);
+                return Err((
+                    id,
+                    Error::Invalid(
+                        "reference measurement scope did not stabilize after 4 regeneration passes; check cyclic reference formulas".into(),
+                    ),
+                ));
+            }
             for node in &mut self.p.timeline {
                 if repeat.contains(&node.id) {
                     node.dirty = true;
                 }
             }
-            let shapes = std::mem::take(&mut self.shapes);
-            let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
-            self.shapes = shapes;
-            report.built.extend(again.built);
-            report.errors.retain(|(id, _)| !repeat.contains(id));
-            report.errors.extend(again.errors);
+            repeat.clear();
         }
-        report
+        unreachable!("bounded regeneration loop returns on its last pass")
     }
 
     /// Bounds the entire directed distance from the plane, including air before the stock.
@@ -403,6 +431,10 @@ fn check_support(p: &Project, sketch: Id, src: Id) -> Result<()> {
     let mut sources: Vec<_> = sketch_sources(p, sketch).into_iter().filter(|id| p.sketch_index(*id).is_some()).collect();
     sources.sort_unstable();
     for source in sources {
+        if source != sketch && p.sketch_index(source).unwrap() >= p.sketch_index(sketch).unwrap() {
+            let name = &p.sketches[p.sketch_index(source).unwrap()].name;
+            return Err(Error::Invalid(format!("hole sketch {sketch}: source sketch {name} ({source}) is solved after the marker")));
+        }
         check_sketch_support(p, source, src).map_err(|e| {
             if source == sketch {
                 e

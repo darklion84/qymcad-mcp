@@ -1,7 +1,7 @@
 # ADR 0033: Native body move and rotation
 
 - Status: accepted (2026-10-30).
-- Related: ADR 0028, F-024, F-074, F-104, F-116, F-117.
+- Related: ADR 0028, F-024, F-074, F-104, F-116, F-117, F-120.
 
 ## Context
 
@@ -16,9 +16,10 @@ Pinned QymCAD stores a body Move as a rigid 3×4 transform. Only its total affin
 5. `dimension_set` exposes exactly native `dx`, `dy`, `dz` on Move. They are the transform's total affine translation in mm, including a rotation pivot's `pivot − R·pivot` contribution; they are not independent rotation angles or necessarily the last gizmo displacement. Angle and pivot remain literal matrix data.
 6. Preserve native source ownership, including imported parts (ADR 0028), and restore the active modelling context. Native persistent face and edge names pass through the transform. A Move creates no new topology roles, so `OfFeature(move)` must not invent faces or edges.
 7. Establish a clean baseline, then apply recipe changes and propagate changed native named dimensions in a recipe transaction. Solve sketches and dirty feature consumers of those names, including independent bodies that do not consume the moved body geometrically. Compute the rebuild plan after propagation, then snapshot every planned live B-rep before regeneration. Any propagation, native rebuild or acceptance error restores the pre-edit recipe, original B-reps and diagnostics. Evaluate the returned transform from the settled post-rebuild scope. Resolve every feature recipe expression, including Move dx/dy/dz and other features reading named shifts, to its named dimension owner in the shared dependency closure. Non-cascade deletion names those consumers; cascade removes them with existing history/undo semantics. Global parameters have no feature owner and remain outside cascade. Retain ordinary history, batch and undo boundaries, F-024 stored-selection preflight and F-074 fillet validation. Never hold `kernel_gate` while invoking self-gating regeneration or restore functions.
+8. After each regeneration pass, compare evaluated named values and repeat every timeline expression consumer of a changed value through the shared dependency closure, not only sketch holes. Bound settling to four passes; failure to converge is an atomic rebuild error. Run centralized evaluated guards again on the settled post-regeneration scope in open and every rebuild path. Guard/non-convergence refusal restores recipe, original B-reps and diagnostics exactly, without another rebuild. Preserve formulas reading native reference measurements: this engine settles them, while the pinned app snapshots feature scope before projected geometry refresh and may need a second regeneration (F-120).
 
 ## Consequences
 
-Translation formulas and named native shift drivers remain editable after save/load through the app's parameter scheduler. Rotations retain the app's literal-angle scope and sampled pivot. Repeated translations preserve full precision and node identity; the unsupported formula-driven rotation accumulation is an explicit atomic refusal.
+Translation formulas and named native shift drivers remain editable after save/load through the app's parameter scheduler. A formula reading a reference measurement updates in the engine; the app may need a second regeneration (F-120). Rotations retain the app's literal-angle scope and sampled pivot. Repeated translations preserve full precision and node identity; the unsupported formula-driven rotation accumulation is an explicit atomic refusal.
 
 Evidence: `tasks/research-medA.md` section 5; stage-0 `research-medA/move/probe.rs`, `output.log` and `notes.md`. Stage-A3 test, mutation and final verification outcomes are recorded in `tasks/A3-report.md`. R2 named-expression deletion, immediate archive rollback and mutation evidence: `crates/engine/tests/golden_medium_r2.rs`, `dependencies::hole_tests::every_feature_formula_key_resolves_named_owners_without_owning_globals`, and `tasks/R2-report.md`.
