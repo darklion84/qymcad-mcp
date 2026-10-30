@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
 - `extrude` accepts optional `down` for native Two sides, with independent global/named height and down drivers. Normal spans [-down,height]; reverse swaps the sides. Explicit down must stay finite and greater than 1e-9 mm on creation and later edits; symmetric/through combinations and zero-down edits are refused (ADR 0029, F-111).
 - `sketch_add` accepts native Point items with optional parametric x/y coordinates and independently nameable axis dimensions. Reused points retain their id without extra constraints. `sketch_info` exposes isolated point dimension status; `sketch_remove point` deletes isolated non-system points safely. Points add no profile material (ADR 0030, F-112).
 
+### Fixed
+- Deleting a named dimension’s owner now detects all feature recipe consumers, including independent Move translations and extrusion distances; non-cascade refuses with dependent names and cascade removes them with undo support. Global parameters retain their existing separate cleanup contract.
+- Sketch holes refuse unsupported projected/datum/face sources reached transitively through named coordinate expressions, including reference measurements and global aliases, at creation and evaluated edits/open/rebuild. Refusals identify the source and preserve the saved archive.
+
 ## 0.1.1-dev.20261026.4 — body booleans, STEP/IGES import and sketch projections (ADR 0025–0028)
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.

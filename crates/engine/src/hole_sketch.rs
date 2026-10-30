@@ -397,6 +397,25 @@ pub(crate) fn sketch_sources(p: &Project, sketch: Id) -> HashSet<Id> {
 
 /// The persisted expression bridge supplies dirtying, not native wave ordering (F-118).
 fn check_support(p: &Project, sketch: Id, src: Id) -> Result<()> {
+    if p.sketch_index(sketch).is_none() {
+        return Err(Error::Invalid(format!("hole sketch {sketch} is missing")));
+    }
+    let mut sources: Vec<_> = sketch_sources(p, sketch).into_iter().filter(|id| p.sketch_index(*id).is_some()).collect();
+    sources.sort_unstable();
+    for source in sources {
+        check_sketch_support(p, source, src).map_err(|e| {
+            if source == sketch {
+                e
+            } else {
+                let name = &p.sketches[p.sketch_index(source).unwrap()].name;
+                Error::Invalid(format!("hole sketch {sketch}: source sketch {name} ({source}): {e}"))
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn check_sketch_support(p: &Project, sketch: Id, src: Id) -> Result<()> {
     let si = p.sketch_index(sketch).ok_or_else(|| Error::Invalid(format!("hole sketch {sketch} is missing")))?;
     if !p.sketches[si].projections.is_empty() {
         return Err(Error::Invalid(format!(
@@ -449,4 +468,57 @@ fn check_host(p: &Project, host: Id, src: Id) -> Result<()> {
         }
     }
     Err(Error::Invalid(format!("hole face support {host} is independent of source {src}; native rebuild ordering is unavailable")))
+}
+
+#[cfg(test)]
+mod r2_tests {
+    use super::*;
+    use qymcad_core::model::{NamedDim, ProjSource, SketchProjection};
+
+    #[test]
+    fn evaluated_rebuild_refuses_transitive_projected_named_source() {
+        let mut s = Session::new_part();
+        let projected = s.p.add_sketch("projected measurement", vec![], None);
+        s.p.add_sketch_node(projected, "projected measurement");
+        let si = s.p.sketch_index(projected).unwrap();
+        s.p.sketches[si].projections.push(SketchProjection {
+            id: 900,
+            body: 901,
+            src: ProjSource::Edge(902),
+            points: vec![],
+            entities: vec![],
+            edges: vec![],
+        });
+        s.p.set_feat_dim(projected, "measurement", "40".into());
+        s.p.named_dims
+            .push(NamedDim { name: "measured_w".into(), target: DimTarget::Feature { node: projected, key: "measurement".into() } });
+        let marker = s.p.add_sketch("marker", vec![], None);
+        s.p.add_sketch_node(marker, "marker");
+        s.p.set_feat_dim(marker, "coordinate", "measured_w/4".into());
+        let h = s.p.add_hole_from_sketch(0, marker, HoleTool { kind: 0, diameter: 4., depth: 4., dia2: 0., depth2: 0. }, true);
+        s.reconcile_hole_dependencies();
+        let archive = |s: &mut Session, label| {
+            let file = std::env::temp_dir().join(format!("qymcad-r2-rebuild-{}-{label}.qcad", std::process::id()));
+            s.save_with_options(Some(&file), true).unwrap();
+            let mut z = zip::ZipArchive::new(std::fs::File::open(&file).unwrap()).unwrap();
+            let entries = (0..z.len())
+                .map(|i| {
+                    let mut e = z.by_index(i).unwrap();
+                    let mut bytes = vec![];
+                    std::io::Read::read_to_end(&mut e, &mut bytes).unwrap();
+                    (e.name().to_string(), bytes)
+                })
+                .collect::<std::collections::BTreeMap<_, _>>();
+            std::fs::remove_file(file).unwrap();
+            entries
+        };
+        let before = archive(&mut s, "before");
+        let r = s.rebuild();
+        assert!(
+            r.errors.iter().any(|e| e.node == h && e.message.contains("projected") && e.message.contains(&projected.to_string())),
+            "{r:?}"
+        );
+        assert!(s.shapes.is_empty(), "evaluated guard must refuse before kernel regeneration");
+        assert_eq!(archive(&mut s, "after"), before, "guard refusal preserves the immediate archive");
+    }
 }

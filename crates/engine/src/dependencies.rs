@@ -74,11 +74,9 @@ pub(crate) fn closure(p: &Project, mut reached: HashSet<Id>) -> HashSet<Id> {
         for node in &p.timeline {
             if matches!(node.kind, qymcad_core::feature::FeatureKind::Hole { sketch, .. } if sketch != 0
                 && crate::hole_sketch::sketch_sources(p, sketch).iter().any(|id| reached.contains(id)))
-                || p.feat_dims.get(&node.id).is_some_and(|dims| {
-                    expression_sources(p, dims.iter().filter(|(key, _)| key.starts_with("sketch_dep_")).map(|(_, expr)| expr.clone()))
-                        .iter()
-                        .any(|id| reached.contains(id))
-                })
+                || p.feat_dims
+                    .get(&node.id)
+                    .is_some_and(|dims| expression_sources(p, dims.values().cloned()).iter().any(|id| reached.contains(id)))
             {
                 reached.insert(node.id);
             }
@@ -130,5 +128,29 @@ mod hole_tests {
         p.named_dims.push(NamedDim { name: "native_item".into(), target: DimTarget::Feature { node: point, key: "radius".into() } });
         p.named_dims.push(NamedDim { name: "sketch_driver".into(), target: DimTarget::Sketch { sketch, refs: vec![point] } });
         assert_eq!(expression_sources(&p, ["native_item+sketch_driver".into()]), HashSet::from([sketch]));
+    }
+
+    #[test]
+    fn every_feature_formula_key_resolves_named_owners_without_owning_globals() {
+        use qymcad_core::model::{NamedDim, Param};
+        let mut p = Project::default();
+        let source = p.add_offset_plane(qymcad_core::feature::BasePlane::XY, 8.);
+        p.named_dims.push(NamedDim { name: "source_size".into(), target: DimTarget::Feature { node: source, key: "dist".into() } });
+        p.parameters.push(Param { name: "alias".into(), expr: "source_size+1".into(), value: 9. });
+        p.parameters.push(Param { name: "global".into(), expr: "3".into(), value: 3. });
+        let mut consumers = Vec::new();
+        for key in ["dx", "dy", "dz", "angle", "height", "down", "depth", "dist", "d2", "count", "sketch_dep_saved", "other_recipe"] {
+            let consumer = p.add_offset_plane(qymcad_core::feature::BasePlane::XY, 9.);
+            p.set_feat_dim(consumer, key, "alias+0".into());
+            consumers.push((consumer, key));
+        }
+        let independent = p.add_offset_plane(qymcad_core::feature::BasePlane::XY, 3.);
+        p.set_feat_dim(independent, "dist", "global".into());
+        let reached = closure(&p, HashSet::from([source]));
+        for (id, key) in consumers {
+            assert!(reached.contains(&id), "omitted feature expression key {key}");
+        }
+        assert!(!reached.contains(&independent));
+        assert!(expression_sources(&p, ["global".into()]).is_empty());
     }
 }
