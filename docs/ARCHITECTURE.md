@@ -34,6 +34,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `modifiers.rs` | fillet, chamfer (symmetric/TwoDist/DistAngle, support adjacency guards, picked edges F-024), shell, push face, hole |
 | `revolve.rs` | revolve about a sketch axis/line, world/datum/face axis; add/cut/intersect/new body |
 | `body_boolean.rs` | native parametric two-body cut/union/intersect, named outputs and dynamic piece count/identity guard (F-108, ADR 0026) |
+| `move_body.rs` | native body translation/rotation, Move-node reuse, full-precision shift accumulation and formula-driven rotation refusal (F-116/F-117, ADR 0033) |
 | `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
 | `history.rs` | guarded native deletion with extended dependency closure; Project/original-shape snapshots, 16-entry modelling undo (ADR 0008) |
 | `dependencies.rs` | native dependency reachability extended through sketch projections and the source's consuming lineage above the sketch; shared rebuild snapshots/retries, deletion and F-024 preflight |

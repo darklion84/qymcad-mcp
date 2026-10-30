@@ -31,7 +31,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P25 | Boolean between bodies | covered | — | `body_boolean` | `FeatureKind::BodyBoolean` |
 | P26 | Recognise mesh as body | not covered | Requires mesh import (I1) | none | `FeatureKind::MeshRecognised,PartTool::Recognise` |
 | P27 | Offset surface | not covered | Surface operation | none | `FeatureKind::OffsetSurface,PartTool::OffsetSurface` |
-| P28 | Move / rotate body | not covered | — | none | `FeatureKind::Move` |
+| P28 | Move / rotate body | covered | Parametric dx/dy/dz; literal angle/pivot; accumulated rotation onto nonliteral shift formulas refused (ADR 0033) | `move` | `FeatureKind::Move` |
 | D1 | Datum plane with offset | covered | — | `plane_offset` | `FeatureKind::Plane,PartTool::DatumPlane` |
 | D2 | Tilted datum plane | covered | Tilt X/Y and Turn; ancestry barriers and global/named drivers (ADR 0031) | `plane_offset` | — |
 | D3 | Datum axis | partial | Axis only inline in revolve and circular array; no standalone datum axis | `revolve`, `circular_array` | `FeatureKind::DatumAxis,PartTool::DatumAxis` |

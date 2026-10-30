@@ -19,6 +19,7 @@ mod localization;
 #[cfg(test)]
 mod localization_tests;
 mod modifiers;
+mod move_body;
 mod params;
 mod patterns;
 mod pngfile;
@@ -43,6 +44,7 @@ pub use history::{Snapshot, ToolCall, Undone, UNDO_LIMIT};
 pub use import_tool::{ImportResult, ImportedBody};
 pub use info::{DocInfo, NodeInfo};
 pub use modifiers::{Chamfer, ChamferInfo, Hole, HoleKind, Side};
+pub use move_body::{Move, MoveResult, Rotation};
 pub use params::ParamInfo;
 pub use patterns::{ArrayDir, AxisRef};
 pub use qymcad_core::model::Id;

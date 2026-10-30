@@ -112,6 +112,7 @@ fn modelling_tool(name: &str) -> bool {
             | "hole"
             | "shell"
             | "push_face"
+            | "move"
             | "linear_array"
             | "circular_array"
             | "mirror"

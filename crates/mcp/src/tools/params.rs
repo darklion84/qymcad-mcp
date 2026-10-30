@@ -39,7 +39,7 @@ pub enum DimensionTargetArg {
     Feature {
         /// Feature id/name, or sketch item's centre/id (items have no native names).
         feature: ObjRef,
-        /// Native numeric key, e.g. `height`, `sides`, `w`, `h`, `turn` (ellipse axes are full sizes). Chamfer `d2` is degrees for Leg and angle, mm for TwoDist, and refused for symmetric.
+        /// Native numeric key, e.g. `height`, `sides`, `w`, `h`, `turn` (ellipse axes are full sizes). Chamfer `d2` is degrees for Leg and angle, mm for TwoDist, and refused for symmetric. Move accepts only `dx`, `dy`, `dz`: total affine translation including rotation pivot correction, not incremental gizmo shifts.
         key: String,
     },
 }
@@ -60,7 +60,7 @@ pub struct DimensionSetArgs {
 
 pub fn tools() -> Vec<Tool> {
     vec![
-        tool("dimension_set", "Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Chamfer dist/d2 metadata reports mode and unit; d2 is degrees in dist_angle, mm in two_dist, and refused in symmetric. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Text height edits and changes to existing text through imported formulas are refused: remove and recreate text to change its height, position, angle, font or characters. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.", |st, a: DimensionSetArgs| {
+        tool("dimension_set", "Set a native sketch, feature or sketch-item driving dimension's value/formula and/or name. Names make dimensions available to other formulas; doc_info lists them. Chamfer dist/d2 metadata reports mode and unit; d2 is degrees in dist_angle, mm in two_dist, and refused in symmetric. Move accepts only dx/dy/dz, the total affine translation including rotation pivot correction; rotation angle/pivot have no drivers. Refuses unknown or ambiguous targets, name collisions, cycles, bad formulas and unsolved edits atomically. An empty name removes the name. New sketch-item names are refused because native app SetDriver leaves their solids stale. Text height edits and changes to existing text through imported formulas are refused: remove and recreate text to change its height, position, angle, font or characters. Item edits that conflict with driving sketch constraints are refused; edit the sketch constraint instead.", |st, a: DimensionSetArgs| {
             let s = st.doc()?;
             let target = match a.target {
                 DimensionTargetArg::Sketch { sketch, constraint } => qymcad_engine::DimensionTarget::Sketch { sketch: sketch.resolve(s)?, constraint },

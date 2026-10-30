@@ -218,6 +218,7 @@ fn limits_allowlist_and_outer_schema() {
         "hole",
         "shell",
         "push_face",
+        "move",
         "linear_array",
         "circular_array",
         "mirror",

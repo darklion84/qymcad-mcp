@@ -5,7 +5,8 @@ use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::topology::{AxisArg, SelArg};
 use super::{tool, Tool};
 use qymcad_engine::{
-    ArrayDir, Chamfer, Direction, Extrude, Hole, HoleKind, Id, Loft, LoftSection, Num, Op, Revolve, Session, Side, Sweep, SweepPath,
+    ArrayDir, Axis, Chamfer, Direction, Extrude, Hole, HoleKind, Id, Loft, LoftSection, Move, Num, Op, Revolve, Rotation, Session, Side,
+    Sweep, SweepPath,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -416,6 +417,49 @@ pub struct MirrorArgs {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MoveAxis {
+    X,
+    Y,
+    Z,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RotationArgs {
+    /// Right-handed rotation axis in the source part's local frame: x, y or z.
+    pub axis: MoveAxis,
+    /// Finite literal angle in degrees. Formula strings are refused; native Move stores no angle driver.
+    pub angle: f64,
+    /// Finite literal point in the part's local frame. Default: current display mesh bbox centre, sampled once.
+    #[serde(default)]
+    pub pivot: Option<[f64; 3]>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MoveArgs {
+    /// Body id or name. Default: the part's current body.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Incremental translation along part X, mm (number or expression); omitted axes default to zero. Excludes rotation.
+    #[serde(default)]
+    pub dx: Option<Num>,
+    /// Incremental translation along part Y, mm (number or expression); omitted axes default to zero. Excludes rotation.
+    #[serde(default)]
+    pub dy: Option<Num>,
+    /// Incremental translation along part Z, mm (number or expression); omitted axes default to zero. Excludes rotation.
+    #[serde(default)]
+    pub dz: Option<Num>,
+    /// One literal rotation; mutually exclusive with dx/dy/dz. Refused when accumulating onto a Move with translation formulas.
+    #[serde(default)]
+    pub rotation: Option<RotationArgs>,
+    /// Name for the native Move node; renames a reused node when supplied. Numeric-id names are refused.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 fn opt_body(s: &Session, b: &Option<ObjRef>) -> Result<Option<Id>, String> {
     b.as_ref().map(|b| b.resolve(s)).transpose()
 }
@@ -444,6 +488,25 @@ macro_rules! stale {
 
 pub fn tools() -> Vec<Tool> {
     vec![
+        tool(
+            "move",
+            "Translate or rotate a body using native Move. Give at least one of dx/dy/dz (parametric incremental mm; omitted axes are zero), or rotation with literal degrees, axis and optional literal pivot, exclusively. Axes and pivot use the source part's local frame. Default pivot is the current display mesh bbox centre, sampled once. Repeated simple moves reuse the native node id and report reused; formulas retain full-precision translation accumulation. Rotation accumulation onto a Move with translation formulas is refused because native composition cannot preserve their axis dependencies. First rotation and rotation of plain numeric Moves are supported. Returns body, source_body, reused, evaluated affine transform (row-major 3x4), and rebuild. Native dx/dy/dz dimensions are total affine translation, including pivot correction; angle/pivot have no drivers. Persistent face/edge names pass through; Move creates no of_feature roles. Re-read topology on the returned body before selecting.",
+            |st, a: MoveArgs| {
+                let translation = match (a.dx, a.dy, a.dz) {
+                    (None, None, None) => None,
+                    (dx, dy, dz) => Some([dx.unwrap_or_else(zero), dy.unwrap_or_else(zero), dz.unwrap_or_else(zero)]),
+                };
+                let rotation = a.rotation.map(|r| Rotation {
+                    angle: r.angle,
+                    axis: match r.axis { MoveAxis::X => Axis::X, MoveAxis::Y => Axis::Y, MoveAxis::Z => Axis::Z },
+                    pivot: r.pivot,
+                });
+                let s = st.doc()?;
+                let request = Move { body: opt_body(s, &a.body)?, translation, rotation, name: a.name };
+                let (result, rebuild) = s.move_body(&request).map_err(err)?;
+                Ok(json!({ "body": result.body, "source_body": result.source_body, "reused": result.reused, "transform": result.transform, "rebuild": rebuild_json(&rebuild) }))
+            },
+        ),
         tool(
             "plane_offset",
             "Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. Returns plane/rebuild; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",

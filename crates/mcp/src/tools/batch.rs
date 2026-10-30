@@ -19,7 +19,7 @@ struct BatchArgs {
 struct Step {
     /// A modelling tool: param_set, dimension_set, param_delete, sketch_create, sketch_add, sketch_project, sketch_constrain, sketch_remove, sketch_edit,
     /// plane_offset, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, linear_array, circular_array,
-    /// mirror, thread, body_boolean, split, import or feature_delete. Reads, document/file tools, undo and nested batch are refused.
+    /// move, mirror, thread, body_boolean, split, import or feature_delete. Reads, document/file tools, undo and nested batch are refused.
     tool: String,
     /// Exactly the named tool's standalone arguments, including its JSON-string object/array leniency.
     args: Value,
@@ -34,7 +34,7 @@ fn decode(args: Value) -> Result<BatchArgs, String> {
 pub(super) fn tool() -> Tool {
     Tool {
         name: "batch",
-        description: "Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches and features referenced by name/id; use single calls when you need topology ids, sketch_info, select or a render between operations. Only param_set, dimension_set, param_delete, sketch_create, sketch_add, sketch_project, sketch_constrain, sketch_remove, sketch_edit, plane_offset, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, linear_array, circular_array, mirror, thread, body_boolean, split, import and feature_delete are allowed. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed. Compact results contain step/tool and created node id/name when applicable, final bodies/warnings/errors; verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.",
+        description: "Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches and features referenced by name/id; use single calls when you need topology ids, sketch_info, select or a render between operations. Only param_set, dimension_set, param_delete, sketch_create, sketch_add, sketch_project, sketch_constrain, sketch_remove, sketch_edit, plane_offset, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, linear_array, circular_array, move, mirror, thread, body_boolean, split, import and feature_delete are allowed. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed. Compact results contain step/tool and created node id/name when applicable, final bodies/warnings/errors; verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.",
         schema: input_schema::<BatchArgs>(),
         validate: Box::new(|args| decode(args).map(|_| ())),
         handler: Box::new(run),
@@ -86,7 +86,7 @@ fn execute(tools: &[Tool], state: &mut State, batch: &BatchArgs, handlers: &[&To
             entry["created"] = json!({"id":id, "name":state.doc()?.node_name(id)});
         }
         // Small operation metadata is useful without repeating full sketch details or body metrics.
-        for key in ["ok", "deleted", "index", "dof", "notes"] {
+        for key in ["ok", "deleted", "index", "dof", "notes", "reused"] {
             if let Some(value) = result.get(key) {
                 entry[key] = value.clone();
             }

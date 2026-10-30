@@ -272,6 +272,7 @@ fn lists_tools_with_object_schemas() {
         "hole",
         "shell",
         "push_face",
+        "move",
         "linear_array",
         "circular_array",
         "mirror",
