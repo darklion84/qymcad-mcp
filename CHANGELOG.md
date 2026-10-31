@@ -3,14 +3,20 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.6 — sketch move/copy/rotate, sketch patterns, DXF/SVG import (ADR 0035–0037)
+
+Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Added
 - `sketch_pattern` creates and updates linked native linear and circular sketch arrays with formula-driven values, strict count caps, batch/undo support, and instance-edit refusals (ADR 0036).
-- `sketch_edit` supports one-shot native move, copy and rotate operations for curve ids. Copies are unlinked, all three operations are batchable and undoable, and dependent rebuild or solver-placement failures roll back atomically (ADR 0035).
+- `sketch_edit` supports one-shot native move, copy and rotate operations for curve ids. Copies are unlinked from their source (copied internal dimensions keep their formulas), all three operations are batchable and undoable, and dependent rebuild or solver-placement failures roll back atomically (ADR 0035).
 - `sketch_import` imports DXF and SVG into editable native sketches with one-time scaling, native closure, unit notes, skipped/invalid/redrawn reports, batch support, and undo (ADR 0037).
 
 ### Fixed
+- A parameter or dimension edit raising a sketch-pattern count over the cap is refused before the native parameter pass regenerates the instances; one `param_set` could hang the server.
+- `sketch_pattern` update accepts the pattern id its creation returned.
+- Explicit profile picks of a patterned sketch follow count edits (full pick grows/shrinks, a subset keeps its instances or refuses atomically) for extrude, combine, revolve and sweep, through param_set, dimension_set, update and save+reopen. The QymCAD app itself keeps only the source contour after an in-app count edit (F-123).
+- `sketch_import` refuses files over 16 MiB before parsing.
 - Array counts over the 1000-copy cap are refused before kernel work on open and rebuild, and between reference-settling passes; a crafted or app-edited file no longer builds up to the native 10000 copies before the refusal.
 
 ## 0.1.1-dev.20261026.5 — two-sided extrude, sketch points and holes, tilted datums, chamfer angle, move (ADR 0029–0034)
