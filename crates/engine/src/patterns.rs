@@ -242,8 +242,12 @@ impl Session {
 
     /// Every array's total copy count, with the current parameter values, within `MAX_ARRAY_COPIES`. Counts can
     /// be expressions (`count`, `count2`, `count3` feature dimensions), so a parameter edit can grow them;
-    /// `param_set` calls this before rebuilding. Each count must be a whole number in the same range as at creation.
+    /// Check known values before kernel work and recheck the settled reference scope on every rebuild.
     pub(crate) fn check_array_limits(&self) -> Result<()> {
+        self.check_array_values().map_err(|(id, e)| Error::Invalid(format!("array {id} `{}`: {e}", self.node_name(id))))
+    }
+
+    pub(crate) fn check_array_values(&self) -> std::result::Result<(), (Id, Error)> {
         let vars = self.p.param_map();
         let dim = |node: Id, key: &str, stored: u32| -> Result<u64> {
             let v = match self.p.feat_dims.get(&node).and_then(|d| d.get(key)) {
@@ -255,13 +259,17 @@ impl Session {
         for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
             let total = match n.kind {
                 FeatureKind::LinearArray { count, count2, count3, .. } => {
-                    let (a, b, c) = (dim(n.id, "count", count)?, dim(n.id, "count2", count2)?, dim(n.id, "count3", count3)?);
+                    let (a, b, c) = (
+                        dim(n.id, "count", count).map_err(|e| (n.id, e))?,
+                        dim(n.id, "count2", count2).map_err(|e| (n.id, e))?,
+                        dim(n.id, "count3", count3).map_err(|e| (n.id, e))?,
+                    );
                     a.checked_mul(b).and_then(|x| x.checked_mul(c)).unwrap_or(u64::MAX)
                 }
-                FeatureKind::CircularArray { count, .. } => dim(n.id, "count", count)?,
+                FeatureKind::CircularArray { count, .. } => dim(n.id, "count", count).map_err(|e| (n.id, e))?,
                 _ => continue,
             };
-            check_total(total).map_err(|e| Error::Invalid(format!("array {} `{}`: {e}", n.id, crate::localization::name(&n.name))))?;
+            check_total(total).map_err(|e| (n.id, e))?;
         }
         Ok(())
     }

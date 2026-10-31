@@ -245,15 +245,22 @@ impl Session {
         self.transaction(|s| {
             let si = s.sketch_si(sketch)?;
             if let Some(ti) = s.p.sketches[si].texts.iter().position(|t| t.id == entity) {
-                s.p.delete_sketch_text(si, ti);
+                s.preserving_points(si, |s| {
+                    s.p.delete_sketch_text(si, ti);
+                    Ok(())
+                })?;
                 return s.finish_sketch_edit(si);
             }
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
             }
             // QymCAD 0.1.1 keeps spline controls and free helpers of surviving geometry (F-046 fixed, our #166).
-            s.p.delete_entities(si, &[entity]);
-            s.prune_debris(si);
+            let explicit = s.explicit_points(si);
+            s.preserving_points(si, |s| {
+                s.p.delete_entities(si, &[entity]);
+                s.prune_debris(si, &explicit);
+                Ok(())
+            })?;
             s.finish_sketch_edit(si)
         })
     }
@@ -271,7 +278,8 @@ impl Session {
             }
             // Free ArcLength starts are engine-created angle references. Support constraints alone do not
             // give a helper a purpose after its last dimension has gone.
-            let used: HashSet<Id> = sk.entities.iter().flat_map(entity_points).chain(sk.system_ids()).collect();
+            let used: HashSet<Id> =
+                sk.entities.iter().flat_map(entity_points).chain(sk.system_ids()).chain(s.explicit_points(si)).collect();
             let helpers: HashSet<Id> = sk
                 .constraints
                 .iter()
@@ -314,11 +322,12 @@ impl Session {
 
     /// Remove points that no entity uses and that are tied to no live geometry by a constraint (only to the
     /// frame or to other such points), with their constraints.
-    fn prune_debris(&mut self, si: usize) {
+    fn prune_debris(&mut self, si: usize, explicit: &HashSet<Id>) {
         let s = &mut self.p.sketches[si];
         let sys: HashSet<Id> = s.system_ids().into_iter().collect();
         let used: HashSet<Id> = s.entities.iter().flat_map(entity_points).collect();
-        let orphan: HashSet<Id> = s.points.iter().map(|p| p.id).filter(|id| !used.contains(id) && !sys.contains(id)).collect();
+        let orphan: HashSet<Id> =
+            s.points.iter().map(|p| p.id).filter(|id| !used.contains(id) && !sys.contains(id) && !explicit.contains(id)).collect();
         let tied: HashSet<Id> = s
             .constraints
             .iter()

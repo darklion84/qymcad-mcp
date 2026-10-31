@@ -82,7 +82,7 @@ impl Session {
         self.transaction(|s| {
             let before = s.p.sketches[si].clone();
             let formulas: Vec<ConstraintInfo> = s.sketch_detail(sketch)?.constraints.into_iter().filter(has_formula).collect();
-            let dimensions = edit(s)?;
+            let dimensions = s.preserving_points(si, edit)?;
             let after = &s.p.sketches[si];
             // A formula dimension survives when one afterwards has the same kind, points and text; failing that
             // (an edit that moved it to another point), the same kind and text. What is left was dropped.

@@ -5,26 +5,34 @@ use std::collections::HashSet;
 /// Resolve expression reads through global aliases and named dimensions to structural owners.
 /// Globals have no timeline node; a named sketch-item dimension belongs to its containing sketch.
 pub(crate) fn expression_sources(p: &Project, expressions: impl IntoIterator<Item = String>) -> HashSet<Id> {
-    let mut sources = HashSet::new();
+    expression_names(p, expressions)
+        .into_iter()
+        .filter_map(|name| {
+            let named = p.named_dims.iter().find(|d| d.name == name)?;
+            Some(match named.target {
+                DimTarget::Sketch { sketch, .. } => sketch,
+                DimTarget::Feature { node, .. } => p
+                    .sketches
+                    .iter()
+                    .find(|sk| {
+                        sk.points.iter().any(|pt| pt.id == node)
+                            || sk.entities.iter().any(|e| e.id == node)
+                            || sk.patterns.iter().any(|item| item.id == node)
+                            || sk.texts.iter().any(|item| item.id == node)
+                    })
+                    .map_or(node, |sk| sk.id),
+            })
+        })
+        .collect()
+}
+
+/// Keep the names as well as their owners: solve order can differ within one sketch.
+pub(crate) fn expression_names(p: &Project, expressions: impl IntoIterator<Item = String>) -> HashSet<String> {
     let mut pending: Vec<_> = expressions.into_iter().collect();
     let mut visited = HashSet::new();
     while let Some(expr) = pending.pop() {
         for named in &p.named_dims {
             if qymcad_core::expr::mentions(&expr, &named.name) && visited.insert(named.name.clone()) {
-                let owner = match named.target {
-                    DimTarget::Sketch { sketch, .. } => sketch,
-                    DimTarget::Feature { node, .. } => p
-                        .sketches
-                        .iter()
-                        .find(|sk| {
-                            sk.points.iter().any(|pt| pt.id == node)
-                                || sk.entities.iter().any(|e| e.id == node)
-                                || sk.patterns.iter().any(|item| item.id == node)
-                                || sk.texts.iter().any(|item| item.id == node)
-                        })
-                        .map_or(node, |sk| sk.id),
-                };
-                sources.insert(owner);
                 pending.extend(p.dim_target_expr(&named.target));
             }
         }
@@ -34,7 +42,7 @@ pub(crate) fn expression_sources(p: &Project, expressions: impl IntoIterator<Ite
             }
         }
     }
-    sources
+    visited
 }
 
 /// Match native `body_seen_from`: a projection follows the source's consuming lineage above its sketch.

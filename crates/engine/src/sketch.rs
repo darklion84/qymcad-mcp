@@ -33,10 +33,15 @@ use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::value::Num;
 use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane};
-use qymcad_core::model::{entity_points, Constraint, EntityKind, Id, PlaneDef};
+use qymcad_core::model::{entity_points, Constraint, EntityKind, Id, PlaneDef, Project};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+pub(crate) struct PointRecords {
+    points: Vec<qymcad_core::model::SketchPoint>,
+    drivers: Vec<Constraint>,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProjectionResult {
@@ -146,6 +151,7 @@ impl Session {
             if reused {
                 return Ok(AddedPoint { point, reused });
             }
+            s.p.set_feat_dim(point, "explicit_point", "1".into());
             if dimensioned {
                 // Reverse the y axis so positive x has a positive signed DistancePL driver. The two
                 // reference sets are distinct, unlike origin Distance{axis}, so native names are unique.
@@ -184,6 +190,91 @@ impl Session {
         })
     }
 
+    /// Native SketchPoint has no intent tag. New explicit Points carry persisted metadata;
+    /// legacy isolated points are user geometry unless positively identified as figure/angle helpers.
+    fn explicit_points_in(p: &Project, si: usize) -> HashSet<Id> {
+        let sk = &p.sketches[si];
+        let used: HashSet<_> = sk.entities.iter().flat_map(entity_points).chain(sk.system_ids()).collect();
+        let helpers: HashSet<_> = sk
+            .rects()
+            .iter()
+            .map(|r| r.centre)
+            .chain(sk.constraints.iter().filter_map(|c| match c {
+                Constraint::ArcLength { a, .. } if !used.contains(a) => Some(*a),
+                Constraint::Midpoint { p, .. } => Some(*p),
+                Constraint::PointOnCircle { p, c }
+                    if !used.contains(p)
+                        && used.contains(c)
+                        && sk.constraints.iter().any(|row| matches!(row, Constraint::Horizontal { a, b } if a == c && b == p)) =>
+                {
+                    Some(*p)
+                }
+                _ => None,
+            }))
+            .collect();
+        sk.points
+            .iter()
+            .filter(|pt| p.feat_dim(pt.id, "explicit_point") == Some("1") || (!used.contains(&pt.id) && !helpers.contains(&pt.id)))
+            .map(|pt| pt.id)
+            .collect()
+    }
+
+    fn explicit_points(&self, si: usize) -> HashSet<Id> {
+        Self::explicit_points_in(&self.p, si)
+    }
+
+    /// Native curve cleanup does not know explicit Point intent, and may prune points/axis drivers.
+    /// Restore those records before reporting; an incompatible edit then refuses via the normal solve.
+    pub(crate) fn point_records(&self, si: usize) -> PointRecords {
+        Self::point_records_in(&self.p, si)
+    }
+
+    pub(crate) fn point_records_in(p: &Project, si: usize) -> PointRecords {
+        let ids = Self::explicit_points_in(p, si);
+        let sk = &p.sketches[si];
+        let points: Vec<_> = sk.points.iter().filter(|p| ids.contains(&p.id)).cloned().collect();
+        let system = sk.system_ids();
+        let drivers: Vec<_> = sk
+            .constraints
+            .iter()
+            .filter(|c| {
+                let pts = c.points();
+                !c.is_driven() && pts.iter().any(|p| ids.contains(p)) && pts.iter().all(|p| ids.contains(p) || system.contains(p))
+            })
+            .cloned()
+            .collect();
+        PointRecords { points, drivers }
+    }
+
+    pub(crate) fn restore_point_records(&mut self, si: usize, records: PointRecords) -> bool {
+        let PointRecords { points, drivers } = records;
+        let sk = &mut self.p.sketches[si];
+        let mut restored = false;
+        for pt in points {
+            if !sk.points.iter().any(|p| p.id == pt.id) {
+                sk.points.push(pt);
+                restored = true;
+            }
+        }
+        for c in drivers {
+            if !sk.constraints.iter().any(|kept| std::mem::discriminant(kept) == std::mem::discriminant(&c) && kept.points() == c.points())
+            {
+                sk.constraints.push(c);
+                restored = true;
+            }
+        }
+        restored
+    }
+
+    fn preserving_points<T>(&mut self, si: usize, edit: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let records = self.point_records(si);
+        let result = edit(self)?;
+        if self.restore_point_records(si, records) {
+            self.finish_sketch_edit(si)?;
+        }
+        Ok(result)
+    }
+
     /// Delete only an isolated non-system point, preserving any entity incident to a refused point.
     pub fn sketch_remove_point(&mut self, sketch: Id, point: Id) -> Result<()> {
         self.transaction(|s| {
@@ -205,6 +296,7 @@ impl Session {
                 return Err(Error::Invalid(format!("point {point} is used by a sketch hole; delete the hole first")));
             }
             s.p.delete_points(si, &[point]);
+            s.p.set_feat_dim(point, "explicit_point", String::new());
             s.finish_sketch_edit(si)
         })
     }
@@ -699,9 +791,15 @@ impl Session {
         if self.check_sketch_point_coordinates(si).is_err() {
             return f64::INFINITY;
         }
+        let records = self.point_records(si);
         let mut residual = self.p.solve_sketch(si);
         if residual > 1e-6 {
             residual = self.p.solve_sketch(si);
+        }
+        if self.restore_point_records(si, records) {
+            self.p.regen_sketch(si);
+            // Include restored driving rows in the ordinary residual/refusal policy.
+            residual = self.p.sketch_residuals(si).into_iter().fold(residual, |a, b| a.max(b.abs()));
         }
         // Horizontal + PointOnCircle also admit a reference on the -x side. That alternate branch
         // satisfies ArcLength while rotating every direction by 180°, so reject it through the same

@@ -123,6 +123,20 @@ pub(crate) fn copy_shapes<'a>(shapes: impl IntoIterator<Item = (Id, &'a Shape)>)
     Ok(copies)
 }
 
+/// Read Point intent before the native loader solves sketches and prunes offset debris.
+fn saved_point_records(path: &Path) -> Result<Vec<(Id, crate::sketch::PointRecords)>> {
+    let read = || -> std::result::Result<_, String> {
+        let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("document.ron").map_err(|e| e.to_string())?, &mut text)
+            .map_err(|e| e.to_string())?;
+        let p = qymcad_core::model::from_ron(&text)?;
+        Ok(p.sketches.iter().enumerate().map(|(si, sk)| (sk.id, Session::point_records_in(&p, si))).collect())
+    };
+    read().map_err(|e| Error::Io(format!("cannot read original Point records from {}: {e}", path.display())))
+}
+
 /// Per sketch index, how many splines a QymCAD 0.1.0 document stores in the old `Sketch.splines` records. QymCAD
 /// 0.1.1 has no such field and drops them on load without a word (F-075). Unreadable files report nothing: the
 /// native loader has already accepted this one.
@@ -293,6 +307,16 @@ impl Session {
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
         };
+        // qymcad-io settles sketches while loading, including offset cleanup. Read the original
+        // recipe through the non-solving parser so that cleanup cannot erase user Point records.
+        for (sketch, records) in saved_point_records(path)? {
+            if let Some(si) = sess.p.sketch_index(sketch) {
+                if sess.restore_point_records(si, records) {
+                    sess.p.regen_sketch(si);
+                    sess.p.mark_sketch_dirty(sketch);
+                }
+            }
+        }
         // Files may be externally edited or reordered. Reject any stored projection with a forward source reference.
         for sketch in &sess.p.sketches {
             for projection in &sketch.projections {
@@ -495,6 +519,7 @@ impl Session {
 
     /// Refuse native coercions before regeneration and on every evaluated edit, even on a previously failed node.
     pub(crate) fn check_evaluated_features(&self) -> std::result::Result<(), (Id, Error)> {
+        self.check_array_values()?;
         self.check_point_coordinates()?;
         self.check_extrude_down()?;
         self.check_thread_dimensions()?;
@@ -1612,3 +1637,7 @@ mod tests {
 #[cfg(test)]
 #[path = "session_r3_tests.rs"]
 mod r3_tests;
+
+#[cfg(test)]
+#[path = "session_r4_tests.rs"]
+mod r4_tests;

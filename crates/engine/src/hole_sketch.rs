@@ -257,13 +257,21 @@ impl Session {
         for pass in 0..4 {
             let before = self.p.param_map();
             let rebuilding: HashSet<_> = self.p.regen_plan().nodes.into_iter().collect();
+            let points: Vec<_> = (0..self.p.sketches.len()).map(|si| self.point_records(si)).collect();
             let shapes = std::mem::take(&mut self.shapes);
             let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
             self.shapes = shapes;
             report.errors.retain(|(id, _)| !rebuilding.contains(id));
             report.errors.extend(again.errors);
             report.built.extend(again.built);
-            self.check_evaluated_features()?;
+            for (si, records) in points.into_iter().enumerate() {
+                if self.restore_point_records(si, records) {
+                    self.p.regen_sketch(si);
+                    let id = self.p.sketches[si].id;
+                    self.p.mark_sketch_dirty(id);
+                    repeat.extend(crate::dependencies::closure(&self.p, HashSet::from([id])));
+                }
+            }
             let after = self.p.param_map();
             let changed: Vec<_> = self
                 .p
@@ -282,6 +290,7 @@ impl Session {
             let reached = crate::dependencies::closure(&self.p, sources);
             repeat.extend(reached);
             if repeat.is_empty() {
+                self.check_evaluated_features()?;
                 return Ok(report);
             }
             if pass == 3 {
@@ -427,6 +436,31 @@ pub(crate) fn sketch_sources(p: &Project, sketch: Id) -> HashSet<Id> {
 fn check_support(p: &Project, sketch: Id, src: Id) -> Result<()> {
     if p.sketch_index(sketch).is_none() {
         return Err(Error::Invalid(format!("hole sketch {sketch} is missing")));
+    }
+    // A reference is refreshed after coordinate expressions, even in the same sketch.
+    // Follow aliases and named driving expressions without collapsing reads to sketch owners.
+    let si = p.sketch_index(sketch).unwrap();
+    let sk = &p.sketches[si];
+    let expressions = sk.constraints.iter().filter_map(|c| c.expr().map(str::to_string)).chain(
+        sk.points
+            .iter()
+            .map(|pt| pt.id)
+            .chain(sk.patterns.iter().map(|pt| pt.id))
+            .chain(sk.texts.iter().map(|pt| pt.id))
+            .flat_map(|id| p.feat_dims.get(&id).into_iter().flat_map(|d| d.values().cloned())),
+    );
+    let reads = crate::dependencies::expression_names(p, expressions);
+    for named in &p.named_dims {
+        let DimTarget::Sketch { sketch: owner, refs } = &named.target else { continue };
+        if *owner == sketch
+            && reads.contains(&named.name)
+            && sk.constraints.iter().any(|c| c.is_driven() && Project::dim_refs(c).is_some_and(|r| Project::dim_key_pub(&r) == *refs))
+        {
+            return Err(Error::Invalid(format!(
+                "hole sketch {sketch}: reference measurement {} is solved after the marker's coordinates",
+                named.name
+            )));
+        }
     }
     let mut sources: Vec<_> = sketch_sources(p, sketch).into_iter().filter(|id| p.sketch_index(*id).is_some()).collect();
     sources.sort_unstable();

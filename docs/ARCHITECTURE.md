@@ -45,13 +45,13 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 
 ## The regenerate pipeline (`Session::rebuild`)
 
-Before regeneration, reconcile persisted datum ancestry barriers and check evaluated feature domains (including datum bounds and chamfer angle/setbacks). Recheck the same centralized evaluated guards against the post-regeneration scope on open and every rebuild path: native regeneration can change named reference measurements. Recheck explicit asymmetric chamfer support adjacency against the current rebuilt source too; violations enter the existing rebuild/atomic rollback path. Guards also run after edits despite an existing error on the same node (F-103/F-104, ADR 0031/0032).
+Before regeneration, reconcile persisted datum ancestry barriers and check evaluated feature domains (including datum bounds and chamfer angle/setbacks). Recheck the same centralized evaluated guards, including integral/1000-copy array limits, against the settled post-regeneration scope on open and every rebuild path: native regeneration can change named reference measurements. Recheck explicit asymmetric chamfer support adjacency against the current rebuilt source too; violations enter the existing rebuild/atomic rollback path. Guards also run after edits despite an existing error on the same node (F-103/F-104, ADR 0031/0032).
 1. `regenerate_dirty_with_shapes` with the live shapes (only dirty nodes rebuild, like the GUI).
 2. If there were errors: mark everything dirty and run once more (F-005: datum planes resolve during
    regenerate; `retryable()` errors).
    Compare evaluated scopes across regeneration and repeat timeline consumers whose expressions read changed
    named values, using the shared expression/dependency closure. Settle supports and sketch-hole consumers too.
-   Bound settling to four passes; non-convergence is a rebuild error (F-120).
+   Bound settling to four passes; non-convergence is a rebuild error (F-120). Validate domains after the last stable pass, so mixed intermediate scopes can settle.
 3. Copy `report.built` faces into the bodies (F-007), so saved files have faces like GUI-saved ones.
 4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
    Check every rebuilt fillet: a non-tangent join between the blends of two edges that share no vertex
