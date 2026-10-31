@@ -12,7 +12,7 @@ QymCAD's import door parses DXF and SVG into `ProfEdge` curves and creates an ow
 1. Expose `sketch_import` with `path`, `format` (`dxf`, `svg`, `auto`), `plane`, optional `name`, and optional `scale`. Auto follows the exact `.dxf`/`.svg` extension rule; unknown extensions refuse.
 2. Parse the exact user path before mutation. Scale is a finite positive `Num`, evaluated once; it is a one-time literal transform, not a driver and has no `dimension_set` key.
 3. Call `Project::import_sketch` inside one atomic engine edit. Empty imports refuse; valid curves with skipped/invalid/redrawn reports succeed and preserve every native report tuple.
-4. Report native entity-kind counts, sketch identity, contours, reports, scale, rebuild bodies and unit notes. DXF drawing units are treated as mm and `$INSUNITS` is not applied. SVG uses 25.4/96 mm per px and CAD-up Y.
+4. Report native entity-kind counts, sketch identity, contours, reports, scale, rebuild bodies and unit notes. DXF drawing units are treated as mm and `$INSUNITS` is not applied. SVG lengths are px when unitless and use 25.4/96 mm per px; CAD-up Y is used. Files larger than 16 MiB are refused before parsing.
 5. Imported curves remain literal editable geometry. Text is never promised; DXF text and SVG text are reported/ignored by the underlying importer.
 
 ## Consequences

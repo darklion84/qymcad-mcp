@@ -210,7 +210,7 @@ impl Session {
                     if a.through {
                         return Err(Error::Invalid("`through` needs a body to go through; give a height".into()));
                     }
-                    s.in_component(s.p.sketch_owner(a.sketch), |p| p.add_extrude_multi(a.sketch, profiles, h, reach, down, vec![]))
+                    s.in_component(s.p.sketch_owner(a.sketch), |p| p.add_extrude_multi(a.sketch, profiles.clone(), h, reach, down, vec![]))
                 }
                 (Op::Cut | Op::Intersect, None) => return Err(Error::Invalid("there is no body to cut or intersect yet".into())),
                 (op, Some(src)) => {
@@ -220,14 +220,15 @@ impl Session {
                         _ => 2,
                     };
                     let span = CombineSpan { height: h, down, extent: Extent { through: a.through, reach }, fill: &[] };
-                    s.in_component(s.p.sketch_owner(a.sketch), |p| p.add_combine_multi_op(src, a.sketch, profiles, span, code))
+                    s.in_component(s.p.sketch_owner(a.sketch), |p| p.add_combine_multi_op(src, a.sketch, profiles.clone(), span, code))
                 }
             };
             if let (Some(e), false) = (a.height.expr(), a.through) {
                 s.p.set_feat_dim(id, "height", e);
             }
-            if a.profiles_at.is_some() {
+            if a.profiles.is_some() || a.profiles_at.is_some() {
                 s.p.set_feat_dim(id, "__profile_pick", "1".into());
+                s.record_pattern_profile_indices(id, a.sketch, &profiles)?;
             }
             if let Some(value) = &a.down {
                 // Keep even literals: a formula entry distinguishes explicit Two sides from legacy one-sided zero.

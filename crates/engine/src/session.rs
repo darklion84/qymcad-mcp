@@ -1154,7 +1154,11 @@ impl Session {
         let r = r.trim();
         let bodies: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
         if let Ok(id) = r.parse::<Id>() {
-            if self.p.timeline.iter().any(|n| n.id == id) || self.p.sketches.iter().any(|s| s.id == id) || bodies.contains(&id) {
+            if self.p.timeline.iter().any(|n| n.id == id)
+                || self.p.sketches.iter().any(|s| s.id == id)
+                || self.p.sketches.iter().any(|s| s.patterns.iter().any(|p| p.id == id))
+                || bodies.contains(&id)
+            {
                 return Ok(id);
             }
             return Err(Error::NotFound(format!("no object with id {id}")));

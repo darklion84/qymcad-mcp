@@ -7,6 +7,8 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+pub(crate) const MAX_IMPORT_BYTES: u64 = 16 * 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum SketchImportFormat {
@@ -45,8 +47,13 @@ impl Session {
                 _ => None,
             })
             .ok_or_else(|| Error::Invalid("sketch import format must be dxf or svg, or path must end in .dxf or .svg".into()))?;
-        if !path.is_file() {
-            return Err(Error::Io(format!("cannot read sketch import source {}", path.display())));
+        let size =
+            std::fs::metadata(path).map_err(|e| Error::Io(format!("cannot read sketch import source {}: {e}", path.display())))?.len();
+        if size > MAX_IMPORT_BYTES {
+            return Err(Error::Invalid(format!(
+                "sketch import file is {size} bytes; the maximum supported size is {} bytes (16 MiB)",
+                MAX_IMPORT_BYTES
+            )));
         }
         let parsed = match format {
             SketchImportFormat::Dxf => {

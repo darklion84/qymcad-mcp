@@ -14,7 +14,7 @@ QymCAD has a native `SketchPattern` recipe whose source curves remain linked and
 3. Counts are strict integral values from 2 through 1000; total copies are at most 1000. Guards run before native work and through the existing rebuild, parameter, dimension and open checks. Refusals restore the exact archive.
 4. Preserve native circular spacing: a full circle uses `total/count`; a sector uses `total/max(count,2)`.
 5. Pattern instances are native derived entities. Editing an instance through `sketch_edit` or `dimension_set` is refused with the owning pattern id; source edits rebuild the linked instances.
-6. A feature consuming a patterned sketch is rebound after every pattern regeneration. Implicit profile selection follows all current root contours; explicit profile selections are matched by native contour boundary provenance (`contours.ents_of`) and refuse atomically if a selected contour disappears. `profiles_at` exposes the same point-pick identity used by the app.
+6. A feature consuming a patterned sketch is rebound after every pattern regeneration. Explicit picks persist their pattern instance indices in feature dimensions, so full picks grow and shrink with the pattern while subset picks retain their indices; a removed subset index refuses atomically. Extrude, Combine, Revolve and Sweep profile consumers use this policy. The native app path remains characterized as stale after count edits (F-123); the engine repairs it.
 7. Results report the pattern, source, created and removed instance ids, evaluated values, formulas, names, contours and rebuilt bodies. History, batch and undo use the existing registry boundaries.
 
 ## Consequences

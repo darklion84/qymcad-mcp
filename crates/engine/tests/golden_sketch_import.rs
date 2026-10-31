@@ -110,6 +110,58 @@ fn import_refusals_are_atomic() {
 }
 
 #[test]
+fn import_refuses_file_over_16_mib() {
+    let path = common::scratch("huge-import.dxf");
+    let mut bytes = vec![b' '; 16 * 1024 * 1024 + 1];
+    bytes[..12].copy_from_slice(b"0\nSECTION\n2\n");
+    fs::write(&path, bytes).unwrap();
+    let mut s = Session::new_part();
+    let before = archive(&mut s, "huge-import-before.qcad");
+    let error = s.sketch_import(&path, None, &PlaneRef::Base(BaseName::XY), None, &1.0.into()).unwrap_err();
+    assert!(error.to_string().contains("16 MiB"), "{error}");
+    assert_eq!(archive(&mut s, "huge-import-after.qcad"), before);
+}
+
+#[test]
+fn nested_contour_pick_semantics() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    s.sketch_circle(sk, &0.0.into(), &0.0.into(), &2.0.into(), false).unwrap();
+    let contours = s.sketch_info(sk).unwrap().contours;
+    assert_eq!(contours.len(), 2);
+    assert!(contours.iter().any(|c| c.parent.is_some()), "circle must be nested: {contours:?}");
+    let body = s
+        .extrude(&Extrude {
+            sketch: sk,
+            profiles: Some(contours.iter().map(|c| c.id).collect()),
+            profiles_at: None,
+            height: 2.0.into(),
+            down: None,
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        })
+        .unwrap()
+        .0;
+    assert_close(s.shape(body).unwrap().volume(), 200.0, 1e-6, "nested contour fill volume");
+}
+
+#[test]
+fn valid_import_just_under_limit_succeeds() {
+    let path = common::scratch("near-limit.dxf");
+    let valid = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n11\n10\n21\n0\n0\nENDSEC\n0\nEOF\n";
+    let mut bytes = valid.to_vec();
+    bytes.resize(16 * 1024 * 1024, b' ');
+    fs::write(&path, bytes).unwrap();
+    let mut s = Session::new_part();
+    let imported = s.sketch_import(&path, None, &PlaneRef::Base(BaseName::XY), None, &1.0.into()).unwrap();
+    assert_eq!(imported.entities.get("line"), Some(&1));
+}
+
+#[test]
 fn svg_rect_circle_text_exact() {
     let svg = file(
         "exact.svg",

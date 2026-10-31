@@ -2808,7 +2808,7 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
 
 ## sketch_import
 
-Import DXF or SVG curves into an editable native sketch. Parsing happens before the atomic project edit. DXF drawing units are taken as mm and $INSUNITS is not applied. SVG uses 25.4/96 mm per px and flips Y to CAD-up. Scale is evaluated once and is a literal one-time transform, not a driver; text is reported as skipped/ignored and never promised.
+Import DXF or SVG curves into an editable native sketch. Files larger than 16 MiB are refused before reading/parsing. Parsing happens before the atomic project edit. DXF drawing units are taken as mm and $INSUNITS is not applied. SVG lengths are px when unitless and use 25.4/96 mm per px; SVG flips Y to CAD-up. Scale is evaluated once and is a literal one-time transform, not a driver; text is reported as skipped/ignored and never promised.
 
 ```json
 {
@@ -3336,7 +3336,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
     },
     "profiles_at": {
       "default": null,
-      "description": "Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost\nclosed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`.",
+      "description": "Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost\nclosed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`. Picking both an outer contour and its nested contour extrudes both filled regions; it does not make a hole.",
       "items": {
         "items": {
           "$ref": "#/$defs/Num"
@@ -3521,7 +3521,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
     },
     "profiles_at": {
       "default": null,
-      "description": "Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost\nclosed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`.",
+      "description": "Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost\nclosed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`. Picking both an outer contour and its nested contour extrudes both filled regions; it does not make a hole.",
       "items": {
         "items": {
           "$ref": "#/$defs/Num"

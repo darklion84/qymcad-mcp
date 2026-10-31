@@ -256,13 +256,133 @@ fn app_path_formula_edit_moves_instances_by_hand_values() {
 }
 
 #[test]
+fn explicit_full_pattern_pick_follows_count() {
+    let mut s = Session::new_part();
+    let (sk, source) = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    s.param_set("n", &3.0.into()).unwrap();
+    let pattern = pattern(&mut s, sk, &source, Num::Expr("n".into()), 15.0.into(), 0.0.into(), None, None, None);
+    let contours = s.sketch_info(sk).unwrap().contours.into_iter().map(|c| c.id).collect::<Vec<_>>();
+
+    let body = s
+        .extrude(&Extrude {
+            sketch: sk,
+            profiles: Some(contours),
+            profiles_at: None,
+            height: 4.0.into(),
+            down: None,
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        })
+        .unwrap()
+        .0;
+    assert_close(s.shape(body).unwrap().volume(), 1200.0, 1e-6, "full pattern initial volume");
+    let target = DimensionTarget::Feature { feature: pattern.pattern, key: "count".into() };
+    s.dimension_set(&target, Some(&5.0.into()), None).unwrap();
+    assert_close(s.shape(body).unwrap().volume(), 2000.0, 1e-6, "dimension count volume");
+    s.sketch_pattern_update(
+        sk,
+        pattern.pattern,
+        None,
+        &SketchPatternKind::Linear { count: Num::Expr("n".into()), dx: 15.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
+    )
+    .unwrap();
+    s.param_set("n", &2.0.into()).unwrap();
+    assert_close(s.shape(body).unwrap().volume(), 800.0, 1e-6, "parameter count volume");
+    let path = scratch("explicit-full-pattern.qcad");
+    s.save_with_options(Some(&path), true).unwrap();
+    let (loaded, report) = Session::open(&path).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    assert_close(loaded.shape(body).unwrap().volume(), 800.0, 1e-6, "reopened count volume");
+}
+
+#[test]
+fn revolve_consumer_of_pattern_rebinds() {
+    let mut s = Session::new_part();
+    let (sk, source) = rect(&mut s, 5.0, 0.0, 2.0, 3.0);
+    let pattern = pattern(&mut s, sk, &source, 3.0.into(), 5.0.into(), 0.0.into(), None, None, None);
+    let profiles = s.sketch_info(sk).unwrap().contours.iter().map(|c| c.id).collect::<Vec<_>>();
+    let (body, _) = s
+        .revolve(&Revolve {
+            sketch: sk,
+            profiles: Some(profiles),
+            axis: AxisRef::SketchY,
+            angle: 360.0.into(),
+            direction: Direction::Normal,
+            op: Op::NewBody,
+            target: None,
+            name: None,
+        })
+        .unwrap();
+    let before = s.shape(body).unwrap().volume();
+    // rings x 4..6, 9..11, 14..16, height 3: pi*3*(20+40+60)
+    assert_close(before, std::f64::consts::PI * 360.0, 1e-6, "revolve before");
+    s.sketch_pattern_update(
+        sk,
+        pattern.pattern,
+        None,
+        &SketchPatternKind::Linear { count: 4.0.into(), dx: 5.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
+    )
+    .unwrap();
+    // count 4 adds the ring x 19..21: pi*3*80
+    assert_close(s.shape(body).unwrap().volume(), std::f64::consts::PI * 600.0, 1e-6, "revolve follows count");
+}
+
+#[test]
+fn explicit_subset_pick_keeps_instances_or_refuses() {
+    let mut s = Session::new_part();
+    let (sk, source) = rect(&mut s, 0.0, 0.0, 10.0, 10.0);
+    let pattern = pattern(&mut s, sk, &source, 3.0.into(), 15.0.into(), 0.0.into(), None, None, None);
+    let contours = s.sketch_info(sk).unwrap().contours.into_iter().map(|c| c.id).collect::<Vec<_>>();
+    let selected = [contours[1], contours[2]];
+    let body = s
+        .extrude(&Extrude {
+            sketch: sk,
+            profiles: Some(selected.to_vec()),
+            profiles_at: None,
+            height: 4.0.into(),
+            down: None,
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        })
+        .unwrap()
+        .0;
+    assert_close(s.shape(body).unwrap().volume(), 800.0, 1e-6, "subset initial volume");
+    s.sketch_pattern_update(
+        sk,
+        pattern.pattern,
+        None,
+        &SketchPatternKind::Linear { count: 4.0.into(), dx: 15.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
+    )
+    .unwrap();
+    assert_close(s.shape(body).unwrap().volume(), 800.0, 1e-6, "subset count up volume");
+    let before = archive(&mut s, "pattern-subset-before-down.qcad");
+    let error = s
+        .sketch_pattern_update(
+            sk,
+            pattern.pattern,
+            None,
+            &SketchPatternKind::Linear { count: 2.0.into(), dx: 15.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("instance index"), "{error}");
+    assert_close(s.shape(body).unwrap().volume(), 800.0, 1e-6, "subset refusal volume");
+    assert_eq!(archive(&mut s, "pattern-subset-after-down.qcad"), before);
+}
+
+#[test]
 fn explicit_profile_pick_refuses_when_pattern_removes_it_atomically() {
     let mut s = Session::new_part();
     let (sk, source) = rect(&mut s, 0.0, 0.0, 10.0, 6.0);
     let pattern = pattern(&mut s, sk, &source, 3.0.into(), 15.0.into(), 0.0.into(), None, None, None);
-    let copy = s.project().sketches[s.project().sketch_index(sk).unwrap()].patterns[0].instances[0];
-    let picked = entity_endpoints(&s, sk, copy)[0];
-    let picked = [picked.0 + 5.0, picked.1 + 3.0];
+    let copy = s.project().sketches[s.project().sketch_index(sk).unwrap()].patterns[0].instances[8];
+    let endpoints = entity_endpoints(&s, sk, copy);
+    let picked = [(endpoints[0].0 + endpoints[1].0) / 2.0, (endpoints[0].1 + endpoints[1].1) / 2.0 - 1.0];
     let body = s
         .extrude(&Extrude {
             sketch: sk,
@@ -288,7 +408,7 @@ fn explicit_profile_pick_refuses_when_pattern_removes_it_atomically() {
             &SketchPatternKind::Linear { count: 2.0.into(), dx: 15.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
         )
         .unwrap_err();
-    assert!(error.to_string().contains("selected profile"), "{error}");
+    assert!(error.to_string().contains("instance index"), "{error}");
     assert_eq!(archive(&mut s, "pattern-explicit-pick-after.qcad"), before);
 }
 

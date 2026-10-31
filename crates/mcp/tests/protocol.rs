@@ -963,6 +963,25 @@ fn sketch_pattern_is_registered_real_stdio_batchable_and_undoable() {
 }
 
 #[test]
+fn pattern_update_by_returned_id() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"profile"}));
+    let added = c.ok("sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","cx":5,"cy":5,"w":10,"h":10}]}));
+    let entities = added["created"][0]["rect_lines"].clone();
+    let created = c.ok("sketch_pattern", json!({"sketch":"profile","entities":entities,"kind":"linear","count":3,"dx":15,"dy":0}));
+    let pattern = created["pattern"].clone();
+    let updated = c.ok("sketch_pattern", json!({"sketch":"profile","pattern":pattern,"kind":"linear","count":5,"dx":15,"dy":0}));
+    assert_eq!(updated["pattern"], pattern);
+    let body = c.ok("extrude", json!({"sketch":"profile","height":4,"name":"body"}));
+    let result = body["rebuild"]["bodies"].as_array().unwrap().iter().find(|b| b["name"] == "body").unwrap();
+    assert!((result["volume_mm3"].as_f64().unwrap() - 2000.0).abs() < 1e-6);
+    assert!((result["bbox"][0].as_f64().unwrap()).abs() < 1e-6);
+    assert!((result["bbox"][3].as_f64().unwrap() - 70.0).abs() < 1e-6);
+}
+
+#[test]
 fn sketch_import_batch_extrude_and_undo_over_stdio() {
     let path = std::env::temp_dir().join(format!("qymcad-mcp-sketch-import-{}.dxf", std::process::id()));
     std::fs::write(&path, "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n8\n0\n90\n4\n70\n1\n10\n0\n20\n0\n10\n10\n20\n0\n10\n10\n20\n10\n10\n0\n20\n10\n0\nENDSEC\n0\nEOF\n").unwrap();

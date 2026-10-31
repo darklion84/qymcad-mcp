@@ -76,7 +76,7 @@ impl Session {
                 (None, _) => s.tip_body(),
             };
             let id = match (a.op, src) {
-                (Op::NewBody, _) | (Op::Add, None) => s.p.add_revolve_axis_ex(a.sketch, profiles, ax, turn),
+                (Op::NewBody, _) | (Op::Add, None) => s.p.add_revolve_axis_ex(a.sketch, profiles.clone(), ax, turn),
                 (Op::Cut | Op::Intersect, None) => return Err(Error::Invalid("there is no body to cut or intersect yet".into())),
                 (op, Some(src)) => {
                     let code = match op {
@@ -84,10 +84,14 @@ impl Session {
                         Op::Add => 1,
                         _ => 2,
                     };
-                    s.p.add_revolve_multi_op(a.sketch, profiles, ax, turn, src, code)
+                    s.p.add_revolve_multi_op(a.sketch, profiles.clone(), ax, turn, src, code)
                 }
             };
             dim(s, id, "angle", &a.angle);
+            if a.profiles.is_some() {
+                s.p.set_feat_dim(id, "__profile_pick", "1".into());
+                s.record_pattern_profile_indices(id, a.sketch, &profiles)?;
+            }
             s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })

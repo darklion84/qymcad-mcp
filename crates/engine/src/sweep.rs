@@ -106,7 +106,7 @@ impl Session {
                             }
                         },
                     };
-                    s.p.add_sweep_multi_op(a.sketch, profiles, *sketch, path, src, code)
+                    s.p.add_sweep_multi_op(a.sketch, profiles.clone(), *sketch, path, src, code)
                 }
                 SweepPath::Edges { body, edges } => {
                     let body = s.source_body(*body)?;
@@ -120,9 +120,13 @@ impl Session {
                     // Self-gating kernel door: no kernel gate is held here (F-073).
                     qymcad_kernel::ask::path_edges_join(shape, &ids)
                         .map_err(|_| Error::Invalid(format!("edges {ids:?} of body {body} do not join end to end into one chain")))?;
-                    s.p.add_sweep_along(a.sketch, profiles, EdgePath { body, edges: Ref::picks(&ids) }, src, code)
+                    s.p.add_sweep_along(a.sketch, profiles.clone(), EdgePath { body, edges: Ref::picks(&ids) }, src, code)
                 }
             };
+            if a.profiles.is_some() {
+                s.p.set_feat_dim(id, "__profile_pick", "1".into());
+                s.record_pattern_profile_indices(id, a.sketch, &profiles)?;
+            }
             s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })

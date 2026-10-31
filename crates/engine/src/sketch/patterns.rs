@@ -90,7 +90,6 @@ impl Session {
                         .position(|p| p.id == pid)
                         .ok_or_else(|| Error::NotFound(format!("pattern {pid}")))?;
                     s.p.update_pattern(si, pi, native);
-                    s.rebind_pattern_profiles(sketch, &source, &profile_picks)?;
                     pid
                 }
                 None => s.p.add_pattern(si, &source, native),
@@ -101,6 +100,8 @@ impl Session {
                     .map_err(|e| Error::Expr(format!("pattern formula `{key}`: {e:?}")))?;
             }
             s.finish_sketch_edit(si)?;
+            let new_instances = s.p.sketches[si].patterns.iter().find(|p| p.id == pid).map(|p| p.instances.clone()).unwrap_or_default();
+            s.rebind_pattern_profiles(sketch, &source, &old_instances, &new_instances, &profile_picks)?;
             Ok(pid)
         })?;
         let new_instances = self.p.sketches[si].patterns.iter().find(|p| p.id == pid).map(|p| p.instances.clone()).unwrap_or_default();
@@ -141,66 +142,157 @@ impl Session {
             .collect())
     }
 
+    pub(crate) fn record_pattern_profile_indices(&mut self, node: Id, sketch: Id, profiles: &[Id]) -> Result<()> {
+        let si = self.sketch_si(sketch)?;
+        let pattern = self.p.sketches[si]
+            .patterns
+            .iter()
+            .find(|p| profiles.iter().any(|cid| self.p.contours.ents_of(*cid).is_some_and(|e| e.iter().any(|id| p.instances.contains(id)))))
+            .cloned();
+        let Some(pattern) = pattern else { return Ok(()) };
+        let source_len = pattern.source.len();
+        let indices = profiles
+            .iter()
+            .map(|cid| {
+                let entities =
+                    self.p.contours.ents_of(*cid).ok_or_else(|| Error::Invalid(format!("profile contour {cid} has no boundary")))?;
+                if entities.iter().any(|id| pattern.source.contains(id)) {
+                    return Ok(0usize);
+                }
+                pattern
+                    .instances
+                    .chunks(source_len)
+                    .position(|chunk| entities.iter().any(|id| chunk.contains(id)))
+                    .map(|i| i + 1)
+                    .ok_or_else(|| Error::Invalid(format!("profile contour {cid} is not a pattern instance")))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for (position, index) in indices.iter().enumerate() {
+            let key = format!("__pattern_profile_{position}");
+            self.p.set_feat_dim(node, &key, index.to_string());
+        }
+        Ok(())
+    }
+
     pub(crate) fn rebind_pattern_profiles(
         &mut self,
         sketch: Id,
-        _source: &[Id],
+        source: &[Id],
+        old_instances: &[Id],
+        _new_instances: &[Id],
         old_picks: &[(Id, std::collections::HashSet<Id>)],
     ) -> Result<()> {
         let si = self.sketch_si(sketch)?;
         let contours = self.p.sketches[si].contour_ids.clone();
-        let mut by_entities = Vec::new();
-        for &cid in &contours {
-            if let Some(entities) = self.p.contours.ents_of(cid) {
-                by_entities.push((entities.iter().copied().collect::<std::collections::HashSet<_>>(), cid));
+        let source_set: std::collections::HashSet<Id> = source.iter().copied().collect();
+        let old_index = |entities: &std::collections::HashSet<Id>| {
+            if *entities == source_set {
+                Some(0)
+            } else {
+                old_instances
+                    .chunks(source.len())
+                    .position(|chunk| chunk.iter().copied().collect::<std::collections::HashSet<_>>() == *entities)
+                    .map(|index| index + 1)
             }
-        }
+        };
         let explicit_nodes: std::collections::HashSet<Id> =
             self.p.timeline.iter().filter(|node| self.p.feat_dim(node.id, "__profile_pick").is_some()).map(|node| node.id).collect();
+        let stored_indices: std::collections::HashMap<Id, Vec<usize>> = self
+            .p
+            .timeline
+            .iter()
+            .filter_map(|node| {
+                let indices = (0..)
+                    .map_while(|position| self.p.feat_dim(node.id, &format!("__pattern_profile_{position}")).and_then(|v| v.parse().ok()))
+                    .collect::<Vec<_>>();
+                (!indices.is_empty()).then_some((node.id, indices))
+            })
+            .collect();
+        let root_contours: Vec<Id> =
+            contours.iter().copied().filter(|cid| self.p.contours.parent_of(*cid).is_none_or(|parent| parent == 0)).collect();
+        let contour_for = |index: usize, _entities: &std::collections::HashSet<Id>| root_contours.get(index).copied();
         for node in &mut self.p.timeline {
-            let replace = match &mut node.kind {
-                FeatureKind::Extrude { sketch: sid, profiles, .. } | FeatureKind::Combine { sketch: sid, profiles, .. }
+            let profiles = match &mut node.kind {
+                FeatureKind::Extrude { sketch: sid, profiles, .. }
+                | FeatureKind::Combine { sketch: sid, profiles, .. }
+                | FeatureKind::Revolve { sketch: sid, profiles, .. }
+                | FeatureKind::Sweep { sketch: sid, profiles, .. }
                     if *sid == sketch =>
                 {
-                    Some(profiles)
+                    profiles
                 }
-                _ => None,
+                _ => continue,
             };
-            let Some(profiles) = replace else { continue };
-            let explicit = explicit_nodes.contains(&node.id);
-            if !explicit {
+            if !explicit_nodes.contains(&node.id) {
                 *profiles =
                     contours.iter().copied().filter(|cid| self.p.contours.parent_of(*cid).is_none_or(|parent| parent == 0)).collect();
-            } else {
-                let mut rebound = Vec::with_capacity(profiles.len());
-                for old in profiles.iter().copied() {
-                    let entities = old_picks
-                        .iter()
-                        .find(|(id, _)| *id == old)
-                        .map(|(_, entities)| entities)
-                        .ok_or_else(|| Error::Invalid(format!("pattern edit removed selected profile contour {old}")))?;
-                    if let Some((_, new)) = by_entities.iter().find(|(candidate, _)| candidate == entities) {
-                        rebound.push(*new);
-                    } else {
-                        return Err(Error::Invalid(format!("pattern edit removed selected profile contour {old}")));
-                    }
-                }
-                *profiles = rebound;
+                continue;
             }
+            let stored_indices = stored_indices.get(&node.id);
+            if stored_indices.is_some_and(|indices| indices.iter().copied().all(|index| index < profiles.len())) {
+                *profiles = root_contours.iter().copied().take(_new_instances.len() / source.len() + 1).collect();
+                continue;
+            }
+            let mut rebound = Vec::with_capacity(profiles.len());
+            for (position, old) in profiles.iter().copied().enumerate() {
+                let owned_entities = old_picks
+                    .iter()
+                    .find(|(id, _)| *id == old)
+                    .map(|(_, e)| e.clone())
+                    .or_else(|| self.p.contours.ents_of(old).map(|e| e.iter().copied().collect::<std::collections::HashSet<_>>()))
+                    .unwrap_or_default();
+                let index = stored_indices
+                    .as_ref()
+                    .and_then(|indices| indices.get(position).copied())
+                    .or_else(|| old_index(&owned_entities))
+                    .ok_or_else(|| {
+                        Error::Invalid(format!("pattern edit removed selected profile contour {old}; instance index is unavailable"))
+                    })?;
+                let source_entities = if index == 0 { source.iter().copied().collect() } else { owned_entities };
+                rebound.push(contour_for(index, &source_entities).ok_or_else(|| {
+                    Error::Invalid(format!("pattern edit removed selected profile contour {old}; instance index {index} no longer exists"))
+                })?);
+            }
+            *profiles = rebound;
         }
         Ok(())
     }
 
     pub(crate) fn refresh_sketch_patterns(&mut self, sketch: Id) -> Result<()> {
         let si = self.sketch_si(sketch)?;
-        let patterns: Vec<(Id, PatternKind)> = self.p.sketches[si].patterns.iter().map(|p| (p.id, p.kind)).collect();
-        for (id, kind) in patterns {
+        let patterns: Vec<Id> = self.p.sketches[si].patterns.iter().map(|p| p.id).collect();
+        for id in patterns {
             let picks = self.pattern_profile_picks(sketch)?;
             let pi =
                 self.p.sketches[si].patterns.iter().position(|p| p.id == id).ok_or_else(|| Error::NotFound(format!("pattern {id}")))?;
             let source = self.p.sketches[si].patterns[pi].source.clone();
+            let old_instances = self.p.sketches[si].patterns[pi].instances.clone();
+            let kind = self.p.sketches[si].patterns[pi].kind;
+            let kind = match kind {
+                PatternKind::Linear { dx, dy, count, dx2, dy2, count2 } => PatternKind::Linear {
+                    dx: self.p.feat_dim(id, "dx").and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok()).unwrap_or(dx),
+                    dy: self.p.feat_dim(id, "dy").and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok()).unwrap_or(dy),
+                    count: self
+                        .p
+                        .feat_dim(id, "count")
+                        .and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok())
+                        .map(|v| v as u32)
+                        .unwrap_or(count),
+                    dx2: self.p.feat_dim(id, "dx2").and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok()).unwrap_or(dx2),
+                    dy2: self.p.feat_dim(id, "dy2").and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok()).unwrap_or(dy2),
+                    count2: self
+                        .p
+                        .feat_dim(id, "count2")
+                        .and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok())
+                        .map(|v| v as u32)
+                        .unwrap_or(count2),
+                },
+                other => other,
+            };
             self.p.update_pattern(si, pi, kind);
-            self.rebind_pattern_profiles(sketch, &source, &picks)?;
+            self.finish_sketch_edit(si)?;
+            let new_instances = self.p.sketches[si].patterns[pi].instances.clone();
+            self.rebind_pattern_profiles(sketch, &source, &old_instances, &new_instances, &picks)?;
         }
         Ok(())
     }

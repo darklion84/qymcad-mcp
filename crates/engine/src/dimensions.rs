@@ -314,6 +314,9 @@ impl Session {
                     let owner = s.p.sketches.iter().find(|sk| sk.points.iter().any(|p| p.id == *node)
                         || sk.patterns.iter().any(|p| p.id == *node) || sk.texts.iter().any(|t| t.id == *node)).map(|sk| sk.id);
                     if let Some(sketch) = owner {
+                        if s.p.sketches.iter().any(|sk| sk.id == sketch && sk.patterns.iter().any(|p| p.id == *node)) {
+                            s.refresh_sketch_patterns(sketch)?;
+                        }
                         s.p.mark_sketch_dirty(sketch);
                     }
                 }

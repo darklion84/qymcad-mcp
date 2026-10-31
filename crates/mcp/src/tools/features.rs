@@ -42,7 +42,7 @@ pub struct ExtrudeArgs {
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
     /// Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost
-    /// closed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`.
+    /// closed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`. Picking both an outer contour and its nested contour extrudes both filled regions; it does not make a hole.
     #[serde(default)]
     pub profiles_at: Option<Vec<[Num; 2]>>,
     /// Distance, mm (number or expression). Not needed with `through`.
@@ -79,7 +79,7 @@ pub struct RevolveArgs {
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
     /// Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost
-    /// closed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`.
+    /// closed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`. Picking both an outer contour and its nested contour extrudes both filled regions; it does not make a hole.
     #[serde(default)]
     pub profiles_at: Option<Vec<[Num; 2]>>,
     /// The axis to revolve about; must lie in the sketch plane and must not cross the profile: "sketch_x" /

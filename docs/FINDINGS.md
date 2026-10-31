@@ -13,6 +13,13 @@ Conventions:
 
 ---
 
+## F-123 Native pattern count edits leave profile consumers stale
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** the native app recreates sketch pattern instances on count edits but does not update explicit downstream profile contour ids; the consumer can fall back to the source contour.
+- **Evidence:** test: `golden_sketch_pattern::app_path_formula_edit_moves_instances_by_hand_values` records the app-path source-only volume; engine regressions cover repaired dimension/parameter paths.
+- **How we handle it:** persist selected pattern instance indices and rebind Extrude, Combine, Revolve and Sweep atomically; removed subset indices refuse with exact rollback.
+
 ## F-001 Uppercase parameter names never trigger a rebuild in the GUI
 
 - **Version:** v0.1.0-dev.20261001
