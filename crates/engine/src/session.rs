@@ -333,6 +333,8 @@ impl Session {
         let before_evaluation = sess.p.clone_without_source_data();
         sess.p.eval_parameters();
         sess.check_hole_supports().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        // Array counts are known before regeneration; the settled-scope guard alone would build every copy first.
+        sess.check_array_values().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.reconcile_datum_dependencies();
         sess.reconcile_hole_dependencies();
         // Native app edits can save stale reference-consuming features despite a clean timeline (F-120).
@@ -549,7 +551,7 @@ impl Session {
         let before = self.p.clone();
         self.reconcile_datum_dependencies();
         self.reconcile_hole_dependencies();
-        if let Err((id, error)) = self.check_hole_supports() {
+        if let Err((id, error)) = self.check_hole_supports().and_then(|()| self.check_array_values()) {
             let issue = self.issue(id, error.to_string());
             self.p = before;
             return Err(issue);
@@ -1648,3 +1650,7 @@ mod r4_tests;
 #[cfg(test)]
 #[path = "session_r5_tests.rs"]
 mod r5_tests;
+
+#[cfg(test)]
+#[path = "session_b0_tests.rs"]
+mod b0_tests;

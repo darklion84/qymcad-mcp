@@ -208,3 +208,16 @@ fn native_offset_regeneration_keeps_free_explicit_point() {
     assert!(report.errors.is_empty(), "{report:?}");
     assert!(s.sketch_detail(sk).unwrap().points.iter().any(|p| p.id == point));
 }
+/// B0: a count raised only by the refreshed reference must refuse before the next settling pass builds it.
+#[test]
+fn settling_repeat_refuses_array_over_cap_before_kernel() {
+    let (mut s, _) = array_fixture();
+    pending(&mut s, "100000");
+    let before = archive(&mut s);
+    let t = std::time::Instant::now();
+    let report = s.rebuild();
+    let dt = t.elapsed();
+    assert!(report.errors.iter().any(|e| e.message.contains("count") || e.message.contains("copies")), "{report:?}");
+    assert!(dt < std::time::Duration::from_secs(5), "settling took {dt:?}: the repeat pass built the oversized array");
+    assert_eq!(archive(&mut s), before);
+}

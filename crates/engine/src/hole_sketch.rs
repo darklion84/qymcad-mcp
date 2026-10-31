@@ -314,6 +314,8 @@ impl Session {
                     ),
                 ));
             }
+            // A refreshed reference can raise an array count; refuse before the next pass builds it.
+            self.check_array_values()?;
             for node in &mut self.p.timeline {
                 if repeat.contains(&node.id) {
                     node.dirty = true;

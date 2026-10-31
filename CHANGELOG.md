@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- Array counts over the 1000-copy cap are refused before kernel work on open and rebuild, and between reference-settling passes; a crafted or app-edited file no longer builds up to the native 10000 copies before the refusal.
+
 ## 0.1.1-dev.20261026.5 — two-sided extrude, sketch points and holes, tilted datums, chamfer angle, move (ADR 0029–0034)
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
