@@ -546,17 +546,23 @@ mod order {
             let pts: Vec<_> = p.sketches[si].points.iter().filter(|pt| !p.sketches[si].system_ids().contains(&pt.id)).collect();
             let a = pts.iter().find(|pt| pt.x.abs() < 1e-6 && pt.y.abs() < 1e-6).unwrap().id;
             let b = pts.iter().find(|pt| (pt.x - 40.).abs() < 1e-6 && (pt.y - 30.).abs() < 1e-6).unwrap().id;
-            p.sketches[si].constraints.push(Constraint::Distance {
-                a,
-                b,
-                d: 40.,
-                off: 0.,
-                expr: String::new(),
-                driven: true,
-                axis: 1,
-                at: None,
-            });
-            assert!(p.add_named_dim("measured_w".into(), source, vec![a, b]));
+            if source_first {
+                // R5: references are unsupported even earlier; retain X15 with a genuine driving width.
+                let c = p.sketches[si].constraints.iter().find(|c| c.expr() == Some("w")).unwrap();
+                assert!(p.add_named_dim("measured_w".into(), source, qymcad_core::model::Project::dim_refs(c).unwrap()));
+            } else {
+                p.sketches[si].constraints.push(Constraint::Distance {
+                    a,
+                    b,
+                    d: 40.,
+                    off: 0.,
+                    expr: String::new(),
+                    driven: true,
+                    axis: 1,
+                    at: None,
+                });
+                assert!(p.add_named_dim("measured_w".into(), source, vec![a, b]));
+            }
             p.solve_sketch(si);
             let breps = {
                 let _g = qymcad_kernel::kernel_gate();
@@ -605,7 +611,7 @@ mod order {
         }
         fn refusal(e: String, source: Id) {
             assert!(
-                e.contains("later world measurement") && e.contains(&source.to_string()) && e.contains("solved after the marker"),
+                e.contains("later world measurement") && e.contains(&source.to_string()) && e.contains("reference measurement measured_w"),
                 "{e}"
             );
         }
@@ -650,7 +656,7 @@ mod order {
             assert_eq!(std::fs::read(file).unwrap(), before);
         }
         #[test]
-        fn earlier_solve_order_world_measurement_control() {
+        fn earlier_solve_order_world_driving_control() {
             let (mut s, stock, marker, point, _, ci, file) = fixture(true);
             s.dimension_set(&DimensionTarget::Sketch { sketch: marker, constraint: ci }, Some(&"measured_w/4".into()), None).unwrap();
             let (hole, r) = s.hole_by_sketch(&hole(stock, marker)).unwrap();

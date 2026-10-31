@@ -184,6 +184,18 @@ impl Session {
         }
     }
 
+    /// Scope-independent scheduling checks are safe before native regeneration.
+    pub(crate) fn check_hole_supports(&self) -> std::result::Result<(), (Id, Error)> {
+        for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
+            if let FeatureKind::Hole { sketch, src, .. } = n.kind {
+                if sketch != 0 {
+                    check_support(&self.p, sketch, src).map_err(|e| (n.id, e))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn check_hole_values(&self) -> std::result::Result<(), (Id, Error)> {
         let vars = self.p.param_map();
         for n in self.p.timeline.iter().filter(|n| !n.suppressed) {
@@ -437,38 +449,67 @@ fn check_support(p: &Project, sketch: Id, src: Id) -> Result<()> {
     if p.sketch_index(sketch).is_none() {
         return Err(Error::Invalid(format!("hole sketch {sketch} is missing")));
     }
-    // A reference is refreshed after coordinate expressions, even in the same sketch.
-    // Follow aliases and named driving expressions without collapsing reads to sketch owners.
-    let si = p.sketch_index(sketch).unwrap();
-    let sk = &p.sketches[si];
-    let expressions = sk.constraints.iter().filter_map(|c| c.expr().map(str::to_string)).chain(
-        sk.points
-            .iter()
-            .map(|pt| pt.id)
-            .chain(sk.patterns.iter().map(|pt| pt.id))
-            .chain(sk.texts.iter().map(|pt| pt.id))
-            .flat_map(|id| p.feat_dims.get(&id).into_iter().flat_map(|d| d.values().cloned())),
-    );
+    // No scheduling heuristic can order reference refresh inside an arbitrary source graph.
+    // Inspect name-level reads from every transitive source, including named Point formulas.
+    let sources = sketch_sources(p, sketch);
+    let expressions = sources.iter().flat_map(|id| {
+        p.feat_dims.get(id).into_iter().flat_map(|dims| dims.values().cloned()).chain(
+            p.sketch_index(*id).into_iter().flat_map(|si| p.sketches[si].constraints.iter().filter_map(|c| c.expr().map(str::to_string))),
+        )
+    });
     let reads = crate::dependencies::expression_names(p, expressions);
     for named in &p.named_dims {
-        let DimTarget::Sketch { sketch: owner, refs } = &named.target else { continue };
-        if *owner == sketch
-            && reads.contains(&named.name)
-            && sk.constraints.iter().any(|c| c.is_driven() && Project::dim_refs(c).is_some_and(|r| Project::dim_key_pub(&r) == *refs))
-        {
+        if !reads.contains(&named.name) {
+            continue;
+        }
+        let reference_owner = match &named.target {
+            DimTarget::Sketch { sketch: owner, refs } => p
+                .sketch_index(*owner)
+                .filter(|si| {
+                    p.sketches[*si]
+                        .constraints
+                        .iter()
+                        .any(|c| c.is_driven() && Project::dim_refs(c).is_some_and(|r| Project::dim_key_pub(&r) == *refs))
+                })
+                .map(|_| *owner),
+            // Feature names without an own formula fall back to kept_number: geometric sketch
+            // items, bound datum coordinates and free joint slots are readings. Stored recipe,
+            // manual datum, specified joint, pattern/text fields are driving (params/item_values).
+            DimTarget::Feature { node, key }
+                if p.feat_dim(*node, key).is_none_or(|e| e.trim().is_empty()) && p.kept_number(*node, key).is_some() =>
+            {
+                p.sketches
+                    .iter()
+                    .find(|sk| sk.points.iter().any(|pt| pt.id == *node))
+                    .map(|sk| sk.id)
+                    .or_else(|| {
+                        p.datum_points
+                            .iter()
+                            .find(|point| point.id == *node && !matches!(point.def, qymcad_core::model::PointDef::Manual))
+                            .map(|point| point.id)
+                    })
+                    .or_else(|| {
+                        let slot = ["angle", "offset", "offset2"].iter().position(|name| *name == key.as_str())?;
+                        p.joints.iter().find(|j| j.id == *node && j.drive[slot].is_none()).map(|j| j.id)
+                    })
+            }
+            _ => None,
+        };
+        if let Some(owner) = reference_owner {
+            let source_name = p
+                .sketch_index(owner)
+                .map(|si| p.sketches[si].name.as_str())
+                .or_else(|| p.timeline.iter().find(|n| n.id == owner).map(|n| n.name.as_str()))
+                .unwrap_or("native value");
             return Err(Error::Invalid(format!(
-                "hole sketch {sketch}: reference measurement {} is solved after the marker's coordinates",
+                "hole sketch {sketch}: source {source_name} ({owner}): reference measurement {} cannot feed marker coordinates; native reference refresh is solved after coordinates and lacks safe ordering",
                 named.name
             )));
         }
     }
-    let mut sources: Vec<_> = sketch_sources(p, sketch).into_iter().filter(|id| p.sketch_index(*id).is_some()).collect();
+    let mut sources: Vec<_> = sources.into_iter().filter(|id| p.sketch_index(*id).is_some()).collect();
     sources.sort_unstable();
     for source in sources {
-        if source != sketch && p.sketch_index(source).unwrap() >= p.sketch_index(sketch).unwrap() {
-            let name = &p.sketches[p.sketch_index(source).unwrap()].name;
-            return Err(Error::Invalid(format!("hole sketch {sketch}: source sketch {name} ({source}) is solved after the marker")));
-        }
         check_sketch_support(p, source, src).map_err(|e| {
             if source == sketch {
                 e

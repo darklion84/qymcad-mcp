@@ -223,6 +223,43 @@ impl Session {
         Self::explicit_points_in(&self.p, si)
     }
 
+    /// Match the native orphan-pruner's protection rule. An otherwise unprotected explicit Point
+    /// carries an unnamed reference distance: persisted, no entity and no driving solver row.
+    /// Leave already protected points alone (extra rows can affect native figure preprocessing).
+    pub(crate) fn retain_native_points(&mut self, si: usize) {
+        let explicit = self.explicit_points(si);
+        let sk = &mut self.p.sketches[si];
+        let mut protected: HashSet<_> = sk.entities.iter().flat_map(entity_points).chain(sk.system_ids()).collect();
+        for c in &sk.constraints {
+            match c {
+                Constraint::Midpoint { p, .. } | Constraint::PointOnLine { p, .. } | Constraint::PointOnCircle { p, .. } => {
+                    protected.insert(*p);
+                }
+                _ if c.dim_value().is_some() => protected.extend(c.points()),
+                _ => {}
+            }
+        }
+        if explicit.is_subset(&protected) {
+            return;
+        }
+        self.p.ensure_origin(si);
+        let sk = &mut self.p.sketches[si];
+        let origin = sk.points.iter().find(|p| p.id == sk.origin).unwrap();
+        let (ox, oy) = (origin.x, origin.y);
+        for pt in sk.points.iter().filter(|p| explicit.contains(&p.id) && !protected.contains(&p.id)) {
+            sk.constraints.push(Constraint::Distance {
+                a: sk.origin,
+                b: pt.id,
+                d: (pt.x - ox).hypot(pt.y - oy),
+                off: 0.,
+                expr: String::new(),
+                driven: true,
+                axis: 0,
+                at: None,
+            });
+        }
+    }
+
     /// Native curve cleanup does not know explicit Point intent, and may prune points/axis drivers.
     /// Restore those records before reporting; an incompatible edit then refuses via the normal solve.
     pub(crate) fn point_records(&self, si: usize) -> PointRecords {
@@ -791,6 +828,7 @@ impl Session {
         if self.check_sketch_point_coordinates(si).is_err() {
             return f64::INFINITY;
         }
+        self.retain_native_points(si);
         let records = self.point_records(si);
         let mut residual = self.p.solve_sketch(si);
         if residual > 1e-6 {
@@ -830,7 +868,7 @@ impl Session {
                 if conflicts.is_empty() { String::new() } else { format!(" (constraints {conflicts:?} disagree)") }
             )));
         }
-        Ok(())
+        self.check_hole_supports().map_err(|(_, error)| error)
     }
 }
 

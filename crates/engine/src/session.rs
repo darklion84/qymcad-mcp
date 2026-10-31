@@ -332,8 +332,7 @@ impl Session {
         }
         let before_evaluation = sess.p.clone_without_source_data();
         sess.p.eval_parameters();
-        sess.check_fixed_text_geometry(&before_evaluation)?;
-        sess.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        sess.check_hole_supports().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.reconcile_datum_dependencies();
         sess.reconcile_hole_dependencies();
         // Native app edits can save stale reference-consuming features despite a clean timeline (F-120).
@@ -354,6 +353,7 @@ impl Session {
         // Planned nodes are checked by the rebuild itself; the rest are checked below (F-074).
         let planned: HashSet<Id> = sess.p.regen_plan().nodes.into_iter().collect();
         let mut r = sess.try_rebuild_retrying(None).map_err(|i| Error::Invalid(format!("{} ({}): {}", i.name, i.node, i.message)))?;
+        sess.check_fixed_text_geometry(&before_evaluation)?;
         sess.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         sess.check_chamfer_references().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         for (&id, old) in &stored {
@@ -517,7 +517,7 @@ impl Session {
         });
     }
 
-    /// Refuse native coercions before regeneration and on every evaluated edit, even on a previously failed node.
+    /// Refuse native coercions on the settled scope, even on a previously failed node.
     pub(crate) fn check_evaluated_features(&self) -> std::result::Result<(), (Id, Error)> {
         self.check_array_values()?;
         self.check_point_coordinates()?;
@@ -549,10 +549,13 @@ impl Session {
         let before = self.p.clone();
         self.reconcile_datum_dependencies();
         self.reconcile_hole_dependencies();
-        if let Err((id, error)) = self.check_evaluated_features() {
+        if let Err((id, error)) = self.check_hole_supports() {
             let issue = self.issue(id, error.to_string());
             self.p = before;
             return Err(issue);
+        }
+        for si in 0..self.p.sketches.len() {
+            self.retain_native_points(si);
         }
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {
@@ -1641,3 +1644,7 @@ mod r3_tests;
 #[cfg(test)]
 #[path = "session_r4_tests.rs"]
 mod r4_tests;
+
+#[cfg(test)]
+#[path = "session_r5_tests.rs"]
+mod r5_tests;

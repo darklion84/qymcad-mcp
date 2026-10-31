@@ -157,21 +157,26 @@ fn standalone_late_chamfer_refusal_restores_immediate_archive() {
 }
 #[test]
 fn evaluated_rebuild_refuses_later_world_source_before_kernel() {
-    use qymcad_core::model::{DimTarget, HoleTool, NamedDim};
+    use qymcad_core::model::{Constraint, DimTarget, HoleTool, NamedDim};
     let mut s = Session::new_part();
     let marker = s.p.add_sketch("marker", vec![], None);
     s.p.add_sketch_node(marker, "marker");
     let source = s.p.add_sketch("late world source", vec![], None);
     s.p.add_sketch_node(source, "late world source");
-    s.p.set_feat_dim(source, "measurement", "40".into());
-    s.p.named_dims.push(NamedDim { name: "measured_w".into(), target: DimTarget::Feature { node: source, key: "measurement".into() } });
+    let si = s.p.sketch_index(source).unwrap();
+    let a = s.p.sketch_point_at(si, 0., 0., 1e-6);
+    let b = s.p.sketch_point_at(si, 40., 0., 1e-6);
+    s.p.sketches[si].constraints.push(Constraint::Distance { a, b, d: 40., off: 0., expr: String::new(), driven: true, axis: 1, at: None });
+    s.p.named_dims.push(NamedDim { name: "measured_w".into(), target: DimTarget::Sketch { sketch: source, refs: vec![a, b] } });
     s.p.set_feat_dim(marker, "coordinate", "measured_w/4".into());
     let hole = s.p.add_hole_from_sketch(0, marker, HoleTool { kind: 0, diameter: 4., depth: 4., dia2: 0., depth2: 0. }, true);
     s.reconcile_hole_dependencies();
     let before = archive(&mut s);
     let r = s.rebuild();
     assert!(
-        r.errors.iter().any(|e| e.node == hole && e.message.contains("late world source") && e.message.contains("solved after the marker")),
+        r.errors
+            .iter()
+            .any(|e| e.node == hole && e.message.contains("late world source") && e.message.contains("reference measurement measured_w")),
         "{r:?}"
     );
     assert!(s.shapes.is_empty());
