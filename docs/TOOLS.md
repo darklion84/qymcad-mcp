@@ -1896,7 +1896,7 @@ A sketch's plane (named datums show name and plane id) and world_frame (origin m
 
 ## sketch_edit
 
-Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {"op":"corner","sketch":"s","curves":[12,13],"point":9,"size":{"mode":"radius","value":"r"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_offsets, dof and free_points; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.
+Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, move, copy, rotate, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {"op":"corner","sketch":"s","curves":[12,13],"point":9,"size":{"mode":"radius","value":"r"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_constraints (every native constraint or dimension removed/released), released_offsets, dof and free_points; move/rotate refuse when the solver leaves requested geometry in place, and all refusals roll back atomically; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.
 
 ```json
 {
@@ -2386,6 +2386,128 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
         "op",
         "sketch",
         "curve"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Move selected curves once by evaluated coordinates; this is not parametric.",
+      "properties": {
+        "dx": {
+          "$ref": "#/$defs/Num",
+          "description": "One-shot x translation."
+        },
+        "dy": {
+          "$ref": "#/$defs/Num",
+          "description": "One-shot y translation."
+        },
+        "entities": {
+          "description": "Non-empty curve entity ids in this sketch.",
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "move",
+          "type": "string"
+        },
+        "sketch": {
+          "$ref": "#/$defs/ObjRef",
+          "description": "Sketch id or name."
+        }
+      },
+      "required": [
+        "op",
+        "sketch",
+        "entities",
+        "dx",
+        "dy"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Copy selected curves once by evaluated coordinates; the copy is unlinked.",
+      "properties": {
+        "dx": {
+          "$ref": "#/$defs/Num",
+          "description": "One-shot x translation."
+        },
+        "dy": {
+          "$ref": "#/$defs/Num",
+          "description": "One-shot y translation."
+        },
+        "entities": {
+          "description": "Non-empty curve entity ids in this sketch.",
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "copy",
+          "type": "string"
+        },
+        "sketch": {
+          "$ref": "#/$defs/ObjRef",
+          "description": "Sketch id or name."
+        }
+      },
+      "required": [
+        "op",
+        "sketch",
+        "entities",
+        "dx",
+        "dy"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Rotate selected curves once by an evaluated angle about an evaluated centre; this is not parametric.",
+      "properties": {
+        "angle": {
+          "$ref": "#/$defs/Num",
+          "description": "One-shot counter-clockwise angle in degrees."
+        },
+        "centre": {
+          "description": "One-shot rotation centre.",
+          "items": {
+            "$ref": "#/$defs/Num"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "entities": {
+          "description": "Non-empty curve entity ids in this sketch.",
+          "items": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "rotate",
+          "type": "string"
+        },
+        "sketch": {
+          "$ref": "#/$defs/ObjRef",
+          "description": "Sketch id or name."
+        }
+      },
+      "required": [
+        "op",
+        "sketch",
+        "entities",
+        "centre",
+        "angle"
       ],
       "type": "object"
     },

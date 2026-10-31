@@ -15,7 +15,7 @@ mod splines;
 mod text;
 
 pub use corner_edit::{CornerSize, CornerSpec};
-pub use edits::{BreakSpec, CurvePickSpec, EditedSketch, ExtendSpec};
+pub use edits::{BreakSpec, CurvePickSpec, EditedSketch, ExtendSpec, RotateSpec, TransformSpec};
 pub use mirror_point::MirrorPointSpec;
 pub use offset_edit::SketchOffsetSpec;
 

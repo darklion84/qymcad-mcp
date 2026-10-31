@@ -40,12 +40,36 @@ pub struct ExtendSpec {
 pub struct BreakSpec {
     /// Exactly one curve.
     pub curve: EntityRef,
-    /// One-time split point; required unless `intersections` is true.
+    /// The split point; required unless `intersections` is true.
     #[serde(default)]
     pub at: Option<[Num; 2]>,
-    /// Split at every intersection with other curves, construction ones included; excludes `at`.
+    /// Split at every intersection with other curves (construction curves included); excludes `at`.
     #[serde(default)]
     pub intersections: bool,
+}
+
+/// A one-shot translation of selected sketch curves.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TransformSpec {
+    /// Non-empty curve entity ids in this sketch.
+    pub entities: Vec<Id>,
+    /// Translation in sketch coordinates, evaluated once.
+    pub dx: Num,
+    /// Translation in sketch coordinates, evaluated once.
+    pub dy: Num,
+}
+
+/// A one-shot rotation of selected sketch curves.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RotateSpec {
+    /// Non-empty curve entity ids in this sketch.
+    pub entities: Vec<Id>,
+    /// Rotation centre in sketch coordinates, evaluated once.
+    pub centre: [Num; 2],
+    /// Counter-clockwise angle in degrees, evaluated once.
+    pub angle: Num,
 }
 
 /// What a sketch edit changed, and the sketch's freedom afterwards.
@@ -68,6 +92,8 @@ pub struct EditedSketch {
     pub dropped_formulas: Vec<ConstraintInfo>,
     /// Native offset associations released by the edit.
     pub released_offsets: Vec<Id>,
+    /// Constraints or dimensions removed or released by the native edit.
+    pub released_constraints: Vec<ConstraintInfo>,
     /// Remaining degrees of freedom and redundant constraints; freedom alone is never a refusal.
     pub dof: (i32, i32),
     /// Point ids that can still move.
@@ -81,7 +107,8 @@ impl Session {
         let si = self.sketch_si(sketch)?;
         self.transaction(|s| {
             let before = s.p.sketches[si].clone();
-            let formulas: Vec<ConstraintInfo> = s.sketch_detail(sketch)?.constraints.into_iter().filter(has_formula).collect();
+            let before_constraints = s.sketch_detail(sketch)?.constraints;
+            let formulas: Vec<ConstraintInfo> = before_constraints.iter().filter(|c| has_formula(c)).cloned().collect();
             let dimensions = s.preserving_points(si, edit)?;
             let after = &s.p.sketches[si];
             // A formula dimension survives when one afterwards has the same kind, points and text; failing that
@@ -122,9 +149,125 @@ impl Session {
                 dimensions,
                 dropped_formulas,
                 released_offsets: before.offsets.iter().filter(|o| !after.offsets.iter().any(|n| n.id == o.id)).map(|o| o.id).collect(),
+                released_constraints: released_constraints(s, sketch, &before_constraints),
                 dof: s.p.sketch_dof(si),
                 free_points: after.points.iter().zip(s.p.sketch_free_points(si)).filter_map(|(p, free)| free.then_some(p.id)).collect(),
             })
+        })
+    }
+
+    pub fn sketch_transform_move(&mut self, sketch: Id, spec: &TransformSpec) -> Result<EditedSketch> {
+        let dx = self.edit_num(&spec.dx)?;
+        let dy = self.edit_num(&spec.dy)?;
+        self.transform_entities(
+            sketch,
+            &spec.entities,
+            |s, si, ids| {
+                s.p.move_entities(si, ids, dx, dy);
+                Ok(())
+            },
+            move |x, y| (x + dx, y + dy),
+        )
+    }
+
+    pub fn sketch_transform_copy(&mut self, sketch: Id, spec: &TransformSpec) -> Result<EditedSketch> {
+        let dx = self.edit_num(&spec.dx)?;
+        let dy = self.edit_num(&spec.dy)?;
+        self.transform_copy(sketch, &spec.entities, dx, dy)
+    }
+
+    pub fn sketch_transform_rotate(&mut self, sketch: Id, spec: &RotateSpec) -> Result<EditedSketch> {
+        let centre = [self.edit_num(&spec.centre[0])?, self.edit_num(&spec.centre[1])?];
+        let angle = self.edit_num(&spec.angle)?;
+        let (sin, cos) = angle.to_radians().sin_cos();
+        self.transform_entities(
+            sketch,
+            &spec.entities,
+            |s, si, ids| {
+                s.p.rotate_entities(si, ids, centre[0], centre[1], angle);
+                Ok(())
+            },
+            move |x, y| {
+                let (x, y) = (x - centre[0], y - centre[1]);
+                (centre[0] + x * cos - y * sin, centre[1] + x * sin + y * cos)
+            },
+        )
+    }
+
+    fn edit_num(&self, value: &Num) -> Result<f64> {
+        value.eval(&self.p.param_map())
+    }
+
+    fn transform_entities(
+        &mut self,
+        sketch: Id,
+        ids: &[Id],
+        edit: impl FnOnce(&mut Self, usize, &[Id]) -> Result<()>,
+        expected: impl Fn(f64, f64) -> (f64, f64),
+    ) -> Result<EditedSketch> {
+        if ids.is_empty() {
+            return Err(Error::Invalid("entities must be non-empty".into()));
+        }
+        let si = self.sketch_si(sketch)?;
+        if ids.iter().any(|id| self.p.sketches[si].entity(*id).is_none()) {
+            return Err(Error::Invalid("entities must name curves in the selected sketch".into()));
+        }
+        let before = self.p.sketches[si].clone();
+        self.sketch_edit_report(sketch, |s| {
+            edit(s, si, ids)?;
+            s.finish_sketch_edit(si)?;
+            let mut moved = false;
+            let mut requested = false;
+            for id in ids {
+                let Some(old_entity) = before.entity(*id) else { continue };
+                let Some(new_entity) = s.p.sketches[si].entity(*id) else { continue };
+                let old = entity_points(old_entity);
+                let new = entity_points(new_entity);
+                for (old, new) in old.into_iter().zip(new) {
+                    let Some(a) = before.point(old) else { continue };
+                    let Some(b) = s.p.sketches[si].point(new) else { continue };
+                    let (x, y) = expected(a.x, a.y);
+                    if (x - a.x).hypot(y - a.y) > 1e-6 {
+                        requested = true;
+                    }
+                    if (b.x - a.x).hypot(b.y - a.y) > 1e-6 {
+                        moved = true;
+                    }
+                    if (b.x - x).hypot(b.y - y) > 1e-6 {
+                        let held = constraint_names(s, sketch, &before, ids);
+                        return Err(Error::Invalid(format!(
+                            "native solver did not place curve {id} at the requested transform; held by {}",
+                            if held.is_empty() { "constraints or dimensions".into() } else { held.join(", ") }
+                        )));
+                    }
+                }
+            }
+            if requested && ids.iter().any(|id| before.entity(*id).is_some()) && !moved {
+                let held = constraint_names(s, sketch, &before, ids);
+                return Err(Error::Invalid(format!(
+                    "native solver left the requested transform as a no-op; held by {}",
+                    if held.is_empty() { "constraints or dimensions".into() } else { held.join(", ") }
+                )));
+            }
+            Ok(Vec::new())
+        })
+    }
+
+    fn transform_copy(&mut self, sketch: Id, ids: &[Id], dx: f64, dy: f64) -> Result<EditedSketch> {
+        if ids.is_empty() {
+            return Err(Error::Invalid("entities must be non-empty".into()));
+        }
+        let si = self.sketch_si(sketch)?;
+        if ids.iter().any(|id| self.p.sketches[si].entity(*id).is_none()) {
+            return Err(Error::Invalid("entities must name curves in the selected sketch".into()));
+        }
+        self.sketch_edit_report(sketch, |s| {
+            let copied = s.p.copy_entities(si, ids, dx, dy);
+            if copied.is_empty() {
+                return Err(Error::Invalid("the selected curves could not be copied".into()));
+            }
+            s.finish_sketch_edit(si)?;
+            Ok(Vec::new())
         })
     }
 
@@ -301,6 +444,48 @@ impl Session {
 
 fn has_formula(c: &ConstraintInfo) -> bool {
     c.expr.as_deref().is_some_and(|e| !e.is_empty())
+}
+
+fn constraint_key(c: &ConstraintInfo) -> (String, Vec<Id>, Option<String>) {
+    let mut points = c.points.clone();
+    points.sort_unstable();
+    (c.kind.clone(), points, c.expr.clone())
+}
+
+fn released_constraints(s: &Session, sketch: Id, before: &[ConstraintInfo]) -> Vec<ConstraintInfo> {
+    let after_info = s.sketch_detail(sketch).ok().map(|d| d.constraints).unwrap_or_default();
+    let mut remaining = after_info;
+    before
+        .iter()
+        .filter(|&c| {
+            remaining
+                .iter()
+                .position(|a| constraint_key(a) == constraint_key(c))
+                .map(|i| {
+                    remaining.swap_remove(i);
+                    false
+                })
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect::<Vec<_>>()
+}
+
+fn constraint_names(s: &Session, sketch: Id, before: &Sketch, ids: &[Id]) -> Vec<String> {
+    let selected: HashSet<Id> = ids.iter().flat_map(|id| before.entity(*id).into_iter().flat_map(entity_points)).collect();
+    s.sketch_detail(sketch)
+        .ok()
+        .map(|d| {
+            d.constraints
+                .into_iter()
+                .filter(|c| c.points.iter().any(|p| selected.contains(p)))
+                .map(|c| match c.expr {
+                    Some(expr) => format!("{}={} (constraint {})", c.kind, expr, c.index),
+                    None => format!("{} (constraint {})", c.kind, c.index),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn same_membership(a: &Constraint, b: &Constraint) -> bool {

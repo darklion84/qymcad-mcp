@@ -1,5 +1,13 @@
 # Findings about QymCAD
 
+## F-121 Native sketch transforms are one-shot curve edits
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** `Project::move_entities`, `copy_entities` and `rotate_entities` accept sketch curve ids and evaluated `f64` placement values. Copy returns new entity ids and copies internal relations without linking to the source. Whole native figures are carried as figures.
+- **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:412-459`, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch_ops.rs:47-57`; observed: `tasks/research-medB/src/main.rs` calls all three APIs and receives a distinct copy id; test: `crates/mcp/tests/sketch_edits_2.rs::sketch_transform_move_copy_rotate_is_one_shot_batchable_and_undoable`.
+- **How we handle it:** the engine evaluates values once, refuses empty or foreign curve-id lists, and runs the calls through the existing atomic sketch edit/rebuild transaction. Text is not accepted because the public calls require curve entity ids.
+
+
 Facts about the QymCAD codebase that this server depends on, each with its evidence. This file is the single
 source of truth: when QymCAD changes, re-verify the entries here (see [UPGRADING.md](UPGRADING.md)).
 

@@ -38,6 +38,33 @@ fn sketch_edit_break_is_strict_batchable_and_undoable() {
 }
 
 #[test]
+fn sketch_transform_move_copy_rotate_is_one_shot_batchable_and_undoable() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    call(&mut r, "param_set", json!({"name":"d","value":2}));
+    call(&mut r, "sketch_create", json!({"plane":"XY","name":"s"}));
+    let added =
+        call(&mut r, "sketch_add", json!({"sketch":"s","entities":[{"type":"line","x1":1,"y1":2,"x2":3,"y2":2,"dimensioned":false}]}));
+    let id = added["created"][0]["entities"][0].as_u64().unwrap();
+    let moved = call(&mut r, "sketch_edit", json!({"sketch":"s","op":"move","entities":[id],"dx":"d","dy":3}));
+    assert_eq!(moved["parametric"], false);
+    assert_eq!(moved["edit"]["changed_entities"], json!([id]));
+    let copied = call(&mut r, "sketch_edit", json!({"sketch":"s","op":"copy","entities":[id],"dx":10,"dy":0}));
+    assert_eq!(copied["parametric"], false);
+    assert_eq!(copied["linked"], false);
+    assert_eq!(copied["edit"]["created_entities"].as_array().unwrap().len(), 1);
+    let rotated = call(&mut r, "sketch_edit", json!({"sketch":"s","op":"rotate","entities":[id],"centre":[0,0],"angle":90}));
+    assert_eq!(rotated["parametric"], false);
+    assert_eq!(rotated["edit"]["changed_entities"], json!([id]));
+    let before = call(&mut r, "sketch_info", json!({"sketch":"s"}));
+    let batch =
+        call(&mut r, "batch", json!({"steps":[{"tool":"sketch_edit","args":{"sketch":"s","op":"move","entities":[id],"dx":1,"dy":1}}]}));
+    assert_eq!(batch["steps"][0]["tool"], "sketch_edit");
+    call(&mut r, "undo", json!({}));
+    assert_eq!(call(&mut r, "sketch_info", json!({"sketch":"s"})), before);
+}
+
+#[test]
 fn every_sketch_edit_op_runs_through_the_tool_and_reports_its_dimensions() {
     let mut r = Registry::new();
     call(&mut r, "doc_new", json!({}));

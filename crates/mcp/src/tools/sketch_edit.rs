@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 /// One sketch edit, chosen by `op`. Picks (`at`, `toward`) are used once; sizes stay driving dimensions.
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum EditArgs {
     /// Remove the part of a curve between the intersections around `at`; a curve with none is removed whole.
@@ -50,6 +50,39 @@ enum EditArgs {
         /// Split at every intersection with other curves (construction curves included).
         #[serde(default)]
         intersections: bool,
+    },
+    /// Move selected curves once by evaluated coordinates; this is not parametric.
+    Move {
+        /// Sketch id or name.
+        sketch: ObjRef,
+        /// Non-empty curve entity ids in this sketch.
+        entities: Vec<u64>,
+        /// One-shot x translation.
+        dx: Num,
+        /// One-shot y translation.
+        dy: Num,
+    },
+    /// Copy selected curves once by evaluated coordinates; the copy is unlinked.
+    Copy {
+        /// Sketch id or name.
+        sketch: ObjRef,
+        /// Non-empty curve entity ids in this sketch.
+        entities: Vec<u64>,
+        /// One-shot x translation.
+        dx: Num,
+        /// One-shot y translation.
+        dy: Num,
+    },
+    /// Rotate selected curves once by an evaluated angle about an evaluated centre; this is not parametric.
+    Rotate {
+        /// Sketch id or name.
+        sketch: ObjRef,
+        /// Non-empty curve entity ids in this sketch.
+        entities: Vec<u64>,
+        /// One-shot rotation centre.
+        centre: [Num; 2],
+        /// One-shot counter-clockwise angle in degrees.
+        angle: Num,
     },
     /// Offset a chain or loop of curves by `distance` to the side of `toward`. The distance stays a driving
     /// dimension (every one the offset makes takes the formula); ellipse and spline offsets are native
@@ -97,6 +130,9 @@ impl EditArgs {
             Self::Trim { sketch, .. }
             | Self::Extend { sketch, .. }
             | Self::Break { sketch, .. }
+            | Self::Move { sketch, .. }
+            | Self::Copy { sketch, .. }
+            | Self::Rotate { sketch, .. }
             | Self::Offset { sketch, .. }
             | Self::Corner { sketch, .. }
             | Self::MirrorPoint { sketch, .. } => sketch,
@@ -107,16 +143,20 @@ impl EditArgs {
 pub(super) fn tools() -> Vec<Tool> {
     vec![tool(
         "sketch_edit",
-        "Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {\"op\":\"corner\",\"sketch\":\"s\",\"curves\":[12,13],\"point\":9,\"size\":{\"mode\":\"radius\",\"value\":\"r\"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_offsets, dof and free_points; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.",
+        "Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, move, copy, rotate, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {\"op\":\"corner\",\"sketch\":\"s\",\"curves\":[12,13],\"point\":9,\"size\":{\"mode\":\"radius\",\"value\":\"r\"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_constraints (every native constraint or dimension removed/released), released_offsets, dof and free_points; move/rotate refuse when the solver leaves requested geometry in place, and all refusals roll back atomically; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.",
         |st, a: EditArgs| {
             let s = st.doc()?;
             let sketch = a.sketch().resolve(s)?;
+            let result_kind = a.clone();
             let (edit, r) = s
                 .sketch_edit(sketch, |s| match a {
                     EditArgs::Trim { curve, at, .. } => s.sketch_trim(sketch, &CurvePickSpec { curve, at }),
                     EditArgs::Extend { curve, at, target, both, .. } => s.sketch_extend(sketch, &ExtendSpec { curve, at, target, both }),
-                    EditArgs::Break { curve, at, intersections, .. } => s.sketch_break(sketch, &BreakSpec { curve, at, intersections }),
-                    EditArgs::Offset { curves, distance, toward, dimension_name, .. } => {
+                     EditArgs::Break { curve, at, intersections, .. } => s.sketch_break(sketch, &BreakSpec { curve, at, intersections }),
+                     EditArgs::Move { entities, dx, dy, .. } => s.sketch_transform_move(sketch, &qymcad_engine::TransformSpec { entities, dx, dy }),
+                     EditArgs::Copy { entities, dx, dy, .. } => s.sketch_transform_copy(sketch, &qymcad_engine::TransformSpec { entities, dx, dy }),
+                     EditArgs::Rotate { entities, centre, angle, .. } => s.sketch_transform_rotate(sketch, &qymcad_engine::RotateSpec { entities, centre, angle }),
+                     EditArgs::Offset { curves, distance, toward, dimension_name, .. } => {
                         s.sketch_offset(sketch, &SketchOffsetSpec { curves, distance, toward, dimension_name })
                     }
                     EditArgs::Corner { curves, point, size, .. } => s.sketch_corner(sketch, &CornerSpec { curves, point, size }),
@@ -125,6 +165,14 @@ pub(super) fn tools() -> Vec<Tool> {
                 .map_err(err)?;
             let mut out = sketch_result(s, sketch, r.as_ref())?;
             out["edit"] = json!(edit);
+            match result_kind {
+                EditArgs::Move { .. } | EditArgs::Rotate { .. } => out["parametric"] = json!(false),
+                EditArgs::Copy { .. } => {
+                    out["parametric"] = json!(false);
+                    out["linked"] = json!(false);
+                }
+                _ => {}
+            }
             Ok(out)
         },
     )]

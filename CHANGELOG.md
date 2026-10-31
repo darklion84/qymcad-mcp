@@ -5,6 +5,9 @@ All notable changes to this project are documented here. The format follows
 
 ## Unreleased
 
+### Added
+- `sketch_edit` supports one-shot native move, copy and rotate operations for curve ids. Copies are unlinked, all three operations are batchable and undoable, and dependent rebuild or solver-placement failures roll back atomically (ADR 0035).
+
 ### Fixed
 - Array counts over the 1000-copy cap are refused before kernel work on open and rebuild, and between reference-settling passes; a crafted or app-edited file no longer builds up to the native 10000 copies before the refusal.
 
