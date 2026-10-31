@@ -24,3 +24,12 @@ The faithful app path still rebuilds the sketch instances but leaves a profile c
 Linked sketch arrays are editable and persist through QymCAD save/load and app-style parameter edits. Reference-measurement formulas follow the engine's settled dependency policy; unsupported non-convergence remains an atomic rebuild error.
 
 Evidence: pinned native source and `tasks/research-medB.md` S9; implementation and acceptance evidence are recorded in `tasks/B2-report.md`.
+
+## Addendum (B4c): cap before the native parameter pass
+
+`Project::eval_parameters` imposes item values, so it regenerates every pattern instance from the new count at
+once; a `param_set` raising a pattern count to 100000 hung the server before any later cap check ran (observed
+through MCP, release build of d8135f5). Every engine call of the native evaluation goes through
+`Session::eval_parameters_capped`: pattern count formulas are pinned to their current counts for a first pass,
+the new parameter values are checked against the cap, and only then the native pass runs. Test:
+`session::b0_tests::param_set_refuses_sketch_pattern_count_over_cap_before_instances`.

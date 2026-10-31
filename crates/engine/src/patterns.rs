@@ -232,6 +232,44 @@ impl Session {
         Ok(ArrayAxis { d: v, count })
     }
 
+    /// `Project::eval_parameters`, refusing a sketch-pattern count over the cap before the native pass imposes it.
+    /// The native evaluation imposes item values (pattern counts) and regenerates every instance at once, so a
+    /// count raised to 100000 by a parameter edit would build 100000 copies before any later check could run.
+    /// First pass: pattern count formulas are pinned to their current counts, the parameters are worked out,
+    /// the formulas restored and checked against the new values; only then the real native pass runs.
+    pub(crate) fn eval_parameters_capped(&mut self) -> Result<Vec<(String, qymcad_core::errors::ExprError)>> {
+        let mut pinned = Vec::new();
+        for sketch in &self.p.sketches {
+            for pattern in &sketch.patterns {
+                let (count, count2) = match pattern.kind {
+                    qymcad_core::model::PatternKind::Linear { count, count2, .. } => (count, Some(count2)),
+                    qymcad_core::model::PatternKind::Circular { count, .. } => (count, None),
+                };
+                for (key, current) in [("count", Some(count)), ("count2", count2)] {
+                    if let (Some(current), Some(formula)) = (current, self.p.feat_dim(pattern.id, key)) {
+                        pinned.push((pattern.id, key, formula.to_string(), current.to_string()));
+                    }
+                }
+            }
+        }
+        if !pinned.is_empty() {
+            let set = |p: &mut qymcad_core::model::Project, id: Id, key: &str, value: &str| {
+                if let Some(dims) = p.feat_dims.get_mut(&id) {
+                    dims.insert(key.to_string(), value.to_string());
+                }
+            };
+            for (id, key, _, current) in &pinned {
+                set(&mut self.p, *id, key, current);
+            }
+            self.p.eval_parameters();
+            for (id, key, formula, _) in &pinned {
+                set(&mut self.p, *id, key, formula);
+            }
+            self.check_sketch_pattern_values().map_err(|(id, e)| Error::Invalid(format!("sketch pattern {id}: {e}")))?;
+        }
+        Ok(self.p.eval_parameters())
+    }
+
     pub(crate) fn check_sketch_pattern_values(&self) -> std::result::Result<(), (Id, Error)> {
         let vars = self.p.param_map();
         for sketch in &self.p.sketches {

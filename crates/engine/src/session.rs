@@ -331,7 +331,7 @@ impl Session {
             }
         }
         let before_evaluation = sess.p.clone_without_source_data();
-        sess.p.eval_parameters();
+        sess.eval_parameters_capped()?;
         sess.check_hole_supports().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         // Array counts are known before regeneration; the settled-scope guard alone would build every copy first.
         sess.check_array_values().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;

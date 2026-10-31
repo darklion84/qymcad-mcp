@@ -260,6 +260,9 @@ impl Session {
 
     pub(crate) fn refresh_sketch_patterns(&mut self, sketch: Id) -> Result<()> {
         let si = self.sketch_si(sketch)?;
+        // Counts may read values that changed after the caller's own cap check (reference measurements
+        // settling): refuse before any instance is generated.
+        self.check_sketch_pattern_values().map_err(|(id, e)| Error::Invalid(format!("sketch pattern {id}: {e}")))?;
         let patterns: Vec<Id> = self.p.sketches[si].patterns.iter().map(|p| p.id).collect();
         for id in patterns {
             let picks = self.pattern_profile_picks(sketch)?;
@@ -276,7 +279,7 @@ impl Session {
                         .p
                         .feat_dim(id, "count")
                         .and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok())
-                        .map(|v| v as u32)
+                        .map(|v| v.round() as u32)
                         .unwrap_or(count),
                     dx2: self.p.feat_dim(id, "dx2").and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok()).unwrap_or(dx2),
                     dy2: self.p.feat_dim(id, "dy2").and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok()).unwrap_or(dy2),
@@ -284,7 +287,7 @@ impl Session {
                         .p
                         .feat_dim(id, "count2")
                         .and_then(|v| Num::Expr(v.into()).eval(&self.p.param_map()).ok())
-                        .map(|v| v as u32)
+                        .map(|v| v.round() as u32)
                         .unwrap_or(count2),
                 },
                 other => other,

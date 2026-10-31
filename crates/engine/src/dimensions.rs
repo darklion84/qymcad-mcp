@@ -264,7 +264,7 @@ impl Session {
             s.reconcile_datum_dependencies();
             s.reconcile_hole_dependencies();
             // apply_param_edit: item-value formulas count as named sketch inputs, too.
-            if let Some((what, err)) = s.p.eval_parameters().into_iter().next() {
+            if let Some((what, err)) = s.eval_parameters_capped()?.into_iter().next() {
                 return Err(Error::Expr(crate::value::formula_failed(&what, &err, s.p.param_map().keys())));
             }
             for si in 0..s.p.sketches.len() {

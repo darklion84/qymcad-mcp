@@ -63,7 +63,14 @@ impl Session {
             self.p = before;
             return Err(e);
         }
-        if let Some((what, err)) = self.p.eval_parameters().into_iter().next() {
+        let evaluated = match self.eval_parameters_capped() {
+            Ok(errors) => errors,
+            Err(e) => {
+                self.p = before;
+                return Err(e);
+            }
+        };
+        if let Some((what, err)) = evaluated.into_iter().next() {
             let message = crate::value::formula_failed(&what, &err, self.p.param_map().keys());
             self.p = before;
             return Err(Error::Expr(message));
@@ -186,7 +193,7 @@ impl Session {
             let mut errors = Vec::new();
             for _ in 0..=self.p.named_dims.len() {
                 self.check_polygon_sides()?;
-                errors = self.p.eval_parameters();
+                errors = self.eval_parameters_capped()?;
                 let next = self.p.param_map();
                 if next == values {
                     break;

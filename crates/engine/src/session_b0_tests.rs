@@ -59,3 +59,29 @@ fn open_refuses_array_over_cap_before_kernel() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
     std::fs::remove_file(path).unwrap();
 }
+
+/// B4c: a parameter edit raising a sketch-pattern count over the cap must refuse before the native evaluation
+/// regenerates the instances (it imposes pattern counts itself); the document stays exactly as it was.
+#[test]
+fn param_set_refuses_sketch_pattern_count_over_cap_before_instances() {
+    let mut s = Session::new_part();
+    s.param_set("n", &3.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let source = s.sketch_rect(sk, &5.0.into(), &5.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    s.sketch_pattern_create(
+        sk,
+        &source,
+        &SketchPatternKind::Linear { count: "n".into(), dx: 15.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
+    )
+    .unwrap();
+    let entities = s.p.sketches[s.sketch_si(sk).unwrap()].entities.len();
+    let t = std::time::Instant::now();
+    let error = s.param_set("n", &100000.0.into()).unwrap_err();
+    assert!(t.elapsed() < std::time::Duration::from_secs(60), "refusal took {:?}", t.elapsed());
+    assert!(error.to_string().contains("count"), "{error}");
+    assert_eq!(s.p.sketches[s.sketch_si(sk).unwrap()].entities.len(), entities, "no instance may be generated");
+    assert_eq!(s.p.param_map().get("n"), Some(&3.0));
+    // Within the cap the edit still applies.
+    s.param_set("n", &5.0.into()).unwrap();
+    assert_eq!(s.sketch_info(sk).unwrap().contours.len(), 5);
+}

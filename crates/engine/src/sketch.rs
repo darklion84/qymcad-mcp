@@ -862,7 +862,7 @@ impl Session {
     }
 
     pub(crate) fn finish_sketch_edit(&mut self, si: usize) -> Result<()> {
-        self.p.eval_parameters();
+        self.eval_parameters_capped()?;
         let residual = self.solve_settled(si);
         let sid = self.p.sketches[si].id;
         self.p.mark_sketch_dirty(sid);
