@@ -12,6 +12,7 @@ mod params;
 mod print;
 mod sketch;
 mod sketch_edit;
+mod sketch_import;
 mod sketch_pattern;
 mod topology;
 
@@ -104,6 +105,7 @@ fn modelling_tool(name: &str) -> bool {
             | "sketch_remove"
             | "sketch_edit"
             | "sketch_pattern"
+            | "sketch_import"
             | "plane_offset"
             | "extrude"
             | "revolve"
@@ -225,6 +227,7 @@ impl Registry {
         tools.extend(sketch::tools());
         tools.extend(sketch_edit::tools());
         tools.extend(sketch_pattern::tools());
+        tools.extend(sketch_import::tools());
         tools.extend(features::tools());
         tools.extend(print::tools());
         tools.extend(import::tools());

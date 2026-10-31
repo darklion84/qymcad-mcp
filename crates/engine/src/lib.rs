@@ -28,6 +28,7 @@ mod render;
 mod revolve;
 mod session;
 mod sketch;
+mod sketch_import;
 mod split;
 mod sweep;
 #[cfg(test)]
@@ -62,6 +63,7 @@ pub use sketch::{
     SketchOffsetSpec, SketchPatternKind, SketchPatternResult, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec,
     TextFont, TextInfo, TextSpec, TransformSpec, Xy,
 };
+pub use sketch_import::{SketchImportFormat, SketchImportResult};
 pub use split::{SplitOptions, SplitResult};
 pub use sweep::{Loft, LoftSection, Sweep, SweepPath};
 pub use thread::{ThreadOptions, ThreadResult};

@@ -56,7 +56,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T8 | Measurement | partial | No distances or angles between elements | `topology`, `doc_info` | — |
 | I1 | STEP / IGES import | covered | Native source-backed part trees, selective solids, literal scale and embedded originals | `import` | `FeatureKind::Import` |
 | I2 | Mesh import | not covered | STL, OBJ, PLY, glTF, 3MF, AMF | none | `FeatureKind::MeshSolid,FeatureKind::MeshPiece` |
-| I3 | DXF / SVG sketch import | not covered | — | none | — |
+| I3 | DXF / SVG sketch import | covered | Native DXF/SVG parsing, literal scaled editable sketches, closure, reports, units, and downstream profiles | `sketch_import`; `golden_sketch_import.rs` | — |
 | E1 | Export STEP, STL, 3MF, GLB, OBJ | covered | — | `export` | — |
 | E2 | Export IGES, PLY, AMF | not covered | — | none | — |
 | E3 | Export sketch DXF / SVG | not covered | — | none | — |

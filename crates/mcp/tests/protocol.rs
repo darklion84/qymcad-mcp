@@ -259,6 +259,7 @@ fn lists_tools_with_object_schemas() {
         "sketch_remove",
         "sketch_edit",
         "sketch_pattern",
+        "sketch_import",
         "extrude",
         "plane_offset",
         "export",
@@ -959,6 +960,30 @@ fn sketch_pattern_is_registered_real_stdio_batchable_and_undoable() {
     );
     assert_eq!(batch["steps"].as_array().unwrap().len(), 2);
     assert!(batch["bodies"].as_array().unwrap().iter().any(|body| body["name"] == "body"));
+}
+
+#[test]
+fn sketch_import_batch_extrude_and_undo_over_stdio() {
+    let path = std::env::temp_dir().join(format!("qymcad-mcp-sketch-import-{}.dxf", std::process::id()));
+    std::fs::write(&path, "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n8\n0\n90\n4\n70\n1\n10\n0\n20\n0\n10\n10\n20\n0\n10\n10\n20\n10\n10\n0\n20\n10\n0\nENDSEC\n0\nEOF\n").unwrap();
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let batch = c.ok(
+        "batch",
+        json!({"steps":[
+            {"tool":"sketch_import","args":{"path":path,"format":"dxf","plane":"XY","name":"imported"}},
+            {"tool":"extrude","args":{"sketch":"imported","height":4,"name":"body"}}
+        ]}),
+    );
+    assert_eq!(batch["steps"].as_array().unwrap().len(), 2);
+    assert!((batch["bodies"][0]["volume_mm3"].as_f64().unwrap() - 400.0).abs() < 1e-6);
+    let undone = c.ok("undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "batch");
+    let info = c.ok("doc_info", json!({}));
+    assert_eq!(info["sketches"], json!([]));
+    assert_eq!(info["bodies"], json!([]));
+    let _ = std::fs::remove_file(path);
 }
 
 #[test]

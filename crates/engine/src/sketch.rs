@@ -103,6 +103,8 @@ pub struct ContourInfo {
     pub id: Id,
     /// The enclosing contour, if any. Extruding a contour extrudes it minus its direct children (holes).
     pub parent: Option<Id>,
+    /// Whether the contour is a closed profile.
+    pub closed: bool,
     /// mm²
     pub area: f64,
 }
@@ -599,6 +601,7 @@ impl Session {
             .map(|&cid| ContourInfo {
                 id: cid,
                 parent: self.p.contours.parent_of(cid).filter(|&x| x != 0),
+                closed: self.p.contours.index_of(cid).is_some_and(|i| self.p.contours[i].closed),
                 area: self.p.contours.index_of(cid).map(|i| self.p.contours[i].signed_area().abs()).unwrap_or(0.0),
             })
             .collect();

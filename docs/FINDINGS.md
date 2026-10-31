@@ -1,5 +1,12 @@
 # Findings about QymCAD
 
+## F-124 Native drawing import reports and curve semantics
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** `qymcad_io::import_dxf` preserves native DXF lines, arcs and circles as `ProfEdge` values and reports unsupported/invalid/redrawn entity kinds. `qymcad_io::import_svg` converts SVG paths/circles to line/spline curves, applies 25.4/96 mm per px, and flips SVG Y to CAD-up. `Project::import_sketch` welds shared endpoints and creates an owned editable sketch node; `add_contours` does not provide that ownership path.
+- **Evidence:** pinned source `.upstream/qymcad-f25f27d/crates/qymcad-io/src/dxf_import.rs:157-240`, `svg_import.rs:204-285`, `qymcad-core/src/model/sketch/entities.rs:1246-1309`; tests `crates/engine/tests/golden_sketch_import.rs::dxf_import_preserves_circle_reports_text_and_extrudes` and `::scale_is_evaluated_once_and_svg_flips_y_and_uses_px_units`.
+- **How we handle it:** `sketch_import` parses before mutation, applies one evaluated finite-positive scale to returned curves, calls `Project::import_sketch` atomically, preserves native skipped/invalid/redrawn tuples, refuses empty imports, and reports the unit rule. Imported geometry has no formula driver.
+
 ## F-123 Native app pattern edits leave profile consumers stale
 
 - **Version:** v0.1.1-dev.20261026

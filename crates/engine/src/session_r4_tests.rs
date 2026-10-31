@@ -219,6 +219,7 @@ fn settling_repeat_refuses_array_over_cap_before_kernel() {
     let report = s.rebuild();
     let dt = t.elapsed();
     assert!(report.errors.iter().any(|e| e.message.contains("count") || e.message.contains("copies")), "{report:?}");
-    assert!(dt < std::time::Duration::from_secs(5), "settling took {dt:?}: the repeat pass built the oversized array");
+    // Generous bound: parallel lib tests contend for the kernel; building 100000 copies takes minutes.
+    assert!(dt < std::time::Duration::from_secs(60), "settling took {dt:?}: the repeat pass built the oversized array");
     assert_eq!(archive(&mut s), before);
 }

@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `sketch_pattern` creates and updates linked native linear and circular sketch arrays with formula-driven values, strict count caps, batch/undo support, and instance-edit refusals (ADR 0036).
 - `sketch_edit` supports one-shot native move, copy and rotate operations for curve ids. Copies are unlinked, all three operations are batchable and undoable, and dependent rebuild or solver-placement failures roll back atomically (ADR 0035).
+- `sketch_import` imports DXF and SVG into editable native sketches with one-time scaling, native closure, unit notes, skipped/invalid/redrawn reports, batch support, and undo (ADR 0037).
 
 ### Fixed
 - Array counts over the 1000-copy cap are refused before kernel work on open and rebuild, and between reference-settling passes; a crafted or app-edited file no longer builds up to the native 10000 copies before the refusal.
