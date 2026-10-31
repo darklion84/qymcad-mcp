@@ -14,6 +14,15 @@ named parameters — and save them as `.qcad` files you open and edit in the Qym
 > See [docs/TOOLS.md](docs/TOOLS.md), [capability coverage](docs/COVERAGE.md), and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
 > quirks are in [docs/FINDINGS.md](docs/FINDINGS.md).
 
+## Support the project
+If you want to support development and chip in for the tokens that keep it going:
+
+- any EVM-compatible crypto: `0xdB157BC1Aa33f176e01dc8D295D6B20f37B8B7D2`
+- rubles via YooMoney: `41001678952661`
+
+Хотите поддержать и подкинуть на токены для продолжения разработки — любая EVM-совместимая крипта на кошелёк
+выше или рубли на ЮMoney `41001678952661`.
+
 ## How it works
 The server links the QymCAD geometry crates (OpenCASCADE kernel) directly and runs headless: no QymCAD window
 is driven. The agent calls tools (`doc_new`, `param_set`, `sketch_create`, `extrude`, `fillet`, `doc_save`, ...);
