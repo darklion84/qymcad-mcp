@@ -151,6 +151,9 @@ impl Session {
             .cloned();
         let Some(pattern) = pattern else { return Ok(()) };
         let source_len = pattern.source.len();
+        if source_len == 0 {
+            return Err(Error::Invalid(format!("sketch pattern {} has no source curves", pattern.id)));
+        }
         let indices = profiles
             .iter()
             .map(|cid| {
@@ -182,6 +185,9 @@ impl Session {
         _new_instances: &[Id],
         old_picks: &[(Id, std::collections::HashSet<Id>)],
     ) -> Result<()> {
+        if source.is_empty() {
+            return Err(Error::Invalid("a sketch pattern of this sketch has no source curves".into()));
+        }
         let si = self.sketch_si(sketch)?;
         let contours = self.p.sketches[si].contour_ids.clone();
         let source_set: std::collections::HashSet<Id> = source.iter().copied().collect();

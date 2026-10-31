@@ -85,3 +85,37 @@ fn param_set_refuses_sketch_pattern_count_over_cap_before_instances() {
     s.param_set("n", &5.0.into()).unwrap();
     assert_eq!(s.sketch_info(sk).unwrap().contours.len(), 5);
 }
+
+/// A crafted file whose sketch pattern has no source curves must refuse a count edit, not panic the server.
+#[test]
+fn pattern_with_empty_source_refuses_instead_of_panicking() {
+    let mut s = Session::new_part();
+    s.param_set("n", &3.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let source = s.sketch_rect(sk, &5.0.into(), &5.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    s.sketch_pattern_create(
+        sk,
+        &source,
+        &SketchPatternKind::Linear { count: "n".into(), dx: 15.0.into(), dy: 0.0.into(), count2: None, dx2: None, dy2: None },
+    )
+    .unwrap();
+    let picks = s.sketch_info(sk).unwrap().contours.iter().map(|c| c.id).collect::<Vec<_>>();
+    s.extrude(&Extrude {
+        sketch: sk,
+        profiles: Some(picks),
+        profiles_at: None,
+        height: 4.0.into(),
+        down: None,
+        op: Op::NewBody,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    })
+    .unwrap();
+    let si = s.sketch_si(sk).unwrap();
+    s.p.sketches[si].patterns[0].source.clear();
+    let edited = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.param_set("n", &4.0.into())));
+    let result = edited.expect("a pattern without source must not panic");
+    assert!(result.is_err(), "{result:?}");
+}
