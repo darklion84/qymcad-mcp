@@ -3,7 +3,9 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.5 — two-sided extrude, sketch points and holes, tilted datums, chamfer angle, move (ADR 0029–0034)
+
+Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Added
 - `hole` accepts native sketch-point placement with persisted global/named coordinate dependencies and engine rebuild/deletion closure. Every requested point must produce its own bore face; missing sites refuse atomically, through checks the full directed span up to its fixed 10000 mm depth, and sketch-hole offset dimensions are refused. P8 remains partial: unnamed/structural in-app sketch edits can leave holes stale; proper point subsets, dynamic datum/projection support and independent face hosts are refused under the pin (ADR 0034, F-118/F-119).
@@ -23,6 +25,14 @@ All notable changes to this project are documented here. The format follows
 - Feature formulas reading changed reference measurements now settle through bounded engine regeneration, including Move, extrusion height/down and datum tilt. Non-convergence refuses atomically; the pinned app may need a second regeneration (F-120).
 - Deleting a named dimension’s owner now detects all feature recipe consumers, including independent Move translations and extrusion distances; non-cascade refuses with dependent names and cascade removes them with undo support. Global parameters retain their existing separate cleanup contract.
 - Sketch holes refuse unsupported projected/datum/face sources reached transitively through named coordinate expressions, including reference measurements and global aliases, at creation and evaluated edits/open/rebuild. Refusals identify the source and preserve the saved archive.
+
+
+### Known limits
+- In the app, a formula that reads a reference measurement may need a second regeneration after the source changes; the engine settles it (F-120).
+- Sketch-hole coordinates may not read reference (non-driving) measurements anywhere in their source graph; unnamed or structural sketch edits made in the app can leave sketch holes stale until reopened through this server (F-118, ADR 0034).
+- Rotating a Move whose translation is a formula is refused; the native accumulation loses the placement (F-117).
+- A free explicit Point carries a reference distance from the sketch origin so the app keeps it; the app shows it as a grey dimension.
+- Checked by hand in QymCAD.app on five files: open, parameter edits and rebuild without errors.
 
 ## 0.1.1-dev.20261026.4 — body booleans, STEP/IGES import and sketch projections (ADR 0025–0028)
 
