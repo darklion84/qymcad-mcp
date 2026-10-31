@@ -1,34 +1,5 @@
 # Findings about QymCAD
 
-## F-124 Native drawing import reports and curve semantics
-
-- **Version:** v0.1.1-dev.20261026
-- **What:** `qymcad_io::import_dxf` preserves native DXF lines, arcs and circles as `ProfEdge` values and reports unsupported/invalid/redrawn entity kinds. `qymcad_io::import_svg` converts SVG paths/circles to line/spline curves, applies 25.4/96 mm per px, and flips SVG Y to CAD-up. `Project::import_sketch` welds shared endpoints and creates an owned editable sketch node; `add_contours` does not provide that ownership path.
-- **Evidence:** pinned source `.upstream/qymcad-f25f27d/crates/qymcad-io/src/dxf_import.rs:157-240`, `svg_import.rs:204-285`, `qymcad-core/src/model/sketch/entities.rs:1246-1309`; tests `crates/engine/tests/golden_sketch_import.rs::dxf_import_preserves_circle_reports_text_and_extrudes` and `::scale_is_evaluated_once_and_svg_flips_y_and_uses_px_units`.
-- **How we handle it:** `sketch_import` parses before mutation, applies one evaluated finite-positive scale to returned curves, calls `Project::import_sketch` atomically, preserves native skipped/invalid/redrawn tuples, refuses empty imports, and reports the unit rule. Imported geometry has no formula driver.
-
-## F-123 Native app pattern edits leave profile consumers stale
-
-- **Version:** v0.1.1-dev.20261026
-- **What:** A native app-style parameter edit regenerates the linked sketch instances, but an extrusion storing contour ids is not rebound. After a 3-copy 10×6 rectangle pattern extruded to h=5, editing `s:15→20` or `n:3→4` leaves the body at `1×60×5` while the sketch contains all moved/new copies.
-- **Evidence:** test: `crates/engine/tests/golden_sketch_pattern.rs::app_path_formula_edit_moves_instances_by_hand_values`; source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:656-668` deletes/recreates instances, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/solve.rs:487-490` replaces contour ids, and `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/profiles.rs:223-243` resolves stored profile ids without re-selection.
-- **How we handle it:** the engine rebinds implicit consumers to all current root contours and explicit consumers through native contour boundary provenance; a missing explicit contour refuses atomically. The faithful app emulation remains unchanged and records the stale source-only volume.
-
-## F-122 Native sketch patterns retain source linkage and use a sector-specific circular step
-
-- **Version:** v0.1.1-dev.20261026
-- **What:** `Project::add_pattern` and `update_pattern` store source curves and recreate native instance entities. Pattern item formulas use exactly `count`, `dx`, `dy`, `count2`, `dx2`, `dy2`, `angle`. Full circles step by `total/count`; sectors step by `total/max(count,2)`.
-- **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:644-668`, `model/sketch_ops.rs:89-123`, `model/item_values.rs:9-10`; verified: `tasks/research-medB.md` S9 native probe.
-- **How we handle it:** `sketch_pattern` preserves source ids, writes formulas through `write_feat_formula`, reports replaced instances, and documents/refuses instance edits. The server applies the F-033 1000-copy strict integral policy before native work and during settled rebuild checks.
-
-## F-121 Native sketch transforms are one-shot curve edits
-
-- **Version:** v0.1.1-dev.20261026
-- **What:** `Project::move_entities`, `copy_entities` and `rotate_entities` accept sketch curve ids and evaluated `f64` placement values. Copy returns new entity ids and copies internal relations without linking to the source. Whole native figures are carried as figures.
-- **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:412-459`, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch_ops.rs:47-57`; observed: `tasks/research-medB/src/main.rs` calls all three APIs and receives a distinct copy id; test: `crates/mcp/tests/sketch_edits_2.rs::sketch_transform_move_copy_rotate_is_one_shot_batchable_and_undoable`.
-- **How we handle it:** the engine evaluates values once, refuses empty or foreign curve-id lists, and runs the calls through the existing atomic sketch edit/rebuild transaction. Text is not accepted because the public calls require curve entity ids.
-
-
 Facts about the QymCAD codebase that this server depends on, each with its evidence. This file is the single
 source of truth: when QymCAD changes, re-verify the entries here (see [UPGRADING.md](UPGRADING.md)).
 
@@ -2370,3 +2341,31 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **R4 settled-domain evidence:** an acyclic two-reference chain with down=`second_w-first_w+5` temporarily has first_w60/second_w40 (down−15), then both60 (down5). Intermediate validation falsely refused it. `golden_medium_r4::transient_guard_before_reference_settling` ports the native three-pass control and now verifies engine success, both references60 and back cap z=−5; the final-scope R3 down/tilt/chamfer refusals and non-convergence rollback remain enforced. Array limits join the same settled guard (F-033). Failing-first and mutation evidence: `tasks/R4-report.md`.
 
 - **R5 settled open/rebuild entry (observed):** a clean native save with first_w60/second_w40 and down=`second_w-first_w+5` is a valid intermediate scope. Entry-time evaluated guards formerly refused down−15 before reaching the R4 settle loop. Open and standalone rebuild now keep only scope-independent support/edge prechecks before regeneration and validate domains on the stable scope; open's fixed-text comparison also follows settling. The ported native save/load plus independent three-pass control and standalone fixture settle both references60 and back cap z−5. R1's negative-Point archive and R3's final invalid down/tilt/chamfer archives still refuse without rewriting; standalone refusals preserve immediate recipe/B-rep archives. Evidence: `golden_medium_r5::open_settles_valid_mixed_scope_saved_by_native`, `session_r5_tests`, prior R1/R3 suites and `tasks/R5-report.md`.
+
+## F-121 Native sketch transforms are one-shot curve edits
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** `Project::move_entities`, `copy_entities` and `rotate_entities` accept sketch curve ids and evaluated `f64` placement values. Copy returns new entity ids and copies internal relations without linking to the source. Whole native figures are carried as figures.
+- **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:412-459`, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch_ops.rs:47-57`; observed: `tasks/research-medB/src/main.rs` calls all three APIs and receives a distinct copy id; test: `crates/mcp/tests/sketch_edits_2.rs::sketch_transform_move_copy_rotate_is_one_shot_batchable_and_undoable`.
+- **How we handle it:** the engine evaluates values once, refuses empty or foreign curve-id lists, and runs the calls through the existing atomic sketch edit/rebuild transaction. Text is not accepted because the public calls require curve entity ids.
+
+## F-122 Native sketch patterns retain source linkage and use a sector-specific circular step
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** `Project::add_pattern` and `update_pattern` store source curves and recreate native instance entities. Pattern item formulas use exactly `count`, `dx`, `dy`, `count2`, `dx2`, `dy2`, `angle`. Full circles step by `total/count`; sectors step by `total/max(count,2)`.
+- **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:644-668`, `model/sketch_ops.rs:89-123`, `model/item_values.rs:9-10`; verified: `tasks/research-medB.md` S9 native probe.
+- **How we handle it:** `sketch_pattern` preserves source ids, writes formulas through `write_feat_formula`, reports replaced instances, and documents/refuses instance edits. The server applies the F-033 1000-copy strict integral policy before native work and during settled rebuild checks.
+
+## F-123 Native app pattern edits leave profile consumers stale
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** A native app-style parameter edit regenerates the linked sketch instances, but an extrusion storing contour ids is not rebound. After a 3-copy 10×6 rectangle pattern extruded to h=5, editing `s:15→20` or `n:3→4` leaves the body at `1×60×5` while the sketch contains all moved/new copies.
+- **Evidence:** test: `crates/engine/tests/golden_sketch_pattern.rs::app_path_formula_edit_moves_instances_by_hand_values`; source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:656-668` deletes/recreates instances, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/solve.rs:487-490` replaces contour ids, and `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/profiles.rs:223-243` resolves stored profile ids without re-selection.
+- **How we handle it:** the engine rebinds implicit consumers to all current root contours and explicit consumers through native contour boundary provenance; a missing explicit contour refuses atomically. The faithful app emulation remains unchanged and records the stale source-only volume.
+
+## F-124 Native drawing import reports and curve semantics
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** `qymcad_io::import_dxf` preserves native DXF lines, arcs and circles as `ProfEdge` values and reports unsupported/invalid/redrawn entity kinds. `qymcad_io::import_svg` converts SVG paths/circles to line/spline curves, applies 25.4/96 mm per px, and flips SVG Y to CAD-up. `Project::import_sketch` welds shared endpoints and creates an owned editable sketch node; `add_contours` does not provide that ownership path.
+- **Evidence:** pinned source `.upstream/qymcad-f25f27d/crates/qymcad-io/src/dxf_import.rs:157-240`, `svg_import.rs:204-285`, `qymcad-core/src/model/sketch/entities.rs:1246-1309`; tests `crates/engine/tests/golden_sketch_import.rs::dxf_import_preserves_circle_reports_text_and_extrudes` and `::scale_is_evaluated_once_and_svg_flips_y_and_uses_px_units`.
+- **How we handle it:** `sketch_import` parses before mutation, applies one evaluated finite-positive scale to returned curves, calls `Project::import_sketch` atomically, preserves native skipped/invalid/redrawn tuples, refuses empty imports, and reports the unit rule. Imported geometry has no formula driver.
