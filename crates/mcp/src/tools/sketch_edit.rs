@@ -62,7 +62,8 @@ enum EditArgs {
         /// One-shot y translation.
         dy: Num,
     },
-    /// Copy selected curves once by evaluated coordinates; the copy is unlinked.
+    /// Copy selected curves once by evaluated coordinates; the copy is unlinked from its source, but the
+    /// internal dimensions it copies keep their formulas (a copied rectangle sized `w` still follows `w`).
     Copy {
         /// Sketch id or name.
         sketch: ObjRef,

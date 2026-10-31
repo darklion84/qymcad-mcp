@@ -2352,7 +2352,7 @@ asserts those exact fractional halves before checking away-from-zero output.
 ## F-121 Native sketch transforms are one-shot curve edits
 
 - **Version:** v0.1.1-dev.20261026
-- **What:** `Project::move_entities`, `copy_entities` and `rotate_entities` accept sketch curve ids and evaluated `f64` placement values. Copy returns new entity ids and copies internal relations without linking to the source. Whole native figures are carried as figures.
+- **What:** `Project::move_entities`, `copy_entities` and `rotate_entities` accept sketch curve ids and evaluated `f64` placement values. Copy returns new entity ids and copies internal relations without linking to the source. Copied internal dimensions keep their formulas, so a copy of a rectangle sized by `w` follows later `w` edits in the app and in the engine alike (GUI check medB 2026-10-31: both rectangles show `Size = w`; engine app-path emulation and param_set agree). Whole native figures are carried as figures.
 - **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:412-459`, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch_ops.rs:47-57`; observed: `tasks/research-medB/src/main.rs` calls all three APIs and receives a distinct copy id; test: `crates/mcp/tests/sketch_edits_2.rs::sketch_transform_move_copy_rotate_is_one_shot_batchable_and_undoable`.
 - **How we handle it:** the engine evaluates values once, refuses empty or foreign curve-id lists, and runs the calls through the existing atomic sketch edit/rebuild transaction. Text is not accepted because the public calls require curve entity ids.
 
@@ -2369,6 +2369,7 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** A native app-style parameter edit regenerates the linked sketch instances, but an extrusion storing contour ids is not rebound. After a 3-copy 10×6 rectangle pattern extruded to h=5, editing `s:15→20` or `n:3→4` leaves the body at `1×60×5` while the sketch contains all moved/new copies.
 - **Evidence:** test: `crates/engine/tests/golden_sketch_pattern.rs::app_path_formula_edit_moves_instances_by_hand_values`; source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:656-668` deletes/recreates instances, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/solve.rs:487-490` replaces contour ids, and `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/profiles.rs:223-243` resolves stored profile ids without re-selection.
 - **How we handle it:** the engine rebinds implicit consumers to all current root contours and explicit consumers through native contour boundary provenance; a missing explicit contour refuses atomically. The faithful app emulation remains unchanged and records the stale source-only volume.
+- **GUI check medB (2026-10-31):** `pattern_extrude.qcad` (explicit picks of 3 pattern contours, extruded 4) edited n 3 -> 5 in QymCAD.app: sketch shows 5 squares, the solid keeps only the source block (one 400 mm3 block, no error mark); engine app-path emulation reproduces 400, engine param_set gives 2000. Native empty `profiles` means the first contour only (`qymcad-core/src/model/sketch/profiles.rs:222`), so the file cannot ask the app for "all contours"; this stays an upstream app limitation.
 
 ## F-124 Native drawing import reports and curve semantics
 

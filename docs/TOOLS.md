@@ -2432,7 +2432,7 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
     },
     {
       "additionalProperties": false,
-      "description": "Copy selected curves once by evaluated coordinates; the copy is unlinked.",
+      "description": "Copy selected curves once by evaluated coordinates; the copy is unlinked from its source, but the\ninternal dimensions it copies keep their formulas (a copied rectangle sized `w` still follows `w`).",
       "properties": {
         "dx": {
           "$ref": "#/$defs/Num",
