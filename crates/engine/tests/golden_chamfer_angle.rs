@@ -20,6 +20,7 @@ fn extrusion(sketch: Id) -> Extrude {
     Extrude {
         sketch,
         profiles: None,
+        profiles_at: None,
         height: 10.0.into(),
         down: None,
         op: Op::Add,

@@ -208,6 +208,7 @@ fn limits_allowlist_and_outer_schema() {
         "sketch_constrain",
         "sketch_remove",
         "sketch_edit",
+        "sketch_pattern",
         "plane_offset",
         "extrude",
         "revolve",

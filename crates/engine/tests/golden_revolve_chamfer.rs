@@ -13,6 +13,7 @@ fn conical_seat(sign: f64) -> Session {
         down: None,
         sketch: stock,
         profiles: None,
+        profiles_at: None,
         height: 10.0.into(),
         op: Op::Add,
         direction: Direction::Normal,

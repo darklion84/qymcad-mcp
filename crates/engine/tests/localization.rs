@@ -13,6 +13,7 @@ fn extrusion(sketch: Id, op: Op) -> Extrude {
         down: None,
         sketch,
         profiles: None,
+        profiles_at: None,
         height: 8.0.into(),
         op,
         direction: Direction::Normal,

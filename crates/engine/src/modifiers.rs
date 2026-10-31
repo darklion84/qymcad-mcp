@@ -631,6 +631,7 @@ mod hint_tests {
             .extrude(&crate::Extrude {
                 sketch: sk,
                 profiles: None,
+                profiles_at: None,
                 height: 10.0.into(),
                 down: None,
                 op: crate::Op::Add,
@@ -676,6 +677,7 @@ mod hint_tests {
                 down: None,
                 sketch: sk,
                 profiles: None,
+                profiles_at: None,
                 height: 10.0.into(),
                 op: crate::Op::NewBody,
                 direction: crate::Direction::Normal,

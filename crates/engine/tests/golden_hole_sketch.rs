@@ -15,6 +15,7 @@ fn block() -> Session {
         .extrude(&Extrude {
             sketch: sk,
             profiles: None,
+            profiles_at: None,
             height: 10.0.into(),
             down: None,
             op: Op::NewBody,
@@ -478,6 +479,7 @@ fn direct_source_face_host_is_allowed_but_independent_face_host_is_refused() {
             s.extrude(&Extrude {
                 sketch: sk,
                 profiles: None,
+                profiles_at: None,
                 height: 10.0.into(),
                 down: None,
                 op: Op::NewBody,
@@ -542,6 +544,7 @@ fn through_guard_is_rechecked_after_the_source_stock_grows() {
     s.extrude(&Extrude {
         sketch: stock,
         profiles: None,
+        profiles_at: None,
         height: "stock_height".into(),
         down: None,
         op: Op::NewBody,

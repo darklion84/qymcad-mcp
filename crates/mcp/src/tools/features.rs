@@ -561,6 +561,7 @@ pub fn tools() -> Vec<Tool> {
                     down: a.down,
                     sketch,
                     profiles,
+                    profiles_at: None,
                     height,
                     op: a.op,
                     direction: a.direction,

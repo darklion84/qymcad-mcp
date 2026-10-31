@@ -47,6 +47,7 @@ fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f6
                 down: None,
                 sketch,
                 profiles: None,
+                profiles_at: None,
                 height: Num::Expr("h".into()),
                 op: Op::NewBody,
                 direction: Direction::Normal,

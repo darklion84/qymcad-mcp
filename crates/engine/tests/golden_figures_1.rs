@@ -18,6 +18,7 @@ fn extrude(s: &mut Session, sk: Id) -> Id {
             down: None,
             sketch: sk,
             profiles: None,
+            profiles_at: None,
             height: n(3.0),
             op: Op::NewBody,
             direction: Direction::Normal,

@@ -14,6 +14,7 @@ fn solid(s: &mut Session, sketch: Id, height: f64, name: &str) -> Id {
         down: None,
         sketch,
         profiles: None,
+        profiles_at: None,
         height: height.into(),
         op: Op::NewBody,
         direction: Direction::Normal,

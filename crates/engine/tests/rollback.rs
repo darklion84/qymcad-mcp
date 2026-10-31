@@ -6,7 +6,18 @@ use qymcad_engine::*;
 use std::f64::consts::PI;
 
 fn extrude(sketch: Id, height: Num, op: Op) -> Extrude {
-    Extrude { down: None, sketch, profiles: None, height, op, direction: Direction::Normal, through: false, target: None, name: None }
+    Extrude {
+        down: None,
+        sketch,
+        profiles: None,
+        profiles_at: None,
+        height,
+        op,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    }
 }
 
 fn along_z() -> Sel {

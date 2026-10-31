@@ -9,6 +9,7 @@ fn box_body(s: &mut Session, cx: Num, cy: Num, width: Num, height: Num, name: &s
         down: None,
         sketch,
         profiles: None,
+        profiles_at: None,
         height: 20.0.into(),
         op: Op::NewBody,
         direction: Direction::Normal,

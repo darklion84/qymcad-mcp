@@ -26,6 +26,7 @@ fn fixture(depth: Option<Num>) -> (Session, Id, Id) {
     s.extrude(&Extrude {
         sketch: profile,
         profiles: None,
+        profiles_at: None,
         height: 10.0.into(),
         down: None,
         op: Op::NewBody,

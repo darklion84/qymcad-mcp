@@ -57,6 +57,9 @@ pub struct Extrude {
     /// (a rectangle with circles inside gives a plate with holes; circles alone give discs).
     #[serde(default)]
     pub profiles: Option<Vec<Id>>,
+    /// Points in sketch coordinates selecting contours as native profile clicks.
+    #[serde(default)]
+    pub profiles_at: Option<Vec<[Num; 2]>>,
     /// Distance, mm (number or expression). Ignored when `through` is set.
     pub height: Num,
     /// Second-side length, mm: normal spans [-down, height], reverse spans [-height, down].
@@ -164,8 +167,9 @@ impl Session {
     /// Extrude sketch profiles into a solid, or cut/add/intersect with the part's body. Returns the new body id.
     pub fn extrude(&mut self, a: &Extrude) -> Result<(Id, Rebuild)> {
         self.atomic(|s| {
-            let profiles = match &a.profiles {
-                Some(ids) if !ids.is_empty() => ids.clone(),
+            let profiles = match (&a.profiles, &a.profiles_at) {
+                (Some(ids), _) if !ids.is_empty() => ids.clone(),
+                (_, Some(points)) => s.contours_at(a.sketch, points)?,
                 _ => s.root_contours(a.sketch)?,
             };
             if profiles.is_empty() {
@@ -174,6 +178,9 @@ impl Session {
             let si = s.sketch_si(a.sketch)?;
             if let Some(bad) = profiles.iter().find(|c| !s.p.sketches[si].contour_ids.contains(c)) {
                 return Err(Error::NotFound(format!("contour {bad} in sketch {}", a.sketch)));
+            }
+            if a.profiles_at.as_ref().is_some_and(|points| points.is_empty()) {
+                return Err(Error::Invalid("profiles_at must contain at least one point".into()));
             }
             let h = a.height.eval(&s.p.param_map())?;
             if !a.through && (h.is_nan() || h <= 0.0) {
@@ -218,6 +225,9 @@ impl Session {
             };
             if let (Some(e), false) = (a.height.expr(), a.through) {
                 s.p.set_feat_dim(id, "height", e);
+            }
+            if a.profiles_at.is_some() {
+                s.p.set_feat_dim(id, "__profile_pick", "1".into());
             }
             if let Some(value) = &a.down {
                 // Keep even literals: a formula entry distinguishes explicit Two sides from legacy one-sided zero.

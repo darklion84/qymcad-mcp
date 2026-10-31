@@ -32,6 +32,7 @@ fn every_accepted_standard_reports_basic_diameters_for_both_sides() {
                     down: None,
                     sketch: sk,
                     profiles: None,
+                    profiles_at: None,
                     height: 20.0.into(),
                     op: Op::NewBody,
                     direction: Direction::Normal,

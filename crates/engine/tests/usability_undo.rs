@@ -6,6 +6,7 @@ fn ex(sketch: Id, height: Num) -> Extrude {
         down: None,
         sketch,
         profiles: None,
+        profiles_at: None,
         height,
         op: Op::Add,
         direction: Direction::Normal,

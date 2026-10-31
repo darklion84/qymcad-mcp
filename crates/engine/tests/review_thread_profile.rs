@@ -18,6 +18,7 @@ fn fixture(internal: bool) -> (Session, Id, Sel) {
             down: None,
             sketch: sk,
             profiles: None,
+            profiles_at: None,
             height: 20.0.into(),
             op: Op::NewBody,
             direction: Direction::Normal,

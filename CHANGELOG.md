@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `sketch_pattern` creates and updates linked native linear and circular sketch arrays with formula-driven values, strict count caps, batch/undo support, and instance-edit refusals (ADR 0036).
 - `sketch_edit` supports one-shot native move, copy and rotate operations for curve ids. Copies are unlinked, all three operations are batchable and undoable, and dependent rebuild or solver-placement failures roll back atomically (ADR 0035).
 
 ### Fixed

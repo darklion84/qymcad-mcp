@@ -16,6 +16,7 @@ fn stock(s: &mut Session, sk: Id) {
     s.extrude(&Extrude {
         sketch: sk,
         profiles: None,
+        profiles_at: None,
         height: 7.0.into(),
         down: None,
         op: Op::NewBody,
@@ -91,6 +92,7 @@ fn isolated_points_do_not_create_profiles_or_material() {
         .extrude(&Extrude {
             sketch: sk,
             profiles: None,
+            profiles_at: None,
             height: 7.0.into(),
             down: None,
             op: Op::NewBody,

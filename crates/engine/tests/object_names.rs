@@ -30,6 +30,7 @@ fn box_body(s: &mut Session, x: f64, name: &str) -> Id {
         down: None,
         sketch,
         profiles: None,
+        profiles_at: None,
         height: 10.0.into(),
         op: Op::NewBody,
         direction: Direction::Normal,

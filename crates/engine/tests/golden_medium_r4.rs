@@ -118,6 +118,7 @@ fn block(s: &mut Session, x: f64, w: Num, down: Option<Num>) -> Id {
     s.extrude(&Extrude {
         sketch: sk,
         profiles: None,
+        profiles_at: None,
         height: 10.0.into(),
         down,
         op: Op::NewBody,
@@ -305,6 +306,7 @@ fn same_sketch_fixture() -> (Session, Id, Id, Id, usize) {
         .extrude(&Extrude {
             sketch: stocksk,
             profiles: None,
+            profiles_at: None,
             height: 10.0.into(),
             down: None,
             op: Op::NewBody,

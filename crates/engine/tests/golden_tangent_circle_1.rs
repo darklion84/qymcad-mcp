@@ -41,6 +41,7 @@ fn tangent_circle_radius_and_support_formulas_rebuild_after_open_and_in_app() {
             down: None,
             sketch: sk,
             profiles: None,
+            profiles_at: None,
             height: v(3.0),
             op: Op::Add,
             direction: Direction::Normal,

@@ -9,7 +9,18 @@ fn spec(text: &str) -> TextSpec {
 }
 
 fn ext(sketch: Id, height: Num, op: Op) -> Extrude {
-    Extrude { down: None, sketch, profiles: None, height, op, direction: Direction::Normal, through: false, target: None, name: None }
+    Extrude {
+        down: None,
+        sketch,
+        profiles: None,
+        profiles_at: None,
+        height,
+        op,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    }
 }
 
 fn sketch(s: &mut Session, text: &TextSpec) -> (Id, Id) {

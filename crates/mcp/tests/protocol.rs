@@ -258,6 +258,7 @@ fn lists_tools_with_object_schemas() {
         "sketch_constrain",
         "sketch_remove",
         "sketch_edit",
+        "sketch_pattern",
         "extrude",
         "plane_offset",
         "export",
@@ -936,6 +937,28 @@ fn projected_edge_drives_slot_and_cut_after_parameter_edit_over_stdio() {
     let topo = c.ok("topology", json!({"body":"cut"}));
     let floor = topo["faces"].as_array().unwrap().iter().find(|f| f["centroid"][2] == 8.0).expect("2 mm pocket floor");
     assert!((floor["centroid"][0].as_f64().unwrap() - 27.0).abs() < 1e-5);
+}
+
+#[test]
+fn sketch_pattern_is_registered_real_stdio_batchable_and_undoable() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"profile"}));
+    let added = c.ok("sketch_add", json!({"sketch":"profile","entities":[{"type":"rect","w":10,"h":6}]}));
+    let ids = added["created"][0]["rect_lines"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect::<Vec<_>>();
+    let pattern = c.ok("sketch_pattern", json!({"sketch":"profile","entities":ids,"kind":"linear","count":4,"dx":15,"dy":0}));
+    assert!(pattern["pattern"].as_u64().is_some());
+    c.ok("undo", json!({}));
+    let batch = c.ok(
+        "batch",
+        json!({"steps":[
+            {"tool":"sketch_pattern","args":{"sketch":"profile","entities":ids,"kind":"linear","count":3,"dx":20,"dy":0}},
+            {"tool":"extrude","args":{"sketch":"profile","height":5,"name":"body"}}
+        ]}),
+    );
+    assert_eq!(batch["steps"].as_array().unwrap().len(), 2);
+    assert!(batch["bodies"].as_array().unwrap().iter().any(|body| body["name"] == "body"));
 }
 
 #[test]

@@ -35,6 +35,7 @@ fn build(mode: &str) -> Session {
         down: None,
         sketch,
         profiles: None,
+        profiles_at: None,
         height: H.into(),
         op: Op::NewBody,
         direction: Direction::Normal,

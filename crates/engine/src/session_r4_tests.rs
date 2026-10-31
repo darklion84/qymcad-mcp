@@ -9,6 +9,7 @@ fn extrusion(s: &mut Session, x: f64, width: Num, height: Num, down: Option<Num>
     s.extrude(&Extrude {
         sketch: sk,
         profiles: None,
+        profiles_at: None,
         height,
         down,
         op: Op::NewBody,

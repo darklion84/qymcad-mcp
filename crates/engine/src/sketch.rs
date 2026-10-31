@@ -10,6 +10,7 @@ mod entities;
 mod figures;
 mod mirror_point;
 mod offset_edit;
+mod patterns;
 mod selectors;
 mod splines;
 mod text;
@@ -18,6 +19,7 @@ pub use corner_edit::{CornerSize, CornerSpec};
 pub use edits::{BreakSpec, CurvePickSpec, EditedSketch, ExtendSpec, RotateSpec, TransformSpec};
 pub use mirror_point::MirrorPointSpec;
 pub use offset_edit::SketchOffsetSpec;
+pub use patterns::{SketchPatternKind, SketchPatternResult};
 
 pub use constrain::{ConstrainSpec, Constrained, ConstraintKind, DistAxis, FrameRef, SketchRef};
 pub use detail::{ConstraintInfo, EntityInfo, PointInfo, SketchDetail};

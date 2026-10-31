@@ -1,5 +1,19 @@
 # Findings about QymCAD
 
+## F-123 Native app pattern edits leave profile consumers stale
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** A native app-style parameter edit regenerates the linked sketch instances, but an extrusion storing contour ids is not rebound. After a 3-copy 10×6 rectangle pattern extruded to h=5, editing `s:15→20` or `n:3→4` leaves the body at `1×60×5` while the sketch contains all moved/new copies.
+- **Evidence:** test: `crates/engine/tests/golden_sketch_pattern.rs::app_path_formula_edit_moves_instances_by_hand_values`; source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:656-668` deletes/recreates instances, `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/solve.rs:487-490` replaces contour ids, and `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/profiles.rs:223-243` resolves stored profile ids without re-selection.
+- **How we handle it:** the engine rebinds implicit consumers to all current root contours and explicit consumers through native contour boundary provenance; a missing explicit contour refuses atomically. The faithful app emulation remains unchanged and records the stale source-only volume.
+
+## F-122 Native sketch patterns retain source linkage and use a sector-specific circular step
+
+- **Version:** v0.1.1-dev.20261026
+- **What:** `Project::add_pattern` and `update_pattern` store source curves and recreate native instance entities. Pattern item formulas use exactly `count`, `dx`, `dy`, `count2`, `dx2`, `dy2`, `angle`. Full circles step by `total/count`; sectors step by `total/max(count,2)`.
+- **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:644-668`, `model/sketch_ops.rs:89-123`, `model/item_values.rs:9-10`; verified: `tasks/research-medB.md` S9 native probe.
+- **How we handle it:** `sketch_pattern` preserves source ids, writes formulas through `write_feat_formula`, reports replaced instances, and documents/refuses instance edits. The server applies the F-033 1000-copy strict integral policy before native work and during settled rebuild checks.
+
 ## F-121 Native sketch transforms are one-shot curve edits
 
 - **Version:** v0.1.1-dev.20261026

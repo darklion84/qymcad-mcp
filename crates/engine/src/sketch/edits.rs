@@ -209,12 +209,14 @@ impl Session {
             return Err(Error::Invalid("entities must be non-empty".into()));
         }
         let si = self.sketch_si(sketch)?;
+        self.refuse_pattern_instance_edit(sketch, ids)?;
         if ids.iter().any(|id| self.p.sketches[si].entity(*id).is_none()) {
             return Err(Error::Invalid("entities must name curves in the selected sketch".into()));
         }
         let before = self.p.sketches[si].clone();
         self.sketch_edit_report(sketch, |s| {
             edit(s, si, ids)?;
+            s.refresh_sketch_patterns(sketch)?;
             s.finish_sketch_edit(si)?;
             let mut moved = false;
             let mut requested = false;
@@ -258,6 +260,7 @@ impl Session {
             return Err(Error::Invalid("entities must be non-empty".into()));
         }
         let si = self.sketch_si(sketch)?;
+        self.refuse_pattern_instance_edit(sketch, ids)?;
         if ids.iter().any(|id| self.p.sketches[si].entity(*id).is_none()) {
             return Err(Error::Invalid("entities must name curves in the selected sketch".into()));
         }

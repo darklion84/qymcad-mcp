@@ -44,7 +44,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | S6 | Sketch point | covered | — | `sketch_add`, `sketch_info`, `sketch_remove` | `SketchShape::Point` |
 | S7 | Project body geometry into sketch | covered | — | `sketch_project` | — |
 | S8 | Move / copy / rotate sketch curves | covered | One-shot native edits; copy is unlinked; dependent rebuild and solver placement are checked atomically | `sketch_edit` | — |
-| S9 | Sketch arrays | not covered | Linked linear and circular copies | none | — |
+| S9 | Sketch arrays | covered | Linked linear and circular copies; strict 2..=1000 counts and 1000 total-copy cap; native sector spacing retained | `sketch_pattern` | — |
 | S10 | Delete sketch geometry | covered | — | `sketch_remove` | — |
 | T1 | Parameters and formulas | covered | — | `param_set`, `param_delete` | — |
 | T2 | Edit feature | partial | Re-pick edges and faces | `dimension_set` | — |

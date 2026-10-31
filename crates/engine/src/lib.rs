@@ -59,8 +59,8 @@ pub use sketch::{
     CornerSpec, CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, ExtendSpec,
     FrameRef, IsolatedPointInfo, LineSpec, MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel, PointSel, PolygonSpec,
     PolylineSpec, ProjectionResult, RectAnchor, RectSpec, RotateSpec, SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo,
-    SketchOffsetSpec, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec, TextFont, TextInfo, TextSpec, TransformSpec,
-    Xy,
+    SketchOffsetSpec, SketchPatternKind, SketchPatternResult, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec,
+    TextFont, TextInfo, TextSpec, TransformSpec, Xy,
 };
 pub use split::{SplitOptions, SplitResult};
 pub use sweep::{Loft, LoftSection, Sweep, SweepPath};

@@ -87,6 +87,11 @@ impl Session {
             return Err(Error::Invalid("dimension_set needs value or name (an empty name clears the name)".into()));
         }
         let native = self.native_dimension_target(target)?;
+        if let DimTarget::Feature { node, .. } = &native {
+            if self.p.sketches.iter().any(|sk| sk.patterns.iter().any(|p| p.instances.contains(node))) {
+                return Err(Error::Invalid(format!("entity {node} is an instance of a sketch pattern; edit the pattern instead")));
+            }
+        }
         if matches!(&native, DimTarget::Feature { node, key } if ["off_u", "off_v"].contains(&key.as_str())
             && self.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Hole { sketch, .. } if sketch != 0)))
         {

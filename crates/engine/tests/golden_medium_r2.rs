@@ -12,6 +12,7 @@ fn extrude(s: &mut Session, sketch: Id, height: Num, name: Option<&str>) -> Id {
     s.extrude(&Extrude {
         sketch,
         profiles: None,
+        profiles_at: None,
         height,
         down: None,
         op: Op::NewBody,

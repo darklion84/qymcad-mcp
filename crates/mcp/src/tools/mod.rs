@@ -12,6 +12,7 @@ mod params;
 mod print;
 mod sketch;
 mod sketch_edit;
+mod sketch_pattern;
 mod topology;
 
 use qymcad_engine::Session;
@@ -59,7 +60,7 @@ where
             st.created_node = if name == "sketch_project" {
                 None // Projection returns its source body and target sketch; neither node was created.
             } else {
-                ["body", "plane", "sketch"].iter().find_map(|key| v[*key].as_u64())
+                ["body", "plane", "sketch", "pattern"].iter().find_map(|key| v[*key].as_u64())
             };
             vec![json!({ "type": "text", "text": v.to_string() })]
         })
@@ -102,6 +103,7 @@ fn modelling_tool(name: &str) -> bool {
             | "sketch_constrain"
             | "sketch_remove"
             | "sketch_edit"
+            | "sketch_pattern"
             | "plane_offset"
             | "extrude"
             | "revolve"
@@ -222,6 +224,7 @@ impl Registry {
         tools.extend(params::tools());
         tools.extend(sketch::tools());
         tools.extend(sketch_edit::tools());
+        tools.extend(sketch_pattern::tools());
         tools.extend(features::tools());
         tools.extend(print::tools());
         tools.extend(import::tools());

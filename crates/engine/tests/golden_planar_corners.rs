@@ -10,6 +10,7 @@ fn extrude(s: &mut Session, sketch: Id, height: f64, op: Op, direction: Directio
             down: None,
             sketch,
             profiles: None,
+            profiles_at: None,
             height: height.into(),
             op,
             direction,

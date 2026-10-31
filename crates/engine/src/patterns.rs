@@ -232,6 +232,42 @@ impl Session {
         Ok(ArrayAxis { d: v, count })
     }
 
+    pub(crate) fn check_sketch_pattern_values(&self) -> std::result::Result<(), (Id, Error)> {
+        let vars = self.p.param_map();
+        for sketch in &self.p.sketches {
+            for pattern in &sketch.patterns {
+                let eval_count = |key: &str, fallback: f64| -> Result<u64> {
+                    let value = self
+                        .p
+                        .feat_dim(pattern.id, key)
+                        .filter(|e| !e.trim().is_empty())
+                        .map_or(Ok(fallback), |e| Num::Expr(e.to_string()).eval(&vars))?;
+                    if value < if key == "count2" && fallback == 1.0 { 1.0 } else { 2.0 }
+                        || value > 1000.0
+                        || (value - value.round()).abs() > 1e-9
+                    {
+                        return Err(Error::Invalid(format!("{key} must be an integral count from 2 to 1000, got {value}")));
+                    }
+                    Ok(value as u64)
+                };
+                let total = match pattern.kind {
+                    qymcad_core::model::PatternKind::Linear { count, count2, .. } => {
+                        let first = eval_count("count", f64::from(count)).map_err(|e| (pattern.id, e))?;
+                        let second = eval_count("count2", f64::from(count2.max(1))).map_err(|e| (pattern.id, e))?;
+                        first.saturating_mul(second)
+                    }
+                    qymcad_core::model::PatternKind::Circular { count, .. } => {
+                        eval_count("count", f64::from(count)).map_err(|e| (pattern.id, e))?
+                    }
+                };
+                if total > MAX_ARRAY_COPIES {
+                    return Err((pattern.id, Error::Invalid(format!("{total} copies; a sketch pattern makes at most {MAX_ARRAY_COPIES}"))));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn count(&self, n: &Num) -> Result<u32> {
         let v = n.eval(&self.p.param_map())?;
         if !(1.0..=MAX_ARRAY_COPIES as f64).contains(&v) || (v - v.round()).abs() > 1e-9 {
@@ -244,7 +280,8 @@ impl Session {
     /// be expressions (`count`, `count2`, `count3` feature dimensions), so a parameter edit can grow them;
     /// Check known values before kernel work and recheck the settled reference scope on every rebuild.
     pub(crate) fn check_array_limits(&self) -> Result<()> {
-        self.check_array_values().map_err(|(id, e)| Error::Invalid(format!("array {id} `{}`: {e}", self.node_name(id))))
+        self.check_array_values().map_err(|(id, e)| Error::Invalid(format!("array {id} `{}`: {e}", self.node_name(id))))?;
+        self.check_sketch_pattern_values().map_err(|(id, e)| Error::Invalid(format!("sketch pattern {id}: {e}")))
     }
 
     pub(crate) fn check_array_values(&self) -> std::result::Result<(), (Id, Error)> {

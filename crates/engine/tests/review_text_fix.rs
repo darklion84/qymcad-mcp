@@ -15,6 +15,7 @@ fn text_part_with_depth(height: f64, depth: f64) -> (Session, Id, Id) {
             down: None,
             sketch: sk,
             profiles: None,
+            profiles_at: None,
             height: depth.into(),
             op: Op::Add,
             direction: Direction::Normal,

@@ -14,6 +14,7 @@ fn stock(s: &mut Session) -> Id {
     s.extrude(&Extrude {
         sketch: sk,
         profiles: None,
+        profiles_at: None,
         height: 10.0.into(),
         down: None,
         op: Op::NewBody,

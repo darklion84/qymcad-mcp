@@ -176,6 +176,7 @@ impl Session {
         self.reconcile_hole_dependencies();
         let mut previous = before.clone();
         let mut unsolved = Vec::new();
+        let mut pattern_consumers = HashSet::new();
         // Each solve round can expose the next named reference dimension. Bound imported cycles, and
         // reserve one extra round to observe stabilization after the longest acyclic sketch chain.
         for round in 0..=self.p.sketches.len() {
@@ -207,6 +208,8 @@ impl Session {
             let reached = |expr: &str| changed.iter().any(|name| qymcad_core::expr::mentions(expr, name));
             for si in 0..self.p.sketches.len() {
                 let sketch = &self.p.sketches[si];
+                let pattern_reached =
+                    sketch.patterns.iter().any(|p| self.p.feat_dims.get(&p.id).is_some_and(|dims| dims.values().any(|expr| reached(expr))));
                 let item_reached = sketch
                     .points
                     .iter()
@@ -215,11 +218,23 @@ impl Session {
                     .chain(sketch.texts.iter().map(|t| t.id))
                     .any(|id| self.p.feat_dims.get(&id).is_some_and(|dims| dims.values().any(|expr| reached(expr))));
                 if item_reached || self.p.sketches[si].constraints.iter().any(|c| c.expr().is_some_and(reached)) {
+                    if pattern_reached {
+                        pattern_consumers.extend(self.p.dependents(sketch.id));
+                    }
+
                     #[cfg(test)]
                     PARAM_SOLVES.with(|solves| solves.borrow_mut().push(self.p.sketches[si].id));
                     let residual = self.solve_settled(si);
                     let sid = self.p.sketches[si].id;
+                    if pattern_reached {
+                        self.refresh_sketch_patterns(sid)?;
+                    }
                     self.p.mark_sketch_dirty(sid);
+                    if pattern_reached {
+                        for id in self.p.dependents(sid) {
+                            self.p.mark_node_dirty(id);
+                        }
+                    }
                     unsolved.retain(|(id, _)| *id != sid);
                     if residual.is_nan() || residual > 1e-6 {
                         unsolved.push((sid, residual));
@@ -238,6 +253,13 @@ impl Session {
                 ));
             }
             previous = values;
+        }
+        let has_pattern_consumers = !pattern_consumers.is_empty();
+        for id in pattern_consumers {
+            self.p.mark_node_dirty(id);
+        }
+        if has_pattern_consumers {
+            self.p.mark_all_dirty();
         }
         // Native inputs() omits datum-hosted sketches. Blanket dirtying alone can still prepare a solid
         // on the old frame, so dirty face-derived datum sketches as barriers without solving them.
@@ -400,6 +422,7 @@ mod tests {
                 down: None,
                 sketch: sk,
                 profiles: None,
+                profiles_at: None,
                 height: 2.0.into(),
                 op: Op::NewBody,
                 direction: Direction::Normal,
@@ -535,6 +558,7 @@ mod tests {
                 down: None,
                 sketch: sk,
                 profiles: None,
+                profiles_at: None,
                 height: 2.0.into(),
                 op: Op::NewBody,
                 direction: Direction::Normal,
@@ -585,6 +609,7 @@ mod tests {
                 down: None,
                 sketch: sk,
                 profiles: None,
+                profiles_at: None,
                 height: 2.0.into(),
                 op: Op::NewBody,
                 direction: Direction::Normal,
