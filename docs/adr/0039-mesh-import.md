@@ -35,5 +35,5 @@ Security addendum (F-126): QymCAD's readers open files named inside a mesh and i
 libraries (parsed exactly like the reader) to single names in the mesh's folder opened with `O_NOFOLLOW|O_NONBLOCK`,
 reads them once, counts them toward the 16 MiB cap, and inflates 3MF/zipped AMF through a counter capped at 64 MiB.
 The native reader, which only takes a path, then runs on a private 0700 copy of exactly those bytes in the temp dir,
-so nothing swapped in after the checks reaches it. Secondary files in subfolders are refused (rare; flatten them).
+so nothing swapped in after the checks reaches it. Secondary files in subfolders are refused (rare; flatten them). Repeated references are read once; the copy is written with `create_new`, so a reference that names the mesh itself (or folds onto it or another one on a case-insensitive disk) is refused instead of overwriting checked bytes.
 

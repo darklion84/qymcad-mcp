@@ -82,6 +82,27 @@ fn gltf_buffer_beside_the_file_is_read_and_one_outside_is_refused() {
     let through = d.join("mesh/through.gltf");
     write_gltf(&through, "sub/up/outside.bin");
     refused(&through, "in a subfolder");
+    // A buffer that names the mesh itself (also by another case on a case-folding disk) would overwrite the checked
+    // bytes in the staged copy: refused.
+    let own = d.join("mesh/own.gltf");
+    write_gltf(&own, "own.gltf");
+    refused(&own, "names the mesh itself");
+    let folded = d.join("mesh/fold.gltf");
+    write_gltf(&folded, "FOLD.gltf");
+    if d.join("mesh/FOLD.gltf").exists() {
+        refused(&folded, "names the mesh itself");
+    }
+    // The same buffer named twice is read once and imported.
+    let twice = d.join("mesh/twice.gltf");
+    std::fs::write(
+        &twice,
+        std::fs::read_to_string(&ok).unwrap().replace(
+            r#""buffers":[{"uri":"tri.bin","byteLength":36}]"#,
+            r#""buffers":[{"uri":"tri.bin","byteLength":36},{"uri":"tri.bin","byteLength":36}]"#,
+        ),
+    )
+    .unwrap();
+    assert_eq!(import(&twice).unwrap().pieces[0].triangles, 1);
     // A FIFO must neither block the import nor be read.
     assert!(std::process::Command::new("mkfifo").arg(d.join("mesh/fifo.bin")).status().unwrap().success());
     let fifo = d.join("mesh/fifo.gltf");

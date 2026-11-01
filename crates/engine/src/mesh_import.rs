@@ -155,7 +155,12 @@ fn preflight(path: &Path, format: MeshFormat) -> Result<Checked> {
         _ => Vec::new(),
     };
     let mut secondary = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for (reference, optional) in references {
+        // The same name twice is one file: read it once (a second read could see a swapped file).
+        if !seen.insert(reference.clone()) {
+            continue;
+        }
         if let Some(data) = secondary_file(path, &reference, optional, &mut total)? {
             secondary.push((std::path::PathBuf::from(reference), data));
         }
@@ -300,14 +305,22 @@ fn stage(path: &Path, checked: &Checked) -> Result<(Staged, std::path::PathBuf)>
     let name = path.file_name().ok_or_else(|| Error::Invalid(format!("mesh path has no file name: {}", path.display())))?;
     let dir = crate::export::private_dir_next_to(&std::env::temp_dir().join(name)).map_err(io)?;
     let staged = Staged(dir);
-    let main = staged.0.join(name);
-    std::fs::write(&main, &checked.bytes).map_err(io)?;
-    for (relative, data) in &checked.secondary {
-        let target = staged.0.join(relative);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(io)?;
+    // `create_new`: a secondary that names the mesh itself, or two names one case-insensitive file system folds
+    // together, is refused instead of overwriting bytes that were checked.
+    let write_new = |target: &Path, data: &[u8], what: &str| -> Result<()> {
+        use std::io::Write;
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(target) {
+            Ok(mut file) => file.write_all(data).map_err(io),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(Error::Invalid(format!("mesh input refers to `{what}`, which names the mesh itself or another referenced file")))
+            }
+            Err(e) => Err(io(e)),
         }
-        std::fs::write(&target, data).map_err(io)?;
+    };
+    let main = staged.0.join(name);
+    write_new(&main, &checked.bytes, &name.to_string_lossy())?;
+    for (relative, data) in &checked.secondary {
+        write_new(&staged.0.join(relative), data, &relative.to_string_lossy())?;
     }
     Ok((staged, main))
 }
