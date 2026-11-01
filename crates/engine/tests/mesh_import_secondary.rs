@@ -25,6 +25,25 @@ fn write_gltf(path: &Path, uri: &str) {
     std::fs::write(path, json).unwrap();
 }
 
+/// A `.glb` whose JSON chunks name these buffer URIs in order (no BIN chunk).
+fn glb_with_json_chunks(uris: &[&str]) -> Vec<u8> {
+    let mut chunks = Vec::new();
+    for uri in uris {
+        let mut json = format!(r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"uri":"{uri}","byteLength":36}}]}}"#).into_bytes();
+        while !json.len().is_multiple_of(4) {
+            json.push(b' ');
+        }
+        chunks.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        chunks.extend_from_slice(&0x4E4F_534A_u32.to_le_bytes());
+        chunks.extend_from_slice(&json);
+    }
+    let mut out = b"glTF".to_vec();
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&((12 + chunks.len()) as u32).to_le_bytes());
+    out.extend_from_slice(&chunks);
+    out
+}
+
 fn import(path: &Path) -> Result<qymcad_engine::MeshImportResult, String> {
     Session::new_part().import_mesh(path, None, None, 1.0, None).map_err(|e| e.to_string())
 }
@@ -57,12 +76,21 @@ fn gltf_buffer_beside_the_file_is_read_and_one_outside_is_refused() {
     std::os::unix::fs::symlink(d.join("outside.bin"), d.join("mesh/link.bin")).unwrap();
     let link = d.join("mesh/link.gltf");
     write_gltf(&link, "link.bin");
-    refused(&link, "not a regular file");
+    refused(&link, "a symbolic link");
     std::fs::create_dir(d.join("mesh/sub")).unwrap();
     std::os::unix::fs::symlink(d.as_path(), d.join("mesh/sub/up")).unwrap();
     let through = d.join("mesh/through.gltf");
     write_gltf(&through, "sub/up/outside.bin");
-    refused(&through, "outside the mesh's folder");
+    refused(&through, "in a subfolder");
+    // A FIFO must neither block the import nor be read.
+    assert!(std::process::Command::new("mkfifo").arg(d.join("mesh/fifo.bin")).status().unwrap().success());
+    let fifo = d.join("mesh/fifo.gltf");
+    write_gltf(&fifo, "fifo.bin");
+    refused(&fifo, "not a regular file");
+    // The native GLB reader keeps the LAST JSON chunk: a harmless first one must not hide a second that escapes.
+    let two = d.join("mesh/two.glb");
+    std::fs::write(&two, glb_with_json_chunks(&["tri.bin", "../outside.bin"])).unwrap();
+    refused(&two, "`../outside.bin`: not a plain relative path");
     // 16 MiB buffer + the .gltf itself > 16 MiB.
     std::fs::write(d.join("mesh/big.bin"), vec![0u8; 16 * 1024 * 1024]).unwrap();
     let big = d.join("mesh/big.gltf");
@@ -100,7 +128,7 @@ fn obj_material_library_must_lie_beside_the_file() {
     std::os::unix::fs::symlink("/dev/zero", d.join("mesh/zero.mtl")).unwrap();
     let zero = d.join("mesh/zero.obj");
     std::fs::write(&zero, format!("mtllib zero.mtl\n{body}")).unwrap();
-    refused(&zero, "not a regular file");
+    refused(&zero, "a symbolic link");
     std::fs::remove_dir_all(d).unwrap();
 }
 

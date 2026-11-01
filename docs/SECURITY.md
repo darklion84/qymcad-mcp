@@ -43,10 +43,13 @@ then the oldest files above 200 previous logs. Logging failures disable logging 
 
 - **Mesh imports that reach other files or inflate without bound.** `import_mesh` reads at most 16 MiB, and
   QymCAD's readers follow paths written inside a mesh (glTF buffer `uri`, OBJ `mtllib`) and inflate ZIP
-  containers (3MF, zipped AMF) with no limit (FINDINGS F-126). Before a reader runs, every such file must be a
-  plain relative path to a regular file in the mesh's folder (no `..`, absolute path, symlink or device) and
-  counts toward the 16 MiB; a container is inflated and counted first and refused past 64 MiB, whatever its
-  directory declares. Evidence: `mesh_import_secondary.rs`.
+  containers (3MF, zipped AMF) with no limit (FINDINGS F-126). Before a reader runs, every such file must be one
+  name directly in the mesh's folder (no `..`, absolute path, subfolder), opened with `O_NOFOLLOW|O_NONBLOCK`
+  (no symlink, FIFO or device), regular, and it counts toward the 16 MiB; GLB chunks are walked like the reader
+  and the URIs of every JSON chunk are checked. A container is inflated and counted first and refused past
+  64 MiB, whatever its directory declares. The reader then runs on a private copy (mode 0700, temp dir) of
+  exactly the bytes that were checked, so a file swapped after the checks never reaches it. Evidence:
+  `mesh_import_secondary.rs`, `mesh_import::stage_tests`.
 
 - **Kernel output on the protocol channel.** OpenCASCADE prints to stdout (F-019); the server moves fd 1 to
   stderr so nothing but JSON-RPC reaches the client (ADR 0005).

@@ -364,7 +364,7 @@ static STAGE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 
 /// Create a fresh directory `.{stem}.qymcad-mcp-{pid}-{n}.d` (mode 0700) next to `path`, like `mkdtemp`: a name that
 /// already exists, whatever it is, is skipped rather than used.
-fn private_dir_next_to(path: &Path) -> std::io::Result<std::path::PathBuf> {
+pub(crate) fn private_dir_next_to(path: &Path) -> std::io::Result<std::path::PathBuf> {
     private_dir_next_to_with_seq(path, &STAGE_SEQ)
 }
 

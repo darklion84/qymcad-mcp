@@ -14,6 +14,8 @@ qymcad-testkit.workspace = true
 qymcad-i18n.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# openat/O_NOFOLLOW for mesh secondary files (ADR 0039); already in the build through qymcad-mcp.
+libc = "0.2"
 schemars.workspace = true
 # PNG compression for `render` (ADR 0004). Already in the build through qymcad-io (zip, usvg): no new crate.
 flate2 = "1.1"

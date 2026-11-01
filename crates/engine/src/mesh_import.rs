@@ -91,7 +91,14 @@ fn format_name(format: MeshFormat) -> &'static str {
     }
 }
 
-fn preflight(path: &Path, format: MeshFormat) -> Result<Vec<u8>> {
+/// What `preflight` read and checked: the reader is given only these bytes (staged privately, see `stage`).
+struct Checked {
+    bytes: Vec<u8>,
+    /// Secondary files by the relative path the reader will join to the mesh's folder.
+    secondary: Vec<(std::path::PathBuf, Vec<u8>)>,
+}
+
+fn preflight(path: &Path, format: MeshFormat) -> Result<Checked> {
     let metadata = std::fs::metadata(path).map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?;
     if !metadata.is_file() {
         return Err(Error::Invalid(format!("mesh input is not a file: {}", path.display())));
@@ -99,7 +106,19 @@ fn preflight(path: &Path, format: MeshFormat) -> Result<Vec<u8>> {
     if metadata.len() > MAX_BYTES {
         return Err(Error::Invalid(format!("mesh input byte limit is {MAX_BYTES}, measured {}", metadata.len())));
     }
-    let bytes = std::fs::read(path).map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?;
+    // Read once, bounded: a file grown after the size check cannot make this read unbounded.
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(
+            std::fs::File::open(path).map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?,
+            MAX_BYTES + 1,
+        ),
+        &mut bytes,
+    )
+    .map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err(Error::Invalid(format!("mesh input byte limit is {MAX_BYTES}, measured more than {MAX_BYTES}")));
+    }
     if bytes.is_empty() {
         return Err(Error::Invalid("mesh input is empty".into()));
     }
@@ -110,7 +129,7 @@ fn preflight(path: &Path, format: MeshFormat) -> Result<Vec<u8>> {
             return Err(Error::Invalid(format!("mesh triangle limit is {MAX_TRIANGLES}, measured {n}")));
         }
         if n.checked_mul(50).and_then(|v| v.checked_add(84)).is_some_and(|end| end == bytes.len()) {
-            return Ok(bytes);
+            return Ok(Checked { bytes, secondary: Vec::new() });
         }
     }
     // A ZIP container (3MF, zipped AMF) is inflated here, counted, before the native reader touches it: declared
@@ -125,23 +144,23 @@ fn preflight(path: &Path, format: MeshFormat) -> Result<Vec<u8>> {
     }
     // Secondary files the native readers open by a path written inside the mesh (OBJ `mtllib`, glTF buffer `uri`)
     // must lie beside it: a plain relative path, a regular file, inside the mesh's folder; they count to MAX_BYTES.
-    let mut total = metadata.len();
-    match format {
-        MeshFormat::Obj => {
-            for library in obj_material_libraries(&String::from_utf8_lossy(&bytes)) {
-                secondary_file(path, &library, true, &mut total)?;
-            }
+    let mut total = bytes.len() as u64;
+    let references: Vec<(String, bool)> = match format {
+        MeshFormat::Obj => obj_material_libraries(&String::from_utf8_lossy(&bytes)).into_iter().map(|l| (l, true)).collect(),
+        MeshFormat::Gltf | MeshFormat::Glb => gltf_buffer_uris(&bytes)?
+            .into_iter()
+            .filter(|uri| !uri.starts_with("data:"))
+            .map(|uri| (uri.replace("%20", " "), false))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut secondary = Vec::new();
+    for (reference, optional) in references {
+        if let Some(data) = secondary_file(path, &reference, optional, &mut total)? {
+            secondary.push((std::path::PathBuf::from(reference), data));
         }
-        MeshFormat::Gltf | MeshFormat::Glb => {
-            for uri in gltf_buffer_uris(&bytes)? {
-                if !uri.starts_with("data:") {
-                    secondary_file(path, &uri.replace("%20", " "), false, &mut total)?;
-                }
-            }
-        }
-        _ => {}
     }
-    Ok(bytes)
+    Ok(Checked { bytes, secondary })
 }
 
 fn zip_within_cap(bytes: &[u8], format: MeshFormat) -> Result<()> {
@@ -184,56 +203,113 @@ fn obj_material_libraries(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// The `uri` of every glTF buffer, from a `.gltf` JSON or the JSON chunk of a `.glb`.
+/// The `uri` of every glTF buffer. A `.glb` is walked chunk by chunk like `qymcad_io::gltf::split_glb` (which keeps
+/// the LAST JSON chunk); the URIs of EVERY JSON chunk are returned, so the check covers whichever one the reader takes.
 fn gltf_buffer_uris(bytes: &[u8]) -> Result<Vec<String>> {
     let not_gltf = || Error::Invalid("mesh input is not a readable glTF".into());
-    let json = if bytes.starts_with(b"glTF") {
-        let len = bytes.get(12..16).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize).ok_or_else(not_gltf)?;
-        bytes.get(20..20usize.checked_add(len).ok_or_else(not_gltf)?).ok_or_else(not_gltf)?
+    let mut documents: Vec<&[u8]> = Vec::new();
+    if bytes.starts_with(b"glTF") {
+        let word = |at: usize| bytes.get(at..at + 4).map(|w| u32::from_le_bytes(w.try_into().unwrap()) as usize);
+        let mut at = 12usize;
+        while at + 8 <= bytes.len() {
+            let (len, kind) = (word(at).ok_or_else(not_gltf)?, word(at + 4).ok_or_else(not_gltf)?);
+            let end = (at + 8).checked_add(len).ok_or_else(not_gltf)?;
+            let body = bytes.get(at + 8..end).ok_or_else(not_gltf)?;
+            if kind == 0x4E4F_534A {
+                documents.push(body);
+            }
+            at = end;
+        }
     } else {
-        bytes
-    };
-    let doc: serde_json::Value = serde_json::from_slice(json).map_err(|_| not_gltf())?;
-    Ok(doc["buffers"]
-        .as_array()
-        .map(|buffers| buffers.iter().filter_map(|b| b["uri"].as_str().map(str::to_string)).collect())
-        .unwrap_or_default())
+        documents.push(bytes);
+    }
+    let mut uris = Vec::new();
+    for json in documents {
+        let doc: serde_json::Value = serde_json::from_slice(json).map_err(|_| not_gltf())?;
+        if let Some(buffers) = doc["buffers"].as_array() {
+            uris.extend(buffers.iter().filter_map(|b| b["uri"].as_str().map(str::to_string)));
+        }
+    }
+    Ok(uris)
 }
 
-/// A file a mesh names inside itself. `optional`: the native reader skips a missing one (OBJ materials).
-fn secondary_file(main: &Path, reference: &str, optional: bool, total: &mut u64) -> Result<()> {
+/// A file a mesh names inside itself, read once. `optional`: the native reader skips a missing one (OBJ materials).
+/// It must be one name in the mesh's folder, not a symlink, a regular file; it is read here once, and the reader later
+/// sees only this copy (`stage`).
+fn secondary_file(main: &Path, reference: &str, optional: bool, total: &mut u64) -> Result<Option<Vec<u8>>> {
     use std::path::Component;
     let refuse = |why: &str| {
         Error::Invalid(format!(
-            "mesh input refers to `{reference}`: {why}; a secondary file must be a plain relative path to a regular file in the mesh's folder"
+            "mesh input refers to `{reference}`: {why}; a secondary file must be a regular file named directly in the mesh's folder"
         ))
     };
     let relative = Path::new(reference);
     if reference.is_empty() || !relative.components().all(|c| matches!(c, Component::Normal(_))) {
         return Err(refuse("not a plain relative path"));
     }
+    // One component only: a name in the mesh's own folder cannot leave it, and no directory on the way can be
+    // swapped for a symlink between this check and the open.
+    if relative.components().count() != 1 {
+        return Err(refuse("in a subfolder"));
+    }
     let dir = main.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    let joined = dir.join(relative);
-    let meta = match std::fs::symlink_metadata(&joined) {
-        Ok(meta) => meta,
-        Err(e) if optional && e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+    let room = MAX_BYTES.saturating_sub(*total);
+    let data = match read_beneath(dir, relative, room) {
+        Ok(data) => data,
+        Err(e) if optional && e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.raw_os_error() == Some(libc::ELOOP) => return Err(refuse("a symbolic link")),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Err(refuse("not a regular file")),
         Err(e) => return Err(Error::Io(format!("cannot read secondary mesh file `{reference}`: {e}"))),
     };
-    if !meta.file_type().is_file() {
-        return Err(refuse("not a regular file"));
-    }
-    let inside = match (dir.canonicalize(), joined.canonicalize()) {
-        (Ok(d), Ok(f)) => f.starts_with(d),
-        _ => false,
-    };
-    if !inside {
-        return Err(refuse("outside the mesh's folder"));
-    }
-    *total = total.saturating_add(meta.len());
+    *total = total.saturating_add(data.len() as u64);
     if *total > MAX_BYTES {
-        return Err(Error::Invalid(format!("mesh input byte limit (with its secondary files) is {MAX_BYTES}, measured {total}")));
+        return Err(Error::Invalid(format!(
+            "mesh input byte limit (with its secondary files) is {MAX_BYTES}, measured more than {MAX_BYTES}"
+        )));
     }
-    Ok(())
+    Ok(Some(data))
+}
+
+/// Open the single-component `name` in `dir` without following a symlink (`O_NOFOLLOW`: the kernel refuses one with
+/// `ELOOP`) and without blocking on a FIFO (`O_NONBLOCK`), and read at most `room + 1` bytes of it. A non-regular file
+/// is `InvalidData`.
+fn read_beneath(dir: &Path, name: &Path, room: u64) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(dir.join(name))?;
+    if !file.metadata()?.file_type().is_file() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "not a regular file"));
+    }
+    let mut data = Vec::new();
+    file.take(room + 1).read_to_end(&mut data)?;
+    Ok(data)
+}
+
+/// A private copy (mode 0700, in the temp dir) of exactly the checked bytes under the same names, for the native
+/// reader, which opens files by path: nothing swapped in after the checks can reach it. Removed on drop.
+struct Staged(std::path::PathBuf);
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn stage(path: &Path, checked: &Checked) -> Result<(Staged, std::path::PathBuf)> {
+    let io = |e: std::io::Error| Error::Io(format!("cannot stage the mesh for reading: {e}"));
+    let name = path.file_name().ok_or_else(|| Error::Invalid(format!("mesh path has no file name: {}", path.display())))?;
+    let dir = crate::export::private_dir_next_to(&std::env::temp_dir().join(name)).map_err(io)?;
+    let staged = Staged(dir);
+    let main = staged.0.join(name);
+    std::fs::write(&main, &checked.bytes).map_err(io)?;
+    for (relative, data) in &checked.secondary {
+        let target = staged.0.join(relative);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(io)?;
+        }
+        std::fs::write(&target, data).map_err(io)?;
+    }
+    Ok((staged, main))
 }
 
 fn mesh_reader(format: MeshFormat, path: &Path) -> Result<Vec<NamedMesh>> {
@@ -340,8 +416,10 @@ impl Session {
         if embedded && unit.is_some() {
             return Err(Error::Invalid(format!("explicit unit for {} is refused; the file declares its own unit", format_name(detected))));
         }
-        let bytes = preflight(path, detected)?;
-        let parsed = mesh_reader(detected, path)?;
+        let checked = preflight(path, detected)?;
+        let (_staged, staged_path) = stage(path, &checked)?;
+        let parsed = mesh_reader(detected, &staged_path)?;
+        let bytes = checked.bytes;
         if parsed.is_empty() {
             return Err(Error::Invalid("mesh contains no pieces".into()));
         }
@@ -441,5 +519,26 @@ impl Session {
             warnings: rebuild.warnings.clone(),
             rebuild,
         })
+    }
+}
+
+#[cfg(test)]
+mod stage_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn stage_copies_exactly_the_checked_bytes_privately_and_removes_them() {
+        let checked = Checked { bytes: b"main".to_vec(), secondary: vec![(std::path::PathBuf::from("buf.bin"), b"secondary".to_vec())] };
+        let (staged, main) = stage(Path::new("/nowhere/model.gltf"), &checked).unwrap();
+        let dir = staged.0.clone();
+        assert_eq!(main, dir.join("model.gltf"));
+        assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert!(dir.starts_with(std::env::temp_dir()));
+        assert_eq!(std::fs::read(&main).unwrap(), b"main");
+        assert_eq!(std::fs::read(dir.join("buf.bin")).unwrap(), b"secondary");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        drop(staged);
+        assert!(!dir.exists());
     }
 }

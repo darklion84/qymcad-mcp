@@ -1313,6 +1313,7 @@ name = "qymcad-engine"
 version = "0.1.1-dev.20261026.6"
 dependencies = [
  "flate2",
+ "libc",
  "png",
  "qymcad-core",
  "qymcad-i18n",
