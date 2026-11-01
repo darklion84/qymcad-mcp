@@ -31,7 +31,7 @@ is refused at one point, `Session::source_body`/`topo_body`, with one text namin
 Only `move` takes a mesh body (`source_body_or_mesh`); render and mesh export read the stored triangles.
 
 Security addendum (F-126): QymCAD's readers open files named inside a mesh and inflate ZIP parts without a limit.
-`preflight` reads the mesh once (bounded), confines glTF buffer URIs (from every GLB JSON chunk) and OBJ material
+`preflight` opens the mesh once with `O_NOFOLLOW|O_NONBLOCK` (type and size from that handle; the MCP `checked_path` already refuses a symlink and checks the root, this closes the window after it) and reads it once (bounded), confines glTF buffer URIs (from every GLB JSON chunk) and OBJ material
 libraries (parsed exactly like the reader) to single names in the mesh's folder opened with `O_NOFOLLOW|O_NONBLOCK`,
 reads them once, counts them toward the 16 MiB cap, and inflates 3MF/zipped AMF through a counter capped at 64 MiB.
 The native reader, which only takes a path, then runs on a private 0700 copy of exactly those bytes in the temp dir,

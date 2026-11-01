@@ -121,6 +121,17 @@ fn gltf_buffer_beside_the_file_is_read_and_one_outside_is_refused() {
 }
 
 #[test]
+fn a_symlinked_or_special_main_file_is_refused() {
+    let d = dir();
+    std::fs::write(d.join("outside.obj"), "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").unwrap();
+    std::os::unix::fs::symlink(d.join("outside.obj"), d.join("mesh/link.obj")).unwrap();
+    refused(&d.join("mesh/link.obj"), "is a symbolic link");
+    assert!(std::process::Command::new("mkfifo").arg(d.join("mesh/fifo.stl")).status().unwrap().success());
+    refused(&d.join("mesh/fifo.stl"), "not a file");
+    std::fs::remove_dir_all(d).unwrap();
+}
+
+#[test]
 fn obj_material_library_must_lie_beside_the_file() {
     let d = dir();
     let body = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";

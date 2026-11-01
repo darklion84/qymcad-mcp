@@ -99,23 +99,27 @@ struct Checked {
 }
 
 fn preflight(path: &Path, format: MeshFormat) -> Result<Checked> {
-    let metadata = std::fs::metadata(path).map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?;
+    // One open, no symlink at the last component (`O_NOFOLLOW`), no stall on a FIFO (`O_NONBLOCK`); type and size come
+    // from that handle and the read is bounded, so nothing swapped in after the caller's path check is read.
+    let cannot = |e: std::io::Error| Error::Io(format!("cannot read mesh source {}: {e}", path.display()));
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        match std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path) {
+            Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
+                return Err(Error::Invalid(format!("mesh input is a symbolic link: {}", path.display())))
+            }
+            other => other.map_err(cannot)?,
+        }
+    };
+    let metadata = file.metadata().map_err(cannot)?;
     if !metadata.is_file() {
         return Err(Error::Invalid(format!("mesh input is not a file: {}", path.display())));
     }
     if metadata.len() > MAX_BYTES {
         return Err(Error::Invalid(format!("mesh input byte limit is {MAX_BYTES}, measured {}", metadata.len())));
     }
-    // Read once, bounded: a file grown after the size check cannot make this read unbounded.
     let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(
-            std::fs::File::open(path).map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?,
-            MAX_BYTES + 1,
-        ),
-        &mut bytes,
-    )
-    .map_err(|e| Error::Io(format!("cannot read mesh source {}: {e}", path.display())))?;
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, MAX_BYTES + 1), &mut bytes).map_err(cannot)?;
     if bytes.len() as u64 > MAX_BYTES {
         return Err(Error::Invalid(format!("mesh input byte limit is {MAX_BYTES}, measured more than {MAX_BYTES}")));
     }
