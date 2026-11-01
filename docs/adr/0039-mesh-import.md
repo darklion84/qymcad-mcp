@@ -29,3 +29,10 @@ Evidence: `tasks/research-medC.md` I2, `tasks/research-medC-probes.md` sections 
 Every B-rep operation on a mesh body (topology, select, modifiers, arrays, mirror, split, boolean, sketch targets)
 is refused at one point, `Session::source_body`/`topo_body`, with one text naming the body as an imported mesh.
 Only `move` takes a mesh body (`source_body_or_mesh`); render and mesh export read the stored triangles.
+
+Security addendum (F-126): QymCAD's readers open files named inside a mesh and inflate ZIP parts without a limit.
+`preflight` now confines glTF buffer URIs and OBJ material libraries to plain relative regular files in the mesh's
+folder, counts them toward the 16 MiB cap, and inflates 3MF/zipped AMF through a counter capped at 64 MiB before any
+reader runs. Residual: the readers reopen the path after the check, so a local process able to swap files in that
+folder between check and read is out of scope (as for every path tool, docs/SECURITY.md).
+

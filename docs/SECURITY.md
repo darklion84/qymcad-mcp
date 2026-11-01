@@ -41,6 +41,13 @@ then the oldest files above 200 previous logs. Logging failures disable logging 
   string of 100 000 `(` overflowed the stack and killed the server. Every expression is checked first: at most
   1000 characters and 64 levels of parentheses, `^` or consecutive signs (`value::check_expr`, FINDINGS F-031).
 
+- **Mesh imports that reach other files or inflate without bound.** `import_mesh` reads at most 16 MiB, and
+  QymCAD's readers follow paths written inside a mesh (glTF buffer `uri`, OBJ `mtllib`) and inflate ZIP
+  containers (3MF, zipped AMF) with no limit (FINDINGS F-126). Before a reader runs, every such file must be a
+  plain relative path to a regular file in the mesh's folder (no `..`, absolute path, symlink or device) and
+  counts toward the 16 MiB; a container is inflated and counted first and refused past 64 MiB, whatever its
+  directory declares. Evidence: `mesh_import_secondary.rs`.
+
 - **Kernel output on the protocol channel.** OpenCASCADE prints to stdout (F-019); the server moves fd 1 to
   stderr so nothing but JSON-RPC reaches the client (ADR 0005).
 

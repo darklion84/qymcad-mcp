@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Added
-- `import_mesh` imports STL, OBJ, PLY, glTF/GLB, 3MF and AMF as embedded MeshPiece bodies with app-compatible units, placements, groups, one-shot scale, pre-parse byte/ZIP/triangle caps, batch/undo support and mesh persistence.
+- `import_mesh` imports STL, OBJ, PLY, glTF/GLB, 3MF and AMF as embedded MeshPiece bodies with app-compatible units, placements, groups, one-shot scale, pre-parse byte/ZIP/triangle caps (ZIP parts counted by real inflation), secondary files (glTF buffers, OBJ materials) confined to the mesh's folder (F-126), batch/undo support and mesh persistence.
 - `recognise` converts imported mesh bodies to exact-surface or polyhedron B-reps with formula-driven settings, pre-native caps/ranges, closed-solid validation, persistence, downstream tools, batch and undo support (ADR 0040).
 - `remove_face` removes and heals a selected face set with persistent FaceKey witnesses, exact rollback on native healing failure, batch/undo support, and whole-set RemoveFace re-pick preserving the feature id. This is the first implemented T2 feature edit; other feature re-picks remain partial.
 

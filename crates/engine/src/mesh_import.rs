@@ -113,21 +113,116 @@ fn preflight(path: &Path, format: MeshFormat) -> Result<Vec<u8>> {
             return Ok(bytes);
         }
     }
-    if matches!(format, MeshFormat::ThreeMf) {
-        let file = std::fs::File::open(path).map_err(|e| Error::Io(format!("cannot inspect 3MF central directory: {e}")))?;
-        let mut archive = zip::ZipArchive::new(file).map_err(|e| Error::Invalid(format!("cannot inspect 3MF central directory: {e}")))?;
-        let mut total = 0u64;
-        for i in 0..archive.len() {
-            let entry = archive.by_index_raw(i).map_err(|e| Error::Invalid(format!("cannot inspect 3MF central directory: {e}")))?;
-            total = total.saturating_add(entry.size());
-            if total > MAX_ZIP_UNCOMPRESSED {
-                return Err(Error::Invalid(format!(
-                    "3MF declared uncompressed limit is {MAX_ZIP_UNCOMPRESSED}, measured at least {total}"
-                )));
+    // A ZIP container (3MF, zipped AMF) is inflated here, counted, before the native reader touches it: declared
+    // sizes are only a quick first refusal, a lying central directory is caught by the real inflated count.
+    let zipped = match format {
+        MeshFormat::ThreeMf => true,
+        MeshFormat::Amf => bytes.starts_with(b"PK"),
+        _ => false,
+    };
+    if zipped {
+        zip_within_cap(&bytes, format)?;
+    }
+    // Secondary files the native readers open by a path written inside the mesh (OBJ `mtllib`, glTF buffer `uri`)
+    // must lie beside it: a plain relative path, a regular file, inside the mesh's folder; they count to MAX_BYTES.
+    let mut total = metadata.len();
+    match format {
+        MeshFormat::Obj => {
+            for line in String::from_utf8_lossy(&bytes).lines() {
+                let mut words = line.split_whitespace();
+                if words.next() == Some("mtllib") {
+                    secondary_file(path, &words.collect::<Vec<_>>().join(" "), true, &mut total)?;
+                }
             }
         }
+        MeshFormat::Gltf | MeshFormat::Glb => {
+            for uri in gltf_buffer_uris(&bytes)? {
+                if !uri.starts_with("data:") {
+                    secondary_file(path, &uri.replace("%20", " "), false, &mut total)?;
+                }
+            }
+        }
+        _ => {}
     }
     Ok(bytes)
+}
+
+fn zip_within_cap(bytes: &[u8], format: MeshFormat) -> Result<()> {
+    use std::io::Read;
+    let label = format_name(format);
+    let bad = |e: String| Error::Invalid(format!("cannot inspect {label} archive: {e}"));
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| bad(e.to_string()))?;
+    let mut declared = 0u64;
+    for i in 0..archive.len() {
+        declared = declared.saturating_add(archive.by_index_raw(i).map_err(|e| bad(e.to_string()))?.size());
+        if declared > MAX_ZIP_UNCOMPRESSED {
+            return Err(Error::Invalid(format!(
+                "{label} declared uncompressed limit is {MAX_ZIP_UNCOMPRESSED}, measured at least {declared}"
+            )));
+        }
+    }
+    let mut inflated = 0u64;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| bad(e.to_string()))?;
+        let room = MAX_ZIP_UNCOMPRESSED - inflated;
+        inflated += std::io::copy(&mut entry.take(room + 1), &mut std::io::sink()).map_err(|e| bad(e.to_string()))?;
+        if inflated > MAX_ZIP_UNCOMPRESSED {
+            return Err(Error::Invalid(format!("{label} uncompressed limit is {MAX_ZIP_UNCOMPRESSED}, inflated at least {inflated}")));
+        }
+    }
+    Ok(())
+}
+
+/// The `uri` of every glTF buffer, from a `.gltf` JSON or the JSON chunk of a `.glb`.
+fn gltf_buffer_uris(bytes: &[u8]) -> Result<Vec<String>> {
+    let not_gltf = || Error::Invalid("mesh input is not a readable glTF".into());
+    let json = if bytes.starts_with(b"glTF") {
+        let len = bytes.get(12..16).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize).ok_or_else(not_gltf)?;
+        bytes.get(20..20usize.checked_add(len).ok_or_else(not_gltf)?).ok_or_else(not_gltf)?
+    } else {
+        bytes
+    };
+    let doc: serde_json::Value = serde_json::from_slice(json).map_err(|_| not_gltf())?;
+    Ok(doc["buffers"]
+        .as_array()
+        .map(|buffers| buffers.iter().filter_map(|b| b["uri"].as_str().map(str::to_string)).collect())
+        .unwrap_or_default())
+}
+
+/// A file a mesh names inside itself. `optional`: the native reader skips a missing one (OBJ materials).
+fn secondary_file(main: &Path, reference: &str, optional: bool, total: &mut u64) -> Result<()> {
+    use std::path::Component;
+    let refuse = |why: &str| {
+        Error::Invalid(format!(
+            "mesh input refers to `{reference}`: {why}; a secondary file must be a plain relative path to a regular file in the mesh's folder"
+        ))
+    };
+    let relative = Path::new(reference);
+    if reference.is_empty() || !relative.components().all(|c| matches!(c, Component::Normal(_))) {
+        return Err(refuse("not a plain relative path"));
+    }
+    let dir = main.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let joined = dir.join(relative);
+    let meta = match std::fs::symlink_metadata(&joined) {
+        Ok(meta) => meta,
+        Err(e) if optional && e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(Error::Io(format!("cannot read secondary mesh file `{reference}`: {e}"))),
+    };
+    if !meta.file_type().is_file() {
+        return Err(refuse("not a regular file"));
+    }
+    let inside = match (dir.canonicalize(), joined.canonicalize()) {
+        (Ok(d), Ok(f)) => f.starts_with(d),
+        _ => false,
+    };
+    if !inside {
+        return Err(refuse("outside the mesh's folder"));
+    }
+    *total = total.saturating_add(meta.len());
+    if *total > MAX_BYTES {
+        return Err(Error::Invalid(format!("mesh input byte limit (with its secondary files) is {MAX_BYTES}, measured {total}")));
+    }
+    Ok(())
 }
 
 fn mesh_reader(format: MeshFormat, path: &Path) -> Result<Vec<NamedMesh>> {

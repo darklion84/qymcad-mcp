@@ -2384,3 +2384,11 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** a cylindrical hole wall may be split by its seam into two cylinder faces (observed for a face hole on a body that already had another hole; a sibling hole of the same size was one face). `add_remove_face` with one half of the wall plus the blind bottom does not refuse: it rebuilds exactly like removing the bottom alone — the blind hole becomes a through hole (40x40x20 box with three Ø10 depth-8 holes: 29172.57 mm3 instead of the healed 30743.36). Only the full set (both wall halves + bottom) heals the hole.
 - **Server policy:** no automatic completion of a face set; the result reports volume and face count so the caller can check it, and the docs tell callers to select every face of the detail (a description such as the feature's faces, or all cylinder faces of the hole), as the app's help does.
 - **Evidence:** test: `golden_remove_face::remove_face_repick_replaces_the_whole_set_and_undo_restores_it` (asserts two wall halves and the healed value); observed: probe during C1 acceptance (fresh remove_face of half wall + bottom → 29172.566611769176, no error).
+
+## F-126 Native mesh readers follow paths inside the file and inflate ZIP parts without a limit
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `qymcad_io::import_gltf` reads every non-`data:` buffer `uri` as `dir.join(uri)`: an absolute path or `../` reads any file the process can open, outside the mesh's folder and outside any root. `import_obj` reads every `mtllib` the same way (`/dev/zero` never ends). `import_3mf` and zipped `import_amf` `read_to_string` ZIP entries; the zip reader does not stop at the declared size, so a directory that declares 100 bytes inflates 64 MiB + 1 before the reader fails.
+- **Server policy:** `import_mesh` checks secondary files (plain relative path, regular file, inside the mesh's folder, counted toward the 16 MiB input cap; a missing OBJ material library is skipped as the reader does) and inflates and counts ZIP containers itself (64 MiB) before calling a reader.
+- **Evidence:** test: `mesh_import_secondary` (3 tests); observed: with the check disabled, a `.gltf` whose buffer is `../outside.bin` imported that file's triangle, and a lying AMF failed only after full inflation (`io-amf-not-amf`).
+
