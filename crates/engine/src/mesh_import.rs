@@ -128,11 +128,8 @@ fn preflight(path: &Path, format: MeshFormat) -> Result<Vec<u8>> {
     let mut total = metadata.len();
     match format {
         MeshFormat::Obj => {
-            for line in String::from_utf8_lossy(&bytes).lines() {
-                let mut words = line.split_whitespace();
-                if words.next() == Some("mtllib") {
-                    secondary_file(path, &words.collect::<Vec<_>>().join(" "), true, &mut total)?;
-                }
+            for library in obj_material_libraries(&String::from_utf8_lossy(&bytes)) {
+                secondary_file(path, &library, true, &mut total)?;
             }
         }
         MeshFormat::Gltf | MeshFormat::Glb => {
@@ -171,6 +168,20 @@ fn zip_within_cap(bytes: &[u8], format: MeshFormat) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The `mtllib` references exactly as `qymcad_io::obj::parse` reads them: backslash-continued lines joined, `#`
+/// comments cut, the rest of the line's words joined by one space. Any other reading would check a different path
+/// than the one the reader opens.
+fn obj_material_libraries(text: &str) -> Vec<String> {
+    let joined = text.replace("\\\r\n", " ").replace("\\\n", " ");
+    joined
+        .lines()
+        .filter_map(|raw| {
+            let mut words = raw.split('#').next().unwrap_or("").split_whitespace();
+            (words.next() == Some("mtllib")).then(|| words.collect::<Vec<_>>().join(" "))
+        })
+        .collect()
 }
 
 /// The `uri` of every glTF buffer, from a `.gltf` JSON or the JSON chunk of a `.glb`.

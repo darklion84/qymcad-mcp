@@ -90,6 +90,13 @@ fn obj_material_library_must_lie_beside_the_file() {
     let device = d.join("mesh/device.obj");
     std::fs::write(&device, format!("mtllib /dev/zero\n{body}")).unwrap();
     refused(&device, "not a plain relative path");
+    // The reader joins a backslash-continued line and cuts `#` comments: "mtllib \\\n/dev/zero" opens /dev/zero.
+    let continued = d.join("mesh/continued.obj");
+    std::fs::write(&continued, format!("mtllib \\\n/dev/zero\n{body}")).unwrap();
+    refused(&continued, "`/dev/zero`: not a plain relative path");
+    let commented = d.join("mesh/commented.obj");
+    std::fs::write(&commented, format!("mtllib ../outside.mtl # colours\n{body}")).unwrap();
+    refused(&commented, "`../outside.mtl`: not a plain relative path");
     std::os::unix::fs::symlink("/dev/zero", d.join("mesh/zero.mtl")).unwrap();
     let zero = d.join("mesh/zero.obj");
     std::fs::write(&zero, format!("mtllib zero.mtl\n{body}")).unwrap();
