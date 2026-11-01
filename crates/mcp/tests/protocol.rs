@@ -274,6 +274,7 @@ fn lists_tools_with_object_schemas() {
         "hole",
         "shell",
         "push_face",
+        "remove_face",
         "move",
         "linear_array",
         "circular_array",
@@ -979,6 +980,29 @@ fn pattern_update_by_returned_id() {
     assert!((result["volume_mm3"].as_f64().unwrap() - 2000.0).abs() < 1e-6);
     assert!((result["bbox"][0].as_f64().unwrap()).abs() < 1e-6);
     assert!((result["bbox"][3].as_f64().unwrap() - 70.0).abs() < 1e-6);
+}
+
+#[test]
+fn remove_face_is_registered_descriptive_batchable_and_undoable_over_stdio() {
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    c.ok("sketch_create", json!({"plane":"XY","name":"stock"}));
+    c.ok("sketch_add", json!({"sketch":"stock","entities":[{"type":"rect","w":40,"h":40}]}));
+    let batch = c.ok(
+        "batch",
+        json!({"steps":[
+            {"tool":"extrude","args":{"sketch":"stock","height":20,"name":"body"}},
+            {"tool":"hole","args":{"body":"body","face":{"facing":"+z"},"diameter":10,"depth":8,"at":[0,0,20],"name":"hole"}},
+            {"tool":"remove_face","args":{"body":"hole","faces":{"of_feature":"hole"}}}
+        ]}),
+    );
+    assert_eq!(batch["steps"].as_array().unwrap().len(), 3);
+    assert!(batch["errors"].as_array().unwrap_or(&Vec::new()).is_empty());
+    let undone = c.ok("undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "batch");
+    let info = c.ok("doc_info", json!({}));
+    assert!(info["timeline"].as_array().unwrap().iter().all(|node| node["kind"] != "removeface"));
 }
 
 #[test]

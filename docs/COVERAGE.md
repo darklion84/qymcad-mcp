@@ -15,7 +15,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P9 | Draft | not covered | Face draft up to 60° | none | `FeatureKind::Draft,PartTool::Draft` |
 | P10 | Thread | partial | Auger mode | `thread` | `FeatureKind::Thread,FeatureKind::Auger,PartTool::Thread` |
 | P11 | Push face | covered | — | `push_face` | `FeatureKind::PushFace,PartTool::PushFace` |
-| P12 | Remove face | not covered | Heal body after face removal | none | `FeatureKind::RemoveFace,PartTool::RemoveFace` |
+| P12 | Remove face | covered | Native face healing, persistent face witnesses, failure rollback, save/open and app-path parameter edits | `remove_face` | `FeatureKind::RemoveFace,PartTool::RemoveFace` |
 | P13 | Split body | covered | — | `split` | `FeatureKind::SplitBody,PartTool::SplitBody` |
 | P14 | Split faces | not covered | Split a face without splitting the body | none | `FeatureKind::SplitFace,PartTool::SplitFace` |
 | P15 | Thicken | not covered | Thicken from a face | none | `FeatureKind::Thicken,PartTool::Thicken` |
@@ -47,7 +47,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | S9 | Sketch arrays | covered | Linked linear and circular copies; strict 2..=1000 counts and 1000 total-copy cap; native sector spacing retained | `sketch_pattern` | — |
 | S10 | Delete sketch geometry | covered | — | `sketch_remove` | — |
 | T1 | Parameters and formulas | covered | — | `param_set`, `param_delete` | — |
-| T2 | Edit feature | partial | Re-pick edges and faces | `dimension_set` | — |
+| T2 | Edit feature | partial | Only RemoveFace whole-set re-pick is implemented; other feature re-picks remain missing | `remove_face`, `dimension_set` | — |
 | T3 | Delete feature and undo | covered | — | `feature_delete`, `undo` | — |
 | T4 | Rename feature | not covered | — | none | — |
 | T5 | Reorder feature | not covered | — | none | — |

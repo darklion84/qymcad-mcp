@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `remove_face` removes and heals a selected face set with persistent FaceKey witnesses, exact rollback on native healing failure, batch/undo support, and whole-set RemoveFace re-pick preserving the feature id. This is the first implemented T2 feature edit; other feature re-picks remain partial.
+
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 

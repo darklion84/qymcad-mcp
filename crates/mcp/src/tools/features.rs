@@ -333,6 +333,22 @@ pub struct PushFaceArgs {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveFaceArgs {
+    /// Body id or name. Default: the part's current body. Face ids must belong to this body.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Faces to remove, as topology ids or one of the existing face descriptions such as {"facing": "+z"}.
+    pub faces: SelArg,
+    /// Existing RemoveFace feature id/name to re-pick instead of creating a node. The whole face set is replaced.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for a new RemoveFace feature. Ignored when re-picking.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 fn zero() -> Num {
     Num::Value(0.0)
 }
@@ -754,11 +770,28 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "push_face",
-            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. raise the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces.", stale!()),
+            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {\"facing\": \"+z\"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later.", stale!()),
             |st, a: PushFaceArgs| {
                 let s = st.doc()?;
                 let (body, face) = (opt_body(s, &a.body)?, a.face.resolve(s)?);
                 feature_json(s.push_face(body, &face, &a.dist, a.name.as_deref()))
+            },
+        ),
+        tool(
+            "remove_face",
+            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is the first T2 feature-edit implementation; other feature re-picks are not supported.", stale!()),
+            |st, a: RemoveFaceArgs| {
+                let s = st.doc()?;
+                let faces = a.faces.resolve(s)?;
+                if let Some(feature) = a.feature {
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_remove_face(feature, &faces).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let (feature, selected, rebuild) = s.remove_face(opt_body(s, &a.body)?, &faces, a.name.as_deref()).map_err(err)?;
+                    let body = feature;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                }
             },
         ),
         tool(

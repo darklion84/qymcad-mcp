@@ -12,6 +12,7 @@ use qymcad_core::model::{ChamferShape, HoleTool, Id};
 use qymcad_core::refs::{Cardinality, Fingerprint, Ref};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Which side of the faces a shell's wall goes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -385,6 +386,65 @@ impl Session {
             s.set_node_name(id, name)?;
             Ok(id)
         })
+    }
+
+    /// Remove selected faces and heal the source body. Face witnesses are captured from the current topology before mutation.
+    pub fn remove_face(&mut self, body: Option<Id>, faces: &Sel, name: Option<&str>) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let mut selected = Vec::new();
+        self.atomic(|s| {
+            let src = s.source_body(body)?;
+            let ids = s.resolve_sel(src, Element::Faces, faces)?;
+            selected = ids.clone();
+            if ids.is_empty() {
+                return Err(Error::Invalid(format!("the face selection matched no face of body {src}")));
+            }
+            let keys = ids
+                .iter()
+                .map(|id| {
+                    s.p.regen_faces
+                        .get(&src)
+                        .and_then(|fs| fs.iter().find(|f| f.id == *id))
+                        .map(crate::topology::face_key)
+                        .ok_or_else(|| Error::NotFound(format!("face {id} of body {src}")))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_remove_face(src, keys));
+            s.set_node_name(id, name)?;
+            Ok((id, ids))
+        })
+        .map_err(|error| match error {
+            Error::Rebuild(lines) => Error::Rebuild(lines.into_iter().map(|line| format!("selected faces {selected:?}: {line}")).collect()),
+            other => other,
+        })
+        .map(|((id, ids), rebuild)| (id, ids, rebuild))
+    }
+
+    /// Replace the complete face set of an existing RemoveFace node, preserving its id and rebuilding dependents.
+    pub fn repick_remove_face(&mut self, feature: Id, faces: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let node = self.p.timeline.iter().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+        let (src, body) = match &node.kind {
+            FeatureKind::RemoveFace { src, body, .. } => (*src, *body),
+            _ => return Err(Error::Invalid(format!("feature {feature} is not a remove_face feature"))),
+        };
+        let ids = self.resolve_sel(src, Element::Faces, faces)?;
+        if ids.is_empty() {
+            return Err(Error::Invalid(format!("the face selection matched no face of source body {src}")));
+        }
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "remove_face re-pick", |s| {
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::RemoveFace { faces, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a remove_face feature")));
+            };
+            *faces = Ref::picks(&ids);
+            node.dirty = true;
+            s.rebuild_for_edit(None).map(|_| ())
+        })?;
+        let rebuild = self.current_rebuild();
+        Ok((body, ids, rebuild))
     }
 
     /// Drill a hole into a planar face (see `Hole`).

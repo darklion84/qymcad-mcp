@@ -17,6 +17,12 @@ pub(crate) fn error(error: &CoreError) -> String {
     } else {
         native
     };
+    if let CoreError::RemoveFacesFailed { why } = error {
+        // The readable text hides the kernel's reason key (e.g. `cad-neighbours-not-extendable`); keep both.
+        if !message.contains(why.as_str()) {
+            message.push_str(&format!(" (native reason: {why})"));
+        }
+    }
     if matches!(error, CoreError::CutRemovedNothing) {
         message.push_str(
             "; the cut does not reach the body; check where the tool body is, and for an extruded cut its direction (reverse) or height",
