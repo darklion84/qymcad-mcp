@@ -2392,3 +2392,10 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Server policy:** `import_mesh` checks secondary files (plain relative path, regular file, inside the mesh's folder, counted toward the 16 MiB input cap; a missing OBJ material library is skipped as the reader does) and inflates and counts ZIP containers itself (64 MiB) before calling a reader.
 - **Evidence:** test: `mesh_import_secondary` (3 tests); observed: with the check disabled, a `.gltf` whose buffer is `../outside.bin` imported that file's triangle, and a lying AMF failed only after full inflation (`io-amf-not-amf`).
 
+
+## F-127 Native mesh recognition accepts a body that is already a B-rep
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** `Project::add_mesh_recognised` on an extruded B-rep body (not a mesh piece) does not refuse: it rebuilds without errors and adds a second "Recognised body" (10x10x10 extrusion → a new 6-face solid of 1000 mm3 beside the original). The app's Recognise command only offers whole mesh bodies (`qymcad-part/src/start.rs`), so the guard lives in the UI, not in the model API.
+- **Server policy:** `recognise` refuses any body that is not mesh-born ("body N is already a B-rep") before the native call; a consumed mesh is refused the same way.
+- **Evidence:** test: `mesh_import::recognition_refusals_are_atomic_and_undo_restores_mesh` (asserts the refusal text and archive equality); observed: with the refusal disabled during C3 acceptance the call returned Ok with `faces: 6, solids: 1, volume: 999.9999999999998` and two bodies in the rebuild.

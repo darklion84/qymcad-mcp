@@ -1,7 +1,7 @@
 # ADR 0040: Recognise mesh bodies as B-reps
 
 - Status: accepted (2026-11-01).
-- Related: ADR 0039, ADR 0008, ADR 0020; F-008.
+- Related: ADR 0039, ADR 0008, ADR 0020; F-008, F-127 (the native call recognises a B-rep too).
 
 ## Context
 
