@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- `fillet` and `chamfer` support atomic whole-edge-set re-picks through `feature`, preserving node ids, formulas, downstream rebuilds, batch/undo behavior and persistent edge picks (ADR 0041).
+
 ## 0.1.1-dev.20261026.7 — remove face, mesh import, mesh recognition (ADR 0038–0040)
 
 Same QymCAD release as 0.1.1-dev.20261026; files open in that app.

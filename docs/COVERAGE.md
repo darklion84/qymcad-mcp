@@ -47,7 +47,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | S9 | Sketch arrays | covered | Linked linear and circular copies; strict 2..=1000 counts and 1000 total-copy cap; native sector spacing retained | `sketch_pattern` | — |
 | S10 | Delete sketch geometry | covered | — | `sketch_remove` | — |
 | T1 | Parameters and formulas | covered | — | `param_set`, `param_delete` | — |
-| T2 | Edit feature | partial | Only RemoveFace whole-set re-pick is implemented; other feature re-picks remain missing | `remove_face`, `dimension_set` | — |
+| T2 | Edit feature | partial | RemoveFace, fillet and chamfer whole-set re-picks are covered; shell and push_face remain next | `remove_face`, `fillet`, `chamfer`, `dimension_set` | — |
 | T3 | Delete feature and undo | covered | — | `feature_delete`, `undo` | — |
 | T4 | Rename feature | not covered | — | none | — |
 | T5 | Reorder feature | not covered | — | none | — |

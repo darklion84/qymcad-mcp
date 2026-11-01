@@ -3920,7 +3920,7 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
 
 ## fillet
 
-Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Round edges of a body. `edges` is a selection: ids from topology, or a description such as {"edges_of": {"facing": "+z"}} (top outline), {"along": "z"} (vertical edges), or {"concave": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {"between": [{"of_feature": "X", "role": "wall"}, {"of_feature": "Y", "role": "cap_end"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees. Give `feature` to replace the whole edge set of an existing fillet; with `feature`, only `edges` is accepted and use `dimension_set` for values. The edges are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big for the geometry is an error and nothing changes. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -3962,7 +3962,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "null"
         }
       ],
-      "description": "Body id or name. Default: the part's current body."
+      "description": "Body id or name. Default: the part's current body. Not accepted with `feature`."
     },
     "edges": {
       "anyOf": [
@@ -3987,24 +3987,42 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "object"
         }
       ],
-      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seam edges are\nautomatically dropped with a result note; a selection containing only seams is refused."
+      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seam edges are\nautomatically dropped with a result note; a selection containing only seams is refused. With `feature`,\nresolved against that fillet's source body and replaces its whole edge set."
+    },
+    "feature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Existing Fillet feature id/name to re-pick. With this set, `edges` is required and all other value fields are refused."
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
       ]
     },
     "radius": {
-      "$ref": "#/$defs/Num",
-      "description": "Radius, mm (number or expression)."
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Radius, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values."
     }
   },
   "required": [
-    "edges",
-    "radius"
+    "edges"
   ],
   "type": "object"
 }
@@ -4012,7 +4030,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
 
 ## chamfer
 
-Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. The native d2 dimension is mm in Two distances and degrees in Leg and angle. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. Give `feature` to replace the whole edge set of an existing chamfer; with `feature`, only `edges` and optional `reference_face` are accepted and use `dimension_set` for values. The native d2 dimension is mm in Two distances and degrees in Leg and angle. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -4066,7 +4084,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "null"
         }
       ],
-      "description": "Body id or name. Default: the part's current body."
+      "description": "Body id or name. Default: the part's current body. Not accepted with `feature`."
     },
     "d2": {
       "anyOf": [
@@ -4081,8 +4099,16 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
       "description": "Second positive setback on the other face, mm: native Two distances. Excludes angle. Stored as native dimension key d2."
     },
     "dist": {
-      "$ref": "#/$defs/Num",
-      "description": "Setback, mm (number or expression). Alone: a symmetric 45° chamfer."
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Setback, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values."
     },
     "edges": {
       "anyOf": [
@@ -4107,7 +4133,18 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "object"
         }
       ],
-      "description": "The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.\nSeam edges are automatically dropped with a result note; a selection containing only seams is refused."
+      "description": "The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.\nSeam edges are automatically dropped with a result note; a selection containing only seams is refused.\nWith `feature`, resolved against that chamfer's source body and replaces its whole edge set."
+    },
+    "feature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Existing Chamfer feature id/name to re-pick. With this set, value fields are refused; use `dimension_set`."
     },
     "flip": {
       "default": false,
@@ -4116,7 +4153,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4157,8 +4194,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
     }
   },
   "required": [
-    "edges",
-    "dist"
+    "edges"
   ],
   "type": "object"
 }
@@ -4599,7 +4635,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
 
 ## remove_face
 
-Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is the first T2 feature-edit implementation; other feature re-picks are not supported. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is a focused T2 feature-edit implementation; shell and push_face re-picks are not supported. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {

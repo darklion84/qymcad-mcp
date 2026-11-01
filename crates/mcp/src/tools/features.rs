@@ -197,16 +197,21 @@ pub struct LoftArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FilletArgs {
-    /// Body id or name. Default: the part's current body.
+    /// Body id or name. Default: the part's current body. Not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// The edges to round: ids from `topology` (current body only) or a description, e.g.
     /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seam edges are
-    /// automatically dropped with a result note; a selection containing only seams is refused.
+    /// automatically dropped with a result note; a selection containing only seams is refused. With `feature`,
+    /// resolved against that fillet's source body and replaces its whole edge set.
     pub edges: SelArg,
-    /// Radius, mm (number or expression).
-    pub radius: Num,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Radius, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values.
+    #[serde(default)]
+    pub radius: Option<Num>,
+    /// Existing Fillet feature id/name to re-pick. With this set, `edges` is required and all other value fields are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -214,14 +219,16 @@ pub struct FilletArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChamferArgs {
-    /// Body id or name. Default: the part's current body.
+    /// Body id or name. Default: the part's current body. Not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.
     /// Seam edges are automatically dropped with a result note; a selection containing only seams is refused.
+    /// With `feature`, resolved against that chamfer's source body and replaces its whole edge set.
     pub edges: SelArg,
-    /// Setback, mm (number or expression). Alone: a symmetric 45° chamfer.
-    pub dist: Num,
+    /// Setback, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values.
+    #[serde(default)]
+    pub dist: Option<Num>,
     /// Second positive setback on the other face, mm: native Two distances. Excludes angle. Stored as native dimension key d2.
     #[serde(default)]
     pub d2: Option<Num>,
@@ -234,7 +241,10 @@ pub struct ChamferArgs {
     /// Swap the native automatic adjacent-face choice (default false). Allowed with d2 or angle. An explicit reference_face overrides the automatic choice.
     #[serde(default)]
     pub flip: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Existing Chamfer feature id/name to re-pick. With this set, value fields are refused; use `dimension_set`.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -675,39 +685,55 @@ pub fn tools() -> Vec<Tool> {
              Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement \
              among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; \
              0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals \
-             can require about 20–30 degrees. The edges \
-             are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
+                 can require about 20–30 degrees. Give `feature` to replace the whole edge set of an existing fillet; \
+              with `feature`, only `edges` is accepted and use `dimension_set` for values. The edges \
+              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
              for the geometry is an error and nothing changes. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
                 stale!()
             ),
             |st, a: FilletArgs| {
                 let s = st.doc()?;
-                let (body, edges) = (opt_body(s, &a.body)?, a.edges.resolve(s)?);
-                feature_json(s.fillet(body, &edges, &a.radius, a.name.as_deref()))
+                let edges = a.edges.resolve(s)?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.radius.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body`, `radius` and `name` are not accepted; change values with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_fillet(feature, &edges).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_edges": selected, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let radius = a.radius.ok_or("`radius` is required unless `feature` is given")?;
+                    feature_json(s.fillet(opt_body(s, &a.body)?, &edges, &radius, a.name.as_deref()))
+                }
             },
         ),
         tool(
             "chamfer",
             concat!(
-                "Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. The native d2 dimension is mm in Two distances and degrees in Leg and angle. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
+                 "Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. Give `feature` to replace the whole edge set of an existing chamfer; with `feature`, only `edges` and optional `reference_face` are accepted and use `dimension_set` for values. The native d2 dimension is mm in Two distances and degrees in Leg and angle. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
                 stale!()
             ),
             |st, a: ChamferArgs| {
                 let s = st.doc()?;
-                let (body, edges) = (opt_body(s, &a.body)?, a.edges.resolve(s)?);
+                let edges = a.edges.resolve(s)?;
                 let reference_face = a.reference_face.as_ref().map(|face| face.resolve(s)).transpose()?;
-                let (id, r) = s.chamfer_ex(&Chamfer {
-                    body,
-                    edges,
-                    dist: a.dist,
-                    d2: a.d2,
-                    angle: a.angle,
-                    reference_face,
-                    flip: a.flip,
-                    name: a.name,
-                }).map_err(err)?;
-                let chamfer = s.chamfer_info(id).map_err(err)?;
-                Ok(json!({ "body": id, "rebuild": rebuild_json(&r), "chamfer": chamfer }))
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.dist.is_some() || a.d2.is_some() || a.angle.is_some() || a.flip || a.name.is_some() {
+                        return Err("with `feature`, `body`, `dist`, `d2`, `angle`, `flip` and `name` are not accepted; change values with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_chamfer(feature, &edges, reference_face.as_ref()).map_err(err)?;
+                    let chamfer = s.chamfer_info(feature).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_edges": selected, "rebuild": rebuild_json(&rebuild), "chamfer": chamfer }))
+                } else {
+                    let dist = a.dist.ok_or("`dist` is required unless `feature` is given")?;
+                    let (id, r) = s.chamfer_ex(&Chamfer {
+                        body: opt_body(s, &a.body)?, edges, dist, d2: a.d2, angle: a.angle,
+                        reference_face, flip: a.flip, name: a.name,
+                    }).map_err(err)?;
+                    let chamfer = s.chamfer_info(id).map_err(err)?;
+                    Ok(json!({ "body": id, "rebuild": rebuild_json(&r), "chamfer": chamfer }))
+                }
             },
         ),
         tool(
@@ -779,7 +805,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "remove_face",
-            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is the first T2 feature-edit implementation; other feature re-picks are not supported.", stale!()),
+            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is a focused T2 feature-edit implementation; shell and push_face re-picks are not supported.", stale!()),
             |st, a: RemoveFaceArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;

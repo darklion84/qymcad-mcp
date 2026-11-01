@@ -336,6 +336,78 @@ impl Session {
         })
     }
 
+    pub fn repick_fillet(&mut self, feature: Id, edges: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body, at_vertices) = match self.p.timeline.iter().find(|n| n.id == feature) {
+            Some(node) => match &node.kind {
+                FeatureKind::Fillet { src, body, at_vertices, .. } => (*src, *body, !at_vertices.is_empty()),
+                _ => return Err(Error::Invalid(format!("feature {feature} is not a fillet feature"))),
+            },
+            None => return Err(Error::NotFound(format!("feature {feature}"))),
+        };
+        if at_vertices {
+            return Err(Error::Invalid(format!(
+                "fillet {feature} has a per-vertex radius table made in the app; re-pick is not supported"
+            )));
+        }
+        let (ids, dropped_seams) = self.edges_now(src, edges)?;
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "fillet re-pick", |s| {
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::Fillet { edges, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a fillet feature")));
+            };
+            *edges = Ref::picks(&ids);
+            node.dirty = true;
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
+        })?;
+        let (_, rebuild) = seam_note((body, self.current_rebuild()), dropped_seams);
+        Ok((body, ids, rebuild))
+    }
+
+    pub fn repick_chamfer(&mut self, feature: Id, edges: &Sel, reference_face: Option<&Sel>) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body, mode, old_reference) = match self.p.timeline.iter().find(|n| n.id == feature) {
+            Some(node) => match node.kind {
+                FeatureKind::Chamfer { src, body, mode, ref_face, .. } => (src, body, mode, ref_face),
+                _ => return Err(Error::Invalid(format!("feature {feature} is not a chamfer feature"))),
+            },
+            None => return Err(Error::NotFound(format!("feature {feature}"))),
+        };
+        if mode == ChamferMode::Symmetric && reference_face.is_some() {
+            return Err(Error::Invalid("symmetric chamfer does not accept reference_face or flip".into()));
+        }
+        let (ids, dropped_seams) = self.edges_now(src, edges)?;
+        let reference = match reference_face {
+            Some(face) => self.one_face(src, face)?.id,
+            None => old_reference,
+        };
+        self.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "chamfer re-pick", |s| {
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::Chamfer { edges, ref_face, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a chamfer feature")));
+            };
+            *edges = Ref::picks(&ids);
+            *ref_face = reference;
+            node.dirty = true;
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
+        })?;
+        let (_, rebuild) = seam_note((body, self.current_rebuild()), dropped_seams);
+        Ok((body, ids, rebuild))
+    }
+
     /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
     /// hollow shell, F-035).
     pub fn shell(&mut self, body: Option<Id>, open_faces: &Sel, thickness: &Num, side: Side, name: Option<&str>) -> Result<(Id, Rebuild)> {
