@@ -7,6 +7,7 @@ mod doc;
 mod features;
 mod history;
 mod import;
+mod import_mesh;
 mod output;
 mod params;
 mod print;
@@ -125,6 +126,7 @@ fn modelling_tool(name: &str) -> bool {
             | "body_boolean"
             | "split"
             | "import"
+            | "import_mesh"
             | "feature_delete"
     )
 }
@@ -232,6 +234,7 @@ impl Registry {
         tools.extend(features::tools());
         tools.extend(print::tools());
         tools.extend(import::tools());
+        tools.extend(import_mesh::tools());
         tools.extend(output::tools());
         tools.extend(history::tools());
         tools.extend(topology::tools());

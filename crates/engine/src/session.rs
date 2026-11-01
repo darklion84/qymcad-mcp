@@ -973,8 +973,29 @@ impl Session {
             .flat_map(|n| n.kind.bodies())
             .filter(|b| !consumed.contains(b))
             .filter_map(|b| {
-                let sh = self.shapes.get(&b)?;
-                Some(BodyInfo { id: b, name: self.body_name(b), volume: sh.volume(), bbox: reporting_bbox(sh).unwrap_or([0.0; 6]) })
+                if let Some(sh) = self.shapes.get(&b) {
+                    return Some(BodyInfo {
+                        id: b,
+                        name: self.body_name(b),
+                        volume: sh.volume(),
+                        bbox: reporting_bbox(sh).unwrap_or([0.0; 6]),
+                    });
+                }
+                let mesh = self.p.mesh_index(b).map(|index| &self.p.bodies[index].mesh)?;
+                let transform = self.p.body_world_transform(b);
+                let mut bbox = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+                for vertex in &mesh.verts {
+                    let point = [
+                        transform[0] * vertex.x + transform[1] * vertex.y + transform[2] * vertex.z + transform[3],
+                        transform[4] * vertex.x + transform[5] * vertex.y + transform[6] * vertex.z + transform[7],
+                        transform[8] * vertex.x + transform[9] * vertex.y + transform[10] * vertex.z + transform[11],
+                    ];
+                    for axis in 0..3 {
+                        bbox[axis] = bbox[axis].min(point[axis]);
+                        bbox[axis + 3] = bbox[axis + 3].max(point[axis]);
+                    }
+                }
+                Some(BodyInfo { id: b, name: self.body_name(b), volume: mesh.volume(), bbox })
             })
             .collect()
     }
@@ -1123,16 +1144,19 @@ impl Session {
 
     /// Display name of a body. Split and all boolean outputs use native piece names; ordinary features keep their names.
     pub fn body_name(&self, id: Id) -> String {
-        let native_component_name =
-            self.p
-                .body_owner(id)
-                .and_then(|owner| self.p.components.iter().find(|component| component.id == owner))
-                .filter(|_| {
-                    self.p.timeline.iter().any(|node| {
-                        matches!(&node.kind, qymcad_core::feature::FeatureKind::Import { .. }) && node.kind.bodies().contains(&id)
-                    })
+        let native_component_name = self
+            .p
+            .body_owner(id)
+            .and_then(|owner| self.p.components.iter().find(|component| component.id == owner))
+            .filter(|_| {
+                self.p.timeline.iter().any(|node| {
+                    matches!(
+                        &node.kind,
+                        qymcad_core::feature::FeatureKind::Import { .. } | qymcad_core::feature::FeatureKind::MeshPiece { .. }
+                    ) && node.kind.bodies().contains(&id)
                 })
-                .map(|component| component.name.clone());
+            })
+            .map(|component| component.name.clone());
         if let Some(name) = native_component_name {
             return crate::localization::name(&name);
         }
@@ -1169,7 +1193,9 @@ impl Session {
             .p
             .timeline
             .iter()
-            .filter(|node| matches!(node.kind, qymcad_core::feature::FeatureKind::Import { .. }))
+            .filter(|node| {
+                matches!(node.kind, qymcad_core::feature::FeatureKind::Import { .. } | qymcad_core::feature::FeatureKind::MeshPiece { .. })
+            })
             .flat_map(|node| node.kind.bodies())
             .filter(|body| self.body_name(*body) == r)
             .collect();

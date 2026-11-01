@@ -283,6 +283,7 @@ fn lists_tools_with_object_schemas() {
         "body_boolean",
         "split",
         "import",
+        "import_mesh",
         "feature_delete",
         "undo",
         "batch",
@@ -738,6 +739,35 @@ fn unbase64(s: &str) -> Vec<u8> {
         out.extend_from_slice(&n.to_be_bytes()[1..4 - pad]);
     }
     out
+}
+
+#[test]
+fn mesh_import_move_batch_and_undo_over_real_stdio() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-mesh-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("tetra.stl");
+    std::fs::write(&path, "solid tetra\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 10 0 0\n   vertex 0 10 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 10 0\n   vertex 0 0 10\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 0 10\n   vertex 10 0 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 10 0 0\n   vertex 0 0 10\n   vertex 0 10 0\n  endloop\n endfacet\nendsolid tetra\n").unwrap();
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let batch = c.ok(
+        "batch",
+        json!({"steps":[
+            {"tool":"import_mesh","args":{"path":path.to_str().unwrap(),"format":"stl"}},
+            {"tool":"move","args":{"dx":5,"dy":-2,"dz":3}}
+        ]}),
+    );
+    assert_eq!(batch["ok"], true);
+    assert_eq!(batch["steps"][0]["tool"], "import_mesh");
+    assert_eq!(batch["steps"][1]["tool"], "move");
+    assert_eq!(batch["steps"][1]["reused"], false);
+    assert_eq!(batch["bodies"].as_array().unwrap().len(), 1);
+    assert_eq!(batch["bodies"][0]["bbox"], json!([5.0, -2.0, 3.0, 15.0, 8.0, 13.0]));
+    let undone = c.ok("undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "batch");
+    let info = c.ok("doc_info", json!({}));
+    assert!(info["bodies"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]

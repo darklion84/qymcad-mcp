@@ -97,7 +97,7 @@ impl Session {
                 ));
             }
         }
-        let src = self.source_body(options.body)?;
+        let src = self.source_body_or_mesh(options.body)?;
         let reused = self.p.timeline.iter().any(|n| n.id == src && matches!(n.kind, FeatureKind::Move { .. }));
         let before = self.p.clone();
         let before_scope = before.param_map();

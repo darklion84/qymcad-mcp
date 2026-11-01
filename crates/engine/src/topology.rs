@@ -571,6 +571,9 @@ impl Session {
 
     /// Native naming diagnostics require only the restored face pool, never tessellation or a kernel gate.
     pub(crate) fn ambiguous_face_warning(&self, body: Id) -> Option<String> {
+        if self.p.mesh_born(body) {
+            return None;
+        }
         let faces = self.p.regen_faces.get(&body)?;
         let mut counts = HashMap::new();
         for face in faces {
@@ -1026,6 +1029,9 @@ impl Session {
             Some(b) => b,
             None => self.default_body("the part has no body yet")?,
         };
+        if self.p.mesh_born(b) {
+            return Err(Error::Invalid(mesh_body_refusal(b)));
+        }
         if !self.p.regen_faces.contains_key(&b) {
             return Err(Error::NotFound(format!("body {b} has no topology (not a built body, or not rebuilt yet)")));
         }
@@ -1035,6 +1041,15 @@ impl Session {
     /// The body a modifier works on: the given one or the current body; it must be a current result (features
     /// consume their source, and branching from a consumed body makes a chain the GUI refuses, F-009).
     pub(crate) fn source_body(&self, body: Option<Id>) -> Result<Id> {
+        let b = self.source_body_or_mesh(body)?;
+        if self.p.mesh_born(b) {
+            return Err(Error::Invalid(mesh_body_refusal(b)));
+        }
+        Ok(b)
+    }
+
+    /// Like [`Self::source_body`], but also accepts an imported mesh body (only `move` works on one).
+    pub(crate) fn source_body_or_mesh(&self, body: Option<Id>) -> Result<Id> {
         let b = match body {
             Some(b) => b,
             None => self.default_body("the part has no body yet; extrude or revolve first")?,
@@ -1046,11 +1061,22 @@ impl Session {
             let cur = self.tip_body().map(|t| format!("; the current body is {t}")).unwrap_or_default();
             return Err(Error::Invalid(format!("body {b} was consumed by a later feature{cur}")));
         }
+        if self.p.mesh_born(b) {
+            return Ok(b);
+        }
         if !self.shapes.contains_key(&b) || !self.p.regen_faces.contains_key(&b) {
             return Err(Error::Invalid(format!("body {b} is not built")));
         }
         Ok(b)
     }
+}
+
+/// One refusal text for every B-rep operation on an imported mesh body (ADR 0039).
+pub(crate) fn mesh_body_refusal(b: Id) -> String {
+    format!(
+        "body {b} is an imported mesh (triangles, not a recognised B-rep); faces, edges and modelling features need a B-rep. \
+         A mesh body can only be moved, rendered and exported to STL/3MF/GLB/OBJ"
+    )
 }
 
 fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
