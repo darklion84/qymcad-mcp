@@ -60,28 +60,6 @@ fn mesh_triangles(session: &Session, body: Id) -> Result<usize> {
     Ok(session.project().bodies[index].mesh.tris.len())
 }
 
-fn mesh_bbox(session: &Session, body: Id) -> Result<[f64; 6]> {
-    let index = session.project().mesh_index(body).ok_or_else(|| Error::Invalid(format!("body {body} is not a mesh body")))?;
-    let mesh = &session.project().bodies[index].mesh;
-    let mut bbox = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
-    let transform = session.project().body_world_transform(body);
-    for vertex in &mesh.verts {
-        let point = [
-            transform[0] * vertex.x + transform[1] * vertex.y + transform[2] * vertex.z + transform[3],
-            transform[4] * vertex.x + transform[5] * vertex.y + transform[6] * vertex.z + transform[7],
-            transform[8] * vertex.x + transform[9] * vertex.y + transform[10] * vertex.z + transform[11],
-        ];
-        for (axis, value) in point.into_iter().enumerate() {
-            bbox[axis] = bbox[axis].min(value);
-            bbox[axis + 3] = bbox[axis + 3].max(value);
-        }
-    }
-    for value in &mut bbox {
-        *value = (*value * 1_000_000.0).round() / 1_000_000.0;
-    }
-    Ok(bbox)
-}
-
 fn validate_values(session: &Session, mode: MeshRecogniseMode, tolerance: &Num, sharp: &Num, simplify: &Num) -> Result<(f64, f64, f64)> {
     let vars = session.project().param_map();
     let t = tolerance.eval(&vars)?;
@@ -154,7 +132,13 @@ impl Session {
                 let faces = shape.face_kinds().map(|k| k.into_iter().sum()).unwrap_or(0);
                 let body = feature;
                 let warnings = rebuild.warnings.clone();
-                let bbox = mesh_bbox(session, source)?;
+                // The recognised body's extents as doc_info reports them, not the source mesh's.
+                let bbox = rebuild
+                    .bodies
+                    .iter()
+                    .find(|b| b.id == body)
+                    .map(|b| b.bbox)
+                    .ok_or_else(|| Error::Invalid("recognition produced no reported body".into()))?;
                 let output = MeshRecogniseResult {
                     feature,
                     body,

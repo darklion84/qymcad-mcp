@@ -453,7 +453,11 @@ fn recognise_exact_and_polyhedron_cylinder_have_hand_computed_metrics() {
     assert_eq!(result.solids, 1);
     let expected_exact = std::f64::consts::PI * 10.0_f64.powi(2) * 40.0; // hand formula: pi*r^2*h
     assert!((result.volume - expected_exact).abs() < 0.5, "{} != {expected_exact}", result.volume);
-    assert_eq!(result.bbox, [-10.0, -10.0, 0.0, 10.0, 10.0, 40.0]);
+    // The result reports the recognised body's extents exactly as doc_info does; the fitted surface is within 1e-3 of r=10.
+    assert_eq!(result.bbox, exact.info().bodies.iter().find(|b| b.id == result.body).unwrap().bbox);
+    for (actual, expected) in result.bbox.into_iter().zip([-10.0, -10.0, 0.0, 10.0, 10.0, 40.0]) {
+        assert!((actual - expected).abs() < 1e-3, "bbox {actual} != {expected}");
+    }
 
     let mut poly = Session::new_part();
     let source = poly.import_mesh(&path, None, None, 1.0, None).unwrap().pieces[0].body;
