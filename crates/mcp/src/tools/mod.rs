@@ -11,6 +11,7 @@ mod import_mesh;
 mod output;
 mod params;
 mod print;
+mod recognise;
 mod sketch;
 mod sketch_edit;
 mod sketch_import;
@@ -127,6 +128,7 @@ fn modelling_tool(name: &str) -> bool {
             | "split"
             | "import"
             | "import_mesh"
+            | "recognise"
             | "feature_delete"
     )
 }
@@ -235,6 +237,7 @@ impl Registry {
         tools.extend(print::tools());
         tools.extend(import::tools());
         tools.extend(import_mesh::tools());
+        tools.extend(recognise::tools());
         tools.extend(output::tools());
         tools.extend(history::tools());
         tools.extend(topology::tools());

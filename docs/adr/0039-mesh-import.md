@@ -22,7 +22,7 @@ A synchronous MCP server must reject oversized or malicious input before reader 
 
 Saved `.qcad` files retain both the mesh and original source bytes, so reopening does not need the external mesh path. Unit and scale are literal import decisions, not parametric drivers. The 200,000-triangle cap admits the measured 200,000-triangle binary STL probe while rejecting larger decoded meshes; the 64 MiB central-directory cap prevents a small compressed 3MF from declaring an unbounded expansion.
 
-I2 is partial until C3 recognition is implemented. No B-rep is created by this tool, and every B-rep tool refuses a raw mesh body (see below).
+I2 is complete for mesh import; C3 recognition is specified separately in [ADR 0040](0040-mesh-recognition.md). No B-rep is created by this tool, and every B-rep tool refuses a raw mesh body until `recognise` is called (see below).
 
 Evidence: `tasks/research-medC.md` I2, `tasks/research-medC-probes.md` sections 2–3, `crates/engine/tests/mesh_import.rs`, and the generated `import_mesh` schema in `docs/TOOLS.md`.
 

@@ -25,7 +25,8 @@ pub fn instructions(app_note: &str) -> String {
          A pocket from the top: plane_offset {{base: \"XY\", dist: \"t\"}}, sketch on {{plane: id}}, extrude op cut \
          direction reverse. Holes: circles inside a rectangle in the same sketch become through holes when the \
          rectangle is extruded.\n\
-         render (view iso/top/front/...) returns a picture to check the shape; export writes STEP/STL/3MF/GLB/OBJ.\n\
+                   render (view iso/top/front/...) returns a picture to check the shape; export writes STEP/STL/3MF/GLB/OBJ. For imported meshes, use import_mesh -> recognise -> topology/select/fillet/body_boolean/export.
+\n\
          Finishing: topology lists the current body's faces and edges with persistent ids (re-read it after every \
          feature: each feature makes a new body). fillet/chamfer/hole/shell/push_face take selections: ids, or \
          descriptions such as {{\"edges_of\": {{\"facing\": \"+z\"}}}} or {{\"along\": \"z\"}}; preview them with \

@@ -29,7 +29,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P23 | Stitch | not covered | Surface operation | none | `FeatureKind::Stitch,PartTool::Stitch` |
 | P24 | Surface trim | not covered | Surface operation | none | `FeatureKind::Trim,PartTool::Trim` |
 | P25 | Boolean between bodies | covered | — | `body_boolean` | `FeatureKind::BodyBoolean` |
-| P26 | Recognise mesh as body | not covered | Requires mesh import (I1) | none | `FeatureKind::MeshRecognised,PartTool::Recognise` |
+| P26 | Recognise mesh as body | covered | Exact analytic recognition and polyhedron B-rep conversion; caps, ranges, closed-solid gate, formulas, persistence, downstream B-rep tools, batch and undo | `recognise` | `FeatureKind::MeshRecognised,FeatureKind::MeshSolid,PartTool::Recognise` |
 | P27 | Offset surface | not covered | Surface operation | none | `FeatureKind::OffsetSurface,PartTool::OffsetSurface` |
 | P28 | Move / rotate body | covered | Parametric dx/dy/dz; literal angle/pivot; accumulated rotation onto nonliteral shift formulas refused (ADR 0033) | `move` | `FeatureKind::Move` |
 | D1 | Datum plane with offset | covered | — | `plane_offset` | `FeatureKind::Plane,PartTool::DatumPlane` |
@@ -55,7 +55,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T7 | Visibility and body color | not covered | Hide a body or sketch; set a body colour (it would reach 3MF) | none | — |
 | T8 | Measurement | partial | No distances or angles between elements | `topology`, `doc_info` | — |
 | I1 | STEP / IGES import | covered | Native source-backed part trees, selective solids, literal scale and embedded originals | `import` | `FeatureKind::Import` |
-| I2 | Mesh import | covered | STL, OBJ, PLY, glTF/GLB, 3MF and AMF import, declared units, caps, embedded source, mesh move/export and persistence are covered; recognition remains C3 | `import_mesh` | `FeatureKind::MeshSolid,FeatureKind::MeshPiece` |
+| I2 | Mesh import | covered | STL, OBJ, PLY, glTF/GLB, 3MF and AMF import, declared units, caps, embedded source, mesh move/export and persistence | `import_mesh` | `FeatureKind::MeshPiece` |
 | I3 | DXF / SVG sketch import | covered | Native DXF/SVG parsing, literal scaled editable sketches, closure, reports, units, and downstream profiles | `sketch_import`; `golden_sketch_import.rs` | — |
 | E1 | Export STEP, STL, 3MF, GLB, OBJ | covered | — | `export` | — |
 | E2 | Export IGES, PLY, AMF | not covered | — | none | — |

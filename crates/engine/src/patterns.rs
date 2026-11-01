@@ -239,6 +239,34 @@ impl Session {
     /// the formulas restored and checked against the new values; only then the real native pass runs.
     pub(crate) fn eval_parameters_capped(&mut self) -> Result<Vec<(String, qymcad_core::errors::ExprError)>> {
         let mut pinned = Vec::new();
+        let mut mesh_pinned = Vec::new();
+        for node in &self.p.timeline {
+            let (source, keys): (Id, &[&str]) = match node.kind {
+                qymcad_core::feature::FeatureKind::MeshSolid { src, .. } => (src, &["simplify"]),
+                qymcad_core::feature::FeatureKind::MeshRecognised { src, .. } => (src, &["tol", "sharp", "simplify"]),
+                _ => continue,
+            };
+            for key in keys {
+                if let Some(formula) = self.p.feat_dim(node.id, key) {
+                    let value = match qymcad_core::expr::eval(formula, &self.p.param_map()) {
+                        Ok(value) => value,
+                        Err(_) => continue,
+                    };
+                    mesh_pinned.push((node.id, source, *key, formula.to_string(), value.to_string()));
+                }
+            }
+        }
+        let set_dim = |p: &mut qymcad_core::model::Project, id: Id, key: &str, value: &str| {
+            if let Some(dims) = p.feat_dims.get_mut(&id) {
+                dims.insert(key.to_string(), value.to_string());
+            }
+        };
+        for (id, _, key, _, value) in &mesh_pinned {
+            set_dim(&mut self.p, *id, key, value);
+        }
+        for (id, _, key, formula, _) in &mesh_pinned {
+            set_dim(&mut self.p, *id, key, formula);
+        }
         for sketch in &self.p.sketches {
             for pattern in &sketch.patterns {
                 let (count, count2) = match pattern.kind {
@@ -267,7 +295,8 @@ impl Session {
             }
             self.check_sketch_pattern_values().map_err(|(id, e)| Error::Invalid(format!("sketch pattern {id}: {e}")))?;
         }
-        Ok(self.p.eval_parameters())
+        let errors = self.p.eval_parameters();
+        Ok(errors)
     }
 
     pub(crate) fn check_sketch_pattern_values(&self) -> std::result::Result<(), (Id, Error)> {

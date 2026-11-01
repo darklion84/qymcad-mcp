@@ -230,6 +230,7 @@ fn limits_allowlist_and_outer_schema() {
         "split",
         "import",
         "import_mesh",
+        "recognise",
         "feature_delete",
     ];
     for name in r.list().iter().map(|t| t["name"].as_str().unwrap()).filter(|n| !allowed.contains(n)).chain(["unknown"]) {

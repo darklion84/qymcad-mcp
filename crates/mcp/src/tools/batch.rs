@@ -19,7 +19,7 @@ struct BatchArgs {
 struct Step {
     /// A modelling tool: param_set, dimension_set, param_delete, sketch_create, sketch_add, sketch_project, sketch_constrain, sketch_remove, sketch_edit, sketch_pattern,
     /// plane_offset, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, remove_face, linear_array, circular_array,
-    /// move, mirror, thread, body_boolean, split, import or feature_delete. Reads, document/file tools, undo and nested batch are refused.
+    /// move, mirror, thread, body_boolean, split, import, import_mesh, recognise or feature_delete. Reads, document/file tools, undo and nested batch are refused.
     tool: String,
     /// Exactly the named tool's standalone arguments, including its JSON-string object/array leniency.
     args: Value,

@@ -284,6 +284,7 @@ fn lists_tools_with_object_schemas() {
         "split",
         "import",
         "import_mesh",
+        "recognise",
         "feature_delete",
         "undo",
         "batch",
@@ -767,6 +768,70 @@ fn mesh_import_move_batch_and_undo_over_real_stdio() {
     assert_eq!(undone["undone"]["tool"], "batch");
     let info = c.ok("doc_info", json!({}));
     assert!(info["bodies"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn mesh_import_recognise_fillet_batch_and_undo_over_real_stdio() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-recognise-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("cube.stl");
+    let mut bytes = vec![0u8; 84 + 12 * 50];
+    bytes[80..84].copy_from_slice(&12u32.to_le_bytes());
+    let vertices = [
+        [0.0, 0.0, 0.0],
+        [10.0, 0.0, 0.0],
+        [10.0, 10.0, 0.0],
+        [0.0, 10.0, 0.0],
+        [0.0, 0.0, 10.0],
+        [10.0, 0.0, 10.0],
+        [10.0, 10.0, 10.0],
+        [0.0, 10.0, 10.0],
+    ];
+    let tris = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    for (k, [a, b, c]) in tris.into_iter().enumerate() {
+        for (j, index) in [a, b, c].into_iter().enumerate() {
+            for (axis, coordinate) in vertices[index].into_iter().enumerate() {
+                let at = 84 + k * 50 + 12 + j * 12 + axis * 4;
+                bytes[at..at + 4].copy_from_slice(&(coordinate as f32).to_le_bytes());
+            }
+        }
+    }
+    std::fs::write(&path, bytes).unwrap();
+    let mut c = Client::start();
+    c.init();
+    c.ok("doc_new", json!({}));
+    let batch = c.ok(
+        "batch",
+        json!({"steps":[
+        {"tool":"import_mesh","args":{"path":path.to_str().unwrap(),"format":"stl"}},
+        {"tool":"recognise","args":{"mode":"polyhedron"}},
+        {"tool":"fillet","args":{"edges":{"along":"z"},"radius":1}}
+    ],"verbose":true}),
+    );
+    assert_eq!(batch["ok"], true);
+    let result = &batch["steps"][1]["result"];
+    assert_eq!(result["mode"], "polyhedron");
+    assert_eq!(result["faces"], 6);
+    assert_eq!(result["solids"], 1);
+    assert!(result["volume_mm3"].as_f64().unwrap() > 999.0);
+    let undone = c.ok("undo", json!({}));
+    assert_eq!(undone["undone"]["tool"], "batch");
+    let info = c.ok("doc_info", json!({}));
+    assert_eq!(info["bodies"].as_array().unwrap().len(), 0);
     std::fs::remove_dir_all(dir).unwrap();
 }
 

@@ -551,7 +551,9 @@ impl Session {
         let before = self.p.clone();
         self.reconcile_datum_dependencies();
         self.reconcile_hole_dependencies();
-        if let Err((id, error)) = self.check_hole_supports().and_then(|()| self.check_array_values()) {
+        if let Err((id, error)) =
+            self.check_hole_supports().and_then(|()| self.check_array_values()).and_then(|()| self.check_mesh_recognise_values())
+        {
             let issue = self.issue(id, error.to_string());
             self.p = before;
             return Err(issue);

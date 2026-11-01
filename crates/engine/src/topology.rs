@@ -1075,7 +1075,7 @@ impl Session {
 pub(crate) fn mesh_body_refusal(b: Id) -> String {
     format!(
         "body {b} is an imported mesh (triangles, not a recognised B-rep); faces, edges and modelling features need a B-rep. \
-         A mesh body can only be moved, rendered and exported to STL/3MF/GLB/OBJ"
+         Recognise it first; a mesh body can only be moved, rendered and exported to STL/3MF/GLB/OBJ"
     )
 }
 
