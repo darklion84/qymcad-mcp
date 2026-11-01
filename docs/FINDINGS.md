@@ -2399,3 +2399,19 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** `Project::add_mesh_recognised` on an extruded B-rep body (not a mesh piece) does not refuse: it rebuilds without errors and adds a second "Recognised body" (10x10x10 extrusion → a new 6-face solid of 1000 mm3 beside the original). The app's Recognise command only offers whole mesh bodies (`qymcad-part/src/start.rs`), so the guard lives in the UI, not in the model API.
 - **Server policy:** `recognise` refuses any body that is not mesh-born ("body N is already a B-rep") before the native call; a consumed mesh is refused the same way.
 - **Evidence:** test: `mesh_import::recognition_refusals_are_atomic_and_undo_restores_mesh` (asserts the refusal text and archive equality); observed: with the refusal disabled during C3 acceptance the call returned Ok with `faces: 6, solids: 1, volume: 999.9999999999998` and two bodies in the rebuild.
+
+
+## F-128 Suppressing a move of a mesh body fails with "source body not built"
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** a `Move` of a mesh-born body rebuilds through the mesh branch of `prep_move` (`qymcad-core/src/model/regen/prep_ops.rs`), which moves the mesh in the document because the kernel holds no B-rep for it. A suppressed modifier instead passes its source through with `kernel.transform_body(body, src, PLACE_IDENTITY)` (`regen/run.rs`, suppressed branch), which bypasses that branch, finds no kernel shape and fails with `SourceBodyNotBuilt`; the stale moved mesh stays in view beside the source. Reproducible in the app alone: import a mesh, move it, suppress the move.
+- **Server policy:** none; the server has no suppress tool, and an unsuppressed move of a mesh rebuilds correctly, also after save/open.
+- **Evidence:** observed in QymCAD.app on `tmp/gui-check-medC/recognised_moved.qcad` (status "Не построено операций: 1. Первая, cube.Перенос: Тело-источник не построено"); the code path read in upstream f25f27d.
+
+
+## F-129 The app's Recognise takes only a mesh body made directly by the import
+
+- **Version:** v0.1.1-dev.20261026.
+- **What:** the Recognise command accepts a click only on a body that is the `body` of a `FeatureKind::MeshPiece` (`qymcad-part/src/aims.rs`); a mesh that was moved is refused with "this tool works with a mesh", although the model (`mesh_born`) and the native recognition accept it and rebuild it correctly.
+- **Server policy:** `recognise` accepts any mesh-born body, as the model does; the result after a move was checked through the engine (6 faces, 1000 mm3, bbox X 20..30, same after save/open) and opens in the app without errors.
+- **Evidence:** observed in QymCAD.app: `mesh_cube.qcad` (import + move) refused, `mesh_cube_plain.qcad` (import only) recognised as 6 planes; `recognised_moved.qcad` opens without errors.

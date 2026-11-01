@@ -18,4 +18,8 @@ Checks: check.sh 1009 passed, 3 ignored on a94e6ba. Live MCP test: remove_face h
 undo back), STL mm/cm import and move, mesh-body refusal text, recognise polyhedron cube + fillet 997.854 + STEP,
 exact cylinder 12566.37 (3 faces), refusals unchanged, `t` 1→2 on an exact recognition — PASS. Manual QymCAD.app
 check: four files in `tmp/gui-check-medC` (remove_face h 20→30, mesh cube + app Recognise, recognised fillet r 1→2,
-exact cylinder t 1→2) — pending at the time of this log.
+exact cylinder t 1→2): remove_face, recognised fillet and exact cylinder PASS; the mesh cube FAILED only because the
+file had a move after the import and the app's Recognise takes the bare mesh piece alone (F-129). Recheck:
+`mesh_cube_plain.qcad` (no move) — app Recognise as polyhedron gave 6 planes, PASS; `recognised_moved.qcad` (MCP:
+import → move → recognise) opens with no errors, PASS; suppressing its move in the app fails with "source body not
+built", an app bug on any moved mesh (F-128), not a server defect.
