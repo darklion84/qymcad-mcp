@@ -4,12 +4,13 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent build **n
 [QymCAD](https://github.com/QymIs-Tech/QymCAD) parts** — sketches, extrusions, cuts, fillets, holes, driven by
 named parameters — and save them as `.qcad` files you open and edit in the QymCAD app.
 
-> Status: **pre-release.** 33 tools for QymCAD 0.1.1: documents, parameters and named driving dimensions;
+> Status: **pre-release.** 44 tools for QymCAD 0.1.1: documents, parameters and named driving dimensions;
 > sketches (rotated rectangle, circle, tangent circle, line, polyline, spline, arc, ellipse, ellipse arc,
 > polygon, slot) fully dimensioned with expressions, plus curve constraints and curve editing (trim, extend,
 > break, offset, corner fillet/chamfer, point mirror); datum planes;
-> extrude / cut / revolve / sweep / loft; fillet, chamfer, hole, shell, push face; linear / circular arrays and mirror;
+> extrude / cut / revolve / sweep / loft; fillet, chamfer, hole, shell, push face, remove face; linear / circular arrays and mirror;
 > topology and descriptive selections; atomic modelling batches, feature deletion and undo;
+> STEP/IGES, DXF/SVG and mesh import (STL, OBJ, PLY, glTF/GLB, 3MF, AMF) with recognition into B-reps;
 > export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
 > See [docs/TOOLS.md](docs/TOOLS.md), [capability coverage](docs/COVERAGE.md), and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
 > quirks are in [docs/FINDINGS.md](docs/FINDINGS.md).
@@ -65,6 +66,7 @@ startup the server warns when the installed QymCAD.app is a different release.
 
 | qymcad-mcp | QymCAD release | OpenCASCADE |
 |---|---|---|
+| 0.1.1-dev.20261026.7 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.6 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.5 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.4 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |

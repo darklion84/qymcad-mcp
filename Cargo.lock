@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-engine"
-version = "0.1.1-dev.20261026.6"
+version = "0.1.1-dev.20261026.7"
 dependencies = [
  "flate2",
  "libc",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-mcp"
-version = "0.1.1-dev.20261026.6"
+version = "0.1.1-dev.20261026.7"
 dependencies = [
  "libc",
  "qymcad-engine",

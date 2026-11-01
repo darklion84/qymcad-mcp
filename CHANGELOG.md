@@ -1,14 +1,19 @@
 # Changelog
 
-## Unreleased
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
+
+## 0.1.1-dev.20261026.7 — remove face, mesh import, mesh recognition (ADR 0038–0040)
+
+Same QymCAD release as 0.1.1-dev.20261026; files open in that app.
 
 ### Added
 - `import_mesh` imports STL, OBJ, PLY, glTF/GLB, 3MF and AMF as embedded MeshPiece bodies with app-compatible units, placements, groups, one-shot scale, pre-parse byte/ZIP/triangle caps (ZIP parts counted by real inflation), secondary files (glTF buffers, OBJ materials) confined to single names in the mesh's folder and read through a private copy of the checked bytes (F-126), batch/undo support and mesh persistence.
 - `recognise` converts imported mesh bodies to exact-surface or polyhedron B-reps with formula-driven settings, pre-native caps/ranges, closed-solid validation, persistence, downstream tools, batch and undo support (ADR 0040).
 - `remove_face` removes and heals a selected face set with persistent FaceKey witnesses, exact rollback on native healing failure, batch/undo support, and whole-set RemoveFace re-pick preserving the feature id. This is the first implemented T2 feature edit; other feature re-picks remain partial.
 
-All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
+### Security
+- `import_mesh` confines files named inside a mesh (glTF buffers, OBJ material libraries) to single names in the mesh's folder, opens the mesh and them with `O_NOFOLLOW|O_NONBLOCK`, counts ZIP inflation, and runs QymCAD's readers on a private copy of exactly the checked bytes (F-126).
 
 ## 0.1.1-dev.20261026.6 — sketch move/copy/rotate, sketch patterns, DXF/SVG import (ADR 0035–0037)
 
