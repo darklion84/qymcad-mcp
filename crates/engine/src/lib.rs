@@ -3,6 +3,7 @@
 //! This crate is the ONLY place that touches the QymCAD API. When QymCAD is upgraded, the changes land here
 //! and nowhere else (see docs/ARCHITECTURE.md and docs/UPGRADING.md).
 
+mod appearance;
 mod body_boolean;
 mod dependencies;
 mod dimensions;
@@ -41,6 +42,7 @@ mod thread;
 mod topology;
 mod value;
 
+pub use appearance::{AppearanceBody, AppearanceResult, AppearanceScope};
 pub use body_boolean::{BodyBooleanOptions, BodyBooleanResult, BooleanOp};
 pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};

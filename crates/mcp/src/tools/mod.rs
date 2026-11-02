@@ -1,6 +1,7 @@
 //! Tool registry. Each group lives in its own module and exposes `fn tools() -> Vec<Tool>`; adding a group
 //! means adding a module and one line in `Registry::new` (keeps parallel work conflict-free).
 
+mod appearance;
 mod batch;
 mod common;
 mod doc;
@@ -135,6 +136,7 @@ fn modelling_tool(name: &str) -> bool {
             | "recognise"
             | "feature_delete"
             | "rename"
+            | "appearance"
     )
 }
 
@@ -246,6 +248,7 @@ impl Registry {
         tools.extend(output::tools());
         tools.extend(history::tools());
         tools.extend(rename::tools());
+        tools.extend(appearance::tools());
         tools.extend(topology::tools());
         tools.extend(measure::tools());
         tools.push(batch::tool());

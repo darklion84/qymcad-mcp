@@ -39,6 +39,12 @@ pub struct BodyInfo {
     pub name: String,
     /// Localised native body label, independent of the producing feature's name.
     pub body_name: String,
+    /// This body id's own persisted visibility, independent of consumed sources.
+    pub visible: bool,
+    /// Native resolved lineage colour, including palette fallback.
+    pub color_rgb: [u8; 3],
+    /// Map membership of the lineage root: manual or palette.
+    pub color_source: &'static str,
     /// mm³, serialized as `volume_mm3` at native floating-point precision.
     #[serde(rename = "volume_mm3")]
     pub volume: f64,
@@ -977,11 +983,18 @@ impl Session {
             .flat_map(|n| n.kind.bodies())
             .filter(|b| !consumed.contains(b))
             .filter_map(|b| {
+                let index = self.p.mesh_index(b)?;
+                let visible = self.p.bodies[index].visible;
+                let color_rgb = self.p.mesh_color(index);
+                let color_source = self.body_color_source(b);
                 if let Some(sh) = self.shapes.get(&b) {
                     return Some(BodyInfo {
                         id: b,
                         name: self.body_name(b),
                         body_name: self.native_body_name(b),
+                        visible,
+                        color_rgb,
+                        color_source,
                         volume: sh.volume(),
                         bbox: reporting_bbox(sh).unwrap_or([0.0; 6]),
                     });
@@ -1000,7 +1013,16 @@ impl Session {
                         bbox[axis + 3] = bbox[axis + 3].max(point[axis]);
                     }
                 }
-                Some(BodyInfo { id: b, name: self.body_name(b), body_name: self.native_body_name(b), volume: mesh.volume(), bbox })
+                Some(BodyInfo {
+                    id: b,
+                    name: self.body_name(b),
+                    body_name: self.native_body_name(b),
+                    visible,
+                    color_rgb,
+                    color_source,
+                    volume: mesh.volume(),
+                    bbox,
+                })
             })
             .collect()
     }

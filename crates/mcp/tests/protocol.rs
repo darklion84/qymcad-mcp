@@ -288,6 +288,7 @@ fn lists_tools_with_object_schemas() {
         "feature_delete",
         "undo",
         "rename",
+        "appearance",
         "measure",
         "batch",
     ];

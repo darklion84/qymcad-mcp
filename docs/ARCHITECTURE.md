@@ -39,6 +39,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `patterns.rs` | linear/circular arrays and mirror of the whole body (F-027), at most 1000 copies also on parameter edits (F-033); `AxisRef` → datum axes (identical fixed axes reused) |
 | `history.rs` | guarded native deletion with extended dependency closure; Project/original-shape snapshots, 16-entry modelling undo (ADR 0008) |
 | `dependencies.rs` | native dependency reachability extended through sketch projections and the source's consuming lineage above the sketch; shared rebuild snapshots/retries, deletion and F-024 preflight |
+| `appearance.rs` | Body-id visibility and native lineage-root colour/reset, metadata-only history/no-ops (ADR 0044); imported overrides retained |
 | `info.rs` | `DocInfo` snapshot for the agent |
 | `value.rs` | `Num` (number or expression); finite values only; `check_expr` bounds length and nesting before QymCAD's recursive parser (F-031) |
 | `error.rs` | `Error` with agent-oriented messages |

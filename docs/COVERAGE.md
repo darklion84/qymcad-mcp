@@ -52,7 +52,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T4 | Rename feature, sketch and body | covered | Separate native labels, metadata-only history, resolver aliases, persistence and batch/undo (ADR 0042) | `rename` | — |
 | T5 | Reorder feature | not covered | — | none | — |
 | T6 | Suppress / rollback history | not covered | — | none | — |
-| T7 | Visibility and body color | not covered | Hide a body or sketch; set a body colour (it would reach 3MF) | none | — |
+| T7 | Visibility and body color | partial | Body visibility and lineage colour saved (ADR 0044); sketch visibility not persisted by the pinned app. Render/export still include every current result body, colourless; export colour and opt-in visibility filter pending E4 | `appearance`, `doc_info` | — |
 | T8 | Measurement | covered | Native support-geometry distances, acute unsigned angles, lengths and radii; arcs use full circles for pairs. No general trimmed B-rep minimum distance, area/mass or signed angles; spline pairs, unsupported curved faces and fallback anchor pairs refused (ADR 0043) | `measure`; `topology`, `doc_info` for existing area/volume reports | — |
 | I1 | STEP / IGES import | covered | Native source-backed part trees, selective solids, literal scale and embedded originals | `import` | `FeatureKind::Import` |
 | I2 | Mesh import | covered | STL, OBJ, PLY, glTF/GLB, 3MF and AMF import, declared units, caps, embedded source, mesh move/export and persistence | `import_mesh` | `FeatureKind::MeshPiece` |

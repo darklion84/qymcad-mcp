@@ -65,6 +65,10 @@ fn bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_va
             id: 1,
             name: String::new(),
             body_name: String::new(),
+            visible: true,
+            // Synthetic first-lineage metadata; native palette from retained T7 appearance probe.
+            color_rgb: [150, 170, 190],
+            color_source: "palette",
             volume: 1.23456789,
             // ±.00001 mm are closer to zero; 10^305 cannot be scaled by 10^4 in f64.
             bbox: [-tie, -0.00001, -0.0, tie, 0.00001, 1e305],
