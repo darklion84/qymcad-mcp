@@ -27,7 +27,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `sketch/selectors.rs` | strict sketch curve/point selectors and native radius-driven tangent-circle creation |
 | `dimensions.rs` | atomic native dimension editing/naming, target ambiguity checks and named-driver discovery |
 | `features.rs` | datum planes with native Tilt X/Y/Turn and evaluated bounds; extrude/cut/add/intersect |
-| `export.rs` | `Session::export`: STEP via `write_step`, meshes via `tessellate_merged` + qymcad-io writers; flat, world transforms (F-020) |
+| `export.rs` | `Session::export`: STEP/3MF/GLB via native tree writers with flat per-body colour nodes; STL/OBJ colourless; existing weld/quality and world placement once, opt-in visibility filtering shared with render (F-020/F-133, ADR 0045) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
 | `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
 | `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-030, balanced unions and a size/depth budget F-032); `select`; `ensure_topology` after open (F-023; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |

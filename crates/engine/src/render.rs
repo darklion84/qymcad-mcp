@@ -81,6 +81,8 @@ pub struct Rendered {
     pub view: View,
     /// The bodies drawn.
     pub bodies: Vec<Id>,
+    /// Hidden current bodies omitted by the opt-in visibility filter.
+    pub skipped_hidden: Vec<Id>,
     /// World-space union of the drawn bodies' B-rep bounding boxes, `[xmin, ymin, zmin, xmax, ymax, zmax]` mm.
     pub bbox: [f64; 6],
 }
@@ -108,12 +110,18 @@ impl Session {
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
     /// result-body bbox reporting acquires that non-reentrant mutex.
     pub fn render(&self, view: View, width: u32, height: u32, bodies: Option<&[Id]>) -> Result<Rendered> {
+        self.render_visible(view, width, height, bodies, false)
+    }
+
+    /// Render with opt-in visibility filtering; explicitly selected hidden bodies are refused.
+    /// Precondition: the current thread must not hold the kernel gate (F-069/F-073).
+    pub fn render_visible(&self, view: View, width: u32, height: u32, bodies: Option<&[Id]>, visible_only: bool) -> Result<Rendered> {
         for (what, v) in [("width", width), ("height", height)] {
             if !(RENDER_MIN_SIDE..=RENDER_MAX_SIDE).contains(&v) {
                 return Err(Error::Invalid(format!("{what} must be {RENDER_MIN_SIDE}..={RENDER_MAX_SIDE} pixels, got {v}")));
             }
         }
-        let ids = self.output_bodies(bodies)?;
+        let (ids, skipped_hidden) = self.output_bodies(bodies, visible_only)?;
         let mut items = Vec::new();
         for &id in &ids {
             let Some(b) = self.p.mesh_index(id).map(|i| &self.p.bodies[i]) else { continue };
@@ -158,7 +166,7 @@ impl Session {
                 }
             }
         }
-        Ok(Rendered { png: crate::pngfile::encode_rgb(width, height, &rgb), width, height, view, bodies: ids, bbox })
+        Ok(Rendered { png: crate::pngfile::encode_rgb(width, height, &rgb), width, height, view, bodies: ids, skipped_hidden, bbox })
     }
 }
 

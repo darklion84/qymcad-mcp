@@ -21,6 +21,9 @@ pub struct ExportArgs {
     /// Bodies to write (ids, native piece names or feature names). Default: every current result body. After split, bodies:[piece] exports only that piece, in one file.
     #[serde(default)]
     pub bodies: Option<Vec<ObjRef>>,
+    /// Only visible current bodies (default false, includes hidden bodies). Omitted bodies selects all visible results and reports skipped_hidden; an explicitly listed hidden body is refused.
+    #[serde(default)]
+    pub visible_only: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -40,6 +43,9 @@ pub struct RenderArgs {
     /// Bodies to draw (ids or names). Default: every current result body.
     #[serde(default)]
     pub bodies: Option<Vec<ObjRef>>,
+    /// Only visible current bodies (default false, includes hidden bodies). Omitted bodies selects all visible results and reports skipped_hidden; an explicitly listed hidden body is refused.
+    #[serde(default)]
+    pub visible_only: bool,
 }
 
 fn default_width() -> u32 {
@@ -59,14 +65,17 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "export",
             "Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body \
-             is placed where it stands in the document; one object per body, no colours. Returns the bodies written, \
+             is placed where it stands in the document; one object per body. STEP/3MF/GLB carry native body colours \
+             (manual or palette) and imported face/triangle colours; STL/OBJ are colourless. Returns colors, per-body \
+             color_rgb/color_source, skipped_hidden and the bodies written. visible_only defaults false (includes hidden \
+             current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. Returns \
              triangle count, current document warnings and per-body mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info). Refuses export if \
              any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: ExportArgs| {
                 let path = checked_path(&a.path, a.format.extensions())?;
                 let s = st.doc()?;
                 let ids = resolve_bodies(s, &a.bodies)?;
-                let r = s.export(a.format, &path, a.quality, ids.as_deref()).map_err(err)?;
+                let r = s.export_visible(a.format, &path, a.quality, ids.as_deref(), a.visible_only).map_err(err)?;
                 let mut v = serde_json::to_value(&r).unwrap_or(Value::Null);
                 v["warnings"] = json!(s.info().warnings);
                 if let Some(bodies) = v["bodies"].as_array_mut() {
@@ -82,12 +91,14 @@ pub fn tools() -> Vec<Tool> {
         tool_content(
             "render",
             "Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted \
-             to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if \
+             to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. \
+             visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses \
+             explicitly listed hidden bodies. The caption lists skipped_hidden. Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if \
              any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: RenderArgs| {
                 let s = st.doc()?;
                 let ids = resolve_bodies(s, &a.bodies)?;
-                let r = s.render(a.view, a.width, a.height, ids.as_deref()).map_err(err)?;
+                let r = s.render_visible(a.view, a.width, a.height, ids.as_deref(), a.visible_only).map_err(err)?;
                 let b = r.bbox.map(|v| round(v, 2));
                 let mut text = format!(
                     "{} view, {}: bodies {:?}, bbox x {}..{} y {}..{} z {}..{} mm",
@@ -101,6 +112,7 @@ pub fn tools() -> Vec<Tool> {
                     b[2],
                     b[5]
                 );
+                text.push_str(&format!("\nskipped_hidden: {:?}", r.skipped_hidden));
                 for warning in s.info().warnings {
                     text.push_str(&format!("\nWarning: {warning}"));
                 }

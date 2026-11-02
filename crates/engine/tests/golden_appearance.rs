@@ -225,18 +225,27 @@ fn preserve_import_maps(s: &mut Session, b: Id) {
 }
 
 #[test]
-fn hidden_and_coloured_bodies_keep_existing_render_export_behaviour() {
+fn hidden_and_coloured_bodies_keep_default_selection_and_export_colour() {
     let (mut s, _, a, b) = stock();
     let before = s.render(View::Iso, 64, 64, None).unwrap();
-    let path = scratch("e3-colourless.3mf");
-    s.export(ExportFormat::ThreeMf, &path, Quality::Standard, None).unwrap();
-    let bytes = std::fs::read(&path).unwrap();
+    let path = scratch("e3-coloured.3mf");
+    let old_report = s.export(ExportFormat::ThreeMf, &path, Quality::Standard, None).unwrap();
+    let old_meshes = qymcad_io::import_3mf(path.to_str().unwrap()).unwrap();
     result(s.appearance(b, Some(false), Some(Some([17, 34, 51]))).unwrap(), a, b, false, [17, 34, 51], "manual", true);
     let after = s.render(View::Iso, 64, 64, None).unwrap();
     assert_eq!(after.bodies, vec![b]);
     assert_eq!(after.png, before.png);
-    assert_eq!(s.export(ExportFormat::ThreeMf, &path, Quality::Standard, None).unwrap().bodies[0].id, b);
-    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    let report = s.export(ExportFormat::ThreeMf, &path, Quality::Standard, None).unwrap();
+    assert_eq!(report.bodies[0].id, b);
+    assert_eq!(report.triangles, old_report.triangles);
+    let meshes = qymcad_io::import_3mf(path.to_str().unwrap()).unwrap();
+    assert_eq!(meshes.len(), 1);
+    assert_eq!(meshes[0].mesh, old_meshes[0].mesh);
+    assert_close(meshes[0].mesh.volume(), 10.0 * 20.0 * 4.0, 1e-6, "rigid prism volume = 800");
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name("3D/3dmodel.model").unwrap(), &mut xml).unwrap();
+    assert!(xml.contains("displaycolor=\"#112233\""), "E4 body colour reaches 3MF");
 }
 
 #[test]

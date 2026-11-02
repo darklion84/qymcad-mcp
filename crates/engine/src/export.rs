@@ -2,13 +2,17 @@
 //!
 //! Mirrors QymCAD.app's File > Export (`crates/qymcad/src/gui/io_jobs.rs` `write_exact_to` / `write_mesh_to`):
 //! every body goes out with its world transform (`body_world_transform`); meshes are re-tessellated from the live
-//! B-rep at the chosen deflection. Unlike the app we always write flat (one object per body, no component tree,
-//! no colours): see FINDINGS F-020.
+//! B-rep at the chosen deflection. Native tree writers carry body (manual or palette) and imported face/triangle
+//! colours in STEP/3MF/GLB, using a flat node per selected body. STL/OBJ remain colourless. Meshes are welded and
+//! placed in world coordinates once; their nodes have identity placement. STEP places independent named Shape
+//! copies in world coordinates too: both STEP and 3MF ignore root-node placement. Hidden current bodies remain
+//! included unless `visible_only` is true.
+//! See FINDINGS F-020/F-133 and ADR 0045.
 
 use crate::error::{Error, Result};
 use crate::session::Session;
 use qymcad_core::geom::{Mesh, Point3};
-use qymcad_core::model::Id;
+use qymcad_core::model::{ExportMesh, ExportNode, Id};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -82,6 +86,10 @@ pub struct ExportReport {
     pub path: String,
     /// The bodies written, in file order.
     pub bodies: Vec<ExportedBody>,
+    /// Whether this format carries colours (STEP/3MF/GLB).
+    pub colors: bool,
+    /// Hidden current bodies omitted by the opt-in visibility filter.
+    pub skipped_hidden: Vec<Id>,
     /// Mesh formats: the deflection used, mm.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deflection_mm: Option<f64>,
@@ -98,6 +106,9 @@ pub struct ExportedBody {
     pub name: String,
     /// Localised native body label, independent of the existing display name.
     pub body_name: String,
+    /// Native body sRGB bytes; imported face/triangle colours may override these.
+    pub color_rgb: [u8; 3],
+    pub color_source: &'static str,
     /// Mesh formats: volume of the written mesh (sum of tetrahedra, absolute), mm³. Compare with the B-rep volume to see
     /// the tessellation error.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,7 +118,7 @@ pub struct ExportedBody {
 impl Session {
     /// The bodies an export or render works on: `bodies` (each must be a current result body), or all result
     /// bodies. Errors if there is nothing to write.
-    pub(crate) fn output_bodies(&self, bodies: Option<&[Id]>) -> Result<Vec<Id>> {
+    pub(crate) fn output_bodies(&self, bodies: Option<&[Id]>, visible_only: bool) -> Result<(Vec<Id>, Vec<Id>)> {
         // A failed feature passes its source body through unchanged (FINDINGS F-008): writing or showing the
         // result would silently drop that feature, so refuse until the document rebuilds cleanly.
         if !self.p.regen_errors.is_empty() {
@@ -125,11 +136,16 @@ impl Session {
             )));
         }
         let results: Vec<Id> = self.result_bodies().iter().map(|b| b.id).collect();
+        let is_hidden = |id: Id| self.p.mesh_index(id).is_some_and(|i| !self.p.bodies[i].visible);
         let Some(asked) = bodies else {
             if results.is_empty() {
                 return Err(Error::Invalid("the document has no bodies yet; build something first".into()));
             }
-            return Ok(results);
+            let (hidden, visible): (Vec<_>, Vec<_>) = results.into_iter().partition(|&id| visible_only && is_hidden(id));
+            if visible.is_empty() {
+                return Err(Error::Invalid("the document has no visible current bodies; show a body or omit visible_only".into()));
+            }
+            return Ok((visible, hidden));
         };
         if asked.is_empty() {
             return Err(Error::Invalid("`bodies` is empty; omit it to use every result body".into()));
@@ -143,23 +159,39 @@ impl Session {
                     self.node_name(id)
                 )));
             }
+            if visible_only && is_hidden(id) {
+                return Err(Error::Invalid(format!("body {id} (`{}`) is hidden; show it or omit visible_only", self.body_name(id))));
+            }
             if !out.contains(&id) {
                 out.push(id);
             }
         }
-        Ok(out)
+        Ok((out, Vec::new()))
     }
 
     /// Write `bodies` (default: every result body) to `path` in `format`. The caller has validated the path; the
     /// extension is checked again here. `quality` applies to mesh formats only.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()` (F-069).
     pub fn export(&self, format: ExportFormat, path: &Path, quality: Quality, bodies: Option<&[Id]>) -> Result<ExportReport> {
+        self.export_visible(format, path, quality, bodies, false)
+    }
+
+    /// Export with opt-in visibility filtering. Explicitly selected hidden bodies are refused before staging.
+    /// Precondition: the current thread must not hold the kernel gate (F-069/F-073).
+    pub fn export_visible(
+        &self,
+        format: ExportFormat,
+        path: &Path,
+        quality: Quality,
+        bodies: Option<&[Id]>,
+        visible_only: bool,
+    ) -> Result<ExportReport> {
         let ext = path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
         if !format.extensions().contains(&ext.as_str()) {
             return Err(Error::Invalid(format!("a {format:?} file must end in .{}", format.extensions().join(" or ."))));
         }
         let final_path = path.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", path.display())))?;
-        let ids = self.output_bodies(bodies)?;
+        let (ids, skipped_hidden) = self.output_bodies(bodies, visible_only)?;
         // Write inside a private directory created fresh next to the target (mode 0700; `create_dir` never follows
         // or reuses an existing entry, a planted symlink included: that name is skipped), then rename the file over the target. QymCAD's writers open
         // their path by name, so the file must live where no other user can swap it; writing the target directly
@@ -171,6 +203,7 @@ impl Session {
         let result = self.export_to(format, &tmp, quality, &ids, final_path).and_then(|mut report| {
             std::fs::rename(&tmp, path).map_err(|e| Error::Io(format!("cannot move the export into place at {final_path}: {e}")))?;
             report.bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            report.skipped_hidden = skipped_hidden;
             Ok(report)
         });
         let _ = std::fs::remove_file(&tmp);
@@ -181,59 +214,124 @@ impl Session {
     /// The actual write, into `tmp` (a fresh file); the report names `final_path`.
     fn export_to(&self, format: ExportFormat, tmp: &Path, quality: Quality, ids: &[Id], final_path: &str) -> Result<ExportReport> {
         let s = tmp.to_str().ok_or_else(|| Error::Invalid(format!("path is not UTF-8: {}", tmp.display())))?;
-        let mut report =
-            ExportReport { format, path: final_path.to_string(), bodies: Vec::new(), deflection_mm: None, triangles: None, bytes: 0 };
+        let colors = matches!(format, ExportFormat::ThreeMf | ExportFormat::Glb | ExportFormat::Step);
+        let mut nodes = Vec::with_capacity(ids.len());
+        let mut report = ExportReport {
+            format,
+            path: final_path.to_string(),
+            bodies: Vec::new(),
+            colors,
+            skipped_hidden: Vec::new(),
+            deflection_mm: None,
+            triangles: None,
+            bytes: 0,
+        };
+        for &id in ids {
+            let index = self.p.mesh_index(id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
+            let color = self.p.mesh_color(index);
+            nodes.push(ExportNode {
+                // Retain flat-writer labels: rename remains metadata-only (ADR 0042), and unnamed STEP
+                // products keep filename-based import names (ADR 0028).
+                name: if format == ExportFormat::Step { String::new() } else { format!("body_{}", nodes.len() + 1) },
+                parent: None,
+                place: if format.is_mesh() { qymcad_core::feature::PLACE_IDENTITY } else { self.p.body_world_transform(id) },
+                body: Some(id),
+                same_as: None,
+                color: Some(color),
+                face_colors: self.p.face_colors.get(&self.p.lineage_root(id)).cloned().unwrap_or_default(),
+            });
+            report.bodies.push(ExportedBody {
+                id,
+                name: self.body_name(id),
+                body_name: self.native_body_name(id),
+                color_rgb: color,
+                color_source: self.body_color_source(id),
+                mesh_volume_mm3: None,
+            });
+        }
         if format.is_mesh() {
             let deflection = quality.deflection();
-            let mut meshes: Vec<Mesh> = Vec::with_capacity(ids.len());
-            for &id in ids {
-                let mut mesh = if self.p.mesh_born(id) {
-                    self.p
-                        .mesh_index(id)
-                        .and_then(|index| self.p.bodies.get(index).map(|body| body.mesh.clone()))
-                        .ok_or_else(|| Error::NotFound(format!("body {id} has no mesh geometry")))?
+            let mut meshes: Vec<ExportMesh> = Vec::with_capacity(ids.len());
+            for (k, &id) in ids.iter().enumerate() {
+                let (mut mesh, mut tri_colors) = if self.p.mesh_born(id) {
+                    let body = &self.p.bodies[self.p.mesh_index(id).unwrap()];
+                    // Mirror the app's raw-mesh route (io_jobs.rs:806–814): only an exact triangle mapping is usable.
+                    let tri = self
+                        .p
+                        .tri_colors
+                        .get(&self.p.lineage_root(id))
+                        .filter(|(_, places)| places.len() == body.mesh.tris.len())
+                        .map(|(palette, places)| places.iter().map(|&i| palette.get(i as usize).copied()).collect())
+                        .unwrap_or_default();
+                    (body.mesh.clone(), tri)
                 } else {
                     let shape = self.shapes.get(&id).ok_or_else(|| Error::NotFound(format!("body {id} has no geometry")))?;
-                    qymcad_kernel::ask::export_mesh(shape, deflection)
-                        .map(|built| built.mesh)
-                        .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?
+                    let built = qymcad_kernel::ask::export_mesh(shape, deflection)
+                        .ok_or_else(|| Error::Invalid(format!("body {id} (`{}`) did not tessellate", self.node_name(id))))?;
+                    // Resolve persistent face colours against THIS tessellation, before weld drops any triangles.
+                    let mut tri = if nodes[k].face_colors.is_empty() { Vec::new() } else { vec![nodes[k].color; built.mesh.tris.len()] };
+                    for face in built.faces.iter().filter(|f| f.id != 0) {
+                        if let Some((_, rgb)) = nodes[k].face_colors.iter().find(|(fid, _)| *fid == face.id) {
+                            for &t in &face.triangles {
+                                if let Some(slot) = tri.get_mut(t as usize) {
+                                    *slot = Some(*rgb);
+                                }
+                            }
+                        }
+                    }
+                    (built.mesh, tri)
                 };
-                weld(&mut mesh);
+                weld_colored(&mut mesh, &mut tri_colors);
                 mesh.transform(&self.p.body_world_transform(id));
-                report.bodies.push(ExportedBody {
-                    id,
-                    name: self.body_name(id),
-                    body_name: self.native_body_name(id),
-                    mesh_volume_mm3: Some(mesh.volume()),
-                });
-                meshes.push(mesh);
+                report.bodies[k].mesh_volume_mm3 = Some(mesh.volume());
+                meshes.push(ExportMesh { body: id, mesh, tri_colors });
             }
+            report.triangles = Some(meshes.iter().map(|m| m.mesh.tris.len()).sum());
             let written = match format {
-                ExportFormat::Stl => qymcad_io::export_stl(&meshes, s),
-                ExportFormat::ThreeMf => qymcad_io::export_3mf(&meshes, s),
-                ExportFormat::Glb => qymcad_io::export_glb(&meshes, s),
-                ExportFormat::Obj => qymcad_io::export_obj(&meshes, s),
+                ExportFormat::ThreeMf => qymcad_io::export_3mf_tree(&nodes, &meshes, s),
+                ExportFormat::Glb => qymcad_io::export_glb_tree(&nodes, &meshes, s),
+                ExportFormat::Stl | ExportFormat::Obj => {
+                    let flat: Vec<Mesh> = meshes.into_iter().map(|m| m.mesh).collect();
+                    if format == ExportFormat::Stl {
+                        qymcad_io::export_stl(&flat, s)
+                    } else {
+                        qymcad_io::export_obj(&flat, s)
+                    }
+                }
                 ExportFormat::Step => unreachable!("STEP is not a mesh format"),
             };
             written.map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
             report.deflection_mm = Some(deflection);
-            report.triangles = Some(meshes.iter().map(|m| m.tris.len()).sum());
         } else {
-            let mut pairs = Vec::with_capacity(ids.len());
+            use qymcad_core::feature::Kernel;
+            let mut placed = Vec::new();
             for &id in ids {
                 let shape = self.shapes.get(&id).ok_or_else(|| {
                     Error::Invalid(format!("body {id} (`{}`) is a mesh body; STEP export requires a recognised B-rep", self.node_name(id)))
                 })?;
-                pairs.push((shape, self.p.body_world_transform(id)));
-                report.bodies.push(ExportedBody {
-                    id,
-                    name: self.body_name(id),
-                    body_name: self.native_body_name(id),
-                    mesh_volume_mm3: None,
-                });
+                if self.p.body_world_transform(id) != qymcad_core::feature::PLACE_IDENTITY {
+                    placed.push((id, shape));
+                }
             }
+            // The native STEP writer applies placement only to child occurrences, not root products. Keep flat
+            // roots by placing named independent copies, preserving imported face ids and original live shapes.
+            // copy_shapes restores through a self-gated door, BEFORE acquiring the caller gate (F-073).
+            let copies = crate::session::copy_shapes(placed)
+                .map_err(|id| Error::Io(format!("cannot copy body {id} for world-space STEP export")))?;
+            let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(copies), ..Default::default() };
             let _gate = qymcad_kernel::kernel_gate();
-            qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
+            for node in &mut nodes {
+                if node.place != qymcad_core::feature::PLACE_IDENTITY {
+                    let id = node.body.unwrap();
+                    kernel
+                        .transform_body(id, id, node.place)
+                        .map_err(|e| Error::Io(format!("cannot place body {id} for STEP export: {e:?}")))?;
+                    node.place = qymcad_core::feature::PLACE_IDENTITY;
+                }
+            }
+            let world = kernel.shapes.borrow();
+            let pairs: Vec<_> = ids.iter().map(|id| (*id, world.get(id).unwrap_or(&self.shapes[id]))).collect();
+            qymcad_kernel::write_step_tree(&nodes, &pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;
         }
         Ok(report)
     }
@@ -251,7 +349,12 @@ impl Session {
 /// point is given once per fan of triangles around it, where a fan hangs together across the edges two triangles are
 /// paired on: the only two of an edge, or around an edge of more, the two holding a wedge of solid (`wedges`).
 /// The per-vertex normals are dropped, as no mesh writer reads them.
+#[cfg(test)]
 fn weld(mesh: &mut Mesh) {
+    weld_colored(mesh, &mut Vec::new());
+}
+
+fn weld_colored(mesh: &mut Mesh, colors: &mut Vec<Option<[u8; 3]>>) {
     use std::collections::HashMap;
     let mut at = HashMap::with_capacity(mesh.verts.len());
     let mut points = Vec::with_capacity(mesh.verts.len());
@@ -267,8 +370,24 @@ fn weld(mesh: &mut Mesh) {
             })
         })
         .collect();
-    let tris: Vec<[u32; 3]> =
-        mesh.tris.iter().map(|t| t.map(|i| index[i as usize])).filter(|&[a, b, c]| a != b && b != c && c != a).collect();
+    let colored = colors.len() == mesh.tris.len();
+    let mut kept_colors = Vec::with_capacity(if colored { colors.len() } else { 0 });
+    let tris: Vec<[u32; 3]> = mesh
+        .tris
+        .iter()
+        .enumerate()
+        .filter_map(|(k, t)| {
+            let [a, b, c] = t.map(|i| index[i as usize]);
+            if a == b || b == c || c == a {
+                return None;
+            }
+            if colored {
+                kept_colors.push(colors[k]);
+            }
+            Some([a, b, c])
+        })
+        .collect();
+    *colors = kept_colors;
 
     // every edge of every triangle, sorted so that the triangles of one edge stand together
     let mut edges: Vec<(u32, u32, u32)> = Vec::with_capacity(tris.len() * 3);
@@ -609,6 +728,23 @@ mod tests {
         m.tris.push([at, at + 1, at + 2]);
         weld(&mut m);
         assert_eq!(m.tris.len(), 4);
+        assert_manifold(&m);
+    }
+
+    #[test]
+    fn welding_keeps_colour_slots_with_surviving_triangles() {
+        let mut m = Mesh::default();
+        tetra(|p| p, &mut m);
+        // Insert a collapsed triangle BETWEEN two coloured faces, so a shifted colour array cannot pass.
+        m.verts.push(m.verts[0]);
+        m.tris.insert(1, [0, 12, 1]);
+        let expected = vec![Some([17, 34, 51]), Some([71, 82, 93]), None, Some([10, 20, 30])];
+        let mut colors = expected.clone();
+        colors.insert(1, Some([255, 0, 255]));
+        weld_colored(&mut m, &mut colors);
+        assert_eq!(colors, expected);
+        assert_eq!((m.tris.len(), m.verts.len()), (4, 4)); // Four triangular faces, four corners of a tetrahedron.
+        assert!((m.volume() - 1.0 / 6.0).abs() < 1e-12); // V = base area (1/2) × height 1 / 3.
         assert_manifold(&m);
     }
 

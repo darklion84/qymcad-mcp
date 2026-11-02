@@ -5743,7 +5743,7 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
 
 ## export
 
-Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body, no colours. Returns the bodies written, triangle count, current document warnings and per-body mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
+Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body. STEP/3MF/GLB carry native body colours (manual or palette) and imported face/triangle colours; STL/OBJ are colourless. Returns colors, per-body color_rgb/color_source, skipped_hidden and the bodies written. visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. Returns triangle count, current document warnings and per-body mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -5841,6 +5841,11 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
       "$ref": "#/$defs/Quality",
       "default": "standard",
       "description": "Mesh detail for stl/3mf/glb/obj (chordal deflection): draft 0.2 mm, standard 0.05 mm (default), high 0.02 mm,\nmax 0.005 mm. Ignored for step."
+    },
+    "visible_only": {
+      "default": false,
+      "description": "Only visible current bodies (default false, includes hidden bodies). Omitted bodies selects all visible results and reports skipped_hidden; an explicitly listed hidden body is refused.",
+      "type": "boolean"
     }
   },
   "required": [
@@ -5853,7 +5858,7 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
 
 ## render
 
-Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
+Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. The caption lists skipped_hidden. Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -5936,6 +5941,11 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
       "$ref": "#/$defs/View",
       "default": "iso",
       "description": "iso (default; from front-right-top), top, bottom, front (from −Y), back, left (from −X), right (from +X)."
+    },
+    "visible_only": {
+      "default": false,
+      "description": "Only visible current bodies (default false, includes hidden bodies). Omitted bodies selects all visible results and reports skipped_hidden; an explicitly listed hidden body is refused.",
+      "type": "boolean"
     },
     "width": {
       "default": 512,
@@ -6086,7 +6096,7 @@ Rename exactly one native feature, sketch or body label without rebuilding geome
 
 ## appearance
 
-Set a current body's saved visibility and/or lineage colour without dirtying nodes or rebuilding geometry. Requires visible or color. Visibility belongs to this body id; colour follows its lineage root. color omitted = unchanged, [r,g,b] integer bytes 0..=255 = manual, null = native reset. Returns body {id,name,body_name}, lineage_root, visible, color_rgb, color_source (manual if the root has a map entry, even for palette-equal RGB; otherwise palette), scope {visibility:body,color:lineage}, changed. A no-op adds no undo entry. Undoable and allowed in batch. Consumed bodies, sketches, datums and unresolved/ambiguous refs are refused. The pinned app has no persisted sketch visibility. Render and export still show/write every current result body regardless of visible, colourless; colour and opt-in visibility filtering are pending E4.
+Set a current body's saved visibility and/or lineage colour without dirtying nodes or rebuilding geometry. Requires visible or color. Visibility belongs to this body id; colour follows its lineage root. color omitted = unchanged, [r,g,b] integer bytes 0..=255 = manual, null = native reset. Returns body {id,name,body_name}, lineage_root, visible, color_rgb, color_source (manual if the root has a map entry, even for palette-equal RGB; otherwise palette), scope {visibility:body,color:lineage}, changed. A no-op adds no undo entry. Undoable and allowed in batch. Consumed bodies, sketches, datums and unresolved/ambiguous refs are refused. The pinned app has no persisted sketch visibility. Render and export include hidden current bodies by default; visible_only=true filters them and refuses explicitly selected hidden bodies. STEP/3MF/GLB export body and imported override colours; STL/OBJ and render retain their existing shading.
 
 ```json
 {
