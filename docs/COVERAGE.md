@@ -49,7 +49,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T1 | Parameters and formulas | covered | — | `param_set`, `param_delete` | — |
 | T2 | Edit feature | covered | RemoveFace, fillet, chamfer, shell and push_face whole-selection re-picks; hole re-placement is out of scope (move a hole by editing its sketch/offset dimensions) | `remove_face`, `fillet`, `chamfer`, `shell`, `push_face`, `dimension_set` | — |
 | T3 | Delete feature and undo | covered | — | `feature_delete`, `undo` | — |
-| T4 | Rename feature | not covered | — | none | — |
+| T4 | Rename feature, sketch and body | covered | Separate native labels, metadata-only history, resolver aliases, persistence and batch/undo (ADR 0042) | `rename` | — |
 | T5 | Reorder feature | not covered | — | none | — |
 | T6 | Suppress / rollback history | not covered | — | none | — |
 | T7 | Visibility and body color | not covered | Hide a body or sketch; set a body colour (it would reach 3MF) | none | — |

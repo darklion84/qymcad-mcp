@@ -47,6 +47,8 @@ impl MeshUnit {
 pub struct MeshPieceResult {
     pub body: Id,
     pub name: String,
+    /// Localised native body label, independent of the imported component label.
+    pub body_name: String,
     pub triangles: usize,
     pub vertices: usize,
     pub unit: MeshUnit,
@@ -519,6 +521,7 @@ impl Session {
                 MeshPieceResult {
                     body,
                     name: self.body_name(body),
+                    body_name: self.native_body_name(body),
                     triangles: mesh.tris.len(),
                     vertices: mesh.verts.len(),
                     unit: if embedded { MeshUnit::Mm } else { chosen_unit },

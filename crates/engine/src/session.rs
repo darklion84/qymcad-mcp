@@ -37,6 +37,8 @@ impl AdvisoryWarning {
 pub struct BodyInfo {
     pub id: Id,
     pub name: String,
+    /// Localised native body label, independent of the producing feature's name.
+    pub body_name: String,
     /// mm³, serialized as `volume_mm3` at native floating-point precision.
     #[serde(rename = "volume_mm3")]
     pub volume: f64,
@@ -979,6 +981,7 @@ impl Session {
                     return Some(BodyInfo {
                         id: b,
                         name: self.body_name(b),
+                        body_name: self.native_body_name(b),
                         volume: sh.volume(),
                         bbox: reporting_bbox(sh).unwrap_or([0.0; 6]),
                     });
@@ -997,7 +1000,7 @@ impl Session {
                         bbox[axis + 3] = bbox[axis + 3].max(point[axis]);
                     }
                 }
-                Some(BodyInfo { id: b, name: self.body_name(b), volume: mesh.volume(), bbox })
+                Some(BodyInfo { id: b, name: self.body_name(b), body_name: self.native_body_name(b), volume: mesh.volume(), bbox })
             })
             .collect()
     }
@@ -1144,6 +1147,11 @@ impl Session {
             .collect()
     }
 
+    /// Localised native body label, using the app's generated label when the stored name is empty.
+    pub fn native_body_name(&self, id: Id) -> String {
+        self.p.mesh_index(id).map(|index| crate::localization::name(&self.p.mesh_name(index))).unwrap_or_default()
+    }
+
     /// Display name of a body. Split and all boolean outputs use native piece names; ordinary features keep their names.
     pub fn body_name(&self, id: Id) -> String {
         let native_component_name = self
@@ -1189,8 +1197,25 @@ impl Session {
             }
             return Err(Error::NotFound(format!("no object with id {id}")));
         }
+        let hits = self.name_matches(r);
+        match hits.as_slice() {
+            [id] => Ok(*id),
+            [] => Err(Error::NotFound(format!("no object named `{r}`"))),
+            _ => Err(Error::Invalid(format!("several objects are named `{r}` ({hits:?}); use the id"))),
+        }
+    }
+
+    /// Shared alias matching for text references and rename collision reporting.
+    pub(crate) fn name_matches(&self, r: &str) -> Vec<Id> {
+        let bodies: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
         let consumed = self.p.consumed_bodies();
-        let mut native: Vec<Id> = self.p.bodies.iter().filter(|b| bodies.contains(&b.id) && b.name == r).map(|b| b.id).collect();
+        let mut native: Vec<Id> = self
+            .p
+            .bodies
+            .iter()
+            .filter(|b| bodies.contains(&b.id) && (b.name == r || crate::localization::name(&b.name) == r))
+            .map(|b| b.id)
+            .collect();
         let imported_aliases: Vec<Id> = self
             .p
             .timeline
@@ -1206,14 +1231,11 @@ impl Session {
         let current: Vec<Id> = native.iter().copied().filter(|id| !consumed.contains(id)).collect();
         let mut hits: Vec<Id> =
             self.p.timeline.iter().filter(|n| n.name == r || crate::localization::name(&n.name) == r).map(|n| n.id).collect();
+        hits.extend(self.p.sketches.iter().filter(|s| s.name == r || crate::localization::name(&s.name) == r).map(|s| s.id));
         hits.extend(if current.is_empty() { native } else { current });
         hits.sort_unstable();
         hits.dedup();
-        match hits.as_slice() {
-            [id] => Ok(*id),
-            [] => Err(Error::NotFound(format!("no object named `{r}`"))),
-            _ => Err(Error::Invalid(format!("several objects are named `{r}` ({hits:?}); use the id"))),
-        }
+        hits
     }
 
     fn issue(&self, node: Id, message: String) -> NodeIssue {

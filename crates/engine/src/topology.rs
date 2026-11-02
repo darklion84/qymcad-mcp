@@ -151,6 +151,8 @@ pub struct EdgeInfo {
 pub struct Topology {
     /// The body the ids belong to.
     pub body: Id,
+    /// Localised native body label, independent of the producing feature's name.
+    pub body_name: String,
     /// Its faces.
     pub faces: Vec<FaceInfo>,
     /// Its edges.
@@ -566,7 +568,7 @@ impl Session {
         out_faces.sort_unstable_by_key(|f| f.id);
         out_edges.sort_unstable_by_key(|e| e.id);
         let warnings = self.ambiguous_face_warning(body).into_iter().collect();
-        Ok(Topology { body, faces: out_faces, edges: out_edges, warnings })
+        Ok(Topology { body, body_name: self.native_body_name(body), faces: out_faces, edges: out_edges, warnings })
     }
 
     /// Native naming diagnostics require only the restored face pool, never tessellation or a kernel gate.

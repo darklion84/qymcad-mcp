@@ -524,7 +524,7 @@ fn topology_json(t: &Topology, a: &TopologyArgs) -> Result<Value, String> {
     let along = a.along.map(|d| unit(d.0)).transpose()?;
     let limit = a.limit.unwrap_or(60);
     let dot = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
-    let mut out = json!({ "body": t.body, "faces_total": t.faces.len(), "edges_total": t.edges.len() });
+    let mut out = json!({ "body": t.body, "body_name": t.body_name, "faces_total": t.faces.len(), "edges_total": t.edges.len() });
     if !t.warnings.is_empty() {
         out["warnings"] = json!(t.warnings);
     }
@@ -565,7 +565,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             "topology",
-            "List the faces and edges of a body with persistent ids: faces (kind plane/cylinder/cone/sphere/other, \
+            "List a body's native localised body_name and its faces and edges with persistent ids: faces (kind plane/cylinder/cone/sphere/other, \
              centroid, outward normal for planes, tessellation-based area (areas can be below analytic by up to ~2% on very small curved regions, including flat faces with curved boundaries, \
              as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
              line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE \

@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- `rename` independently renames a feature timeline label, sketch record or native body label, with trimmed case-preserving names, duplicate diagnostics, localisation, metadata-only undo and batch rollback (ADR 0042).
+- Sketch and native body labels resolve by raw or localised name after rename and save/open. Body results expose native `body_name` while preserving existing `name` semantics.
+
+### Fixed
+
 ## 0.1.1-dev.20261026.8 — feature re-pick for fillet, chamfer, shell, push face (ADR 0041)
 
 ### Added

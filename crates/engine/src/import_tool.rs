@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct ImportedBody {
     pub body: Id,
     pub name: String,
+    /// Localised native body label, independent of the imported component label.
+    pub body_name: String,
     pub solid: u32,
     pub scale: f64,
     #[serde(rename = "volume_mm3")]
@@ -251,7 +253,7 @@ impl Session {
                     }
                 }
             }
-            imported.push(ImportedBody { body, name, solid: index, scale, volume, bbox });
+            imported.push(ImportedBody { body, name, body_name: self.native_body_name(body), solid: index, scale, volume, bbox });
         }
         let warnings = rebuild.warnings.clone();
         Ok(ImportResult { source, feature, bodies: imported, warnings, rebuild })

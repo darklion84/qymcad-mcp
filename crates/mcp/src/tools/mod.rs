@@ -12,6 +12,7 @@ mod output;
 mod params;
 mod print;
 mod recognise;
+mod rename;
 mod sketch;
 mod sketch_edit;
 mod sketch_import;
@@ -31,6 +32,8 @@ pub type Content = Vec<Value>;
 pub struct State {
     pub session: Option<Session>,
     created_node: Option<qymcad_engine::Id>,
+    /// A successful metadata no-op restores its snapshot instead of consuming an undo entry.
+    skip_history: bool,
 }
 
 impl State {
@@ -130,6 +133,7 @@ fn modelling_tool(name: &str) -> bool {
             | "import_mesh"
             | "recognise"
             | "feature_delete"
+            | "rename"
     )
 }
 
@@ -240,6 +244,7 @@ impl Registry {
         tools.extend(recognise::tools());
         tools.extend(output::tools());
         tools.extend(history::tools());
+        tools.extend(rename::tools());
         tools.extend(topology::tools());
         tools.push(batch::tool());
         Registry { tools, state: State::default() }
@@ -271,13 +276,14 @@ impl Registry {
             None
         };
         self.state.created_node = None;
+        self.state.skip_history = false;
         let result = (t.handler)(&self.tools, &mut self.state, args);
         if let Some(mut snapshot) = snapshot {
             if let Some(id) = self.state.created_node {
                 snapshot.record_created_node(id);
             }
             if let Some(s) = self.state.session.as_mut() {
-                s.finish_tool_edit(snapshot, result.is_ok());
+                s.finish_tool_edit(snapshot, result.is_ok() && !self.state.skip_history);
             }
         }
         Ok(result)

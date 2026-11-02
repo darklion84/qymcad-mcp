@@ -287,6 +287,7 @@ fn lists_tools_with_object_schemas() {
         "recognise",
         "feature_delete",
         "undo",
+        "rename",
         "batch",
     ];
     for want in expected {

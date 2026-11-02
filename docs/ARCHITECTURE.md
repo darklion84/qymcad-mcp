@@ -108,7 +108,7 @@ and argument type, before opening a history boundary. It then invokes the existi
 without recursively calling `Registry::call`: the enclosing batch supplies the only tool-edit snapshot
 and undo entry. Every step retains its normal engine atomicity, rebuild and error checks, so later steps
 can use earlier parameters and named/id-referenced sketches and features. A failure restores the enclosing
-snapshot, adds no undo entry and reports the 1-based step index, tool and original error. Success records
+snapshot including unpublished provisional ids (ADR 0042), adds no undo entry and reports the 1-based step index, tool and original error. Success records
 tool `batch` and label `Batch (N steps)`; individual calls and batches interleave in the same 16-entry history.
 Compact results report step/tool, created-node id/name where applicable and minimal operation details,
 followed by current bodies/warnings/errors without an extra rebuild. `verbose=true` also includes every
@@ -279,13 +279,9 @@ argument path; the normal deserializer still rejects unknown fields and invalid 
   `QYMCAD_MCP_LOG=off` so tests do not write to the developer's default log directory.
 
 ## Roadmap
-| Phase | Scope | Status |
-|---|---|---|
-| 0 | Repository skeleton, pinned build, docs, ADRs, smoke test | done |
-| 1 | Engine core: session, regenerate pipeline, params, rect/circle sketches, extrude/cut, offset plane | done |
-| 2 | MCP transport + phase-1 tools, protocol tests, registration | done |
-| 3 | Sketch entities & constraints (3A); topology + fillet/chamfer/hole/shell/arrays/mirror/revolve (3B); export + render (3C) | implemented and integrated; review fixes in progress on `phase3/codex-r2` |
-| 4 | Acceptance on real parts (collet test plate, hanging shelf) vs build123d references | — |
-| 5 | Release 0.1.0 | — |
+
+Released packages through `0.1.1-dev.20261026.8` include the modelling core, sketch tools/patterns/import,
+body booleans and import, mesh recognition, RemoveFace and focused feature re-picks. See CHANGELOG.md for
+package details. Next: package E, starting with feature/sketch/body rename (ADR 0042).
 
 Explicit Point preservation uses the native orphan-pruner rule: otherwise unprotected Points receive an unnamed non-driving origin Distance. Existing native protection is reused without extra rows. This persists across native saved-file offset relays, adds no solver DOF restriction or geometric entity, and may display a reference annotation (ADR0030, F-112). Engine record restoration remains for legacy inputs.

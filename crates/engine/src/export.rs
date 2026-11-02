@@ -96,6 +96,8 @@ pub struct ExportReport {
 pub struct ExportedBody {
     pub id: Id,
     pub name: String,
+    /// Localised native body label, independent of the existing display name.
+    pub body_name: String,
     /// Mesh formats: volume of the written mesh (sum of tetrahedra, absolute), mm³. Compare with the B-rep volume to see
     /// the tessellation error.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,7 +200,12 @@ impl Session {
                 };
                 weld(&mut mesh);
                 mesh.transform(&self.p.body_world_transform(id));
-                report.bodies.push(ExportedBody { id, name: self.body_name(id), mesh_volume_mm3: Some(mesh.volume()) });
+                report.bodies.push(ExportedBody {
+                    id,
+                    name: self.body_name(id),
+                    body_name: self.native_body_name(id),
+                    mesh_volume_mm3: Some(mesh.volume()),
+                });
                 meshes.push(mesh);
             }
             let written = match format {
@@ -218,7 +225,12 @@ impl Session {
                     Error::Invalid(format!("body {id} (`{}`) is a mesh body; STEP export requires a recognised B-rep", self.node_name(id)))
                 })?;
                 pairs.push((shape, self.p.body_world_transform(id)));
-                report.bodies.push(ExportedBody { id, name: self.body_name(id), mesh_volume_mm3: None });
+                report.bodies.push(ExportedBody {
+                    id,
+                    name: self.body_name(id),
+                    body_name: self.native_body_name(id),
+                    mesh_volume_mm3: None,
+                });
             }
             let _gate = qymcad_kernel::kernel_gate();
             qymcad_kernel::write_step(&pairs, s).map_err(|e| Error::Io(format!("cannot write {final_path}: {e}")))?;

@@ -232,6 +232,7 @@ fn limits_allowlist_and_outer_schema() {
         "import_mesh",
         "recognise",
         "feature_delete",
+        "rename",
     ];
     for name in r.list().iter().map(|t| t["name"].as_str().unwrap()).filter(|n| !allowed.contains(n)).chain(["unknown"]) {
         let message = error(&mut r, json!({"steps":[step(name,json!({}))]}));
