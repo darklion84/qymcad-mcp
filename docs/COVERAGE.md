@@ -53,7 +53,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T5 | Reorder feature | not covered | — | none | — |
 | T6 | Suppress / rollback history | not covered | — | none | — |
 | T7 | Visibility and body color | not covered | Hide a body or sketch; set a body colour (it would reach 3MF) | none | — |
-| T8 | Measurement | partial | No distances or angles between elements | `topology`, `doc_info` | — |
+| T8 | Measurement | covered | Native support-geometry distances, acute unsigned angles, lengths and radii; arcs use full circles for pairs. No general trimmed B-rep minimum distance, area/mass or signed angles; spline pairs, unsupported curved faces and fallback anchor pairs refused (ADR 0043) | `measure`; `topology`, `doc_info` for existing area/volume reports | — |
 | I1 | STEP / IGES import | covered | Native source-backed part trees, selective solids, literal scale and embedded originals | `import` | `FeatureKind::Import` |
 | I2 | Mesh import | covered | STL, OBJ, PLY, glTF/GLB, 3MF and AMF import, declared units, caps, embedded source, mesh move/export and persistence | `import_mesh` | `FeatureKind::MeshPiece` |
 | I3 | DXF / SVG sketch import | covered | Native DXF/SVG parsing, literal scaled editable sketches, closure, reports, units, and downstream profiles | `sketch_import`; `golden_sketch_import.rs` | — |

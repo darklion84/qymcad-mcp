@@ -19,6 +19,7 @@ mod info;
 mod localization;
 #[cfg(test)]
 mod localization_tests;
+mod measure;
 mod mesh_import;
 mod mesh_recognise;
 mod modifiers;
@@ -49,6 +50,7 @@ pub use history::{Snapshot, ToolCall, Undone, UNDO_LIMIT};
 pub use hole_sketch::HoleSketch;
 pub use import_tool::{ImportResult, ImportedBody};
 pub use info::{DocInfo, NodeInfo};
+pub use measure::{MeasureAt, MeasureOperand, MeasureResult, ResolvedMeasure};
 pub use mesh_import::{MeshFormat, MeshImportResult, MeshPieceResult, MeshUnit};
 pub use mesh_recognise::{MeshRecogniseMode, MeshRecogniseResult};
 pub use modifiers::{Chamfer, ChamferInfo, Hole, HoleKind, Side};

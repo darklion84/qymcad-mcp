@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `measure` reports native support-geometry distances, acute unsigned angles, edge lengths and circle/cylinder radii in world coordinates, with exact-one face/edge selections and explicit distance meanings. Arcs use their full underlying circle for pairs; unsupported/fallback pairs are refused. Read-only, outside batch and undo; no general B-rep minimum distance, area/mass or signed angles (ADR 0043).
 - `rename` independently renames a feature timeline label, sketch record or native body label, with trimmed case-preserving names, duplicate diagnostics, localisation, metadata-only undo and batch rollback (ADR 0042).
 - Sketch and native body labels resolve by raw or localised name after rename and save/open. Body results expose native `body_name` while preserving existing `name` semantics.
 

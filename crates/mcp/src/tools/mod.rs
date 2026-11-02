@@ -8,6 +8,7 @@ mod features;
 mod history;
 mod import;
 mod import_mesh;
+mod measure;
 mod output;
 mod params;
 mod print;
@@ -246,6 +247,7 @@ impl Registry {
         tools.extend(history::tools());
         tools.extend(rename::tools());
         tools.extend(topology::tools());
+        tools.extend(measure::tools());
         tools.push(batch::tool());
         Registry { tools, state: State::default() }
     }
