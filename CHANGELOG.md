@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.8 — feature re-pick for fillet, chamfer, shell, push face (ADR 0041)
 
 ### Added
 - `fillet` and `chamfer` support atomic whole-edge-set re-picks through `feature`, preserving node ids, formulas, downstream rebuilds, batch/undo behavior and persistent edge picks (ADR 0041).

@@ -9,7 +9,8 @@ named parameters — and save them as `.qcad` files you open and edit in the Qym
 > polygon, slot) fully dimensioned with expressions, plus curve constraints and curve editing (trim, extend,
 > break, offset, corner fillet/chamfer, point mirror); datum planes;
 > extrude / cut / revolve / sweep / loft; fillet, chamfer, hole, shell, push face, remove face; linear / circular arrays and mirror;
-> topology and descriptive selections; atomic modelling batches, feature deletion and undo;
+> topology and descriptive selections; re-picking the edges/faces of an existing fillet, chamfer, shell, push face or remove face;
+> atomic modelling batches, feature deletion and undo;
 > STEP/IGES, DXF/SVG and mesh import (STL, OBJ, PLY, glTF/GLB, 3MF, AMF) with recognition into B-reps;
 > export to STEP / STL / 3MF / GLB / OBJ and a rendered PNG preview.
 > See [docs/TOOLS.md](docs/TOOLS.md), [capability coverage](docs/COVERAGE.md), and the [roadmap](docs/ARCHITECTURE.md#roadmap). Known limits and QymCAD
@@ -66,6 +67,7 @@ startup the server warns when the installed QymCAD.app is a different release.
 
 | qymcad-mcp | QymCAD release | OpenCASCADE |
 |---|---|---|
+| 0.1.1-dev.20261026.8 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.7 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.6 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.5 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
