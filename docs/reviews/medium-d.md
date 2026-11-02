@@ -14,3 +14,10 @@ and made the fixes below. Reviews follow the incremental policy: each round revi
 Checks: check.sh 1036 passed, 3 ignored on 46394d4. Live MCP test: fillet 3991.416 → 3965.664 (4 edges) → r=1
 3991.416, undo back; chamfer 3990 → 3980; shell 1084 → tube 760 → t=2 1440; push_face 6000 → +x 5000 → d=2 4400;
 failed batch rolled back the re-pick; save/open matches — PASS.
+
+Manual QymCAD.app check (computer use, 2026-11-02): four files in `tmp/gui-check-medD`, each with a re-picked
+feature — fillet on 4 vertical edges (r 2→1; the app's own edit panel shows «Рёбер: 4», all four highlighted),
+chamfer on two parallel top edges (c 1→2), shell open top and bottom (t 1→2, still a through tube), push_face on +X
+(d 5→2, the app reports 22.0 × 20.0 × 10.0 mm) — 4/4 PASS, no rebuild errors, files unchanged (SHA-256).
+Side observation, app behaviour: a .qcad handed over by macOS "open with" was refused with "QymCAD cannot open
+files of this type"; File → Open of the same file works.
