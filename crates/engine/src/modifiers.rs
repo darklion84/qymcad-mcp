@@ -408,6 +408,35 @@ impl Session {
         Ok((body, ids, rebuild))
     }
 
+    /// Replace the opening faces of an existing shell, preserving its dimensions and rebuilding dependents.
+    pub fn repick_shell(&mut self, feature: Id, open_faces: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body) = match self.p.timeline.iter().find(|n| n.id == feature) {
+            Some(node) => match &node.kind {
+                FeatureKind::Shell { src, body, .. } => (*src, *body),
+                _ => return Err(Error::Invalid(format!("feature {feature} is not a shell feature"))),
+            },
+            None => return Err(Error::NotFound(format!("feature {feature}"))),
+        };
+        let (ids, faces_ref) = self.shell_face_ref(src, open_faces)?;
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "shell re-pick", |s| {
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::Shell { faces: stored, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a shell feature")));
+            };
+            *stored = faces_ref;
+            node.dirty = true;
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
+        })?;
+        Ok((body, ids, self.current_rebuild()))
+    }
+
     /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
     /// hollow shell, F-035).
     pub fn shell(&mut self, body: Option<Id>, open_faces: &Sel, thickness: &Num, side: Side, name: Option<&str>) -> Result<(Id, Rebuild)> {
@@ -415,10 +444,7 @@ impl Session {
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let t = positive(s, thickness, "shell thickness")?;
-            let ids = s.resolve_sel(src, Element::Faces, open_faces)?;
-            if ids.is_empty() {
-                return Err(Error::Invalid(format!("the open-face selection matched no face of body {src}")));
-            }
+            let (ids, faces_ref) = s.shell_face_ref(src, open_faces)?;
             let qside = match side {
                 Side::Inward => ShellSide::Inward,
                 Side::Outward => ShellSide::Outward,
@@ -426,15 +452,45 @@ impl Session {
             };
             let id = s.p.add_shell_mode(src, t, if open_faces.is_ids() { ids.clone() } else { Vec::new() }, qside);
             if !open_faces.is_ids() {
-                let q = s.face_query(open_faces, &ids)?;
                 if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
-                    *faces = Ref::many(q);
+                    *faces = faces_ref;
                 }
             }
             dim(s, id, "thickness", thickness);
             s.set_node_name(id, name)?;
             Ok(id)
         })
+    }
+
+    /// Replace the face of an existing PushFace node, preserving its distance formula and rebuilding dependents.
+    pub fn repick_push_face(&mut self, feature: Id, face: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body) = match self.p.timeline.iter().find(|n| n.id == feature) {
+            Some(node) => match &node.kind {
+                FeatureKind::PushFace { src, body, .. } => (*src, *body),
+                _ => return Err(Error::Invalid(format!("feature {feature} is not a push_face feature"))),
+            },
+            None => return Err(Error::NotFound(format!("feature {feature}"))),
+        };
+        let key = self.planar_face(src, face)?;
+        let ids = vec![key.id];
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "push_face re-pick", |s| {
+            let stored_ref = s.push_face_ref(face, &key)?;
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::PushFace { face: stored, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a push_face feature")));
+            };
+            *stored = stored_ref;
+            node.dirty = true;
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
+        })?;
+        Ok((body, ids, self.current_rebuild()))
     }
 
     /// Move one planar face along its outward normal by `dist` (negative pushes it in).
@@ -447,12 +503,10 @@ impl Session {
                 return Err(Error::Invalid("push distance must not be zero".into()));
             }
             let key = s.planar_face(src, face)?;
+            let stored_ref = s.push_face_ref(face, &key)?;
             let id = s.in_component(s.p.body_owner(src), |p| p.add_push_face(src, key, d));
-            if !face.is_ids() {
-                let q = s.face_query(face, &[key.id])?;
-                if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {
-                    *r = Ref { query: q, expect: Cardinality::One, hint: Fingerprint { centroid: key.centroid, normal: key.normal } };
-                }
+            if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {
+                *r = stored_ref;
             }
             dim(s, id, "dist", dist);
             s.set_node_name(id, name)?;
@@ -622,6 +676,25 @@ impl Session {
             )));
         }
         Ok((ids, dropped))
+    }
+
+    fn shell_face_ref(&self, src: Id, sel: &Sel) -> Result<(Vec<u32>, Ref)> {
+        let ids = self.resolve_sel(src, Element::Faces, sel)?;
+        if ids.is_empty() {
+            return Err(Error::Invalid(format!("the open-face selection matched no face of body {src}")));
+        }
+        let stored = if sel.is_ids() { Ref::picks(&ids) } else { Ref::many(self.face_query(sel, &ids)?) };
+        Ok((ids, stored))
+    }
+
+    /// The PushFace reference creation and re-pick both store: the native id pick for ids, the creation query
+    /// for descriptions; either way with the face's centroid/normal hint.
+    fn push_face_ref(&self, sel: &Sel, key: &qymcad_core::feature::FaceKey) -> Result<Ref> {
+        let hint = Fingerprint { centroid: key.centroid, normal: key.normal };
+        if sel.is_ids() {
+            return Ok(Ref::one(key.id, hint));
+        }
+        Ok(Ref { query: self.face_query(sel, &[key.id])?, expect: Cardinality::One, hint })
     }
 
     fn planar_face(&self, src: Id, sel: &Sel) -> Result<qymcad_core::feature::FaceKey> {

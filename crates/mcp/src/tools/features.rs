@@ -312,18 +312,22 @@ pub struct HoleArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShellArgs {
-    /// Body id or name. Default: the part's current body.
+    /// Body id or name. Default: the part's current body; not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// Faces to remove (the openings), at least one, e.g. {"facing": "+z"} for an open box. QymCAD has no closed
-    /// hollow shell.
+    /// hollow shell. With `feature`, replaces the complete opening-face selection on that shell.
     pub open_faces: SelArg,
-    /// Wall thickness, mm (number or expression).
-    pub thickness: Num,
+    /// Wall thickness, mm (number or expression); required without `feature`, otherwise use `dimension_set`.
+    #[serde(default)]
+    pub thickness: Option<Num>,
     /// inward (default: the outside stays), outward (the body becomes the cavity), centred.
     #[serde(default)]
-    pub side: Side,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    pub side: Option<Side>,
+    /// Existing Shell feature id/name to re-pick. With this set, `body`, `thickness`, `side` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -331,14 +335,18 @@ pub struct ShellArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PushFaceArgs {
-    /// Body id or name. Default: the part's current body.
+    /// Body id or name. Default: the part's current body; not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
-    /// One planar face, e.g. {"facing": "+z"}.
+    /// One planar face, e.g. {"facing": "+z"}. With `feature`, replaces that node's selected face.
     pub face: SelArg,
-    /// Distance along the outward normal, mm (number or expression); negative pulls the face in.
-    pub dist: Num,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Distance along the outward normal, mm (number or expression); negative pulls the face in; required without `feature`.
+    #[serde(default)]
+    pub dist: Option<Num>,
+    /// Existing PushFace feature id/name to re-pick. With this set, `body`, `dist` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -784,28 +792,49 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "shell",
             concat!(
-                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces.",
+                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the complete face selection of an existing shell; its thickness/side formulas are unchanged and values remain editable with `dimension_set`.",
                 stale!()
             ),
             |st, a: ShellArgs| {
                 let s = st.doc()?;
-                let body = opt_body(s, &a.body)?;
                 let faces = a.open_faces.resolve(s)?;
-                feature_json(s.shell(body, &faces, &a.thickness, a.side, a.name.as_deref()))
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.thickness.is_some() || a.side.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body`, `thickness`, `side` and `name` are not accepted; change values with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected_faces, rebuild) = s.repick_shell(feature, &faces).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected_faces, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let body = opt_body(s, &a.body)?;
+                    let thickness = a.thickness.ok_or("`thickness` is required unless `feature` is given")?;
+                    feature_json(s.shell(body, &faces, &thickness, a.side.unwrap_or_default(), a.name.as_deref()))
+                }
             },
         ),
         tool(
             "push_face",
-            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {\"facing\": \"+z\"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later.", stale!()),
+            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {\"facing\": \"+z\"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the selected face of an existing push_face; its distance formula stays unchanged and remains editable with `dimension_set`.", stale!()),
             |st, a: PushFaceArgs| {
                 let s = st.doc()?;
-                let (body, face) = (opt_body(s, &a.body)?, a.face.resolve(s)?);
-                feature_json(s.push_face(body, &face, &a.dist, a.name.as_deref()))
+                let face = a.face.resolve(s)?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.dist.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body`, `dist` and `name` are not accepted; change values with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected_faces, rebuild) = s.repick_push_face(feature, &face).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected_faces, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let body = opt_body(s, &a.body)?;
+                    let dist = a.dist.ok_or("`dist` is required unless `feature` is given")?;
+                    feature_json(s.push_face(body, &face, &dist, a.name.as_deref()))
+                }
             },
         ),
         tool(
             "remove_face",
-            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is a focused T2 feature-edit implementation; shell and push_face re-picks are not supported.", stale!()),
+            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. Shell and push_face also support whole-selection re-picks through `feature`, preserving node ids, formulas, downstream rebuilds and atomic rollback.", stale!()),
             |st, a: RemoveFaceArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;

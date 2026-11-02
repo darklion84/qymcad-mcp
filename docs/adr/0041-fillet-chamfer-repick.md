@@ -14,8 +14,12 @@ The QymCAD app edits an existing fillet or chamfer node by replacing its complet
 3. Fillet variable-radius vertex tables are refused. The normal F-074 acceptance check and all rebuild errors apply to the replacement set. Chamfer retained reference-face adjacency is checked before mutation; an explicit new reference face replaces it.
 4. Every edit rebuilds on independent B-rep copies and restores the exact recipe, diagnostics and live shapes on failure. Re-pick is legal in batch and is undoable.
 
+## Shell and push_face
+
+`Shell` and `PushFace` use the same focused `feature` update surface. The complete face selection is resolved against the node's own source body, ids are stored as native picks, descriptions retain the creation query, and PushFace refreshes the centroid/normal hint. Body, side, thickness/dist and name stay unchanged and are editable with `dimension_set`. Independent B-rep copies, downstream rebuild checks, batch and one-step undo preserve the atomic rollback contract. Hole re-placement is out of scope: move a hole by editing its sketch/offset dimensions.
+
 ## Consequences
 
-Successful results report `feature`, `body`, `name`, `selected_edges` and rebuild diagnostics; chamfer results also report retained mode/reference/flip. T2 remains partial: RemoveFace, fillet and chamfer re-picks are implemented; shell and push_face are next.
+Successful results report `feature`, `body`, `name`, `selected_edges` or `selected_faces` and rebuild diagnostics; chamfer results also report retained mode/reference/flip. T2 is covered for RemoveFace, fillet, chamfer, shell and push_face re-picks.
 
-Evidence: `crates/engine/tests/golden_repick.rs`, `crates/mcp/tests/d1_repick.rs`, and generated `docs/TOOLS.md`. Acceptance mutations (append instead of replace, a stored query instead of picks, no F-074 check, no retained-adjacency check) each turned a named test red.
+Evidence: `crates/engine/tests/golden_repick.rs`, `crates/engine/tests/golden_repick_faces.rs`, `crates/mcp/tests/d1_repick.rs`, `crates/mcp/tests/d2_repick_faces.rs`, and generated `docs/TOOLS.md`. Acceptance mutations (append instead of replace, an old PushFace hint, no planar check, no refusal on a downstream rebuild error) each turned a named test red.

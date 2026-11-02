@@ -4426,7 +4426,7 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
 
 ## shell
 
-Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {"facing": "+z"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {"facing": "+z"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the complete face selection of an existing shell; its thickness/side formulas are unchanged and values remain editable with `dimension_set`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -4488,11 +4488,22 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
           "type": "null"
         }
       ],
-      "description": "Body id or name. Default: the part's current body."
+      "description": "Body id or name. Default: the part's current body; not accepted with `feature`."
+    },
+    "feature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Existing Shell feature id/name to re-pick. With this set, `body`, `thickness`, `side` and `name` are refused."
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4521,21 +4532,35 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
           "type": "object"
         }
       ],
-      "description": "Faces to remove (the openings), at least one, e.g. {\"facing\": \"+z\"} for an open box. QymCAD has no closed\nhollow shell."
+      "description": "Faces to remove (the openings), at least one, e.g. {\"facing\": \"+z\"} for an open box. QymCAD has no closed\nhollow shell. With `feature`, replaces the complete opening-face selection on that shell."
     },
     "side": {
-      "$ref": "#/$defs/Side",
-      "default": "inward",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Side"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
       "description": "inward (default: the outside stays), outward (the body becomes the cavity), centred."
     },
     "thickness": {
-      "$ref": "#/$defs/Num",
-      "description": "Wall thickness, mm (number or expression)."
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Wall thickness, mm (number or expression); required without `feature`, otherwise use `dimension_set`."
     }
   },
   "required": [
-    "open_faces",
-    "thickness"
+    "open_faces"
   ],
   "type": "object"
 }
@@ -4543,7 +4568,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
 
 ## push_face
 
-Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {"facing": "+z"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {"facing": "+z"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the selected face of an existing push_face; its distance formula stays unchanged and remains editable with `dimension_set`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -4585,11 +4610,19 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
           "type": "null"
         }
       ],
-      "description": "Body id or name. Default: the part's current body."
+      "description": "Body id or name. Default: the part's current body; not accepted with `feature`."
     },
     "dist": {
-      "$ref": "#/$defs/Num",
-      "description": "Distance along the outward normal, mm (number or expression); negative pulls the face in."
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Distance along the outward normal, mm (number or expression); negative pulls the face in; required without `feature`."
     },
     "face": {
       "anyOf": [
@@ -4614,11 +4647,22 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
           "type": "object"
         }
       ],
-      "description": "One planar face, e.g. {\"facing\": \"+z\"}."
+      "description": "One planar face, e.g. {\"facing\": \"+z\"}. With `feature`, replaces that node's selected face."
+    },
+    "feature": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Existing PushFace feature id/name to re-pick. With this set, `body`, `dist` and `name` are refused."
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
+      "description": "Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4626,8 +4670,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
     }
   },
   "required": [
-    "face",
-    "dist"
+    "face"
   ],
   "type": "object"
 }
@@ -4635,7 +4678,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
 
 ## remove_face
 
-Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. This is a focused T2 feature-edit implementation; shell and push_face re-picks are not supported. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. Shell and push_face also support whole-selection re-picks through `feature`, preserving node ids, formulas, downstream rebuilds and atomic rollback. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {

@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - `fillet` and `chamfer` support atomic whole-edge-set re-picks through `feature`, preserving node ids, formulas, downstream rebuilds, batch/undo behavior and persistent edge picks (ADR 0041).
+- `shell` and `push_face` support atomic face re-picks through `feature`, preserving node ids, formulas, downstream rebuilds, batch/undo behavior and native face references (ADR 0041).
 
 ## 0.1.1-dev.20261026.7 — remove face, mesh import, mesh recognition (ADR 0038–0040)
 
