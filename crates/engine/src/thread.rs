@@ -597,10 +597,11 @@ impl Session {
 
     /// Stock is checked after regeneration: a source-sketch edit can move the saved rim during this pass.
     pub(crate) fn check_thread_stock(&self) -> Vec<crate::NodeIssue> {
+        let buildable = Self::geometry_check_nodes(&self.p);
         self.p
             .timeline
             .iter()
-            .filter(|n| !n.suppressed)
+            .filter(|n| buildable.contains(&n.id))
             .filter_map(|n| {
                 let FeatureKind::Thread { src, edge, spec, .. } = n.kind else { return None };
                 let check = || -> Result<()> {

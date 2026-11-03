@@ -356,7 +356,8 @@ impl Session {
     /// Check every requested native site, even when an aggregate cut reports success.
     pub(crate) fn hole_site_refusals(&self) -> Vec<(Id, String)> {
         let mut refused = Vec::new();
-        for n in self.p.timeline.iter().take(self.p.rollback.unwrap_or(usize::MAX)).filter(|n| !n.suppressed) {
+        let buildable = Self::geometry_check_nodes(&self.p);
+        for n in self.p.timeline.iter().filter(|n| buildable.contains(&n.id)) {
             let FeatureKind::Hole { sketch, src, body, flip, .. } = n.kind else { continue };
             if sketch == 0 {
                 continue;

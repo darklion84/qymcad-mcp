@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `history_rollback` and `feature_suppress` report exact `lost_body_metadata` for removed named/hidden native body records; lineage colour survives native recreation (F-136).
 - `history_rollback` selects the native active timeline prefix by `after`, `start` or `end`, with persisted marker inspection in `doc_info`, checked tail rebuilds, exact refusal restoration, no-op history skipping and batch/undo. New features use native insertion and consumer remapping at the marker (ADR 0047).
 - `feature_suppress` explicitly suppresses or enables body-producing features through the native suffix-dirtying setter, with checked rebuilds, exact failure restore, no-op history skipping and batch/undo. Results distinguish intentional `unbuilt` bodies; `doc_info` timeline nodes expose `suppressed`. Mesh-born Moves and downstream rebuild errors are refused (ADR 0046).
 - 3MF/GLB/STEP export carries native manual/palette body colour and imported face/triangle overrides through flat native tree nodes, preserving world placement, mesh quality and welds. Export results report format colour support and per-body RGB/source; STL/OBJ remain colourless (ADR 0045).
@@ -16,6 +17,8 @@ All notable changes to this project are documented here. The format follows
 - Sketch and native body labels resolve by raw or localised name after rename and save/open. Body results expose native `body_name` while preserving existing `name` semantics.
 
 ### Fixed
+- Geometry-dependent history checks ignore rollback tails and suppression cascades while retaining active chamfer validation (E-R4). Suppression changes involving multiple output bodies now refuse before mutation, including downstream removal/recreation, under the pinned app (E-R2/E-R5).
+- Document the existing read-tool face-cache restoration after open, including refused measurements: only derived `faces/*.ron` entries may appear on the next save (E-R1).
 - Current result bodies honor the native rollback prefix and document body membership, retain suppressed modifiers' identity pass-through outputs, and exclude intentionally unbuilt base cascades and stale live shapes. Inspection, measurement, export, render and open's missing-B-rep detection share the active-set rules (ADR 0046).
 
 ## 0.1.1-dev.20261026.8 — feature re-pick for fillet, chamfer, shell, push face (ADR 0041)

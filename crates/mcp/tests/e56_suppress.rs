@@ -119,11 +119,12 @@ fn suppression(
     bodies: &[(Value, f64)],
 ) -> Value {
     let result = c.ok("feature_suppress", json!({"feature":feature,"suppressed":suppressed}));
-    assert_eq!(keys(&result), ["changed", "feature", "rebuild", "suppressed", "unbuilt"]);
+    assert_eq!(keys(&result), ["changed", "feature", "lost_body_metadata", "rebuild", "suppressed", "unbuilt"]);
     assert_eq!(result["feature"], json!({"id":feature,"name":name}));
     assert_eq!(result["suppressed"], suppressed);
     assert_eq!(result["changed"], changed);
     assert_eq!(result["unbuilt"], unbuilt);
+    assert_eq!(result["lost_body_metadata"], json!([]));
     assert_eq!(keys(&result["rebuild"]), ["bodies", "errors", "warnings"]);
     assert_eq!(result["rebuild"]["errors"], json!([]));
     assert_eq!(result["rebuild"]["warnings"], json!([]));

@@ -176,7 +176,8 @@ impl Session {
 
     /// Recheck retained manual support-face adjacency against the current source geometry.
     pub(crate) fn check_chamfer_references(&self) -> std::result::Result<(), (Id, Error)> {
-        for node in &self.p.timeline {
+        let buildable = Self::geometry_check_nodes(&self.p);
+        for node in self.p.timeline.iter().filter(|node| buildable.contains(&node.id)) {
             if let FeatureKind::Chamfer { src, ref edges, ref_face, mode, .. } = node.kind {
                 if mode == ChamferMode::Symmetric {
                     continue;

@@ -44,6 +44,14 @@ pub struct SuppressedFeature {
     pub name: String,
 }
 
+/// Non-default native metadata discarded when a body record is removed by history.
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+pub struct LostBodyMetadata {
+    pub body: Id,
+    pub body_name: String,
+    pub visible: bool,
+}
+
 #[derive(Clone, Debug, serde::Serialize, PartialEq)]
 pub struct SuppressResult {
     pub feature: SuppressedFeature,
@@ -51,6 +59,7 @@ pub struct SuppressResult {
     pub changed: bool,
     /// Active-prefix outputs deliberately absent after native suppression/cascading.
     pub unbuilt: Vec<Id>,
+    pub lost_body_metadata: Vec<LostBodyMetadata>,
     pub rebuild: Rebuild,
 }
 
@@ -69,6 +78,7 @@ pub struct RollbackResult {
     #[serde(flatten)]
     pub marker: RollbackInfo,
     pub changed: bool,
+    pub lost_body_metadata: Vec<LostBodyMetadata>,
     pub rebuild: Rebuild,
 }
 
@@ -236,7 +246,12 @@ impl Session {
             _ => return Err(Error::Invalid("history_rollback needs exactly one of after or position (start/end)".into())),
         };
         if self.p.rollback == target {
-            return Ok(RollbackResult { marker: self.rollback_info(), changed: false, rebuild: self.current_rebuild() });
+            return Ok(RollbackResult {
+                marker: self.rollback_info(),
+                changed: false,
+                lost_body_metadata: Vec::new(),
+                rebuild: self.current_rebuild(),
+            });
         }
         let snapshot = if self.tool_edit_active {
             None
@@ -245,6 +260,7 @@ impl Session {
             snapshot.record_call("history_rollback", serde_json::json!({"after":after,"position":position}));
             Some(snapshot)
         };
+        let metadata = self.body_metadata_at_risk();
         let before = self.p.clone();
         // Retry/settling can reach beyond the dirty suffix through named drivers and projections.
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
@@ -261,7 +277,12 @@ impl Session {
                 );
                 return Err(Error::Rebuild(errors));
             }
-            Ok(RollbackResult { marker: s.rollback_info(), changed: true, rebuild: report })
+            Ok(RollbackResult {
+                marker: s.rollback_info(),
+                changed: true,
+                lost_body_metadata: s.removed_body_metadata(metadata),
+                rebuild: report,
+            })
         });
         if let Some(snapshot) = snapshot {
             self.finish_tool_edit(snapshot, result.is_ok());
@@ -287,6 +308,8 @@ impl Session {
         if !changed {
             return Ok(self.suppression_result(feature, suppressed, false));
         }
+        self.check_suppression_outputs(feature, suppressed)?;
+        let metadata = self.body_metadata_at_risk();
         // Direct engine calls own one history boundary; MCP and batch already supply theirs.
         let snapshot = if self.tool_edit_active {
             None
@@ -312,7 +335,9 @@ impl Session {
                 );
                 return Err(Error::Rebuild(errors));
             }
-            Ok(s.suppression_result(feature, suppressed, true))
+            let mut result = s.suppression_result(feature, suppressed, true);
+            result.lost_body_metadata = s.removed_body_metadata(metadata);
+            Ok(result)
         });
         if let Some(snapshot) = snapshot {
             self.finish_tool_edit(snapshot, result.is_ok());
@@ -321,29 +346,62 @@ impl Session {
     }
 
     fn suppression_result(&self, feature: Id, suppressed: bool, changed: bool) -> SuppressResult {
-        // Mirror native suppression propagation, then use document presence as the authority. This
-        // excludes rollback tails and unrelated unavailable bodies from the intentional cascade list.
-        let mut cascade = HashSet::new();
-        let mut unbuilt = Vec::new();
-        for node in self.p.timeline.iter().take(self.p.rollback_place()) {
-            let bypass = node.kind.consumed_body().is_some_and(|src| !cascade.contains(&src))
-                && node.kind.body().is_some()
-                && !matches!(node.kind, FeatureKind::SplitBody { .. });
-            if (node.suppressed && !bypass) || node.kind.inputs().iter().any(|id| cascade.contains(id)) {
-                for body in node.kind.bodies() {
-                    if cascade.insert(body) && self.p.mesh_index(body).is_none() {
-                        unbuilt.push(body);
-                    }
-                }
-            }
-        }
+        let cascade = crate::session::suppression_unbuilt(&self.p, None);
+        // Preserve timeline/output order and report only genuinely absent document records.
+        let unbuilt = self
+            .p
+            .timeline
+            .iter()
+            .take(self.p.rollback_place())
+            .flat_map(|n| n.kind.bodies())
+            .filter(|id| cascade.contains(id) && self.p.mesh_index(*id).is_none())
+            .collect();
         SuppressResult {
             feature: SuppressedFeature { id: feature, name: self.node_name(feature) },
             suppressed,
             changed,
             unbuilt,
+            lost_body_metadata: Vec::new(),
             rebuild: self.current_rebuild(),
         }
+    }
+
+    /// Reject native multi-piece suppression before any setter, snapshot or rebuild.
+    fn check_suppression_outputs(&self, feature: Id, suppressed: bool) -> Result<()> {
+        let before = crate::session::suppression_unbuilt(&self.p, None);
+        let after = crate::session::suppression_unbuilt(&self.p, Some((feature, suppressed)));
+        for node in &self.p.timeline {
+            let outputs = node.kind.bodies();
+            if outputs.len() > 1 && (node.id == feature || outputs.iter().any(|id| before.contains(id) != after.contains(id))) {
+                return Err(Error::Invalid(format!(
+                    "feature `{}` ({}): multi-output suppression is refused under the pinned app: it leaves stale or overlapping pieces / the identity guard cannot follow their removal or recreation",
+                    self.node_name(node.id), node.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn body_metadata_at_risk(&self) -> Vec<LostBodyMetadata> {
+        self.p
+            .bodies
+            .iter()
+            .filter(|body| {
+                let default_name = body.name.is_empty()
+                    || body
+                        .name
+                        .strip_prefix("name-body#")
+                        .is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_digit()));
+                !default_name || !body.visible
+            })
+            .map(|body| LostBodyMetadata { body: body.id, body_name: self.native_body_name(body.id), visible: body.visible })
+            .collect()
+    }
+
+    fn removed_body_metadata(&self, mut metadata: Vec<LostBodyMetadata>) -> Vec<LostBodyMetadata> {
+        metadata.retain(|body| self.p.mesh_index(body.body).is_none());
+        metadata.sort_by_key(|body| body.body);
+        metadata
     }
 
     // Native inputs omit datum placement dependencies (F-017). Extend native graph traversal with

@@ -756,10 +756,11 @@ impl Session {
     /// Fillet nodes picked by `check` whose built result fails `modifiers::fillet_acceptance` (F-074), with the reason.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
     fn fillet_refusals(&self, check: impl Fn(Id) -> bool) -> Vec<(Id, String)> {
+        let buildable = Self::geometry_check_nodes(&self.p);
         self.p
             .timeline
             .iter()
-            .filter(|n| !n.suppressed && check(n.id))
+            .filter(|n| buildable.contains(&n.id) && check(n.id))
             .filter_map(|n| match n.kind {
                 qymcad_core::feature::FeatureKind::Fillet { src, radius, body, .. } => {
                     // The node keeps the number typed last; a formula's value is what was built.
@@ -783,11 +784,12 @@ impl Session {
     fn edge_query_rebuild_errors(&self, p: &Project) -> Vec<NodeIssue> {
         use qymcad_core::feature::FeatureKind;
         let planned = crate::dependencies::rebuild_nodes(p);
+        let buildable = Self::geometry_check_nodes(p);
         let queries: Vec<Id> = p
             .timeline
             .iter()
             .take(p.rollback.unwrap_or(usize::MAX))
-            .filter(|n| !n.suppressed && planned.contains(&n.id))
+            .filter(|n| buildable.contains(&n.id) && planned.contains(&n.id))
             .filter(|n| matches!(&n.kind, FeatureKind::Fillet { edges, .. } | FeatureKind::Chamfer { edges, .. } if !edges.query.is_pick_list()))
             .map(|n| n.id)
             .collect();
@@ -937,25 +939,23 @@ impl Session {
             }
             let mut refused = self.check_thread_stock();
             refused.extend(self.hole_site_refusals().into_iter().map(|(id, message)| self.issue(id, message)));
-            // Keep the full snapshot plan above: rollback deliberately removes inactive tail shapes,
-            // so only active pieces can have their identities checked against rebuilt geometry.
-            let active_identity_nodes: Option<HashSet<Id>> = self.p.rollback.map(|_| {
-                self.p
-                    .timeline
-                    .iter()
-                    .take(self.p.rollback_place())
-                    .flat_map(|node| std::iter::once(node.id).chain(node.kind.bodies()))
-                    .filter(|id| nodes.contains(id))
-                    .collect()
-            });
-            let identity_nodes = active_identity_nodes.as_ref().unwrap_or(nodes);
+            // Snapshot all planned handles, but validate identities only for pieces being built.
+            let buildable = Self::geometry_check_nodes(&self.p);
+            let identity_nodes: HashSet<Id> = self
+                .p
+                .timeline
+                .iter()
+                .filter(|node| buildable.contains(&node.id))
+                .flat_map(|node| std::iter::once(node.id).chain(node.kind.bodies()))
+                .filter(|id| nodes.contains(id))
+                .collect();
             refused.extend(
-                self.split_identity_refusals(&split_identities, identity_nodes)
+                self.split_identity_refusals(&split_identities, &identity_nodes)
                     .into_iter()
                     .map(|(node, message)| self.issue(node, message)),
             );
             refused.extend(
-                self.boolean_identity_refusals(&boolean_identities, identity_nodes)
+                self.boolean_identity_refusals(&boolean_identities, &identity_nodes)
                     .into_iter()
                     .map(|(node, message)| self.issue(node, message)),
             );
@@ -1323,6 +1323,40 @@ impl Session {
             Some(e) => Err(e),
             None => Ok(()),
         }
+    }
+}
+
+/// Predict only intentional suppression cascades, independently of stale/missing live geometry.
+/// Match the native suppressed-modifier bypass before checking other inputs (regen/run.rs).
+pub(crate) fn suppression_unbuilt(p: &Project, override_flag: Option<(Id, bool)>) -> HashSet<Id> {
+    let mut unbuilt = HashSet::new();
+    for node in p.timeline.iter().take(p.rollback_place()) {
+        let suppressed = override_flag.filter(|(id, _)| *id == node.id).map_or(node.suppressed, |(_, flag)| flag);
+        if suppressed {
+            let bypass = !matches!(node.kind, qymcad_core::feature::FeatureKind::SplitBody { .. })
+                && node.kind.body().is_some()
+                && node.kind.consumed_body().is_some_and(|src| !unbuilt.contains(&src));
+            if !bypass {
+                unbuilt.extend(node.kind.bodies());
+            }
+        } else if node.kind.inputs().iter().any(|id| unbuilt.contains(id)) {
+            unbuilt.extend(node.kind.bodies());
+        }
+    }
+    unbuilt
+}
+
+impl Session {
+    /// Nodes whose own geometry will be built, rather than bypassed or intentionally removed.
+    /// Do not infer this from shape presence: an active invalid source must still be refused.
+    pub(crate) fn geometry_check_nodes(p: &Project) -> HashSet<Id> {
+        let unbuilt = suppression_unbuilt(p, None);
+        p.timeline
+            .iter()
+            .take(p.rollback_place())
+            .filter(|node| !node.suppressed && !node.kind.inputs().iter().chain(node.kind.bodies().iter()).any(|id| unbuilt.contains(id)))
+            .map(|node| node.id)
+            .collect()
     }
 }
 

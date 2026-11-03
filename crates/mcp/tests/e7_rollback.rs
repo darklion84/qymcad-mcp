@@ -137,6 +137,7 @@ fn rollback(c: &mut Client, args: Value, expected: Value, changed: bool, bodies:
     let mut fields = result.clone();
     let rebuild = fields.as_object_mut().unwrap().remove("rebuild").unwrap();
     assert_eq!(fields.as_object_mut().unwrap().remove("changed"), Some(json!(changed)));
+    assert_eq!(fields.as_object_mut().unwrap().remove("lost_body_metadata"), Some(json!([])));
     assert_eq!(fields, expected);
     assert_eq!(rebuild.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["bodies", "errors", "warnings"]);
     assert_eq!(rebuild["errors"], json!([]));
@@ -394,6 +395,7 @@ fn e7_stdio_cut_creation_inserts_and_remaps_tail() {
     let mut fields = resumed.clone();
     fields.as_object_mut().unwrap().remove("rebuild");
     fields.as_object_mut().unwrap().remove("changed");
+    assert_eq!(fields.as_object_mut().unwrap().remove("lost_body_metadata"), Some(json!([])));
     assert_eq!(fields, marker("end", Value::Null, Value::Null, 6, 6));
     assert_eq!(resumed["changed"], true);
     assert_eq!(resumed["rebuild"]["errors"], json!([]));

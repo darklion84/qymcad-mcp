@@ -48,7 +48,9 @@ pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};
 pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};
 pub use features::{Direction, Extrude, Op};
-pub use history::{RollbackInfo, RollbackResult, Snapshot, SuppressResult, SuppressedFeature, ToolCall, Undone, UNDO_LIMIT};
+pub use history::{
+    LostBodyMetadata, RollbackInfo, RollbackResult, Snapshot, SuppressResult, SuppressedFeature, ToolCall, Undone, UNDO_LIMIT,
+};
 pub use hole_sketch::HoleSketch;
 pub use import_tool::{ImportResult, ImportedBody};
 pub use info::{DocInfo, NodeInfo};
