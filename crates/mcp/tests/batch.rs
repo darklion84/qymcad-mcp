@@ -232,6 +232,7 @@ fn limits_allowlist_and_outer_schema() {
         "import_mesh",
         "recognise",
         "feature_delete",
+        "feature_suppress",
         "rename",
         "appearance",
     ];

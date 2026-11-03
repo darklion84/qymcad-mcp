@@ -51,7 +51,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | T3 | Delete feature and undo | covered | — | `feature_delete`, `undo` | — |
 | T4 | Rename feature, sketch and body | covered | Separate native labels, metadata-only history, resolver aliases, persistence and batch/undo (ADR 0042) | `rename` | — |
 | T5 | Reorder feature | not covered | — | none | — |
-| T6 | Suppress / rollback history | not covered | — | none | — |
+| T6 | Suppress / rollback history | partial | Native body-feature suppress/unsuppress, active result bodies, exact failure restore, batch/undo and persistence (ADR 0046); mesh-born Move refused (F-128). Rollback tool pending E7 | `feature_suppress`, `doc_info` | — |
 | T7 | Visibility and body color | partial | Body visibility and lineage colour saved (ADR 0044); colour reaches 3MF/GLB/STEP with imported overrides, and export/render have opt-in `visible_only` (default false; ADR 0045). Sketch visibility not persisted by the pinned app | `appearance`, `doc_info`, `export`, `render` | — |
 | T8 | Measurement | covered | Native support-geometry distances, acute unsigned angles, lengths and radii; arcs use full circles for pairs. No general trimmed B-rep minimum distance, area/mass or signed angles; spline pairs, unsupported curved faces and fallback anchor pairs refused (ADR 0043) | `measure`; `topology`, `doc_info` for existing area/volume reports | — |
 | I1 | STEP / IGES import | covered | Native source-backed part trees, selective solids, literal scale and embedded originals | `import` | `FeatureKind::Import` |

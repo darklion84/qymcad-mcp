@@ -34,7 +34,7 @@ pub type Content = Vec<Value>;
 pub struct State {
     pub session: Option<Session>,
     created_node: Option<qymcad_engine::Id>,
-    /// A successful metadata no-op restores its snapshot instead of consuming an undo entry.
+    /// A successful same-state no-op restores its snapshot instead of consuming an undo entry.
     skip_history: bool,
 }
 
@@ -135,6 +135,7 @@ fn modelling_tool(name: &str) -> bool {
             | "import_mesh"
             | "recognise"
             | "feature_delete"
+            | "feature_suppress"
             | "rename"
             | "appearance"
     )

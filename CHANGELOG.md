@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `feature_suppress` explicitly suppresses or enables body-producing features through the native suffix-dirtying setter, with checked rebuilds, exact failure restore, no-op history skipping and batch/undo. Results distinguish intentional `unbuilt` bodies; `doc_info` timeline nodes expose `suppressed`. Mesh-born Moves and downstream rebuild errors are refused (ADR 0046).
 - 3MF/GLB/STEP export carries native manual/palette body colour and imported face/triangle overrides through flat native tree nodes, preserving world placement, mesh quality and welds. Export results report format colour support and per-body RGB/source; STL/OBJ remain colourless (ADR 0045).
 - `export` and `render` accept `visible_only` (default false): omitted body lists filter to visible current bodies and report skipped hidden ids; explicit hidden selections and empty visible results are refused. Default output still includes every current result body (ADR 0045).
 - `appearance` saves per-body visibility and lineage body RGB with native reset, strict byte validation, metadata-only undo and batch rollback. `doc_info` bodies expose visibility, RGB and manual/palette source (ADR 0044). Sketch visibility is not persisted by the pinned app.
@@ -14,6 +15,7 @@ All notable changes to this project are documented here. The format follows
 - Sketch and native body labels resolve by raw or localised name after rename and save/open. Body results expose native `body_name` while preserving existing `name` semantics.
 
 ### Fixed
+- Current result bodies honor the native rollback prefix and document body membership, retain suppressed modifiers' identity pass-through outputs, and exclude intentionally unbuilt base cascades and stale live shapes. Inspection, measurement, export, render and open's missing-B-rep detection share the active-set rules (ADR 0046).
 
 ## 0.1.1-dev.20261026.8 — feature re-pick for fillet, chamfer, shell, push face (ADR 0041)
 

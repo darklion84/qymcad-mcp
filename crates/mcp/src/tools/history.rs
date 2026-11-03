@@ -18,8 +18,24 @@ struct DeleteArgs {
     cascade: bool,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SuppressArgs {
+    /// Body-producing timeline feature id/name. Sketches, datums, parameters and mesh-born Moves are refused.
+    feature: ObjRef,
+    /// Explicit desired suppression state. Same-state requests return changed:false without a rebuild or undo entry.
+    suppressed: bool,
+}
+
 pub fn tools() -> Vec<Tool> {
     vec![
+        tool("feature_suppress", "Suppress or enable a body-producing timeline feature through native checked regeneration. A suppressed modifier keeps its output id as an identity pass-through; a suppressed base and its dependents become intentionally unbuilt. Returns feature{id,name}, suppressed, changed, unbuilt body ids and rebuild{bodies,warnings,errors}. Native errors (including lost downstream picks) refuse and restore exact state. Mesh-born Moves, sketches and datums are refused. An unchanged flag adds no undo entry; a real change is one undo step and is allowed in batch. Rollback control is not exposed.", |st, a: SuppressArgs| {
+            let s = st.doc()?;
+            let id = a.feature.resolve(s)?;
+            let result = s.feature_suppress(id, a.suppressed).map_err(err)?;
+            st.skip_history = !result.changed;
+            Ok(json!(result))
+        }),
         tool("feature_delete", "Delete a timeline feature, sketch or datum atomically and return deleted node ids, names and kinds. A node with dependents is refused (unlike the app, it is not relinked); use cascade=true to remove all transitive dependents, or delete the leaf. Deleting the final modifier restores its consumed source as the result. Undo can restore the deletion.", |st, a: DeleteArgs| {
             let s = st.doc()?;
             let id = a.feature.resolve(s)?;

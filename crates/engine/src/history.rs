@@ -37,6 +37,23 @@ pub struct Undone {
     pub rebuild: Rebuild,
 }
 
+/// The existing timeline feature whose suppression state was requested.
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+pub struct SuppressedFeature {
+    pub id: Id,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+pub struct SuppressResult {
+    pub feature: SuppressedFeature,
+    pub suppressed: bool,
+    pub changed: bool,
+    /// Active-prefix outputs deliberately absent after native suppression/cascading.
+    pub unbuilt: Vec<Id>,
+    pub rebuild: Rebuild,
+}
+
 impl Snapshot {
     /// Attach the caller's tool name and arguments for undo reporting.
     pub fn record_call(&mut self, tool: &str, arguments: serde_json::Value) {
@@ -157,6 +174,83 @@ impl Session {
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
         warnings.extend(self.cross_part_projection_warnings());
         Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies(), ..Default::default() } })
+    }
+
+    /// Set a body-producing feature's native suppression flag. A successful modifier bypass keeps
+    /// its output id; base suppression deliberately leaves its dependent bodies unbuilt.
+    pub fn feature_suppress(&mut self, feature: Id, suppressed: bool) -> Result<SuppressResult> {
+        let ti =
+            self.p.timeline.iter().position(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("no feature with id {feature}")))?;
+        let node = &self.p.timeline[ti];
+        if node.kind.bodies().is_empty() {
+            return Err(Error::Invalid(format!(
+                "feature {feature} is not a body-producing feature; sketches, datums and parameters cannot be suppressed"
+            )));
+        }
+        if matches!(node.kind, FeatureKind::Move { body, .. } if self.p.mesh_born(body)) {
+            return Err(Error::Invalid(format!("feature {feature} is a mesh-born move; native suppression requires a B-rep (F-128)")));
+        }
+        let changed = node.suppressed != suppressed;
+        if !changed {
+            return Ok(self.suppression_result(feature, suppressed, false));
+        }
+        // Direct engine calls own one history boundary; MCP and batch already supply theirs.
+        let snapshot = if self.tool_edit_active {
+            None
+        } else {
+            let mut snapshot = self.begin_tool_edit()?;
+            snapshot.record_call("feature_suppress", serde_json::json!({"feature": feature, "suppressed": suppressed}));
+            Some(snapshot)
+        };
+        let before = self.p.clone();
+        // Native retry/settling can reach beyond the suffix through projections and named drivers.
+        // Retain every timeline body's original handle so any such failure restores exactly.
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        let result = self.with_rebuild_copies(before, &nodes, "feature suppression", |s| {
+            s.p.set_feature_suppressed(ti, suppressed);
+            let report = s.rebuild_for_edit(Some(&nodes))?;
+            if !report.errors.is_empty() || !s.p.regen_errors.is_empty() {
+                let mut errors: Vec<String> = report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect();
+                errors.extend(
+                    s.p.regen_errors
+                        .iter()
+                        .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
+                        .map(|(id, e)| format!("{} ({id}): {}", s.node_name(*id), crate::localization::error(e))),
+                );
+                return Err(Error::Rebuild(errors));
+            }
+            Ok(s.suppression_result(feature, suppressed, true))
+        });
+        if let Some(snapshot) = snapshot {
+            self.finish_tool_edit(snapshot, result.is_ok());
+        }
+        result
+    }
+
+    fn suppression_result(&self, feature: Id, suppressed: bool, changed: bool) -> SuppressResult {
+        // Mirror native suppression propagation, then use document presence as the authority. This
+        // excludes rollback tails and unrelated unavailable bodies from the intentional cascade list.
+        let mut cascade = HashSet::new();
+        let mut unbuilt = Vec::new();
+        for node in self.p.timeline.iter().take(self.p.rollback_place()) {
+            let bypass = node.kind.consumed_body().is_some_and(|src| !cascade.contains(&src))
+                && node.kind.body().is_some()
+                && !matches!(node.kind, FeatureKind::SplitBody { .. });
+            if (node.suppressed && !bypass) || node.kind.inputs().iter().any(|id| cascade.contains(id)) {
+                for body in node.kind.bodies() {
+                    if cascade.insert(body) && self.p.mesh_index(body).is_none() {
+                        unbuilt.push(body);
+                    }
+                }
+            }
+        }
+        SuppressResult {
+            feature: SuppressedFeature { id: feature, name: self.node_name(feature) },
+            suppressed,
+            changed,
+            unbuilt,
+            rebuild: self.current_rebuild(),
+        }
     }
 
     // Native inputs omit datum placement dependencies (F-017). Extend native graph traversal with
@@ -312,6 +406,43 @@ impl Session {
 mod snapshot_tests {
     use super::*;
     use qymcad_core::model::SourceFile;
+
+    #[test]
+    fn suppression_lost_pick_restores_private_undo_depth_and_exact_state() {
+        use crate::{BaseName, PlaneRef, Sel};
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("stock profile")).unwrap();
+        s.sketch_rect(sk, &0.0.into(), &0.0.into(), &10.0.into(), &20.0.into(), false).unwrap();
+        let (base, r) = s.extrude(&serde_json::from_value(serde_json::json!({"sketch": sk, "height": 20})).unwrap()).unwrap();
+        assert!(r.errors.is_empty());
+        assert!((r.bodies[0].volume - 10.0 * 20.0 * 20.0).abs() < 1e-6); // 4000 mm³.
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("bore profile")).unwrap();
+        s.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
+        let (cut, r) =
+            s.extrude(&serde_json::from_value(serde_json::json!({"sketch":sk,"height":20,"op":"cut","target":base})).unwrap()).unwrap();
+        assert!(r.errors.is_empty());
+        assert!((r.bodies[0].volume - (10.0 * 20.0 * 20.0 - std::f64::consts::PI * 2_f64.powi(2) * 20.0)).abs() < 1e-6); // Prism minus cylinder.
+        let rim = s.p.regen_edges[&cut].iter().find(|e| (e.radius - 2.0).abs() < 1e-7 && (e.center[2] - 20.0).abs() < 1e-7).unwrap().id;
+        let (fillet, r) = s.fillet(Some(cut), &Sel::Ids(vec![rim]), &0.5.into(), Some("rim")).unwrap();
+        assert!(r.errors.is_empty());
+        // Nonempty history makes a lost or extra entry observable, in addition to the golden's empty-history control.
+        assert!(s.rename(crate::RenameTarget::Feature(base), "stock").unwrap().changed);
+        assert_eq!(s.undo.len(), 1);
+        let state = |s: &Session| {
+            let breps: std::collections::BTreeMap<_, _> = {
+                let _gate = qymcad_kernel::kernel_gate();
+                s.shapes.iter().map(|(&id, sh)| (id, sh.to_brep_bytes().unwrap())).collect()
+            };
+            (ron::to_string(&s.p).unwrap(), breps, s.info(), s.undo.len())
+        };
+        let topology = s.topology(Some(fillet), true).unwrap();
+        let before = state(&s);
+        assert!(s.feature_suppress(cut, true).is_err());
+        assert_eq!(state(&s), before);
+        assert_eq!(s.topology(Some(fillet), true).unwrap(), topology);
+        assert_eq!(s.undo().unwrap().call.unwrap().tool, "rename");
+        assert!(s.undo.is_empty());
+    }
 
     #[test]
     fn snapshots_omit_source_bytes_and_restore_them_on_undo_and_failure() {

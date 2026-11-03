@@ -287,7 +287,7 @@ impl Session {
         restore_faces(&mut project);
         let mut shapes = restore_shapes(breps);
         let import_warnings = crate::imports::restore_missing(&project, &mut shapes);
-        let missing = project.timeline.iter().flat_map(|n| n.kind.bodies()).any(|b| !shapes.contains_key(&b));
+        let missing = document_body_ids(&project).any(|b| !project.mesh_born(b) && !shapes.contains_key(&b));
         let saved_lineage = first_body_feature(&project);
         let mut import_warnings = import_warnings;
         for (si, count) in legacy_splines(path) {
@@ -486,7 +486,7 @@ impl Session {
 
     /// The live B-rep of a body, if built.
     pub fn shape(&self, body: Id) -> Option<&Shape> {
-        self.shapes.get(&body)
+        self.is_active_body(body).then(|| self.shapes.get(&body)).flatten()
     }
 
     /// Rebuild what is dirty. Errors are retried once with the whole timeline dirty: a datum plane created in
@@ -598,8 +598,9 @@ impl Session {
                             self.shapes.insert(id, shape);
                         }
                     }
-                    report.bodies = self.result_bodies();
                 }
+                self.prune_inactive_shapes();
+                report.bodies = self.result_bodies();
                 Ok(report)
             }
             Err(issue) => {
@@ -975,13 +976,8 @@ impl Session {
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
     /// bbox reporting acquires that non-reentrant mutex.
     pub fn result_bodies(&self) -> Vec<BodyInfo> {
-        let consumed = self.p.consumed_bodies();
-        self.p
-            .timeline
-            .iter()
-            .filter(|n| !n.suppressed)
-            .flat_map(|n| n.kind.bodies())
-            .filter(|b| !consumed.contains(b))
+        self.current_body_ids()
+            .into_iter()
             .filter_map(|b| {
                 let index = self.p.mesh_index(b)?;
                 let visible = self.p.bodies[index].visible;
@@ -1027,19 +1023,36 @@ impl Session {
             .collect()
     }
 
-    /// The single current body of the active part, which features modify by default.
-    pub(crate) fn tip_body(&self) -> Option<Id> {
+    /// Bodies in the native active prefix with an actual document record. Imported originals may
+    /// survive privately in `shapes` while suppressed/rolled back, but are not document geometry.
+    pub(crate) fn is_active_body(&self, body: Id) -> bool {
+        document_body_ids(&self.p).any(|id| id == body)
+    }
+
+    pub(crate) fn current_body_ids(&self) -> Vec<Id> {
         let consumed = self.p.consumed_bodies();
-        let part = self.p.active_component;
-        let tips: Vec<Id> = self
+        let mut seen = HashSet::new();
+        document_body_ids(&self.p).filter(|b| !consumed.contains(b) && seen.insert(*b)).collect()
+    }
+
+    /// Match the app's live-shape cleanup: retain import originals for native reactivation only.
+    fn prune_inactive_shapes(&mut self) {
+        let imports: HashSet<Id> = self
             .p
             .timeline
             .iter()
-            .filter(|n| !n.suppressed)
-            .flat_map(|n| n.kind.bodies())
-            .filter(|b| !consumed.contains(b) && (part.is_none() || self.p.body_owner(*b) == part))
+            .filter_map(|n| match n.kind {
+                qymcad_core::feature::FeatureKind::Import { body, .. } => Some(body),
+                _ => None,
+            })
             .collect();
-        tips.last().copied()
+        self.shapes.retain(|id, _| imports.contains(id) || self.p.mesh_index(*id).is_some());
+    }
+
+    /// The single current body of the active part, which features modify by default.
+    pub(crate) fn tip_body(&self) -> Option<Id> {
+        let part = self.p.active_component;
+        self.current_body_ids().into_iter().rfind(|b| part.is_none() || self.p.body_owner(*b) == part)
     }
 
     /// The body a tool uses when none is given: the active part's current body, else the document's only current body
@@ -1048,11 +1061,7 @@ impl Session {
         if let Some(b) = self.tip_body() {
             return Ok(b);
         }
-        let consumed = self.p.consumed_bodies();
-        let mut current: Vec<Id> =
-            self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).filter(|b| !consumed.contains(b)).collect();
-        let mut seen = HashSet::new();
-        current.retain(|b| seen.insert(*b));
+        let current = self.current_body_ids();
         match current.as_slice() {
             [] => Err(Error::Invalid(empty.into())),
             [only] => Ok(*only),
@@ -1301,6 +1310,12 @@ impl Session {
     }
 }
 
+/// Native active document membership; suppression is intentionally not a filter: modifiers retain
+/// their identity pass-through output while base cascades have no body record (F-134).
+fn document_body_ids(p: &Project) -> impl Iterator<Item = Id> + '_ {
+    p.timeline.iter().take(p.rollback_place()).flat_map(|n| n.kind.bodies()).filter(|b| p.mesh_index(*b).is_some())
+}
+
 pub(crate) fn restore_faces(p: &mut Project) {
     for i in 0..p.bodies.len() {
         if let (Some(body), false) = (p.mesh_id(i), p.bodies[i].faces.is_empty()) {
@@ -1314,6 +1329,52 @@ pub(crate) fn restore_faces(p: &mut Project) {
 mod tests {
     use super::*;
     use crate::test_support as native;
+
+    #[test]
+    fn result_prefix_excludes_dirty_tail_and_orphan_live_shapes() {
+        use crate::{BaseName, ExportFormat, MeasureOperand, PlaneRef, Quality, Sel};
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("profile")).unwrap();
+        s.sketch_rect(sk, &0.0.into(), &0.0.into(), &10.0.into(), &20.0.into(), false).unwrap();
+        let (base, r) =
+            s.extrude(&serde_json::from_value(serde_json::json!({"sketch": sk, "height": 20, "op": "new_body"})).unwrap()).unwrap();
+        assert!(r.errors.is_empty());
+        let (tail, r) =
+            s.extrude(&serde_json::from_value(serde_json::json!({"sketch": sk, "height": 20, "op": "new_body"})).unwrap()).unwrap();
+        assert!(r.errors.is_empty());
+        assert_eq!(r.bodies.iter().map(|b| b.id).collect::<Vec<_>>(), vec![base, tail]);
+        for body in &r.bodies {
+            assert!((body.volume - 10.0 * 20.0 * 20.0).abs() < 1e-6); // Two independent centred prisms: 4000 each.
+        }
+        let ti = s.p.timeline.iter().position(|n| n.id == tail).unwrap();
+        s.p.set_rollback(Some(ti)); // Observe before regeneration: both document records and live handles still exist.
+        assert!(s.p.mesh_index(tail).is_some() && s.shapes.contains_key(&tail));
+        assert_eq!(s.result_bodies().iter().map(|b| b.id).collect::<Vec<_>>(), vec![base]);
+        assert_eq!(s.info().bodies.iter().map(|b| b.id).collect::<Vec<_>>(), vec![base]);
+        assert_eq!(s.default_body("empty").unwrap(), base);
+        let before = s.info();
+        assert!(s.topology(Some(tail), true).is_err());
+        assert_eq!(s.info(), before);
+        let path = std::env::temp_dir().join(format!("e56-prefix-before-rebuild-{}.step", std::process::id()));
+        let exported = s.export(ExportFormat::Step, &path, Quality::Standard, None).unwrap();
+        assert_eq!(exported.bodies.iter().map(|b| b.id).collect::<Vec<_>>(), vec![base]);
+        let _ = std::fs::remove_file(path);
+        s.p.set_rollback(None);
+        assert_eq!(s.result_bodies().iter().map(|b| b.id).collect::<Vec<_>>(), vec![base, tail]);
+        // An ordinary stale live handle must remain private even without a rollback marker.
+        s.p.bodies.retain(|b| b.id != tail);
+        assert!(s.shapes.contains_key(&tail));
+        assert!(s.shape(tail).is_none());
+        assert_eq!(s.result_bodies().iter().map(|b| b.id).collect::<Vec<_>>(), vec![base]);
+        for n in &mut s.p.timeline {
+            n.dirty = false;
+        }
+        let before = s.info();
+        assert!(s.measure(MeasureOperand::Face { body: tail, selection: Sel::Largest }, None).is_err());
+        assert_eq!(s.info(), before);
+        s.prune_inactive_shapes();
+        assert!(!s.shapes.contains_key(&tail));
+    }
 
     #[test]
     fn missing_live_projection_edge_is_reported_detached_in_session_detail() {

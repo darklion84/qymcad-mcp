@@ -286,6 +286,7 @@ fn lists_tools_with_object_schemas() {
         "import_mesh",
         "recognise",
         "feature_delete",
+        "feature_suppress",
         "undo",
         "rename",
         "appearance",

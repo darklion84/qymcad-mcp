@@ -987,12 +987,10 @@ impl Session {
     /// meaning, F-024); missing faces need one full rebuild.
     pub(crate) fn ensure_topology(&mut self) -> Result<()> {
         self.restore_edges()?;
-        let consumed = self.p.consumed_bodies();
-        let missing = self.p.timeline.iter().filter(|n| !n.suppressed).flat_map(|n| n.kind.bodies()).any(|b| {
-            !consumed.contains(&b)
-                && self.shapes.contains_key(&b)
-                && !(self.p.regen_faces.contains_key(&b) && self.p.regen_edges.contains_key(&b))
-        });
+        let missing = self
+            .current_body_ids()
+            .into_iter()
+            .any(|b| self.shapes.contains_key(&b) && !(self.p.regen_faces.contains_key(&b) && self.p.regen_edges.contains_key(&b)));
         if !missing {
             return Ok(());
         }
@@ -1031,6 +1029,9 @@ impl Session {
             Some(b) => b,
             None => self.default_body("the part has no body yet")?,
         };
+        if !self.is_active_body(b) {
+            return Err(Error::NotFound(format!("body {b} is not built in the active document")));
+        }
         if self.p.mesh_born(b) {
             return Err(Error::Invalid(mesh_body_refusal(b)));
         }
@@ -1056,8 +1057,8 @@ impl Session {
             Some(b) => b,
             None => self.default_body("the part has no body yet; extrude or revolve first")?,
         };
-        if !self.p.timeline.iter().any(|n| n.kind.bodies().contains(&b)) {
-            return Err(Error::NotFound(format!("{b} is not a body")));
+        if !self.is_active_body(b) {
+            return Err(Error::NotFound(format!("body {b} is not built in the active document")));
         }
         if self.p.consumed_bodies().contains(&b) {
             let cur = self.tip_body().map(|t| format!("; the current body is {t}")).unwrap_or_default();

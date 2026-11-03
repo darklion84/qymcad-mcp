@@ -218,7 +218,7 @@ impl Session {
             MeasureOperand::Edge { body, selection, at } => (body, selection, Element::Edges, at),
         };
         // Existing select may restore missing topology after open; it never owns our raw-read gate.
-        if self.p.timeline.iter().any(|n| n.dirty) || !self.p.regen_errors.is_empty() {
+        if self.p.timeline.iter().take(self.p.rollback_place()).any(|n| n.dirty) || !self.p.regen_errors.is_empty() {
             return Err(invalid("measurement needs current, successfully built bodies; rebuild the document first"));
         }
         self.ensure_topology()?;
