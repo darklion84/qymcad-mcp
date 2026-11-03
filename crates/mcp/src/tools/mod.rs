@@ -136,6 +136,7 @@ fn modelling_tool(name: &str) -> bool {
             | "recognise"
             | "feature_delete"
             | "feature_suppress"
+            | "history_rollback"
             | "rename"
             | "appearance"
     )

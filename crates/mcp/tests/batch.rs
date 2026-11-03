@@ -233,6 +233,7 @@ fn limits_allowlist_and_outer_schema() {
         "recognise",
         "feature_delete",
         "feature_suppress",
+        "history_rollback",
         "rename",
         "appearance",
     ];

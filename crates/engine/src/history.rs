@@ -54,6 +54,24 @@ pub struct SuppressResult {
     pub rebuild: Rebuild,
 }
 
+/// A timeline boundary, expressed without unstable numeric indexes.
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+pub struct RollbackInfo {
+    pub position: &'static str,
+    pub after: Option<SuppressedFeature>,
+    pub next_feature: Option<SuppressedFeature>,
+    pub active_nodes: usize,
+    pub total_nodes: usize,
+}
+
+#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+pub struct RollbackResult {
+    #[serde(flatten)]
+    pub marker: RollbackInfo,
+    pub changed: bool,
+    pub rebuild: Rebuild,
+}
+
 impl Snapshot {
     /// Attach the caller's tool name and arguments for undo reporting.
     pub fn record_call(&mut self, tool: &str, arguments: serde_json::Value) {
@@ -174,6 +192,81 @@ impl Session {
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
         warnings.extend(self.cross_part_projection_warnings());
         Ok(Undone { call, rebuild: Rebuild { errors, warnings, bodies: self.result_bodies(), ..Default::default() } })
+    }
+
+    /// Inspect the persisted native rollback boundary. All timeline nodes, including sketches and
+    /// datums, count. The end is canonical even if an external archive stored Some(len).
+    pub fn rollback_info(&self) -> RollbackInfo {
+        let total_nodes = self.p.timeline.len();
+        let active_nodes = self.p.rollback_place().min(total_nodes);
+        let node = |i: usize| self.p.timeline.get(i).map(|n| SuppressedFeature { id: n.id, name: crate::localization::name(&n.name) });
+        let position = if active_nodes == total_nodes {
+            "end"
+        } else if active_nodes == 0 {
+            "start"
+        } else {
+            "after"
+        };
+        RollbackInfo {
+            position,
+            after: if position == "after" { node(active_nodes - 1) } else { None },
+            next_feature: node(active_nodes),
+            active_nodes,
+            total_nodes,
+        }
+    }
+
+    /// Move the native history marker after a timeline node, or to start/end. A changed marker
+    /// owns one undo boundary unless called inside a tool/batch. Every rebuild error refuses the
+    /// move, restoring the original recipe, live B-reps and diagnostics without a repair rebuild.
+    pub fn history_rollback(&mut self, after: Option<Id>, position: Option<&str>) -> Result<RollbackResult> {
+        let target = match (after, position) {
+            (Some(id), None) => {
+                let ti = self
+                    .p
+                    .timeline
+                    .iter()
+                    .position(|n| n.id == id)
+                    .ok_or_else(|| Error::NotFound(format!("no timeline node with id {id}")))?;
+                Some(ti + 1).filter(|&n| n < self.p.timeline.len())
+            }
+            (None, Some("start")) => Some(0).filter(|&n| n < self.p.timeline.len()),
+            (None, Some("end")) => None,
+            (None, Some(value)) => return Err(Error::Invalid(format!("unknown rollback position `{value}`; use start or end"))),
+            _ => return Err(Error::Invalid("history_rollback needs exactly one of after or position (start/end)".into())),
+        };
+        if self.p.rollback == target {
+            return Ok(RollbackResult { marker: self.rollback_info(), changed: false, rebuild: self.current_rebuild() });
+        }
+        let snapshot = if self.tool_edit_active {
+            None
+        } else {
+            let mut snapshot = self.begin_tool_edit()?;
+            snapshot.record_call("history_rollback", serde_json::json!({"after":after,"position":position}));
+            Some(snapshot)
+        };
+        let before = self.p.clone();
+        // Retry/settling can reach beyond the dirty suffix through named drivers and projections.
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        let result = self.with_rebuild_copies(before, &nodes, "history rollback", |s| {
+            s.p.set_rollback(target);
+            let report = s.rebuild_for_edit(Some(&nodes))?;
+            if !report.errors.is_empty() || !s.p.regen_errors.is_empty() {
+                let mut errors: Vec<String> = report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect();
+                errors.extend(
+                    s.p.regen_errors
+                        .iter()
+                        .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
+                        .map(|(id, e)| format!("{} ({id}): {}", s.node_name(*id), crate::localization::error(e))),
+                );
+                return Err(Error::Rebuild(errors));
+            }
+            Ok(RollbackResult { marker: s.rollback_info(), changed: true, rebuild: report })
+        });
+        if let Some(snapshot) = snapshot {
+            self.finish_tool_edit(snapshot, result.is_ok());
+        }
+        result
     }
 
     /// Set a body-producing feature's native suppression flag. A successful modifier bypass keeps
@@ -406,6 +499,47 @@ impl Session {
 mod snapshot_tests {
     use super::*;
     use qymcad_core::model::SourceFile;
+
+    #[test]
+    fn rollback_native_tail_error_restores_private_depth_and_live_shapes() {
+        use crate::{BaseName, PlaneRef};
+        let mut s = Session::new_part();
+        let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(sketch, &0.0.into(), &0.0.into(), &10.0.into(), &20.0.into(), false).unwrap();
+        let (base, report) = s.extrude(&serde_json::from_value(serde_json::json!({"sketch":sketch,"height":20})).unwrap()).unwrap();
+        assert!(report.errors.is_empty());
+        assert!((report.bodies[0].volume - 10.0 * 20.0 * 20.0).abs() < 1e-6); // V=area*height=4000.
+        let mut matrix = qymcad_core::feature::PLACE_IDENTITY;
+        matrix[3] = 5.0;
+        let tail = s.p.add_move(base, matrix);
+        let report = s.rebuild();
+        assert!(report.errors.is_empty());
+        assert_eq!(report.bodies[0].id, tail);
+        assert!((report.bodies[0].volume - 10.0 * 20.0 * 20.0).abs() < 1e-6);
+        let rolled = s.history_rollback(Some(base), None).unwrap();
+        assert!(rolled.changed);
+        assert_eq!(rolled.rebuild.bodies[0].id, base);
+        assert_eq!(s.undo.len(), 1);
+        // A native document can carry an invalid inactive tail. The marker hides that recipe
+        // until resume; no injected engine error or mocked rebuild is involved.
+        let FeatureKind::Move { src, .. } = &mut s.p.timeline.iter_mut().find(|n| n.id == tail).unwrap().kind else { unreachable!() };
+        *src = u64::MAX;
+        let state = |s: &Session| {
+            let breps: std::collections::BTreeMap<_, _> = {
+                let _gate = qymcad_kernel::kernel_gate();
+                s.shapes.iter().map(|(&id, sh)| (id, sh.to_brep_bytes().unwrap())).collect()
+            };
+            (ron::to_string(&s.p).unwrap(), breps, s.info(), s.advisory_warnings.clone(), s.undo.len())
+        };
+        let topology = s.topology(None, true).unwrap();
+        let before = state(&s);
+        assert!(s.history_rollback(None, Some("end")).is_err());
+        assert_eq!(state(&s), before);
+        assert_eq!(s.topology(None, true).unwrap(), topology);
+        assert_eq!(s.undo.len(), 1);
+        assert_eq!(s.undo().unwrap().call.unwrap().tool, "history_rollback");
+        assert!(s.undo.is_empty());
+    }
 
     #[test]
     fn suppression_lost_pick_restores_private_undo_depth_and_exact_state() {

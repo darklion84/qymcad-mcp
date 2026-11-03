@@ -937,11 +937,27 @@ impl Session {
             }
             let mut refused = self.check_thread_stock();
             refused.extend(self.hole_site_refusals().into_iter().map(|(id, message)| self.issue(id, message)));
+            // Keep the full snapshot plan above: rollback deliberately removes inactive tail shapes,
+            // so only active pieces can have their identities checked against rebuilt geometry.
+            let active_identity_nodes: Option<HashSet<Id>> = self.p.rollback.map(|_| {
+                self.p
+                    .timeline
+                    .iter()
+                    .take(self.p.rollback_place())
+                    .flat_map(|node| std::iter::once(node.id).chain(node.kind.bodies()))
+                    .filter(|id| nodes.contains(id))
+                    .collect()
+            });
+            let identity_nodes = active_identity_nodes.as_ref().unwrap_or(nodes);
             refused.extend(
-                self.split_identity_refusals(&split_identities, nodes).into_iter().map(|(node, message)| self.issue(node, message)),
+                self.split_identity_refusals(&split_identities, identity_nodes)
+                    .into_iter()
+                    .map(|(node, message)| self.issue(node, message)),
             );
             refused.extend(
-                self.boolean_identity_refusals(&boolean_identities, nodes).into_iter().map(|(node, message)| self.issue(node, message)),
+                self.boolean_identity_refusals(&boolean_identities, identity_nodes)
+                    .into_iter()
+                    .map(|(node, message)| self.issue(node, message)),
             );
             if !refused.is_empty() {
                 return Err(Error::Rebuild(refused.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect()));

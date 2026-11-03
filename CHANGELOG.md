@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `history_rollback` selects the native active timeline prefix by `after`, `start` or `end`, with persisted marker inspection in `doc_info`, checked tail rebuilds, exact refusal restoration, no-op history skipping and batch/undo. New features use native insertion and consumer remapping at the marker (ADR 0047).
 - `feature_suppress` explicitly suppresses or enables body-producing features through the native suffix-dirtying setter, with checked rebuilds, exact failure restore, no-op history skipping and batch/undo. Results distinguish intentional `unbuilt` bodies; `doc_info` timeline nodes expose `suppressed`. Mesh-born Moves and downstream rebuild errors are refused (ADR 0046).
 - 3MF/GLB/STEP export carries native manual/palette body colour and imported face/triangle overrides through flat native tree nodes, preserving world placement, mesh quality and welds. Export results report format colour support and per-body RGB/source; STL/OBJ remain colourless (ADR 0045).
 - `export` and `render` accept `visible_only` (default false): omitted body lists filter to visible current bodies and report skipped hidden ids; explicit hidden selections and empty visible results are refused. Default output still includes every current result body (ADR 0045).

@@ -25,6 +25,8 @@ pub struct DocInfo {
     pub sketches: Vec<SketchInfo>,
     /// The timeline (the recipe), in build order.
     pub timeline: Vec<NodeInfo>,
+    /// Persisted native active-prefix boundary; the inactive timeline remains in the recipe.
+    pub rollback: crate::RollbackInfo,
     pub bodies: Vec<BodyInfo>,
     pub errors: Vec<NodeIssue>,
     pub warnings: Vec<String>,
@@ -70,6 +72,7 @@ impl Session {
                     suppressed: n.suppressed,
                 })
                 .collect(),
+            rollback: self.rollback_info(),
             bodies,
             errors: p
                 .regen_errors
