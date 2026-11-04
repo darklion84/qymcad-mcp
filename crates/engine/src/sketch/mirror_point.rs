@@ -98,7 +98,7 @@ impl Session {
                     s.p.sketches[si].constraints.truncate(n);
                 }
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Vec::new())
         })
     }

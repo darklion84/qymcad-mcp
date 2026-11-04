@@ -178,7 +178,7 @@ impl Session {
                 diam: false,
                 at: None,
             });
-            session.finish_sketch_edit(si)?;
+            session.complete_sketch_edit(si)?;
             let after = session.p.sketch_dof(si);
             if after.1 > before.1 || after.0 > before.0 {
                 return Err(Error::Invalid(format!("the tangent circle is not independently defined: sketch DOF {after:?}")));

@@ -145,7 +145,7 @@ impl Session {
                 },
                 purpose(a.construction),
             );
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(id)
         })
     }

@@ -204,7 +204,7 @@ impl Session {
                     .ok_or_else(|| Error::Invalid("native corner dimension cannot store a formula".into()))?;
                 *expression = size.expr().unwrap_or_default();
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             let dof = s.p.sketch_dof(si);
             if dof.1 > redundant {
                 return Err(Error::Invalid(format!("the corner cut left redundant constraints in the sketch: DOF {dof:?}")));

@@ -119,6 +119,13 @@ impl Session {
             .collect();
         // Validate selectors and native reference ambiguity before any mutation. All following edits are reversible.
         self.transaction(|s| {
+            let mut solved = HashSet::new();
+            let target_sketch = match &native {
+                DimTarget::Sketch { sketch, .. } => Some(*sketch),
+                DimTarget::Feature { node, .. } => s.p.sketches.iter().find(|sk|
+                    sk.points.iter().any(|p| p.id == *node) || sk.patterns.iter().any(|p| p.id == *node)
+                    || sk.texts.iter().any(|t| t.id == *node)).map(|sk| sk.id),
+            };
             if let Some(name) = name {
                 let name = name.trim();
                 if !name.is_empty() {
@@ -252,6 +259,7 @@ impl Session {
                         "dimension target sketch {sketch} does not solve (residual {residual:.3e}); edit rolled back"
                     )));
                 }
+                solved.insert(*sketch);
                 s.p.mark_sketch_dirty(*sketch);
             }
             if value.is_some() {
@@ -268,7 +276,8 @@ impl Session {
                 return Err(Error::Expr(crate::value::formula_failed(&what, &err, s.p.param_map().keys())));
             }
             for si in 0..s.p.sketches.len() {
-                if s.p.sketch_reads_names(si) {
+                if Some(s.p.sketches[si].id) == target_sketch {
+                    solved.insert(s.p.sketches[si].id);
                     let residual = s.solve_settled(si);
                     if (!residual.is_finite() || residual > 1e-6) && !had_unsolved.contains(&s.p.sketches[si].id) {
                         return Err(Error::Invalid(format!(
@@ -278,14 +287,14 @@ impl Session {
                     }
                 }
             }
-            let unsolved = s.propagate_params(&before_scope)?;
+            let unsolved = s.propagate_params_unsettled(&before_scope, &mut solved)?;
             if unsolved.iter().any(|(id, _)| !had_unsolved.contains(id)) {
                 return Err(Error::Invalid("dimension propagation left a sketch unsolved; edit rolled back".into()));
             }
             // Propagation evaluates item formulas again even if the named scope is unchanged. As in the
             // app, solve after that imposition; otherwise an item edit could leave old driving rows unsatisfied.
             for si in 0..s.p.sketches.len() {
-                if s.p.sketch_reads_names(si) {
+                if solved.contains(&s.p.sketches[si].id) {
                     let residual = s.solve_settled(si);
                     if (!residual.is_finite() || residual > 1e-6) && !had_unsolved.contains(&s.p.sketches[si].id) {
                         return Err(Error::Invalid(format!(
@@ -314,13 +323,18 @@ impl Session {
                     let owner = s.p.sketches.iter().find(|sk| sk.points.iter().any(|p| p.id == *node)
                         || sk.patterns.iter().any(|p| p.id == *node) || sk.texts.iter().any(|t| t.id == *node)).map(|sk| sk.id);
                     if let Some(sketch) = owner {
-                        if s.p.sketches.iter().any(|sk| sk.id == sketch && sk.patterns.iter().any(|p| p.id == *node)) {
-                            s.refresh_sketch_patterns(sketch)?;
+                        let si = s.sketch_si(sketch)?;
+                        let residual = s.solve_settled(si);
+                        if !residual.is_finite() || residual > 1e-6 {
+                            return Err(Error::Invalid(format!("dimension item sketch {sketch} does not solve; edit rolled back")));
                         }
+                        solved.insert(sketch);
                         s.p.mark_sketch_dirty(sketch);
                     }
                 }
             }
+            // Every source is now in its final solved state, including item imposition above.
+            s.settle_patterns_of_solved_sketches(solved)?;
             Ok(())
         })?;
         let nodes = crate::dependencies::rebuild_nodes(&self.p);

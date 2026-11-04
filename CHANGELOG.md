@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- Sketch-pattern instances follow their final solved source geometry after parameter, dimension and structural sketch edits, including ordered batch calls. Refresh retains contour selections, projection consumers and atomic undo/rollback. Chained pattern sources are refused; failed batches restore unpublished ids and exact archive bytes (ADR 0036/0020, F-137).
+
 ## 0.1.1-dev.20261026.9 — rename, measure, appearance and colour export, suppression, rollback (ADR 0042–0047)
 
 ### Added

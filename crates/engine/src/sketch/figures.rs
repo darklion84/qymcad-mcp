@@ -131,7 +131,7 @@ impl Session {
             if spec.dimensioned {
                 s.dimension_ellipse(si, parts, spec, [cx, cy, rx, ry, turn])?;
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Added { entities: vec![id], points: vec![parts.c, parts.ma, parts.mi] })
         })
     }
@@ -194,7 +194,7 @@ impl Session {
                     s.add_independent(si, [angle(parts.c, parts.ma, parts.c, p, deg, expr)]);
                 }
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Added { entities: vec![id], points: vec![parts.c, parts.ma, parts.mi, span.from, span.to] })
         })
     }
@@ -264,7 +264,7 @@ impl Session {
             self.p.give_rect_turn_to(si, &dim);
             self.p.sketches[si].constraints.push(dim);
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         Ok(lines)
     }
 }

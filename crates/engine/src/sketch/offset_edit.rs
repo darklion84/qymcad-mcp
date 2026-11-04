@@ -131,7 +131,7 @@ impl Session {
                     return Err(Error::Invalid("offset dimension name would collide or create a formula cycle".into()));
                 }
             }
-            session.finish_sketch_edit(si)?;
+            session.complete_sketch_edit(si)?;
             Ok(drivers)
         })
     }

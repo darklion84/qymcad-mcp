@@ -234,7 +234,7 @@ impl Session {
                 )));
             }
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         // A kept `Parallel` stands just before the dimension; both were appended by this call.
         Ok(Constrained { index: Some(idx), indices: (start..=idx).collect(), note: None, dof: self.p.sketch_dof(si) })
     }
@@ -249,7 +249,7 @@ impl Session {
                     s.p.delete_sketch_text(si, ti);
                     Ok(())
                 })?;
-                return s.finish_sketch_edit(si);
+                return s.complete_sketch_edit(si);
             }
             if !s.p.sketches[si].entities.iter().any(|e| e.id == entity) {
                 return Err(Error::NotFound(format!("entity {entity} in sketch {sketch} (see sketch_info)")));
@@ -261,7 +261,7 @@ impl Session {
                 s.prune_debris(si, &explicit);
                 Ok(())
             })?;
-            s.finish_sketch_edit(si)
+            s.complete_sketch_edit(si)
         })
     }
 
@@ -316,7 +316,7 @@ impl Session {
             let unused: HashSet<Id> = helpers.difference(&live).copied().collect();
             sk.points.retain(|p| !unused.contains(&p.id));
             sk.constraints.retain(|c| !c.points().iter().any(|p| unused.contains(p)));
-            s.finish_sketch_edit(si)
+            s.complete_sketch_edit(si)
         })
     }
 
@@ -484,7 +484,7 @@ impl Session {
                 kind_name(spec.kind)
             )));
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         let after = self.p.sketch_dof(si);
         if !spec.reference && after.1 > before.1 {
             return Err(Error::Invalid(format!("this {} becomes redundant after solving sketch {sketch}", kind_name(spec.kind))));

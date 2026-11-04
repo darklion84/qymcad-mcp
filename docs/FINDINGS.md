@@ -1003,7 +1003,7 @@ no persisted guard or upstream GUI fix for OffsetFace dependencies is claimed.
   empty source instead of 2048 bytes; it also verifies failed-call rollback, original allocation reuse,
   preservation of the enclosing boundary, and release after 1 deletion + 16 edits evicts its snapshot.
 - **How we handle it:** use all three APIs in session history; preserve exact recipe/B-reps while intentionally
-  keeping the id allocator monotonic (ADR 0008). Share deletion's enclosing MCP snapshot. Move removed originals
+  keeping published ids monotonic on undo (ADR 0008). Share deletion's enclosing MCP snapshot. Move removed originals
   into a session archive while history needs them, then recover/prune them without copying their byte buffers.
 
 ## F-057 Stored Project body pools can be inspected without rebuilding geometry
@@ -2349,6 +2349,7 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **What:** `Project::add_pattern` and `update_pattern` store source curves and recreate native instance entities. Pattern item formulas use exactly `count`, `dx`, `dy`, `count2`, `dx2`, `dy2`, `angle`. Full circles step by `total/count`; sectors step by `total/max(count,2)`.
 - **Evidence:** source: `.upstream/qymcad-f25f27d/crates/qymcad-core/src/model/sketch/edit.rs:644-668`, `model/sketch_ops.rs:89-123`, `model/item_values.rs:9-10`; verified: `tasks/research-medB.md` S9 native probe.
 - **How we handle it:** `sketch_pattern` preserves source ids, writes formulas through `write_feat_formula`, reports replaced instances, and documents/refuses instance edits. The server applies the F-033 1000-copy strict integral policy before native work and during settled rebuild checks.
+- **Whole-figure copy membership (source, F5):** native `dup_entities_unbuilt` expands a whole rectangle's four selected sides with its construction diagonals and centre before copying. Returned curve ids follow the sketch entity-table order, including the two diagonals, rather than just the four stored source ids (`model/sketch/edit.rs:526-579`; `model/sketch/copies.rs:14-17`). `copy_sketch_geometry(...).entities` exposes that same expanded curve order without allocating copies (`edit.rs:584-598`). Thus a curve-selected rectangle contributes six instance entities per copy. F5 rectangle/grid/circular and disconnected-source tests verify every returned curve point against the transformed expanded source.
 
 ## F-123 Native app pattern edits leave profile consumers stale
 
@@ -2477,3 +2478,22 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Observed (E-R3):** `tasks/E-review/history_probe.py metadata` / `metadata suppress`, with retained `history-metadata.log` / `history-metadata-suppress.log`, name moved body 22 `custom-body`, hide it, and set lineage RGB `[12,34,56]`. Rolling back after stock and resuming, or suppressing stock and enabling, removes then recreates body 22: its name becomes `Body 1`, visibility true, while colour stays `[12,34,56]` with source `manual`. The 10 × 20 × 20 stock still has analytic volume 4000 mm³.
 - **Source:** `model/regen/run.rs:277-341` calls `drop_body_from_view` for rollback tails and suppression cascades; `model/regen/apply.rs:173-183` cascades that removal via `model/keys.rs:529-539`; `model/features.rs:6-23` recreates it with a carried/generated name and visible true. Native `body_colors` belongs to the lineage map rather than the removed body record. Paths are relative to `.upstream/qymcad-f25f27d/crates/qymcad-core/src/`.
 - **Server contract:** history rollback and feature suppression report `lost_body_metadata:[{body,body_name,visible}]` for removed records with non-default names or hidden visibility, otherwise `[]`. They retain native behavior and introduce no metadata persistence. E8 engine and real-stdio regressions verify exact loss reports and surviving colour; execution evidence belongs in `tasks/E8-report.md`.
+
+## F-137 Native source-only sketch-pattern edits leave instances stale
+
+- **Version:** v0.1.1-dev.20261026 (pinned source f25f27d).
+- **Observed native control:** `tasks/research-medF/f5-native-app.log` records the native load, parameter
+  evaluation, solve and regeneration schedule: margin 5→10 moves the hexagon source centre from (8,20) to
+  (13,20), but its first linear instance remains (8,30), instead of (13,30). The expected x is
+  margin + width/2 = 10 + 6/2; expected y is span/2 + pitch = 40/2 + (6+4). Native regeneration reports
+  `errors=[]`. This is executed native app-path emulation, not a manual GUI observation.
+- **Source:** relative to `.upstream/qymcad-f25f27d/`, `crates/qymcad-core/src/model/params.rs:348-362`
+  imposes item formulas; `model/item_values.rs:144-158` only imposes changed stored numeric values, and
+  `:193-198` updates a pattern when its numeric input changes. Source-only motion does not change those
+  inputs. `model/sketch/edit.rs:647-668` stores actual copied entities and explicitly recreates them on
+  update. `model/params.rs:424-427` solves without a general pattern refresh. The GUI parameter path
+  `crates/qymcad/src/gui/panels_windows/params.rs:375-397` evaluates, solves and schedules regeneration;
+  it does not recreate unchanged-value patterns after solving their source.
+- **Scope:** this describes stale native instance geometry. F-123 remains the separate observation of stale
+  downstream contour selections after native instance recreation. Loading corrected instances does not
+  prevent the native source-only edit gap. Server settlement policy belongs to ADR 0036.

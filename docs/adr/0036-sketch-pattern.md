@@ -33,3 +33,45 @@ through MCP, release build of d8135f5). Every engine call of the native evaluati
 `Session::eval_parameters_capped`: pattern count formulas are pinned to their current counts for a first pass,
 the new parameter values are checked against the cap, and only then the native pass runs. Test:
 `session::b0_tests::param_set_refuses_sketch_pattern_count_over_cap_before_instances`.
+
+## Addendum (F5): settle instances after source solves
+
+After every successful modelling call that solves a sketch, all its pattern instances must equal the final
+solved source under the evaluated pattern transform, before dependent bodies rebuild and before returning.
+Identical ordered single calls and `batch` calls produce identical geometry; no repair call is required.
+
+Use one explicit guarded caller-level settlement step in the engine sketch infrastructure. It skips sketches
+without patterns and refreshes only sketches actually solved by the call, through `refresh_sketch_patterns`.
+Keep its pre-allocation count cap, contour provenance and consumer rebind. Dirty the full dependency closure
+before and after refresh, including projected sketches and their consuming bodies. Keep independent B-rep
+copies, the existing error restoration path, and one undo boundary per tool or batch. A failed batch restores
+every archive byte except the monotonic `next_id` allocator (ADR 0020/F-056): refresh allocates replacement
+entity ids, and keeping them past a rollback avoids any aliasing with native state keyed by id.
+
+Profile provenance uses the native whole-figure copy membership, including carried construction curves
+(F-122), while contour boundaries contain only real curves. Persist each picked contour's copy index,
+owning pattern and source-curve positions in the existing feature dimensions. This preserves disconnected
+source components and prefix subsets without turning them into full-pattern picks. Legacy picks infer
+provenance from their old boundaries; an ambiguous legacy boundary is refused atomically.
+
+The entry points are parameter propagation (including named-source propagation), dimension edits after their
+final solve, structural sketch edits (additions sharing source points, constraints and constraint removal),
+native sketch-edit operations and projection edits. The shared step is never called from `solve_settled`
+or `finish_sketch_edit`: refresh itself uses `finish_sketch_edit`, so doing so would recurse.
+
+Chained patterns are refused: a pattern source cannot contain another pattern's instance entities. Creation
+checks before native allocation; settlement also checks existing/loaded recipes, including missing source
+entities. A refusal restores the pre-call recipe and geometry. Independent patterns in one sketch remain
+supported.
+
+A reached source with competing native item formulas and fully driving sketch dimensions (F-081) is
+refused when its evaluated item input differs from its solved geometry. This prevents a later native
+evaluation from reimposing a different source after copies were made. The check is limited to the solved
+pattern sources and uses the existing transaction rollback; it does not add support for competing drivers.
+
+`doc_open` does not silently repair saved stale instance geometry. The next modelling call that solves that
+sketch repairs it. The pinned app can leave instances stale after a source-only parameter edit (F-137), even
+when it loads an engine-corrected file. This limitation is separate from F-123's stale consuming contour ids.
+
+Evidence: `golden_pattern_source`, real stdio `f5_pattern_source`, and executed logs/report under
+`tasks/F5-logs/` and `tasks/F5-report.md`.

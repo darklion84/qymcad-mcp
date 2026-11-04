@@ -189,7 +189,7 @@ impl Session {
                     s.p.add_constraint_if_independent(si, constraint);
                 }
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(AddedPoint { point, reused })
         })
     }
@@ -311,7 +311,7 @@ impl Session {
         let records = self.point_records(si);
         let result = edit(self)?;
         if self.restore_point_records(si, records) {
-            self.finish_sketch_edit(si)?;
+            self.complete_sketch_edit(si)?;
         }
         Ok(result)
     }
@@ -338,7 +338,7 @@ impl Session {
             }
             s.p.delete_points(si, &[point]);
             s.p.set_feat_dim(point, "explicit_point", String::new());
-            s.finish_sketch_edit(si)
+            s.complete_sketch_edit(si)
         })
     }
 
@@ -518,6 +518,7 @@ impl Session {
             if residual > 1e-6 {
                 return Err(Error::Invalid(format!("sketch {sketch} does not solve after projection (residual {residual:.3e})")));
             }
+            session.settle_patterns_of_solved_sketches([sketch])?;
             let report = session.rebuild_for_edit(Some(&nodes))?;
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
@@ -588,7 +589,7 @@ impl Session {
             *dd = vd;
         }
         self.pin_point(si, center, cx, vx, cy, vy)?;
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         Ok(eid)
     }
 
@@ -859,6 +860,36 @@ impl Session {
             return f64::INFINITY;
         }
         residual
+    }
+
+    /// Public sketch edit callers complete their last solve before rebuilding or reporting geometry.
+    /// Pattern refresh uses the raw finish helper below, so it cannot recurse into settlement.
+    pub(crate) fn complete_sketch_edit(&mut self, si: usize) -> Result<()> {
+        self.finish_sketch_edit(si)?;
+        self.settle_patterns_of_solved_sketches([self.p.sketches[si].id])
+    }
+
+    /// Refresh only the sketches explicitly solved by this caller. Preserve the entire consumer plan
+    /// on both sides of contour recreation, including projection dependencies absent from native inputs.
+    pub(crate) fn settle_patterns_of_solved_sketches(&mut self, solved: impl IntoIterator<Item = Id>) -> Result<()> {
+        let mut seen = HashSet::new();
+        for sketch in solved {
+            if !seen.insert(sketch) {
+                continue;
+            }
+            let si = self.sketch_si(sketch)?;
+            if self.p.sketches[si].patterns.is_empty() {
+                continue;
+            }
+            self.check_pattern_sources(sketch)?;
+            let mut consumers = crate::dependencies::closure(&self.p, HashSet::from([sketch]));
+            self.refresh_sketch_patterns(sketch)?;
+            consumers.extend(crate::dependencies::closure(&self.p, HashSet::from([sketch])));
+            for id in consumers {
+                self.p.mark_node_dirty(id);
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn finish_sketch_edit(&mut self, si: usize) -> Result<()> {

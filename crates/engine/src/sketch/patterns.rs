@@ -70,6 +70,7 @@ impl Session {
                 self.sketch_curve_ids(sketch, &crate::SketchCurveSel::Ids(entities.to_vec()))?
             }
         };
+        self.refuse_pattern_instance_edit(sketch, &source)?;
         let vars = self.p.param_map();
         let (native, formulas, evaluated) = native_kind(kind, &vars)?;
         let total = match native {
@@ -99,9 +100,9 @@ impl Session {
                 s.p.write_feat_formula(&FeatNumber { node: pid, key }, text, plain)
                     .map_err(|e| Error::Expr(format!("pattern formula `{key}`: {e:?}")))?;
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             let new_instances = s.p.sketches[si].patterns.iter().find(|p| p.id == pid).map(|p| p.instances.clone()).unwrap_or_default();
-            s.rebind_pattern_profiles(sketch, &source, &old_instances, &new_instances, &profile_picks)?;
+            s.rebind_pattern_profiles(sketch, pid, &source, &old_instances, &new_instances, &profile_picks)?;
             Ok(pid)
         })?;
         let new_instances = self.p.sketches[si].patterns.iter().find(|p| p.id == pid).map(|p| p.instances.clone()).unwrap_or_default();
@@ -142,6 +143,12 @@ impl Session {
             .collect())
     }
 
+    /// Native whole-figure copying carries rectangle diagonals and orders copied entities by the
+    /// sketch's entity table, rather than by the user's source selector (sketch/edit.rs:526-579).
+    fn pattern_source_entities(&self, si: usize, source: &[Id]) -> Vec<Id> {
+        self.p.copy_sketch_geometry(si, source, 0.0, 0.0).entities.into_iter().map(|e| e.id).collect()
+    }
+
     pub(crate) fn record_pattern_profile_indices(&mut self, node: Id, sketch: Id, profiles: &[Id]) -> Result<()> {
         let si = self.sketch_si(sketch)?;
         let pattern = self.p.sketches[si]
@@ -150,7 +157,8 @@ impl Session {
             .find(|p| profiles.iter().any(|cid| self.p.contours.ents_of(*cid).is_some_and(|e| e.iter().any(|id| p.instances.contains(id)))))
             .cloned();
         let Some(pattern) = pattern else { return Ok(()) };
-        let source_len = pattern.source.len();
+        let source = self.pattern_source_entities(si, &pattern.source);
+        let source_len = source.len();
         if source_len == 0 {
             return Err(Error::Invalid(format!("sketch pattern {} has no source curves", pattern.id)));
         }
@@ -159,7 +167,7 @@ impl Session {
             .map(|cid| {
                 let entities =
                     self.p.contours.ents_of(*cid).ok_or_else(|| Error::Invalid(format!("profile contour {cid} has no boundary")))?;
-                if entities.iter().any(|id| pattern.source.contains(id)) {
+                if entities.iter().any(|id| source.contains(id)) {
                     return Ok(0usize);
                 }
                 pattern
@@ -171,33 +179,80 @@ impl Session {
             })
             .collect::<Result<Vec<_>>>()?;
         for (position, index) in indices.iter().enumerate() {
-            let key = format!("__pattern_profile_{position}");
-            self.p.set_feat_dim(node, &key, index.to_string());
+            let group = if *index == 0 {
+                source.as_slice()
+            } else {
+                pattern
+                    .instances
+                    .chunks(source_len)
+                    .nth(*index - 1)
+                    .ok_or_else(|| Error::Invalid("pattern profile index is unavailable".into()))?
+            };
+            let entities = self
+                .p
+                .contours
+                .ents_of(profiles[position])
+                .ok_or_else(|| Error::Invalid("pattern profile boundary is unavailable".into()))?;
+            let offsets: Vec<usize> = group.iter().enumerate().filter_map(|(offset, id)| entities.contains(id).then_some(offset)).collect();
+            self.p.set_feat_dim(node, &format!("__pattern_profile_{position}"), index.to_string());
+            // Store numeric source positions, not old instance ids; native evaluation may replace ids
+            // before the caller's final source solve. Multiple disconnected contours stay distinct.
+            for (part, offset) in offsets.iter().enumerate() {
+                self.p.set_feat_dim(node, &format!("__pattern_profile_source_{position}_{part}"), offset.to_string());
+            }
         }
+        let expected: Vec<Id> = self.p.sketches[si]
+            .contour_ids
+            .iter()
+            .copied()
+            .filter(|cid| {
+                self.p.contours.parent_of(*cid).is_none_or(|parent| parent == 0)
+                    && self.p.contours.ents_of(*cid).is_some_and(|entities| {
+                        !entities.is_empty()
+                            && std::iter::once(source.as_slice())
+                                .chain(pattern.instances.chunks(source_len))
+                                .any(|group| entities.iter().all(|id| group.contains(id)))
+                    })
+            })
+            .collect();
+        let full = profiles.len() == expected.len() && expected.iter().all(|cid| profiles.contains(cid));
+        self.p.set_feat_dim(node, "__pattern_profile_full", if full { "1" } else { "0" }.into());
+        self.p.set_feat_dim(node, "__pattern_profile_owner", pattern.id.to_string());
         Ok(())
     }
 
     pub(crate) fn rebind_pattern_profiles(
         &mut self,
         sketch: Id,
+        pattern: Id,
         source: &[Id],
         old_instances: &[Id],
-        _new_instances: &[Id],
+        new_instances: &[Id],
         old_picks: &[(Id, std::collections::HashSet<Id>)],
     ) -> Result<()> {
         if source.is_empty() {
             return Err(Error::Invalid("a sketch pattern of this sketch has no source curves".into()));
         }
         let si = self.sketch_si(sketch)?;
+        let effective_source = self.pattern_source_entities(si, source);
+        let source = effective_source.as_slice();
+        if source.is_empty() {
+            return Err(Error::Invalid("pattern source has no copyable curves".into()));
+        }
         let contours = self.p.sketches[si].contour_ids.clone();
-        let source_set: std::collections::HashSet<Id> = source.iter().copied().collect();
+        // Construction source curves (e.g. a polygon's circumcircle) have corresponding copies,
+        // but never belong to a profile boundary. The positional mask also works for removed old ids.
+        let real: Vec<bool> = source.iter().map(|id| self.p.sketches[si].entity(*id).is_some_and(|e| !e.construction)).collect();
+        let boundary =
+            |ids: &[Id]| ids.iter().zip(&real).filter_map(|(id, real)| real.then_some(*id)).collect::<std::collections::HashSet<_>>();
+        let source_set = boundary(source);
         let old_index = |entities: &std::collections::HashSet<Id>| {
-            if *entities == source_set {
+            if !entities.is_empty() && entities.is_subset(&source_set) {
                 Some(0)
             } else {
                 old_instances
                     .chunks(source.len())
-                    .position(|chunk| chunk.iter().copied().collect::<std::collections::HashSet<_>>() == *entities)
+                    .position(|chunk| !entities.is_empty() && entities.is_subset(&boundary(chunk)))
                     .map(|index| index + 1)
             }
         };
@@ -214,9 +269,64 @@ impl Session {
                 (!indices.is_empty()).then_some((node.id, indices))
             })
             .collect();
+        let stored_offsets: HashMap<Id, Vec<Vec<usize>>> = stored_indices
+            .iter()
+            .map(|(node, indices)| {
+                let offsets = (0..indices.len())
+                    .map(|position| {
+                        (0..)
+                            .map_while(|part| {
+                                self.p.feat_dim(*node, &format!("__pattern_profile_source_{position}_{part}")).and_then(|v| v.parse().ok())
+                            })
+                            .collect()
+                    })
+                    .collect();
+                (*node, offsets)
+            })
+            .collect();
         let root_contours: Vec<Id> =
             contours.iter().copied().filter(|cid| self.p.contours.parent_of(*cid).is_none_or(|parent| parent == 0)).collect();
-        let contour_for = |index: usize, _entities: &std::collections::HashSet<Id>| root_contours.get(index).copied();
+        let owners: HashMap<Id, Id> = self
+            .p
+            .timeline
+            .iter()
+            .filter_map(|node| self.p.feat_dim(node.id, "__pattern_profile_owner").and_then(|v| v.parse().ok()).map(|id| (node.id, id)))
+            .collect();
+        let full_picks: HashMap<Id, bool> = self
+            .p
+            .timeline
+            .iter()
+            .filter_map(|node| self.p.feat_dim(node.id, "__pattern_profile_full").map(|v| (node.id, v == "1")))
+            .collect();
+        // Contour order is global to the sketch and can interleave independent patterns. Match the
+        // actual source/instance boundary, never a position in that global contour list.
+        let boundaries: HashMap<Id, std::collections::HashSet<Id>> = root_contours
+            .iter()
+            .filter_map(|cid| self.p.contours.ents_of(*cid).map(|entities| (*cid, entities.iter().copied().collect())))
+            .collect();
+        let contour_with =
+            |entities: &std::collections::HashSet<Id>| root_contours.iter().copied().find(|cid| boundaries.get(cid) == Some(entities));
+        let new_group = |index: usize| {
+            if index == 0 {
+                Some(source)
+            } else {
+                new_instances.chunks(source.len()).nth(index - 1)
+            }
+        };
+        let contour_for = |index: usize, offsets: Option<&[usize]>| {
+            let group = new_group(index)?;
+            if let Some(offsets) = offsets.filter(|v| !v.is_empty()) {
+                let entities =
+                    offsets.iter().map(|offset| group.get(*offset).copied()).collect::<Option<std::collections::HashSet<_>>>()?;
+                return contour_with(&entities);
+            }
+            // A legacy pick without per-contour provenance is safe only if the group has one root.
+            let entities = boundary(group);
+            let mut candidates =
+                root_contours.iter().copied().filter(|cid| boundaries.get(cid).is_some_and(|b| !b.is_empty() && b.is_subset(&entities)));
+            let first = candidates.next()?;
+            candidates.next().is_none().then_some(first)
+        };
         for node in &mut self.p.timeline {
             let profiles = match &mut node.kind {
                 FeatureKind::Extrude { sketch: sid, profiles, .. }
@@ -234,9 +344,23 @@ impl Session {
                     contours.iter().copied().filter(|cid| self.p.contours.parent_of(*cid).is_none_or(|parent| parent == 0)).collect();
                 continue;
             }
-            let stored_indices = stored_indices.get(&node.id);
-            if stored_indices.is_some_and(|indices| indices.iter().copied().all(|index| index < profiles.len())) {
-                *profiles = root_contours.iter().copied().take(_new_instances.len() / source.len() + 1).collect();
+            let owns_indices = owners.get(&node.id).is_none_or(|owner| *owner == pattern);
+            let stored_indices = stored_indices.get(&node.id).filter(|_| owns_indices);
+            let old_total = old_instances.len() / source.len() + 1;
+            let full = full_picks.get(&node.id).copied().unwrap_or_else(|| {
+                stored_indices.is_some_and(|indices| indices.len() == old_total && (0..old_total).all(|i| indices.contains(&i)))
+            });
+            if full && stored_indices.is_some() {
+                let groups: Vec<_> = std::iter::once(source).chain(new_instances.chunks(source.len())).map(boundary).collect();
+                *profiles = root_contours
+                    .iter()
+                    .copied()
+                    .filter(|cid| {
+                        boundaries
+                            .get(cid)
+                            .is_some_and(|entities| !entities.is_empty() && groups.iter().any(|group| entities.is_subset(group)))
+                    })
+                    .collect();
                 continue;
             }
             let mut rebound = Vec::with_capacity(profiles.len());
@@ -247,17 +371,32 @@ impl Session {
                     .map(|(_, e)| e.clone())
                     .or_else(|| self.p.contours.ents_of(old).map(|e| e.iter().copied().collect::<std::collections::HashSet<_>>()))
                     .unwrap_or_default();
-                let index = stored_indices
-                    .as_ref()
-                    .and_then(|indices| indices.get(position).copied())
-                    .or_else(|| old_index(&owned_entities))
-                    .ok_or_else(|| {
-                        Error::Invalid(format!("pattern edit removed selected profile contour {old}; instance index is unavailable"))
-                    })?;
-                let source_entities = if index == 0 { source.iter().copied().collect() } else { owned_entities };
-                rebound.push(contour_for(index, &source_entities).ok_or_else(|| {
-                    Error::Invalid(format!("pattern edit removed selected profile contour {old}; instance index {index} no longer exists"))
-                })?);
+                let index = stored_indices.and_then(|indices| indices.get(position).copied()).or_else(|| old_index(&owned_entities));
+                let contour = if let Some(index) = index {
+                    let offsets = stored_offsets
+                        .get(&node.id)
+                        .filter(|_| owns_indices)
+                        .and_then(|rows| rows.get(position))
+                        .filter(|v| !v.is_empty())
+                        .cloned()
+                        .or_else(|| {
+                            let old_group = if index == 0 { Some(source) } else { old_instances.chunks(source.len()).nth(index - 1) }?;
+                            let offsets: Vec<_> = old_group
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(offset, id)| owned_entities.contains(id).then_some(offset))
+                                .collect();
+                            (!offsets.is_empty() && offsets.len() == owned_entities.len()).then_some(offsets)
+                        });
+                    contour_for(index, offsets.as_deref()).ok_or_else(|| Error::Invalid(format!(
+                        "pattern edit removed selected profile contour {old}; instance index {index} no longer exists or its contour boundary is ambiguous")))?
+                } else {
+                    // A pick of another independent source is carried through by unchanged provenance.
+                    contour_with(&owned_entities).ok_or_else(|| {
+                        Error::Invalid(format!("pattern edit removed selected profile contour {old}; boundary is unavailable"))
+                    })?
+                };
+                rebound.push(contour);
             }
             *profiles = rebound;
         }
@@ -301,7 +440,51 @@ impl Session {
             self.p.update_pattern(si, pi, kind);
             self.finish_sketch_edit(si)?;
             let new_instances = self.p.sketches[si].patterns[pi].instances.clone();
-            self.rebind_pattern_profiles(sketch, &source, &old_instances, &new_instances, &picks)?;
+            self.rebind_pattern_profiles(sketch, id, &source, &old_instances, &new_instances, &picks)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_pattern_sources(&self, sketch: Id) -> Result<()> {
+        let si = self.sketch_si(sketch)?;
+        let sk = &self.p.sketches[si];
+        let scope = self.p.param_map();
+        for pattern in &sk.patterns {
+            if pattern.source.is_empty() || pattern.source.iter().any(|id| sk.entity(*id).is_none()) {
+                return Err(Error::Invalid(format!(
+                    "sketch pattern {} has missing source curves; chained patterns are unsupported",
+                    pattern.id
+                )));
+            }
+            self.refuse_pattern_instance_edit(sketch, &pattern.source)?;
+            // Imported item formulas can compete with source driving constraints (F-081). A later
+            // native evaluation would impose that different shape again, after we copied the solved
+            // source. Refuse the reached source, like dimension_set's discarded-item-value guard.
+            let points: std::collections::HashSet<Id> = self
+                .pattern_source_entities(si, &pattern.source)
+                .iter()
+                .filter_map(|id| sk.entity(*id))
+                .flat_map(qymcad_core::model::entity_points)
+                .collect();
+            for point in points {
+                let Some(dims) = self.p.feat_dims.get(&point) else { continue };
+                for (key, expression) in dims {
+                    // Shape placement/axes can compete with solved driving rows (F-081). Counts
+                    // have separate guards; native polygon counts also include angle helpers.
+                    if !["turn", "w", "h"].contains(&key.as_str()) || expression.trim().is_empty() {
+                        continue;
+                    }
+                    let Some(actual) = self.p.kept_number(point, key) else { continue };
+                    let expected = Num::Expr(expression.clone()).eval(&scope)?;
+                    let difference = if key == "turn" { (actual - expected + 180.0).rem_euclid(360.0) - 180.0 } else { actual - expected };
+                    if !difference.is_finite() || difference.abs() > 1e-7 * expected.abs().max(1.0) {
+                        return Err(Error::Invalid(format!(
+                            "sketch pattern {} source item {point} `{key}` conflicts with its driving constraints: formula requires {expected}, solved value is {actual}; edit rolled back",
+                            pattern.id
+                        )));
+                    }
+                }
+            }
         }
         Ok(())
     }

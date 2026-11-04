@@ -229,7 +229,7 @@ impl Session {
             }
             self.add_independent(si, dims);
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         Ok(Added { entities, points })
     }
 
@@ -304,7 +304,7 @@ impl Session {
             }
             self.add_independent(si, dims);
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         Ok(Added { entities, points: vec![center, ps, pe] })
     }
 
@@ -407,7 +407,7 @@ impl Session {
             }
             None => {}
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         Ok(Added { entities, points: std::iter::once(center).chain(verts).collect() })
     }
 
@@ -442,7 +442,7 @@ impl Session {
             dims.push(radius_dim(p1, w / 2.0, sl.width.expr().map(|e| half(&e)).transpose()?.unwrap_or_default()));
             self.add_independent(si, dims);
         }
-        self.finish_sketch_edit(si)?;
+        self.complete_sketch_edit(si)?;
         Ok(Added { entities, points: vec![p1, p2] })
     }
 

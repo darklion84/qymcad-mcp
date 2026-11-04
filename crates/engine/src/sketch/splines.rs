@@ -67,7 +67,7 @@ impl Session {
                     s.add_independent(si, dims);
                 }
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Added { entities: vec![eid], points: nodes })
         })
     }

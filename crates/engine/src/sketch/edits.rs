@@ -216,8 +216,7 @@ impl Session {
         let before = self.p.sketches[si].clone();
         self.sketch_edit_report(sketch, |s| {
             edit(s, si, ids)?;
-            s.refresh_sketch_patterns(sketch)?;
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             let mut moved = false;
             let mut requested = false;
             for id in ids {
@@ -269,7 +268,7 @@ impl Session {
             if copied.is_empty() {
                 return Err(Error::Invalid("the selected curves could not be copied".into()));
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Vec::new())
         })
     }
@@ -286,7 +285,7 @@ impl Session {
                 return Err(Error::Invalid("trim cannot apply to the selected curve at this point".into()));
             }
             s.tie_edited_ends(si, id, &before);
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Vec::new())
         })
     }
@@ -317,7 +316,7 @@ impl Session {
                 return Err(Error::Invalid("the extension did not apply".into()));
             }
             s.tie_edited_ends(si, id, &before);
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             Ok(Vec::new())
         })
     }
@@ -394,7 +393,7 @@ impl Session {
                     }
                 }
             }
-            s.finish_sketch_edit(si)?;
+            s.complete_sketch_edit(si)?;
             // A picked break of a horizontal line at a point held otherwise splits its row into two that over-hold the
             // point. (Breaking a circle or an ellipse leaves the app's own redundant rows, accepted as they are.)
             let dof = s.p.sketch_dof(si);
