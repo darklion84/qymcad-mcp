@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.9 — rename, measure, appearance and colour export, suppression, rollback (ADR 0042–0047)
 
 ### Added
 - `history_rollback` and `feature_suppress` report exact `lost_body_metadata` for removed named/hidden native body records; lineage colour survives native recreation (F-136).
