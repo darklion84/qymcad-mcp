@@ -122,7 +122,7 @@ Splines pin their ordered interpolation nodes; ellipses/arcs dimension their cen
 Pinning uses `Distance{axis}` from the origin (a magnitude `|Δ|`: the side comes from the
 initial geometry, so a negative value stores `-(expr)`), or `PointOnLine` on an axis for a plain zero.
 
-`dimension_set` uses the native SetDriver check/write/name path, solves/dirties the target sketch, propagates
+`dimension_set` uses the native SetDriver check/write/name path (an indexed sketch row whose references are shared, such as a point's x/y pins, is written by index like the app's inline editor and cannot be named; ADR 0049), solves/dirties the target sketch, propagates
 names and rebuilds on independent B-rep copies. Ambiguous native dimension reference sets are refused.
 Polygon counts use native item formulas and retain existing vertices/first side. Native ellipse axes/turn and
 polygon turn item formulas conflict with fully driving dimensions; those creation paths are stopped (F-081).

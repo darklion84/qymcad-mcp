@@ -86,7 +86,14 @@ impl Session {
         if value.is_none() && name.is_none() {
             return Err(Error::Invalid("dimension_set needs value or name (an empty name clears the name)".into()));
         }
-        let native = self.native_dimension_target(target)?;
+        let (native, ambiguous_row) = self.native_dimension_target(target)?;
+        // Native names address a sketch dimension by its point set only; x and y pins of one point share it.
+        // An indexed value edit is exact, a name cannot be (ADR 0049).
+        if let (Some((sketch, ci)), Some(_)) = (ambiguous_row, name) {
+            return Err(Error::Invalid(format!(
+                "constraint {ci} in sketch {sketch} has ambiguous native driver references; value/formula can be edited by index, but this dimension cannot be named independently in QymCAD 0.1.1"
+            )));
+        }
         if let DimTarget::Feature { node, .. } = &native {
             if self.p.sketches.iter().any(|sk| sk.patterns.iter().any(|p| p.instances.contains(node))) {
                 return Err(Error::Invalid(format!("entity {node} is an instance of a sketch pattern; edit the pattern instead")));
@@ -232,7 +239,14 @@ impl Session {
                 // Native writes a plain feature number through fmt_num, which keeps 4 decimals (expr.rs:346);
                 // store the number as given instead, the way creation does.
                 // Match native's trimmed parse, including numbers sent as strings.
-                if let Some((si, ci)) = point_coordinate {
+                if let Some((sketch, ci)) = ambiguous_row {
+                    // Write exactly the selected row, as the app's inline editor does (qymcad-sketch dims.rs
+                    // set_dim_value + expression on that row); native SetDriver would edit the first set-equal row.
+                    let si = s.sketch_si(sketch)?;
+                    if !write_dimension_row(&mut s.p.sketches[si].constraints[ci], evaluated, if plain_number { "" } else { &text }) {
+                        return Err(Error::NotFound("dimension target no longer exists".into()));
+                    }
+                } else if let Some((si, ci)) = point_coordinate {
                     // Native SetDriver takes abs() and clears the expression. The guard above has
                     // established the magnitude; write it without coercion, retaining legacy side flags.
                     if let Constraint::DistancePL { d, expr, .. } = &mut s.p.sketches[si].constraints[ci] {
@@ -350,11 +364,30 @@ impl Session {
             if !broken.is_empty() {
                 return Err(Error::Rebuild(broken));
             }
-            Ok(DimensionEdit { dimension: s.dimension_info(&native), rebuild })
+            let mut dimension = s.dimension_info(&native);
+            if let Some((sketch, ci)) = ambiguous_row {
+                // Report the selected row, not the native first set-equal row.
+                let si = s.sketch_si(sketch)?;
+                let c = &s.p.sketches[si].constraints[ci];
+                dimension.target = Some(DimensionTarget::Sketch { sketch, constraint: ci });
+                dimension.value = Project::dim_value_of(c);
+                dimension.expression = c.expr().filter(|e| !e.trim().is_empty()).map(str::to_string);
+                let want: HashSet<Id> = dimension.references.iter().copied().collect();
+                let first = s.p.sketches[si]
+                    .constraints
+                    .iter()
+                    .position(|c| Project::dim_refs(c).is_some_and(|r| r.iter().copied().collect::<HashSet<_>>() == want));
+                if first != Some(ci) {
+                    dimension.name = String::new();
+                }
+            }
+            Ok(DimensionEdit { dimension, rebuild })
         })
     }
 
-    fn native_dimension_target(&self, target: &DimensionTarget) -> Result<DimTarget> {
+    /// The native target, plus `(sketch, constraint)` when the selected sketch row shares its native
+    /// references with another dimension (only an indexed value edit can address it).
+    fn native_dimension_target(&self, target: &DimensionTarget) -> Result<(DimTarget, Option<(Id, usize)>)> {
         match target {
             DimensionTarget::Sketch { sketch, constraint } => {
                 let si = self.p.sketch_index(*sketch).ok_or_else(|| Error::NotFound(format!("sketch {sketch}")))?;
@@ -369,10 +402,8 @@ impl Session {
                     .ok_or_else(|| Error::Invalid(format!("constraint {constraint} is not a dimensional constraint")))?;
                 let refs = Project::dim_key_pub(&refs);
                 let target = DimTarget::Sketch { sketch: *sketch, refs };
-                if self.dimension_selector(&target).is_none() {
-                    return Err(Error::Invalid(format!("constraint {constraint} in sketch {sketch} has ambiguous native dimension references; another dimension uses the same entities")));
-                }
-                Ok(target)
+                let ambiguous = self.dimension_selector(&target).is_none().then_some((*sketch, *constraint));
+                Ok((target, ambiguous))
             }
             DimensionTarget::Feature { feature, key } => {
                 if key == "d2"
@@ -387,7 +418,7 @@ impl Session {
                 if self.p.kept_number(*feature, key).is_none() {
                     return Err(Error::NotFound(format!("no numeric dimension `{key}` on feature or sketch item {feature}")));
                 }
-                Ok(DimTarget::Feature { node: *feature, key: key.clone() })
+                Ok((DimTarget::Feature { node: *feature, key: key.clone() }, None))
             }
         }
     }
@@ -475,5 +506,27 @@ impl Session {
             expression: self.p.dim_target_expr(target),
             dof: owner.map(|si| self.p.sketch_dof(si)),
         }
+    }
+}
+
+/// Set a driving sketch dimension row's value and expression, with the variant semantics of the app's
+/// `set_dim_value` (DistancePL keeps its side sign). Returns false for a non-dimensional row.
+fn write_dimension_row(c: &mut Constraint, v: f64, expr: &str) -> bool {
+    match c {
+        Constraint::Angle { deg, .. } | Constraint::AngleLines { deg, .. } => *deg = v,
+        Constraint::DistancePL { d, .. } => *d = if *d < 0.0 { -v } else { v },
+        Constraint::Distance { d, .. }
+        | Constraint::Diameter { d, .. }
+        | Constraint::EdgeDistance { d, .. }
+        | Constraint::CurveDistance { d, .. } => *d = v,
+        Constraint::ArcLength { len, .. } => *len = v,
+        _ => return false,
+    }
+    match c.expr_mut() {
+        Some(e) => {
+            *e = expr.to_string();
+            true
+        }
+        None => false,
     }
 }

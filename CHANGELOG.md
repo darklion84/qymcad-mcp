@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Fixed
+- `dimension_set` by sketch constraint index edits exactly that row when the x and y pins of one point share native references (polyline vertices, rectangle anchors, slot ends, circle/polygon centres); previously refused. Naming such a row is refused with an explanation; the result reports the selected row's value and formula (ADR 0049).
 - Files saved by QymCAD.app with the assembly active: features on existing part sketches find their body in the sketch's part, new sketches go to the document's only part (several parts are refused with a list), and a target in another part is refused up front (ADR 0048, F-139).
 - Sketch-pattern instances follow their final solved source geometry after parameter, dimension and structural sketch edits, including ordered batch calls. Refresh retains contour selections, projection consumers and atomic undo/rollback. Chained pattern sources are refused (ADR 0036, F-137).
 - Deleting a sketch (with or without cascade) removes the formulas and named dimensions owned by its points, curves, patterns and texts, so a parameter used only by a deleted sketch pattern can be deleted. A named dimension still read by a surviving parameter is kept until that parameter is deleted, as before (F-138).

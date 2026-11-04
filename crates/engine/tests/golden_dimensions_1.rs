@@ -219,7 +219,7 @@ fn fully_dimensioned_ellipse_refuses_an_item_edit_that_solver_would_discard() {
 }
 
 #[test]
-fn ambiguous_native_dimension_references_are_refused_before_editing() {
+fn ambiguous_native_dimension_references_refuse_naming_before_editing() {
     let mut s = Session::new_part();
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_circle(sk, &3.0.into(), &4.0.into(), &2.0.into(), false).unwrap();
@@ -244,7 +244,8 @@ fn ambiguous_native_dimension_references_are_refused_before_editing() {
         .dimension_set(&DimensionTarget::Sketch { sketch: sk, constraint: ci }, Some(&7.0.into()), Some("CentreX"))
         .unwrap_err()
         .to_string();
-    assert!(error.contains("ambiguous native dimension references"), "{error}");
+    // ADR 0049: an indexed value edit is exact, a native name cannot tell x from y.
+    assert!(error.contains("has ambiguous native driver references; value/formula can be edited by index"), "{error}");
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
 }
 
