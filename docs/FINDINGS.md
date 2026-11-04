@@ -2497,3 +2497,22 @@ asserts those exact fractional halves before checking away-from-zero output.
 - **Scope:** this describes stale native instance geometry. F-123 remains the separate observation of stale
   downstream contour selections after native instance recreation. Loading corrected instances does not
   prevent the native source-only edit gap. Server settlement policy belongs to ADR 0036.
+
+## F-138 Native sketch deletion leaves sketch-owned item formulas and names behind
+
+- **Version:** v0.1.1-dev.20261026 (pinned source f25f27d).
+- **Observed native control:** `tasks/research-medF/f3-rustc-app.log`: load a document with sketch 3 (hexagon
+  + linear pattern 48 whose count is `repeat_count`) and its extrusion, run native
+  `delete_sketch_with_dependents(3)`, `prune_dangling()`, `eval_parameters()` and dirty regeneration. Timeline
+  and sketches become empty, `errors=[]`, but `feat_dims[48] = {"count": "repeat_count"}` survives and is saved.
+  Executed native app-core emulation, not a manual GUI observation.
+- **Source:** relative to `.upstream/qymcad-f25f27d/`, `crates/qymcad-core/src/model/sketch_types.rs:40-42`
+  (patterns are sketch-owned records, not timeline nodes); `model/timeline/delete.rs:49-108` and
+  `model/bodies.rs:21-34` remove the sketch and doomed bodies' formula maps only; `model/item_values.rs:129-154`
+  skips formula entries whose owner is absent, so rebuild reports nothing; `doc_file.rs:105-112,170-173`
+  serialises `named_dims`/`feat_dims` unfiltered. GUI path: `crates/qymcad/src/gui/commands.rs:193-202` →
+  `qymcad-part/src/topology.rs:68-118`, no item-metadata cleanup.
+- **How we handle it:** `feature_delete` captures ids owned by every deleted sketch (points, entities, patterns,
+  texts) before native deletion and removes their `feat_dims` and any `named_dims` targeting them or a deleted
+  node, inside the existing tool-edit snapshot. A name still read by a surviving parameter is kept (existing
+  policy, `golden_medium_r1` named deletion: the user deletes the alias explicitly). No global sweep of old documents. Tests: `crates/mcp/tests/f3_delete_metadata.rs`.

@@ -3,7 +3,7 @@ use crate::session::AdvisoryWarning;
 use crate::{Error, Id, NodeIssue, Rebuild, Result, Session};
 use qymcad_core::{
     feature::{FeatureKind, SketchPlane},
-    model::{AxisDef, PlaneDef, PointDef, Project},
+    model::{AxisDef, DimTarget, PlaneDef, PointDef, Project},
 };
 use qymcad_kernel::Shape;
 use std::collections::{HashMap, HashSet};
@@ -497,6 +497,42 @@ impl Session {
                 dependents.join(", ")
             )));
         }
+        // Sketch-owned records (points, entities, patterns, texts) are not timeline nodes, yet their
+        // formulas and names live in separate maps that native deletion leaves behind (F-138).
+        let deleted_sketches: HashSet<Id> = self
+            .p
+            .timeline
+            .iter()
+            .filter(|n| gone.contains(&n.id))
+            .filter_map(|n| match n.kind {
+                FeatureKind::Sketch { sketch } => Some(sketch),
+                _ => None,
+            })
+            .collect();
+        let mut owned: HashSet<Id> = gone.clone();
+        for sketch in self.p.sketches.iter().filter(|sk| deleted_sketches.contains(&sk.id)) {
+            owned.insert(sketch.id);
+            owned.extend(sketch.points.iter().map(|x| x.id));
+            owned.extend(sketch.entities.iter().map(|x| x.id));
+            owned.extend(sketch.patterns.iter().map(|x| x.id));
+            owned.extend(sketch.texts.iter().map(|x| x.id));
+        }
+        // A name a surviving global still reads stays, as before: the user deletes that alias explicitly
+        // (golden_medium_r1 named_deletion). Every other name owned by deleted records goes with them.
+        let kept_names: HashSet<String> = self
+            .p
+            .named_dims
+            .iter()
+            .filter(|d| self.p.parameters.iter().any(|q| qymcad_core::expr::mentions(&q.expr, &d.name)))
+            .map(|d| d.name.clone())
+            .collect();
+        let doomed = |d: &qymcad_core::model::NamedDim| {
+            !kept_names.contains(&d.name)
+                && match &d.target {
+                    DimTarget::Sketch { sketch, .. } => deleted_sketches.contains(sketch),
+                    DimTarget::Feature { node, .. } => owned.contains(node),
+                }
+        };
         // MCP already isolates shapes and retains rollback state for the whole tool call.
         // Direct engine callers still need their own atomic deletion boundary.
         let snapshot = if self.tool_edit_active { None } else { Some(self.begin_tool_edit()?) };
@@ -533,6 +569,8 @@ impl Session {
             self.p.regen_errors.remove(&id);
             self.p.regen_warnings.remove(&id);
         }
+        self.p.feat_dims.retain(|id, _| !owned.contains(id));
+        self.p.named_dims.retain(|d| !doomed(d));
         if let Some(prefix) = rollback_prefix {
             self.p.set_rollback(Some(self.p.timeline.iter().filter(|n| prefix.contains(&n.id)).count()));
         }
