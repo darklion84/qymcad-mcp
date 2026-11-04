@@ -17,7 +17,7 @@ use serde_json::json;
 pub struct PlaneOffsetArgs {
     /// A base plane ("XY", "XZ", "YZ") or {"plane": <datum plane>}.
     pub base: PlaneArg,
-    /// Distance along the base plane's normal, mm (number or expression), finite within ±100000. Later evaluated edits retain this limit.
+    /// Offset distance, mm (number or expression), finite within ±100000: toward +Z from XY, +Y from XZ, +X from YZ, or along a datum base's current (tilted) normal. Applied before this plane's own tilt. Later evaluated edits retain this limit.
     pub dist: Num,
     /// Native Tilt X in degrees (number or expression), finite within ±360. Default 0; no angle normalization. Also checked on later evaluated edits.
     #[serde(default = "zero")]
@@ -558,7 +558,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "plane_offset",
-            "Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Returns plane/rebuild; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",
+            "Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Order as in the app: offset first, then tilt about the offset origin. A base plane offsets toward +Z (XY), +Y (XZ, whose sketch normal is -Y) or +X (YZ); a datum base offsets along its current normal; this plane's own tilt never rotates its offset. Tilt X then Tilt Y use the reference plane's axes; Turn is about the final normal. To offset along a tilted normal, make a tilted datum with dist 0 and offset a child from it. A sketch's world_frame.origin is the projection of world zero onto the plane, not the tilt pivot. Returns plane/rebuild; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",
             |st, a: PlaneOffsetArgs| {
                 let s = st.doc()?;
                 let base = a.base.resolve(s)?;
