@@ -200,11 +200,7 @@ impl Session {
             let reach: Reach = a.direction.into();
             // A target must be a current body: an extrude into a consumed one branches a ghost chain (F-009). A new
             // body has no target; asking for both is a contradiction, not something to guess about.
-            let src = match (a.target, a.op) {
-                (Some(_), Op::NewBody) => return Err(Error::Invalid("op new_body makes a separate body; omit `target`".into())),
-                (Some(t), _) => Some(s.source_body(Some(t))?),
-                (None, _) => s.tip_body(),
-            };
+            let src = s.sketch_feature_body(a.sketch, a.op, a.target)?;
             let id = match (a.op, src) {
                 (Op::NewBody, _) | (Op::Add, None) => {
                     if a.through {
@@ -354,5 +350,54 @@ mod datum_tests {
             assert_eq!(s.result_bodies()[0].bbox, bbox);
             s.p = before;
         }
+    }
+}
+
+impl Session {
+    /// The part a feature on `sketch` is built in: the sketch's owning part, which the app activates
+    /// before resolving the body (qymcad-part apply/solids.rs:420-459). `None` keeps the active context.
+    pub(crate) fn sketch_part(&self, sketch: Id) -> Option<Id> {
+        self.p.sketch_owner(sketch).filter(|c| self.p.component_is_part(*c))
+    }
+
+    /// The body a sketch-based feature works on, resolved in the sketch's part rather than in the
+    /// navigation context: a GUI file may be saved with an assembly active (ADR 0048).
+    pub(crate) fn sketch_feature_body(&self, sketch: Id, op: Op, target: Option<Id>) -> Result<Option<Id>> {
+        match (target, op) {
+            (Some(_), Op::NewBody) => Err(Error::Invalid("op new_body makes a separate body; omit `target`".into())),
+            (Some(t), _) => {
+                let src = self.source_body(Some(t))?;
+                if let (Some(part), Some(owner)) = (self.sketch_part(sketch), self.p.body_owner(src)) {
+                    if owner != part && self.p.component_is_part(owner) {
+                        return Err(Error::Invalid(format!(
+                            "target body {src} belongs to part {owner} '{}'; sketch {sketch} belongs to part {part} '{}'; cross-component inputs are not allowed",
+                            self.component_label(owner),
+                            self.component_label(part)
+                        )));
+                    }
+                }
+                Ok(Some(src))
+            }
+            (None, Op::NewBody) => Ok(None),
+            (None, _) => Ok(match self.sketch_part(sketch) {
+                Some(part) => self.current_body_ids().into_iter().rfind(|b| self.p.body_owner(*b) == Some(part)),
+                None => self.tip_body(),
+            }),
+        }
+    }
+
+    /// Run a feature adder inside the sketch's part and restore the user's navigation context afterwards,
+    /// on success and on error alike.
+    pub(crate) fn in_sketch_part<T>(&mut self, sketch: Id, edit: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
+        let Some(part) = self.sketch_part(sketch) else { return edit(self) };
+        let saved = self.p.active_component;
+        self.p.set_active_component(Some(part));
+        let value = edit(self);
+        self.p.set_active_component(saved);
+        value
+    }
+
+    pub(crate) fn component_label(&self, id: Id) -> String {
+        self.p.components.iter().find(|c| c.id == id).map(|c| crate::localization::name(&c.name)).unwrap_or_default()
     }
 }

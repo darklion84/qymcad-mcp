@@ -70,23 +70,21 @@ impl Session {
             };
             let reach: Reach = a.direction.into();
             let turn = RevolveTurn { angle, reach };
-            let src = match (a.target, a.op) {
-                (Some(_), Op::NewBody) => return Err(Error::Invalid("op new_body makes a separate body; omit `target`".into())),
-                (Some(t), _) => Some(s.source_body(Some(t))?),
-                (None, _) => s.tip_body(),
-            };
-            let id = match (a.op, src) {
-                (Op::NewBody, _) | (Op::Add, None) => s.p.add_revolve_axis_ex(a.sketch, profiles.clone(), ax, turn),
-                (Op::Cut | Op::Intersect, None) => return Err(Error::Invalid("there is no body to cut or intersect yet".into())),
-                (op, Some(src)) => {
-                    let code = match op {
-                        Op::Cut => 0,
-                        Op::Add => 1,
-                        _ => 2,
-                    };
-                    s.p.add_revolve_multi_op(a.sketch, profiles.clone(), ax, turn, src, code)
-                }
-            };
+            let src = s.sketch_feature_body(a.sketch, a.op, a.target)?;
+            let id = s.in_sketch_part(a.sketch, |s| {
+                Ok(match (a.op, src) {
+                    (Op::NewBody, _) | (Op::Add, None) => s.p.add_revolve_axis_ex(a.sketch, profiles.clone(), ax, turn),
+                    (Op::Cut | Op::Intersect, None) => return Err(Error::Invalid("there is no body to cut or intersect yet".into())),
+                    (op, Some(src)) => {
+                        let code = match op {
+                            Op::Cut => 0,
+                            Op::Add => 1,
+                            _ => 2,
+                        };
+                        s.p.add_revolve_multi_op(a.sketch, profiles.clone(), ax, turn, src, code)
+                    }
+                })
+            })?;
             dim(s, id, "angle", &a.angle);
             if a.profiles.is_some() {
                 s.p.set_feat_dim(id, "__profile_pick", "1".into());

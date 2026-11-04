@@ -81,7 +81,7 @@ impl Session {
         }
         self.atomic(|s| {
             let profiles = s.closed_profiles(a.sketch, a.profiles.as_deref())?;
-            let src = s.op_source(a.op, a.target)?;
+            let src = s.op_source(a.sketch, a.op, a.target)?;
             let (code, src) = match src {
                 Some(src) => (op_code(a.op), src),
                 None => (1, 0),
@@ -106,7 +106,7 @@ impl Session {
                             }
                         },
                     };
-                    s.p.add_sweep_multi_op(a.sketch, profiles.clone(), *sketch, path, src, code)
+                    s.in_sketch_part(a.sketch, |s| Ok(s.p.add_sweep_multi_op(a.sketch, profiles.clone(), *sketch, path, src, code)))?
                 }
                 SweepPath::Edges { body, edges } => {
                     let body = s.source_body(*body)?;
@@ -120,7 +120,9 @@ impl Session {
                     // Self-gating kernel door: no kernel gate is held here (F-073).
                     qymcad_kernel::ask::path_edges_join(shape, &ids)
                         .map_err(|_| Error::Invalid(format!("edges {ids:?} of body {body} do not join end to end into one chain")))?;
-                    s.p.add_sweep_along(a.sketch, profiles.clone(), EdgePath { body, edges: Ref::picks(&ids) }, src, code)
+                    s.in_sketch_part(a.sketch, |s| {
+                        Ok(s.p.add_sweep_along(a.sketch, profiles.clone(), EdgePath { body, edges: Ref::picks(&ids) }, src, code))
+                    })?
                 }
             };
             if a.profiles.is_some() {
@@ -166,11 +168,12 @@ impl Session {
                 sketches.push(section.sketch);
                 contours.push(contour);
             }
-            let (code, src) = match s.op_source(a.op, a.target)? {
+            let first = sketches[0];
+            let (code, src) = match s.op_source(first, a.op, a.target)? {
                 Some(src) => (op_code(a.op), src),
                 None => (1, 0),
             };
-            let id = s.p.add_loft(sketches, contours, a.ruled, src, code, a.surface);
+            let id = s.in_sketch_part(first, |s| Ok(s.p.add_loft(sketches, contours, a.ruled, src, code, a.surface)))?;
             s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
         })
@@ -198,13 +201,8 @@ impl Session {
 
     /// The body an operation works on: `None` for a new body (or the first add), refusing a target for a new
     /// body and a cut or intersection with nothing to work on.
-    fn op_source(&self, op: Op, target: Option<Id>) -> Result<Option<Id>> {
-        let src = match (target, op) {
-            (Some(_), Op::NewBody) => return Err(Error::Invalid("op new_body makes a separate body; omit `target`".into())),
-            (Some(t), _) => Some(self.source_body(Some(t))?),
-            (None, Op::NewBody) => None,
-            (None, _) => self.tip_body(),
-        };
+    fn op_source(&self, sketch: Id, op: Op, target: Option<Id>) -> Result<Option<Id>> {
+        let src = self.sketch_feature_body(sketch, op, target)?;
         match (op, src) {
             (Op::NewBody, _) => Ok(None),
             (Op::Cut | Op::Intersect, None) => Err(Error::Invalid("there is no body to cut or intersect yet".into())),

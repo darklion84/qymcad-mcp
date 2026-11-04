@@ -353,7 +353,7 @@ impl Session {
         let name = name.map(str::to_string).unwrap_or_else(|| format!("Sketch {n}"));
         let owner = match plane {
             PlaneRef::Face { body, .. } => self.p.body_owner(*body),
-            _ => self.p.active_component,
+            _ => self.modelling_part(plane)?,
         };
         let sid = self.in_component(owner, |p| {
             let sid = p.add_sketch(name.clone(), vec![], None);
@@ -364,6 +364,41 @@ impl Session {
         self.p.sketches[si].plane = sp;
         self.track_datum_dependencies(sid);
         Ok(sid)
+    }
+
+    /// The part an unanchored new sketch belongs to (ADR 0048). A part-owned datum supplies its part; else
+    /// the active part; with an assembly active, the document's only part (server policy: the app would make
+    /// a new part instead), or a new one via native `part_to_draw_in` when there is none. Several parts are
+    /// ambiguous and refused before any change. Documents without components keep the active context.
+    fn modelling_part(&mut self, plane: &PlaneRef) -> Result<Option<Id>> {
+        if let PlaneRef::Plane(id) = plane {
+            let owner = self
+                .p
+                .timeline
+                .iter()
+                .find(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Plane { plane } if plane == *id))
+                .and_then(|n| n.parent)
+                .filter(|c| self.p.component_is_part(*c));
+            if owner.is_some() {
+                return Ok(owner);
+            }
+        }
+        let Some(active) = self.p.active_component else { return Ok(None) };
+        if self.p.component_is_part(active) {
+            return Ok(Some(active));
+        }
+        let mut parts: Vec<_> = self.p.components.iter().filter(|c| self.p.component_is_part(c.id)).map(|c| c.id).collect();
+        parts.sort_unstable();
+        match parts.as_slice() {
+            [part] => Ok(Some(*part)),
+            [] => Ok(self.p.part_to_draw_in()),
+            many => Err(Error::Invalid(format!(
+                "active component {active} '{}' is an assembly; cannot choose a modelling part from {} parts: {}; create a sketch on a body face or use a sketch owned by the intended part",
+                self.component_label(active),
+                many.len(),
+                many.iter().map(|id| format!("{id} '{}'", self.component_label(*id))).collect::<Vec<_>>().join(", ")
+            ))),
+        }
     }
 
     /// Native feature dimensions make a datum sketch dirty before parallel preparation (F-017).

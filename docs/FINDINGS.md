@@ -2516,3 +2516,19 @@ asserts those exact fractional halves before checking away-from-zero output.
   texts) before native deletion and removes their `feat_dims` and any `named_dims` targeting them or a deleted
   node, inside the existing tool-edit snapshot. A name still read by a surviving parameter is kept (existing
   policy, `golden_medium_r1` named deletion: the user deletes the alias explicitly). No global sweep of old documents. Tests: `crates/mcp/tests/f3_delete_metadata.rs`.
+
+## F-139 Native modelling context is the sketch's part, not the saved navigation context
+
+- **Version:** v0.1.1-dev.20261026 (pinned source f25f27d).
+- **Observed:** a file saved by QymCAD.app 0.1.1 with the root assembly active (`active_component: Some(1)`,
+  part 2 holds all geometry) loads without errors. Native `add_sketch_node` records the current context as the
+  sketch parent, so a sketch created while the assembly is active belongs to the assembly; native isolation then
+  refuses any feature that combines it with a part body (`cross-component input`). Native `part_to_draw_in`
+  creates a new part when the context is an assembly; it never reuses an existing part. Executed headlessly in
+  `tasks/research-medF/f1-probe-final.log`; no manual GUI run.
+- **Source:** relative to `.upstream/qymcad-f25f27d/`: `crates/qymcad-core/src/model/timeline/nodes.rs:149-157`
+  (sketch parent = active context); `model/components.rs:17-27` (`part_to_draw_in`);
+  `crates/qymcad-part/src/apply/solids.rs:420-459` (feature apply activates the sketch owner and takes
+  `active_body(owner)`); `crates/qymcad/src/gui/no_assembly_sketch.rs:15-47` (assembly UI offers no sketch tool);
+  `model/regen/apply.rs:193-208` (cross-component refusal).
+- **How we handle it:** ADR 0048. The sole-part choice for a new sketch is server policy, not native behaviour.
