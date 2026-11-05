@@ -2499,7 +2499,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   prevent the native source-only edit gap. Server settlement policy belongs to ADR 0036.
 
 The same gap applies to a pattern whose source is a projection: the source moves during regeneration and the instances stay. The server settles and rebuilds again; the app does not [source read, not run in the app].
-- **Owner's report (2026-11-05):** on the holder, `bed_frame_width` 40 and `phone_width` 20 typed in QymCAD.app show triangles of mixed sizes and overlaps (screenshot). The same values over MCP give 5 and 8 even triangles, volume 97318.853, on release .9 and on this branch. That F-137 is the cause in the app is inferred, the app run was not reproduced by us.
+- **Owner's report (2026-11-05):** on the holder, `bed_frame_width` 40 and `phone_width` 20 typed in QymCAD.app show triangles of mixed sizes and overlaps (screenshot). The same values over MCP give 5 and 8 even triangles, volume 97318.853, on release .9 and on this branch. Replayed on the native app path (`gui_edit_param_model`, no server code, not the GUI itself): `bed_frame_width` 25→40 moves the truss source to (11.20, 8.51) while its first copy stays at (7.00, 67.54), the old width; `bed_frame_depth` 50→30 moves the leg hexagon source to (-8.03, 13.12) while its first copy stays at (-14.70, 40.77); volume 91567.291 against 89176.772 from the server. Native rebuild reports no errors.
 
 ## F-138 Native sketch deletion leaves sketch-owned item formulas and names behind
 
