@@ -2499,6 +2499,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   prevent the native source-only edit gap. Server settlement policy belongs to ADR 0036.
 
 The same gap applies to a pattern whose source is a projection: the source moves during regeneration and the instances stay. The server settles and rebuilds again; the app does not [source read, not run in the app].
+- **Owner's report (2026-11-05):** on the holder, `bed_frame_width` 40 and `phone_width` 20 typed in QymCAD.app show triangles of mixed sizes and overlaps (screenshot). The same values over MCP give 5 and 8 even triangles, volume 97318.853, on release .9 and on this branch. That F-137 is the cause in the app is inferred, the app run was not reproduced by us.
 
 ## F-138 Native sketch deletion leaves sketch-owned item formulas and names behind
 
@@ -2550,3 +2551,15 @@ The same gap applies to a pattern whose source is a projection: the source moves
   it would diverge from the native record.
 - **Related case:** native reprojection replaces a projected spline whose shape changed with a new entity, while the
   pattern source keeps the old id, so the copies stay at the old shape. Reproduced in review F4; refused the same way.
+
+## F-141 A reprojected spline whose shape changed leaves the downstream contour at the old shape
+
+- **Version:** v0.1.1-dev.20261026 (pinned source f25f27d).
+- **Observed:** native reprojection replaces a changed projected spline with a new entity and keeps the replaced curve
+  as ordinary geometry (`model/projection.rs::apply_curves`). An extrusion of the projected profile, with no pattern
+  involved, keeps the old contour: the edit succeeds with no error, stock volume 125.001→200.002, downstream stays
+  125.003 against 199.988 for a fresh model. Removing a pattern natively and retrying gives the same stale result, also
+  after save and reopen. Reproduced through the engine in package F review 5 (`docs/reviews/medium-f.md`); not run in the app.
+- **How we handle it:** with a pattern source the edit is refused and the message names the path that works: delete the
+  projecting sketch with cascade, edit, build it again (F-140, tested). Without a pattern the behaviour is unchanged and
+  not fixed: rebuild the projecting sketch after changing a projected spline.

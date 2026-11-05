@@ -615,11 +615,11 @@ impl Session {
         });
         match released {
             Some(((sketch, entity), projection)) if is_source(*sketch, *entity) => Err(Error::Invalid(format!(
-                "projection {} in sketch {sketch} would be released: this edit replaces its curve {entity}, a sketch pattern source, so the copies would stay at the old shape; remove the pattern first",
+                "projection {} in sketch {sketch} would be released: this edit replaces its curve {entity}, a sketch pattern source, so the copies would stay at the old shape; delete sketch {sketch} with cascade, make the edit, then build it again",
                 projection.id
             ))),
             Some(((sketch, _), projection)) => Err(Error::Invalid(format!(
-                "projection {} in sketch {sketch} would be released: body {} comes from a sketch pattern whose instances this edit recreates; project the pattern's source curves or remove the projection first",
+                "projection {} in sketch {sketch} would be released: body {} comes from a sketch pattern whose instances this edit recreates; delete sketch {sketch} with cascade, make the edit, then build it again, projecting the pattern's source curves if it must follow later edits",
                 projection.id, projection.body
             ))),
             None => Ok(()),

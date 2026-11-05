@@ -966,6 +966,20 @@ fn f5r_recreating_a_projected_copy_is_refused_before_it_detaches_the_projection(
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
     assert_eq!(projection_count(&s, b), 4);
     bbox(&s, b_body, [12.0, -1.0, 0.0, 214.0, 1.0, 2.0]);
+
+    // The advice in the refusal works: delete the projecting sketch, edit, then build it again.
+    assert!(error.contains(&format!("delete sketch {b} with cascade, make the edit, then build it again")), "{error}");
+    s.feature_delete(b, true).unwrap();
+    s.param_set("x", &6.0.into()).unwrap();
+    let a_body = s.project().timeline.iter().find_map(|n| n.kind.bodies().first().copied()).unwrap();
+    let edges = top_edges(&mut s, a_body, 14.0..18.0);
+    assert_eq!(edges.len(), 4);
+    let again = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("B again")).unwrap();
+    let (projection, _) = s.sketch_project(again, a_body, &edges).unwrap();
+    s.sketch_pattern_create(again, &projection.entities, &linear(3.0.into(), 100.0.into(), 0.0.into())).unwrap();
+    let rebuilt = extrude(&mut s, again, None);
+    // Copy 1 of A at x = 6 + 10, 2 wide, repeated at 100 and 200.
+    bbox(&s, rebuilt, [15.0, -1.0, 0.0, 217.0, 1.0, 2.0]);
 }
 #[test]
 fn f5r_edit_that_leaves_copies_in_place_keeps_their_ids_and_the_projection() {
@@ -1064,4 +1078,17 @@ fn f5r_replaced_projected_spline_source_is_refused_instead_of_freezing_the_copie
     assert!(error.contains("would be released"), "{error}");
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
     assert_eq!(s.shape(follower).unwrap().volume(), volume);
+
+    // The advice in the refusal works: delete the projecting sketch, edit, then build it again.
+    assert!(error.contains(&format!("delete sketch {sk} with cascade, make the edit, then build it again")), "{error}");
+    s.feature_delete(sk, true).unwrap();
+    s.param_set("v", &8.0.into()).unwrap();
+    let stock_area = s.shape(body).unwrap().volume() / 2.0;
+    let edges = top_edges(&mut s, body, -100.0..100.0);
+    let again = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("projected again")).unwrap();
+    let (projection, _) = s.sketch_project(again, body, &edges).unwrap();
+    s.sketch_pattern_create(again, &projection.entities, &linear(3.0.into(), 40.0.into(), 0.0.into())).unwrap();
+    let rebuilt = extrude(&mut s, again, None);
+    // Three copies of the v=8 profile, height 2; the projected spline is approximate, as in a fresh model.
+    assert_close(s.shape(rebuilt).unwrap().volume(), 3.0 * 2.0 * stock_area, 0.1, "rebuilt from the new shape");
 }
