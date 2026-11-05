@@ -1039,3 +1039,29 @@ fn f5r_copies_with_the_opposite_arc_winding_are_not_considered_unchanged() {
     // Major segments: area 3pi + 2, height 2, three of them = 18pi + 12.
     assert_close(s.shape(body).unwrap().volume(), 18.0 * std::f64::consts::PI + 12.0, 1e-5, "major segments");
 }
+/// Native reprojection replaces a changed spline with a new entity; the pattern source keeps the old one.
+#[test]
+fn f5r_replaced_projected_spline_source_is_refused_instead_of_freezing_the_copies() {
+    let mut s = Session::new_part();
+    s.param_set("v", &5.0.into()).unwrap();
+    let stock = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let spec: SplineSpec = serde_json::from_value(serde_json::json!({"points":[[2,3],[12,"v+3"],[22,3]]})).unwrap();
+    s.sketch_spline(stock, &spec).unwrap();
+    s.sketch_line(
+        stock,
+        &LineSpec { x1: 22.0.into(), y1: 3.0.into(), x2: 2.0.into(), y2: 3.0.into(), construction: false, dimensioned: false },
+    )
+    .unwrap();
+    let body = extrude(&mut s, stock, None);
+    let edges = top_edges(&mut s, body, -100.0..100.0);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("projected")).unwrap();
+    let (projection, _) = s.sketch_project(sk, body, &edges).unwrap();
+    s.sketch_pattern_create(sk, &projection.entities, &linear(3.0.into(), 40.0.into(), 0.0.into())).unwrap();
+    let follower = extrude(&mut s, sk, None);
+    let volume = s.shape(follower).unwrap().volume();
+    let before = serde_json::to_value(s.project()).unwrap();
+    let error = s.param_set("v", &8.0.into()).unwrap_err().to_string();
+    assert!(error.contains("would be released"), "{error}");
+    assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+    assert_eq!(s.shape(follower).unwrap().volume(), volume);
+}

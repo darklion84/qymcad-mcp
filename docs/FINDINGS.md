@@ -2548,3 +2548,5 @@ The same gap applies to a pattern whose source is a projection: the source moves
   projection of a live body fed by a patterned sketch, it is refused atomically (ADR 0036 addendum). Projecting the
   pattern's source curves is not affected. Moving instances in place was rejected: they carry copied constraints and
   it would diverge from the native record.
+- **Related case:** native reprojection replaces a projected spline whose shape changed with a new entity, while the
+  pattern source keeps the old id, so the copies stay at the old shape. Reproduced in review F4; refused the same way.

@@ -593,7 +593,8 @@ impl Session {
     }
 
     /// Recreated pattern instances lose their edge names, so a projection of them would silently freeze at
-    /// the old position (F-140). A live body fed by a patterned sketch must keep its projections.
+    /// the old position (F-140). A live body fed by a patterned sketch must keep its projections, and a pattern
+    /// source must stay projected: native reprojection can replace a curve and leave the source behind.
     fn refuse_projection_released_by_pattern(&self, before: &HashMap<(Id, Id), DetachedProjection>) -> Result<()> {
         let after = self.projection_provenance();
         let lost: Vec<_> = before.iter().filter(|(key, _)| !after.contains_key(*key)).collect();
@@ -606,7 +607,17 @@ impl Session {
             .filter_map(|id| self.p.timeline.iter().find(|n| n.id == id))
             .flat_map(|n| n.kind.bodies())
             .collect();
-        match lost.into_iter().find(|(_, projection)| fed.contains(&projection.body) && self.shapes.contains_key(&projection.body)) {
+        let is_source = |sketch: Id, entity: Id| {
+            self.p.sketch_index(sketch).is_some_and(|si| self.p.sketches[si].patterns.iter().any(|p| p.source.contains(&entity)))
+        };
+        let released = lost.into_iter().find(|((sketch, entity), projection)| {
+            self.shapes.contains_key(&projection.body) && (fed.contains(&projection.body) || is_source(*sketch, *entity))
+        });
+        match released {
+            Some(((sketch, entity), projection)) if is_source(*sketch, *entity) => Err(Error::Invalid(format!(
+                "projection {} in sketch {sketch} would be released: this edit replaces its curve {entity}, a sketch pattern source, so the copies would stay at the old shape; remove the pattern first",
+                projection.id
+            ))),
             Some(((sketch, _), projection)) => Err(Error::Invalid(format!(
                 "projection {} in sketch {sketch} would be released: body {} comes from a sketch pattern whose instances this edit recreates; project the pattern's source curves or remove the projection first",
                 projection.id, projection.body
