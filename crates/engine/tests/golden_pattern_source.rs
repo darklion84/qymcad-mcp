@@ -1004,3 +1004,38 @@ fn f5r_legacy_nested_pick_is_refused_instead_of_becoming_the_annulus() {
     assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
     assert_close(s.shape(body).unwrap().volume(), two_pi, 1e-5, "still the inner disc");
 }
+/// Native stale case: only the source arc is reversed in the file. Same endpoints and radius, other winding.
+#[test]
+fn f5r_copies_with_the_opposite_arc_winding_are_not_considered_unchanged() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let spec: ArcSpec =
+        serde_json::from_value(serde_json::json!({"cx":3,"cy":4,"r":2,"start_angle":0,"end_angle":90,"dimensioned":false})).unwrap();
+    let arc = s.sketch_arc(sk, &spec).unwrap();
+    let chord = s
+        .sketch_line(
+            sk,
+            &LineSpec { x1: 5.0.into(), y1: 4.0.into(), x2: 3.0.into(), y2: 6.0.into(), construction: false, dimensioned: false },
+        )
+        .unwrap();
+    let mut source = arc.entities.clone();
+    source.extend(chord.entities.iter().copied());
+    s.sketch_pattern_create(sk, &source, &linear(3.0.into(), 20.0.into(), 0.0.into())).unwrap();
+    let body = extrude(&mut s, sk, None);
+    // Minor segment of a quarter circle r=2: (pi - 2), height 2, three of them.
+    assert_close(s.shape(body).unwrap().volume(), 6.0 * std::f64::consts::PI - 12.0, 1e-5, "minor segments");
+    let path = scratch("f5r-winding-original.qcad");
+    s.save_with_options(Some(&path), true).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let si = project.sketch_index(sk).unwrap();
+    let curve = project.sketches[si].entities.iter_mut().find(|e| e.id == arc.entities[0]).unwrap();
+    assert!(curve.kind.reverse_arc());
+    project.regen_sketch(si);
+    let stale = scratch("f5r-winding-stale.qcad");
+    qymcad_io::save_project_guarded_with_brep(&project, stale.to_str().unwrap(), &breps).unwrap();
+    let (mut s, report) = Session::open(&stale).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    s.sketch_edit(sk, |s| s.sketch_point(sk, &70.0.into(), &80.0.into(), true)).unwrap();
+    // Major segments: area 3pi + 2, height 2, three of them = 18pi + 12.
+    assert_close(s.shape(body).unwrap().volume(), 18.0 * std::f64::consts::PI + 12.0, 1e-5, "major segments");
+}

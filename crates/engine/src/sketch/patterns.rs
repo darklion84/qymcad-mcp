@@ -28,23 +28,33 @@ pub enum SketchPatternKind {
     Circular { count: Num, centre: [Num; 2], angle: Num },
 }
 
-/// Point positions and own numbers (a circle's radius, spline handles) of curves, in order, without their ids.
+/// Everything that shapes curves, in order, without their ids: point positions plus each curve's own structure
+/// (a circle's radius, an arc's winding, spline handles and ends). Native ids are the only integers in a curve kind.
 pub(crate) fn curve_geometry(sketch: &qymcad_core::model::Sketch, curves: &[Id]) -> Vec<f64> {
-    fn floats(value: &serde_json::Value, out: &mut Vec<f64>) {
+    fn text(value: &str, out: &mut Vec<f64>) {
+        out.extend(value.bytes().map(f64::from));
+    }
+    fn structure(value: &serde_json::Value, out: &mut Vec<f64>) {
         match value {
             serde_json::Value::Number(n) if n.is_f64() => out.extend(n.as_f64()),
-            serde_json::Value::Array(items) => items.iter().for_each(|v| floats(v, out)),
-            serde_json::Value::Object(fields) => fields.values().for_each(|v| floats(v, out)),
+            serde_json::Value::Bool(b) => out.push(f64::from(u8::from(*b))),
+            serde_json::Value::String(s) => text(s, out),
+            serde_json::Value::Array(items) => items.iter().for_each(|v| structure(v, out)),
+            serde_json::Value::Object(fields) => fields.iter().for_each(|(key, v)| {
+                text(key, out);
+                structure(v, out);
+            }),
             _ => {}
         }
     }
     let mut out = Vec::new();
     for entity in curves.iter().filter_map(|id| sketch.entity(*id)) {
+        out.push(f64::from(u8::from(entity.construction)));
         for point in qymcad_core::model::entity_points(entity).into_iter().filter_map(|id| sketch.point(id)) {
             out.extend([point.x, point.y]);
         }
         if let Ok(kind) = serde_json::to_value(&entity.kind) {
-            floats(&kind, &mut out);
+            structure(&kind, &mut out);
         }
     }
     out
