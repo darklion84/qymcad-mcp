@@ -551,8 +551,54 @@ impl Session {
     }
 
     /// Safety failures must bypass callers' exemptions for pre-existing native errors.
+    /// A projected curve moves during the rebuild itself, after every solve of its sketch. When it is a
+    /// pattern source, settle that pattern and rebuild again; each round can feed the next projection.
     pub(crate) fn rebuild_for_edit(&mut self, only: Option<&HashSet<Id>>) -> Result<Rebuild> {
-        self.try_rebuild_retrying(only).map_err(|i| Error::Rebuild(vec![format!("{} ({}): {}", i.name, i.node, i.message)]))
+        let mut notes = Vec::new();
+        for _ in 0..=self.p.sketches.len() {
+            let sources = self.projected_pattern_sources();
+            let mut report =
+                self.try_rebuild_retrying(only).map_err(|i| Error::Rebuild(vec![format!("{} ({}): {}", i.name, i.node, i.message)]))?;
+            let after = self.projected_pattern_sources();
+            let moved: Vec<Id> = after
+                .iter()
+                .filter(|(sketch, points)| {
+                    sources.get(*sketch).is_some_and(|before| {
+                        before.len() != points.len()
+                            || before.iter().zip(points.iter()).any(|(a, b)| (a.0 - b.0).abs() > 1e-9 || (a.1 - b.1).abs() > 1e-9)
+                    })
+                })
+                .map(|(sketch, _)| *sketch)
+                .collect();
+            notes.append(&mut report.notes);
+            if moved.is_empty() {
+                report.notes = notes;
+                return Ok(report);
+            }
+            self.settle_patterns_of_solved_sketches(moved)?;
+        }
+        Err(Error::Rebuild(vec!["projected pattern sources did not settle".into()]))
+    }
+
+    /// Source point positions of the patterned sketches that hold a projection; empty for all others.
+    fn projected_pattern_sources(&self) -> HashMap<Id, Vec<(f64, f64)>> {
+        self.p
+            .sketches
+            .iter()
+            .filter(|sketch| !sketch.projections.is_empty() && !sketch.patterns.is_empty())
+            .map(|sketch| {
+                let points = sketch
+                    .patterns
+                    .iter()
+                    .flat_map(|pattern| &pattern.source)
+                    .filter_map(|id| sketch.entity(*id))
+                    .flat_map(qymcad_core::model::entity_points)
+                    .filter_map(|id| sketch.point(id))
+                    .map(|point| (point.x, point.y))
+                    .collect();
+                (sketch.id, points)
+            })
+            .collect()
     }
 
     fn try_rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> std::result::Result<Rebuild, NodeIssue> {

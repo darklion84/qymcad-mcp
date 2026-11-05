@@ -25,7 +25,7 @@ owning part first, and creating a sketch from an assembly calls native `part_to_
    part). With several parts the call is refused before any change, listing them by id:
    `active component <id> '<name>' is an assembly; cannot choose a modelling part from <N> parts: <id> '<name>', ...; create a sketch on a body face or use a sketch owned by the intended part`.
    With no part at all, native `part_to_draw_in` creates and activates one, as the app does. A face sketch keeps
-   its body's owning part. Documents without components keep the previous behaviour.
+   its body's owning part. Navigation saved as `None` means the root (native `current_ctx`), exactly like `Some(root)`. Documents without components keep the previous behaviour.
 4. No file-format change and no new metadata. Undo/batch boundaries are unchanged.
 
 ## Consequences and evidence

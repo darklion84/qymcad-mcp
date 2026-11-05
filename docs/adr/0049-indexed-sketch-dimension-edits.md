@@ -19,7 +19,7 @@ editor instead writes the selected `(sketch, constraint)` row (`qymcad-sketch/sr
    solve, propagation, pattern settlement, checked rebuild and undo/batch boundaries are unchanged.
 2. A name (including the empty name) on a row whose references are shared is refused before any change:
    `constraint {ci} in sketch {sketch} has ambiguous native driver references; value/formula can be edited by index, but this dimension cannot be named independently in QymCAD 0.1.1`.
-   A native name on the first row of an imported shared set stays bound to that first row.
+   A native name on the first row of an imported shared set stays bound to that first row. A formula on another row of that set may read this name: it is checked as an unnamed formula, while the first row itself keeps the native self-reference refusal.
 3. The result reports the selected row: `target` is the given selector, `value`/`expression` come from that row,
    and `name` is reported only when the row is the native first hit.
 4. Rows with unique references keep the native SetDriver path. No file-format change. Constraint indices are a

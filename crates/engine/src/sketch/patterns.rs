@@ -300,12 +300,13 @@ impl Session {
             .collect();
         // Contour order is global to the sketch and can interleave independent patterns. Match the
         // actual source/instance boundary, never a position in that global contour list.
-        let boundaries: HashMap<Id, std::collections::HashSet<Id>> = root_contours
+        // An explicit pick may be a nested contour, so exact matching covers every contour, not only roots.
+        let boundaries: HashMap<Id, std::collections::HashSet<Id>> = contours
             .iter()
             .filter_map(|cid| self.p.contours.ents_of(*cid).map(|entities| (*cid, entities.iter().copied().collect())))
             .collect();
         let contour_with =
-            |entities: &std::collections::HashSet<Id>| root_contours.iter().copied().find(|cid| boundaries.get(cid) == Some(entities));
+            |entities: &std::collections::HashSet<Id>| contours.iter().copied().find(|cid| boundaries.get(cid) == Some(entities));
         let new_group = |index: usize| {
             if index == 0 {
                 Some(source)

@@ -830,3 +830,83 @@ fn f5_dimension_source_position_refreshes_after_solve() {
     // Radius=diameter2/2=1, centres6+k*10 for k0..2, height2; curved bbox F-066 deflection.
     bbox_with_tolerance(&s, body, [6.0 - 1.0, -1.0, 0.0, 6.0 + 2.0 * 10.0 + 1.0, 1.0, 2.0], 0.005);
 }
+
+/// Stock 2x2 at (x,0), height 2; a second sketch projects its top edges and patterns them 3 x dx 10.
+fn projected_pattern(reach_pattern_sketch: bool) -> (Session, Id, Id) {
+    use qymcad_core::model::ProjSource;
+    let mut s = Session::new_part();
+    s.param_set("x", &3.0.into()).unwrap();
+    let stock = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(stock, &"x".into(), &0.0.into(), &2.0.into(), &2.0.into(), false).unwrap();
+    let body = extrude(&mut s, stock, None);
+    let edges: Vec<_> = s
+        .topology(Some(body), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .filter(|e| (e.a[2] - 2.0).abs() < 1e-6 && (e.b[2] - 2.0).abs() < 1e-6)
+        .map(|e| ProjSource::Edge(e.id))
+        .collect();
+    assert_eq!(edges.len(), 4);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("projected")).unwrap();
+    let (projection, _) = s.sketch_project(sk, body, &edges).unwrap();
+    if reach_pattern_sketch {
+        s.sketch_point(sk, &"x".into(), &100.0.into(), true).unwrap();
+    }
+    s.sketch_pattern_create(sk, &projection.entities, &linear(3.0.into(), 10.0.into(), 0.0.into())).unwrap();
+    let follower = extrude(&mut s, sk, None);
+    (s, sk, follower)
+}
+fn f5r_projected_source_follows_rebuild(reach_pattern_sketch: bool) {
+    let (mut s, sk, follower) = projected_pattern(reach_pattern_sketch);
+    bbox(&s, follower, [2.0, -1.0, 0.0, 24.0, 1.0, 2.0]);
+    let r = s.param_set("x", &6.0.into()).unwrap();
+    assert!(r.errors.is_empty(), "{r:?}");
+    matches(s.project(), sk);
+    // Source [5,7], copies +10 and +20: the far edge is 7 + 20 = 27. Volume is 3 x 4 x 2 = 24 either way.
+    bbox(&s, follower, [5.0, -1.0, 0.0, 27.0, 1.0, 2.0]);
+    let path = scratch(&format!("f5r-projected-{reach_pattern_sketch}.qcad"));
+    s.save(Some(&path)).unwrap();
+    let (reopened, report) = Session::open(&path).unwrap();
+    assert!(report.errors.is_empty());
+    matches(reopened.project(), sk);
+    bbox(&reopened, follower, [5.0, -1.0, 0.0, 27.0, 1.0, 2.0]);
+}
+#[test]
+fn f5r_projected_source_moved_only_by_the_rebuild_refreshes_instances() {
+    f5r_projected_source_follows_rebuild(false);
+}
+#[test]
+fn f5r_projected_source_of_a_solved_sketch_refreshes_after_the_rebuild() {
+    f5r_projected_source_follows_rebuild(true);
+}
+#[test]
+fn f5r_projected_refresh_undoes_in_one_step() {
+    let (mut s, sk, follower) = projected_pattern(false);
+    let before = coordinates(s.project(), sk);
+    let snapshot = s.begin_tool_edit().unwrap();
+    let r = s.param_set("x", &6.0.into());
+    s.finish_tool_edit(snapshot, r.is_ok());
+    assert!(r.unwrap().errors.is_empty());
+    assert_ne!(coordinates(s.project(), sk), before);
+    s.undo().unwrap();
+    assert_eq!(coordinates(s.project(), sk), before);
+    bbox(&s, follower, [2.0, -1.0, 0.0, 24.0, 1.0, 2.0]);
+}
+#[test]
+fn f5r_explicit_pick_of_a_nested_contour_survives_a_source_move() {
+    let mut s = Session::new_part();
+    s.param_set("x", &3.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let outer = s.sketch_circle(sk, &"x".into(), &0.0.into(), &4.0.into(), false).unwrap();
+    let inner = s.sketch_circle(sk, &"x".into(), &0.0.into(), &2.0.into(), false).unwrap();
+    s.sketch_pattern_create(sk, &[outer, inner], &linear(3.0.into(), 10.0.into(), 0.0.into())).unwrap();
+    // The point (13,0) lies in the inner disc of copy 1: radius 1, height 2, V = 2*pi.
+    let body = extrude(&mut s, sk, Some(vec![[13.0.into(), 0.0.into()]]));
+    assert_close(s.shape(body).unwrap().volume(), 2.0 * std::f64::consts::PI, 1e-5, "inner disc");
+    let r = s.param_set("x", &6.0.into()).unwrap();
+    assert!(r.errors.is_empty(), "{r:?}");
+    matches(s.project(), sk);
+    assert_close(s.shape(body).unwrap().volume(), 2.0 * std::f64::consts::PI, 1e-5, "still the inner disc");
+    bbox_with_tolerance(&s, body, [15.0, -1.0, 0.0, 17.0, 1.0, 2.0], 0.005);
+}

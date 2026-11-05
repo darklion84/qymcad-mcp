@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Fixed
+- A pattern whose source is projected body geometry follows the source after the rebuild moves it (report and saved `.qcad` were stale); an explicit pick of a nested patterned contour survives a source move instead of being refused (review F).
+- A file saved with root navigation recorded as `None` builds new sketches into its sole part; a formula on a shared-reference row may read the name held by its first row (review F).
+- `plane_offset` documentation: a datum parent's Turn is not inherited by a child's tilt axes (review F).
 - `plane_offset` documentation states the native order (offset, then tilt about the offset origin), the base offset directions (XZ offsets +Y) and that the plane's own tilt does not rotate its offset; geometry unchanged.
 - `dimension_set` by sketch constraint index edits exactly that row when the x and y pins of one point share native references (polyline vertices, rectangle anchors, slot ends, circle/polygon centres); previously refused. Naming such a row is refused with an explanation; the result reports the selected row's value and formula (ADR 0049).
 - Files saved by QymCAD.app with the assembly active: features on existing part sketches find their body in the sketch's part, new sketches go to the document's only part (several parts are refused with a list), and a target in another part is refused up front (ADR 0048, F-139).

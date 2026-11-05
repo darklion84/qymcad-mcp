@@ -32,7 +32,7 @@ pub enum DimensionTargetArg {
     Sketch {
         /// Sketch id or name.
         sketch: ObjRef,
-        /// Current constraint index; its native entity references must identify one dimension uniquely.
+        /// Current constraint index; the edit applies to exactly this row. A row whose native references another row shares cannot be named.
         constraint: usize,
     },
     /// A numeric field of a timeline feature or a sketch item.

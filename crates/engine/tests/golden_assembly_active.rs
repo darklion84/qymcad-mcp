@@ -19,6 +19,9 @@ fn root(s: &Session) -> Id {
 /// Rewrite the saved navigation context to `active`, keeping every other archive entry, as QymCAD.app
 /// does when the user saves while standing in the assembly.
 fn save_with_active(s: &mut Session, active: Id, name: &str) -> PathBuf {
+    save_with_active_text(s, &format!("Some({active})"), name)
+}
+fn save_with_active_text(s: &mut Session, active: &str, name: &str) -> PathBuf {
     let plain = scratch(&format!("{name}-plain.qcad"));
     s.save(Some(&plain)).unwrap();
     let mut zin = zip::ZipArchive::new(std::fs::File::open(&plain).unwrap()).unwrap();
@@ -32,7 +35,7 @@ fn save_with_active(s: &mut Session, active: Id, name: &str) -> PathBuf {
             let text = String::from_utf8(bytes).unwrap();
             let line = text.lines().find(|l| l.trim_start().starts_with("active_component:")).unwrap().to_owned();
             let indent = &line[..line.len() - line.trim_start().len()];
-            bytes = text.replacen(&line, &format!("{indent}active_component: Some({active}),"), 1).into_bytes();
+            bytes = text.replacen(&line, &format!("{indent}active_component: {active},"), 1).into_bytes();
         }
         zout.start_file(f.name(), zip::write::SimpleFileOptions::default()).unwrap();
         zout.write_all(&bytes).unwrap();
@@ -199,4 +202,21 @@ fn entries_without_dirty(path: &Path) -> std::collections::BTreeMap<String, Vec<
             (f.name().to_owned(), bytes)
         })
         .collect()
+}
+
+/// Native files may record the root navigation as `None`; `current_ctx` then resolves to the root.
+#[test]
+fn f1_root_navigation_saved_as_none_builds_in_the_sole_part() {
+    let (mut s, part, _) = stock_with_assembly_active("f1-none-source");
+    let path = save_with_active_text(&mut s, "None", "f1-none");
+    let mut s = open(&path);
+    assert_eq!(s.project().active_component, None);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("pocket")).unwrap();
+    assert_eq!(s.project().sketch_owner(sk), Some(part));
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &2.0.into(), &2.0.into(), false).unwrap();
+    let (id, r) = s.extrude(&cut(sk, None, 5.0)).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(s.project().active_component, None, "navigation unchanged");
+    let b = s.result_bodies().into_iter().find(|b| b.id == id).unwrap();
+    assert_close(b.volume, 1000.0 - 20.0, 1e-6, "10 x 20 x 5 minus 2 x 2 x 5");
 }

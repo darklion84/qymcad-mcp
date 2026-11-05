@@ -137,3 +137,29 @@ fn f2_undo_restores_the_old_row_and_solid_in_one_step() {
     assert_eq!(after, before);
     assert_close(s.result_bodies()[0].volume, 100.0, 1e-6, "old solid");
 }
+
+/// A native name lives on the first set-equal row; another row reading it is no cycle.
+#[test]
+fn f2_second_row_may_read_the_name_of_the_first_row() {
+    let (mut s, sk) = circle();
+    let rows = ambiguous_rows(&s, sk);
+    let (first, second) = (rows[0], rows[1]);
+    let path = scratch("f2-first-row-name.qcad");
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let refs = Project::dim_key_pub(&Project::dim_refs(&project.sketches[0].constraints[first]).unwrap());
+    assert!(project.name_dim("first_axis".into(), qymcad_core::model::DimTarget::Sketch { sketch: sk, refs }));
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (mut s, r) = Session::open(&path).unwrap();
+    assert!(r.errors.is_empty());
+    let first_value = Project::dim_value_of(&s.project().sketches[0].constraints[first]).unwrap();
+    let edit = s.dimension_set(&DimensionTarget::Sketch { sketch: sk, constraint: second }, Some(&"first_axis+2".into()), None).unwrap();
+    assert_eq!(edit.dimension.value, Some(first_value + 2.0));
+    assert_eq!(edit.dimension.name, "");
+    assert_eq!(edit.dimension.expression.as_deref(), Some("first_axis+2"));
+    assert_eq!(Project::dim_value_of(&s.project().sketches[0].constraints[first]), Some(first_value));
+    // The named row itself still cannot read its own name.
+    let error =
+        s.dimension_set(&DimensionTarget::Sketch { sketch: sk, constraint: first }, Some(&"first_axis+2".into()), None).unwrap_err();
+    assert!(error.to_string().contains("LeansOnItself"), "{error}");
+}

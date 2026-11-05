@@ -2498,6 +2498,8 @@ asserts those exact fractional halves before checking away-from-zero output.
   downstream contour selections after native instance recreation. Loading corrected instances does not
   prevent the native source-only edit gap. Server settlement policy belongs to ADR 0036.
 
+The same gap applies to a pattern whose source is a projection: the source moves during regeneration and the instances stay. The server settles and rebuilds again; the app does not [source read, not run in the app].
+
 ## F-138 Native sketch deletion leaves sketch-owned item formulas and names behind
 
 - **Version:** v0.1.1-dev.20261026 (pinned source f25f27d).

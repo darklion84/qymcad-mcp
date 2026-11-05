@@ -235,7 +235,20 @@ impl Session {
                 if let Some(size) = size.filter(|_| evaluated <= 0.0) {
                     return Err(Error::Invalid(format!("{size} must be positive, got {evaluated}")));
                 }
-                s.p.check_dim_target_text(&native, &text).map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))?;
+                // A native name belongs to the first set-equal row; check another selected row as unnamed.
+                let unnamed_row = ambiguous_row.is_some_and(|(sketch, ci)| {
+                    s.p.sketch_index(sketch).is_some_and(|si| {
+                        let key = |c: &Constraint| Project::dim_refs(c).map(|r| Project::dim_key_pub(&r));
+                        let constraints = &s.p.sketches[si].constraints;
+                        constraints.iter().position(|c| key(c).is_some() && key(c) == key(&constraints[ci])) != Some(ci)
+                    })
+                });
+                let checked = if unnamed_row {
+                    s.p.check_formula(&qymcad_core::model::NamedFormula { name: "", text: text.trim() })
+                } else {
+                    s.p.check_dim_target_text(&native, &text)
+                };
+                checked.map_err(|e| Error::Expr(crate::value::explain(&e, s.p.param_map().keys())))?;
                 // Native writes a plain feature number through fmt_num, which keeps 4 decimals (expr.rs:346);
                 // store the number as given instead, the way creation does.
                 // Match native's trimmed parse, including numbers sent as strings.

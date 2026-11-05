@@ -383,7 +383,11 @@ impl Session {
                 return Ok(owner);
             }
         }
-        let Some(active) = self.p.active_component else { return Ok(None) };
+        // Native navigation None means the root (`current_ctx`) whenever the document has components.
+        if self.p.components.is_empty() {
+            return Ok(None);
+        }
+        let active = self.p.current_ctx();
         if self.p.component_is_part(active) {
             return Ok(Some(active));
         }

@@ -75,3 +75,7 @@ when it loads an engine-corrected file. This limitation is separate from F-123's
 
 Evidence: `golden_pattern_source`, real stdio `f5_pattern_source`, and executed logs/report under
 `tasks/F5-logs/` and `tasks/F5-report.md`.
+
+## Addendum (package F review): projected pattern sources
+
+A projected curve moves during the rebuild, after every solve of its sketch. `Session::rebuild_for_edit` compares the source points of patterned sketches holding a projection before and after each rebuild; when they moved it settles those patterns and rebuilds again, bounded by the sketch count and refused if it does not settle. Standalone and open rebuilds do not do this: `doc_open` still does not repair a stale file.
