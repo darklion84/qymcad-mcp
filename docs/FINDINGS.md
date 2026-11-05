@@ -2534,3 +2534,17 @@ The same gap applies to a pattern whose source is a projection: the source moves
   `active_body(owner)`); `crates/qymcad/src/gui/no_assembly_sketch.rs:15-47` (assembly UI offers no sketch tool);
   `model/regen/apply.rs:193-208` (cross-component refusal).
 - **How we handle it:** ADR 0048. The sole-part choice for a new sketch is server policy, not native behaviour.
+
+## F-140 Recreating sketch-pattern instances releases projections of their edges
+
+- **Version:** v0.1.1-dev.20261026 (pinned source f25f27d).
+- **Observed:** `update_pattern` deletes and recreates every instance (`model/sketch/edit.rs`). Edge names of a body
+  built from those instances derive from the entity ids, so a projection of such an edge in a later sketch no longer
+  resolves and native rebuilding releases it. The released curves stay as ordinary geometry at the old position, with
+  no error: the edit succeeds and the downstream solid is wrong. Reproduced through the engine and over stdio in the
+  package F review (`docs/reviews/medium-f.md`); not run in the app.
+- **How we handle it:** instances that already equal the final source under an unchanged kind are not recreated, so
+  an edit that does not move them keeps every projection. When an edit does recreate them, or otherwise drops a
+  projection of a live body fed by a patterned sketch, it is refused atomically (ADR 0036 addendum). Projecting the
+  pattern's source curves is not affected. Moving instances in place was rejected: they carry copied constraints and
+  it would diverge from the native record.

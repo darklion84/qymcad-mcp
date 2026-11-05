@@ -6,7 +6,8 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Fixed
-- A pattern whose source is projected body geometry follows the source after the rebuild moves it (report and saved `.qcad` were stale); an explicit pick of a nested patterned contour survives a source move instead of being refused (review F).
+- A pattern whose source is projected body geometry follows the source after the rebuild moves or resizes it (report and saved `.qcad` were stale); an explicit pick of a nested patterned contour survives a source move instead of being refused (review F).
+- An edit that would recreate pattern instances whose edges another sketch projects is refused instead of silently freezing that sketch at the old position (F-140); instances that do not change are no longer recreated. A legacy nested pick without boundary provenance is refused instead of turning into the outer contour (review F).
 - A file saved with root navigation recorded as `None` builds new sketches into its sole part; a formula on a shared-reference row may read the name held by its first row (review F).
 - `plane_offset` documentation: a datum parent's Turn is not inherited by a child's tilt axes (review F).
 - `plane_offset` documentation states the native order (offset, then tilt about the offset origin), the base offset directions (XZ offsets +Y) and that the plane's own tilt does not rotate its offset; geometry unchanged.

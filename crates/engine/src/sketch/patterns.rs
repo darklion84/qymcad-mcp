@@ -28,6 +28,32 @@ pub enum SketchPatternKind {
     Circular { count: Num, centre: [Num; 2], angle: Num },
 }
 
+/// Point positions and own numbers (a circle's radius, spline handles) of curves, in order, without their ids.
+pub(crate) fn curve_geometry(sketch: &qymcad_core::model::Sketch, curves: &[Id]) -> Vec<f64> {
+    fn floats(value: &serde_json::Value, out: &mut Vec<f64>) {
+        match value {
+            serde_json::Value::Number(n) if n.is_f64() => out.extend(n.as_f64()),
+            serde_json::Value::Array(items) => items.iter().for_each(|v| floats(v, out)),
+            serde_json::Value::Object(fields) => fields.values().for_each(|v| floats(v, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for entity in curves.iter().filter_map(|id| sketch.entity(*id)) {
+        for point in qymcad_core::model::entity_points(entity).into_iter().filter_map(|id| sketch.point(id)) {
+            out.extend([point.x, point.y]);
+        }
+        if let Ok(kind) = serde_json::to_value(&entity.kind) {
+            floats(&kind, &mut out);
+        }
+    }
+    out
+}
+
+pub(crate) fn same_geometry(a: &[f64], b: &[f64]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| (a - b).abs() <= 1e-9)
+}
+
 impl Session {
     pub fn sketch_pattern_create(&mut self, sketch: Id, entities: &[Id], kind: &SketchPatternKind) -> Result<SketchPatternResult> {
         self.sketch_pattern_edit(sketch, entities, None, kind)
@@ -326,7 +352,11 @@ impl Session {
             let mut candidates =
                 root_contours.iter().copied().filter(|cid| boundaries.get(cid).is_some_and(|b| !b.is_empty() && b.is_subset(&entities)));
             let first = candidates.next()?;
-            candidates.next().is_none().then_some(first)
+            // One root is not enough: the old pick may have been a contour nested inside it.
+            let nested = contours
+                .iter()
+                .any(|cid| !root_contours.contains(cid) && boundaries.get(cid).is_some_and(|b| !b.is_empty() && b.is_subset(&entities)));
+            (candidates.next().is_none() && !nested).then_some(first)
         };
         for node in &mut self.p.timeline {
             let profiles = match &mut node.kind {
@@ -438,8 +468,22 @@ impl Session {
                 },
                 other => other,
             };
-            self.p.update_pattern(si, pi, kind);
-            self.finish_sketch_edit(si)?;
+            // Native update recreates every instance, which releases projections of their edges (F-140).
+            // Instances that already equal the final source under an unchanged kind keep their ids. Picks are
+            // rebound regardless: native item evaluation may have recreated the instances before this call.
+            let unchanged = kind == self.p.sketches[si].patterns[pi].kind && {
+                let mut trial = self.p.clone();
+                trial.update_pattern(si, pi, kind);
+                let replaced = &trial.sketches[si];
+                same_geometry(
+                    &curve_geometry(&self.p.sketches[si], &old_instances),
+                    &curve_geometry(replaced, &replaced.patterns[pi].instances),
+                )
+            };
+            if !unchanged {
+                self.p.update_pattern(si, pi, kind);
+                self.finish_sketch_edit(si)?;
+            }
             let new_instances = self.p.sketches[si].patterns[pi].instances.clone();
             self.rebind_pattern_profiles(sketch, id, &source, &old_instances, &new_instances, &picks)?;
         }

@@ -554,24 +554,23 @@ impl Session {
     /// A projected curve moves during the rebuild itself, after every solve of its sketch. When it is a
     /// pattern source, settle that pattern and rebuild again; each round can feed the next projection.
     pub(crate) fn rebuild_for_edit(&mut self, only: Option<&HashSet<Id>>) -> Result<Rebuild> {
+        let projections_before = self.projection_provenance();
         let mut notes = Vec::new();
         for _ in 0..=self.p.sketches.len() {
             let sources = self.projected_pattern_sources();
             let mut report =
                 self.try_rebuild_retrying(only).map_err(|i| Error::Rebuild(vec![format!("{} ({}): {}", i.name, i.node, i.message)]))?;
-            let after = self.projected_pattern_sources();
-            let moved: Vec<Id> = after
+            let moved: Vec<Id> = self
+                .projected_pattern_sources()
                 .iter()
-                .filter(|(sketch, points)| {
-                    sources.get(*sketch).is_some_and(|before| {
-                        before.len() != points.len()
-                            || before.iter().zip(points.iter()).any(|(a, b)| (a.0 - b.0).abs() > 1e-9 || (a.1 - b.1).abs() > 1e-9)
-                    })
+                .filter(|(sketch, geometry)| {
+                    sources.get(*sketch).is_some_and(|before| !crate::sketch::patterns::same_geometry(before, geometry))
                 })
                 .map(|(sketch, _)| *sketch)
                 .collect();
             notes.append(&mut report.notes);
             if moved.is_empty() {
+                self.refuse_projection_released_by_pattern(&projections_before)?;
                 report.notes = notes;
                 return Ok(report);
             }
@@ -580,25 +579,40 @@ impl Session {
         Err(Error::Rebuild(vec!["projected pattern sources did not settle".into()]))
     }
 
-    /// Source point positions of the patterned sketches that hold a projection; empty for all others.
-    fn projected_pattern_sources(&self) -> HashMap<Id, Vec<(f64, f64)>> {
+    /// Source geometry of the patterned sketches that hold a projection; empty for all others.
+    fn projected_pattern_sources(&self) -> HashMap<Id, Vec<f64>> {
         self.p
             .sketches
             .iter()
             .filter(|sketch| !sketch.projections.is_empty() && !sketch.patterns.is_empty())
             .map(|sketch| {
-                let points = sketch
-                    .patterns
-                    .iter()
-                    .flat_map(|pattern| &pattern.source)
-                    .filter_map(|id| sketch.entity(*id))
-                    .flat_map(qymcad_core::model::entity_points)
-                    .filter_map(|id| sketch.point(id))
-                    .map(|point| (point.x, point.y))
-                    .collect();
-                (sketch.id, points)
+                let sources: Vec<Id> = sketch.patterns.iter().flat_map(|pattern| pattern.source.iter().copied()).collect();
+                (sketch.id, crate::sketch::patterns::curve_geometry(sketch, &sources))
             })
             .collect()
+    }
+
+    /// Recreated pattern instances lose their edge names, so a projection of them would silently freeze at
+    /// the old position (F-140). A live body fed by a patterned sketch must keep its projections.
+    fn refuse_projection_released_by_pattern(&self, before: &HashMap<(Id, Id), DetachedProjection>) -> Result<()> {
+        let after = self.projection_provenance();
+        let lost: Vec<_> = before.iter().filter(|(key, _)| !after.contains_key(*key)).collect();
+        if lost.is_empty() {
+            return Ok(());
+        }
+        let patterned: HashSet<Id> = self.p.sketches.iter().filter(|s| !s.patterns.is_empty()).map(|s| s.id).collect();
+        let fed: HashSet<Id> = crate::dependencies::closure(&self.p, patterned)
+            .into_iter()
+            .filter_map(|id| self.p.timeline.iter().find(|n| n.id == id))
+            .flat_map(|n| n.kind.bodies())
+            .collect();
+        match lost.into_iter().find(|(_, projection)| fed.contains(&projection.body) && self.shapes.contains_key(&projection.body)) {
+            Some(((sketch, _), projection)) => Err(Error::Invalid(format!(
+                "projection {} in sketch {sketch} would be released: body {} comes from a sketch pattern whose instances this edit recreates; project the pattern's source curves or remove the projection first",
+                projection.id, projection.body
+            ))),
+            None => Ok(()),
+        }
     }
 
     fn try_rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> std::result::Result<Rebuild, NodeIssue> {

@@ -10,7 +10,7 @@ mod entities;
 mod figures;
 mod mirror_point;
 mod offset_edit;
-mod patterns;
+pub(crate) mod patterns;
 mod selectors;
 mod splines;
 mod text;

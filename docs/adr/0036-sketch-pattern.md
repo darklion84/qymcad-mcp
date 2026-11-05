@@ -78,4 +78,6 @@ Evidence: `golden_pattern_source`, real stdio `f5_pattern_source`, and executed 
 
 ## Addendum (package F review): projected pattern sources
 
-A projected curve moves during the rebuild, after every solve of its sketch. `Session::rebuild_for_edit` compares the source points of patterned sketches holding a projection before and after each rebuild; when they moved it settles those patterns and rebuilds again, bounded by the sketch count and refused if it does not settle. Standalone and open rebuilds do not do this: `doc_open` still does not repair a stale file.
+A projected curve moves during the rebuild, after every solve of its sketch. `Session::rebuild_for_edit` compares the source points of patterned sketches holding a projection before and after each rebuild; when they or a curve's own numbers (a circle's radius) changed it settles those patterns and rebuilds again, bounded by the sketch count and refused if it does not settle. Standalone and open rebuilds do not do this: `doc_open` still does not repair a stale file.
+
+Settlement does not recreate instances that already equal the final source under an unchanged kind, so their ids and every projection of their edges survive; profile picks are rebound in any case, because native item evaluation can recreate instances earlier. An edit that drops a projection of a live body fed by a patterned sketch is refused atomically (F-140). A legacy pick with no boundary provenance is refused when its group holds a nested contour: its stored index cannot tell the inner boundary from the outer one.

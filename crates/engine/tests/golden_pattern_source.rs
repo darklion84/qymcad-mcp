@@ -910,3 +910,97 @@ fn f5r_explicit_pick_of_a_nested_contour_survives_a_source_move() {
     assert_close(s.shape(body).unwrap().volume(), 2.0 * std::f64::consts::PI, 1e-5, "still the inner disc");
     bbox_with_tolerance(&s, body, [15.0, -1.0, 0.0, 17.0, 1.0, 2.0], 0.005);
 }
+
+fn top_edges(s: &mut Session, body: Id, x: std::ops::Range<f64>) -> Vec<qymcad_core::model::ProjSource> {
+    s.topology(Some(body), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .filter(|e| (e.a[2] - 2.0).abs() < 1e-6 && (e.b[2] - 2.0).abs() < 1e-6 && x.contains(&e.a[0]) && x.contains(&e.b[0]))
+        .map(|e| qymcad_core::model::ProjSource::Edge(e.id))
+        .collect()
+}
+#[test]
+fn f5r_projected_circle_resize_refreshes_instances() {
+    let mut s = Session::new_part();
+    s.param_set("d", &2.0.into()).unwrap();
+    let stock = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_circle(stock, &3.0.into(), &0.0.into(), &"d".into(), false).unwrap();
+    let body = extrude(&mut s, stock, None);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("projected")).unwrap();
+    let edges = top_edges(&mut s, body, -100.0..100.0);
+    let (projection, _) = s.sketch_project(sk, body, &edges).unwrap();
+    s.sketch_pattern_create(sk, &projection.entities, &linear(3.0.into(), 10.0.into(), 0.0.into())).unwrap();
+    let follower = extrude(&mut s, sk, None);
+    assert_close(s.shape(follower).unwrap().volume(), 6.0 * std::f64::consts::PI, 1e-5, "3 discs r1 h2");
+    assert!(s.param_set("d", &4.0.into()).unwrap().errors.is_empty());
+    // Three discs of radius 2, height 2: V = 3 x 4pi x 2 = 24pi.
+    assert_close(s.shape(follower).unwrap().volume(), 24.0 * std::f64::consts::PI, 1e-5, "3 discs r2 h2");
+    bbox_with_tolerance(&s, follower, [1.0, -2.0, 0.0, 25.0, 2.0, 2.0], 0.02);
+}
+/// Sketch A: 2x2 at (x,0) patterned 3 x dx 10 and extruded. Sketch B projects copy 1 of A's body.
+fn projection_of_a_copy() -> (Session, Id, Id, Id) {
+    let mut s = Session::new_part();
+    s.param_set("x", &3.0.into()).unwrap();
+    let a = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("A")).unwrap();
+    let rect = s.sketch_rect(a, &"x".into(), &0.0.into(), &2.0.into(), &2.0.into(), false).unwrap();
+    s.sketch_pattern_create(a, &rect, &linear(3.0.into(), 10.0.into(), 0.0.into())).unwrap();
+    let a_body = extrude(&mut s, a, None);
+    let b = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("B")).unwrap();
+    let edges = top_edges(&mut s, a_body, 11.0..15.0);
+    assert_eq!(edges.len(), 4);
+    let (projection, _) = s.sketch_project(b, a_body, &edges).unwrap();
+    s.sketch_pattern_create(b, &projection.entities, &linear(3.0.into(), 100.0.into(), 0.0.into())).unwrap();
+    let b_body = extrude(&mut s, b, None);
+    (s, a, b, b_body)
+}
+fn projection_count(s: &Session, sketch: Id) -> usize {
+    s.project().sketches[s.project().sketch_index(sketch).unwrap()].projections.len()
+}
+#[test]
+fn f5r_recreating_a_projected_copy_is_refused_before_it_detaches_the_projection() {
+    let (mut s, _, b, b_body) = projection_of_a_copy();
+    let before = serde_json::to_value(s.project()).unwrap();
+    let error = s.param_set("x", &6.0.into()).unwrap_err().to_string();
+    assert!(error.contains("would be released"), "{error}");
+    assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+    assert_eq!(projection_count(&s, b), 4);
+    bbox(&s, b_body, [12.0, -1.0, 0.0, 214.0, 1.0, 2.0]);
+}
+#[test]
+fn f5r_edit_that_leaves_copies_in_place_keeps_their_ids_and_the_projection() {
+    let (mut s, a, b, b_body) = projection_of_a_copy();
+    let instances = |s: &Session| s.project().sketches[s.project().sketch_index(a).unwrap()].patterns[0].instances.clone();
+    let before = instances(&s);
+    // A separate curve solves sketch A without moving the source of its pattern.
+    s.sketch_point(a, &50.0.into(), &50.0.into(), true).unwrap();
+    assert_eq!(instances(&s), before, "unchanged copies are not recreated");
+    assert_eq!(projection_count(&s, b), 4);
+    bbox(&s, b_body, [12.0, -1.0, 0.0, 214.0, 1.0, 2.0]);
+}
+#[test]
+fn f5r_legacy_nested_pick_is_refused_instead_of_becoming_the_annulus() {
+    let mut s = Session::new_part();
+    s.param_set("n", &3.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let outer = s.sketch_circle(sk, &3.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
+    let inner = s.sketch_circle(sk, &3.0.into(), &0.0.into(), &2.0.into(), false).unwrap();
+    s.sketch_pattern_create(sk, &[outer, inner], &linear("n".into(), 10.0.into(), 0.0.into())).unwrap();
+    let body = extrude(&mut s, sk, Some(vec![[13.0.into(), 0.0.into()]]));
+    let path = scratch("f5r-legacy-nested-original.qcad");
+    s.save_with_options(Some(&path), true).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let metadata = project.feat_dims.get_mut(&body).unwrap();
+    metadata.retain(|key, _| key.strip_prefix("__pattern_profile_").is_none_or(|suffix| suffix.parse::<usize>().is_ok()));
+    let legacy = scratch("f5r-legacy-nested.qcad");
+    qymcad_io::save_project_guarded_with_brep(&project, legacy.to_str().unwrap(), &breps).unwrap();
+    let (mut s, report) = Session::open(&legacy).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    let two_pi = 2.0 * std::f64::consts::PI; // Inner disc: radius 1, height 2.
+    assert_close(s.shape(body).unwrap().volume(), two_pi, 1e-5, "inner disc");
+    let before = serde_json::to_value(s.project()).unwrap();
+    let error = s.param_set("n", &4.0.into()).unwrap_err().to_string();
+    assert!(error.contains("ambiguous"), "{error}");
+    assert_eq!(serde_json::to_value(s.project()).unwrap(), before);
+    assert_close(s.shape(body).unwrap().volume(), two_pi, 1e-5, "still the inner disc");
+}
