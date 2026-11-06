@@ -181,6 +181,18 @@ fn reorder_consumed_boolean_tool_is_addressable_but_consumer_above_tool_refuses(
     assert_eq!(exact(&mut s, &path), before);
 }
 #[test]
+fn reorder_reports_no_lost_metadata_when_the_named_body_survives() {
+    let (mut s, _, _, hole, arr) = chain();
+    s.rename(RenameTarget::Body(arr), "kept-array").unwrap();
+    s.appearance(arr, Some(false), None).unwrap();
+    let r = s.feature_reorder(hole, "down").unwrap();
+    assert!(r.changed);
+    assert_eq!(serde_json::to_value(&r.lost_body_metadata).unwrap(), json!([]));
+    let kept = s.project().mesh_index(arr).expect("the array body record survives the move");
+    assert_eq!(s.project().bodies[kept].name, "kept-array");
+    assert!(!s.project().bodies[kept].visible);
+}
+#[test]
 fn reorder_rollback_keeps_numeric_marker_reports_loss_and_undo_restores() {
     let (mut s, _, base) = prism();
     let arr = array(&mut s, base);

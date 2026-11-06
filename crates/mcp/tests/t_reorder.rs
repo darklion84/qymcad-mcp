@@ -176,6 +176,22 @@ fn t_stdio_reorder_strict_schema_refusals_and_ambiguous_names() {
         format!("invalid request: several objects are named `duplicate` ({ids:?}); use the id")
     );
 }
+/// A face stored as a query is evaluated on the new source: `facing +z` matches both array tops there,
+/// and a hole needs exactly one. The same move with the face picked by id succeeds (next test).
+#[test]
+fn t_stdio_hole_face_picked_by_a_query_refuses_a_move_that_makes_it_ambiguous() {
+    let mut c = Client::start();
+    c.ok("doc_new", json!({}));
+    let sketch = c.ok("sketch_create", json!({"plane":"XY"}))["sketch"].clone();
+    c.ok("sketch_add", json!({"sketch":sketch,"entities":[{"type":"rect","w":10,"h":10}]}));
+    let stock = c.ok("extrude", json!({"sketch":sketch,"height":10}))["body"].clone();
+    let hole = c.ok("hole", json!({"body":stock,"face":{"facing":"+z"},"at":[0,0,10],"diameter":2,"through":true}))["body"].clone();
+    c.ok("linear_array", json!({"body":hole,"dx":20,"count":2}));
+    let error = c.refuse_unchanged("feature_reorder", json!({"feature":hole,"direction":"down"}));
+    assert!(error.contains("operation rolled back") && error.contains(&format!("({hole})")), "{error}");
+    // Two copies of 1000 - pi*1^2*10.
+    volume(&c.ok("doc_info", json!({}))["bodies"][0], 2000.0 - 20.0 * std::f64::consts::PI);
+}
 #[test]
 fn t_stdio_consumed_hole_down_and_array_up_rewire_geometry_one_undo() {
     for up in [true, false] {

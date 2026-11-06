@@ -16,6 +16,8 @@ Keep the exact numeric rollback field. Crossing it can change which recipe nodes
 
 Failures restore the exact Project, original shape handles/absence and diagnostics through the existing transaction boundary, without a repair rebuild. A direct engine real move owns one labelled undo entry; MCP and batch reuse their outer boundary. Boundary no-ops do no regeneration and add no standalone entry. Semantic recipe change, not native bool, determines changed. Batches retain the established one-entry policy even if all steps are no-ops; a later no-op never cancels a real edit. Batch validates arguments/direction before beginning and returns compact reorder action metadata.
 
+A selection stored as a query stays a query. After a move it is evaluated on the new source, so a hole picked with `facing +z` and moved after an array refuses, because both tops match, while the same hole picked by id succeeds. We do not convert the query to an id or repick silently. Refusal is atomic; the native message says the face went stale.
+
 ## Persistence and limits
 
 Save the native ordered nodes and remapped references, with normal dependency reconciliation, numeric rollback and suppression. No format fields, pin change or server-only timeline are added. Native saved-file forced rebuilding and parameter scheduling are tested separately from Session rebuilding. Native F-137 pattern source-only scheduling and F-141 general projection limitations remain; reorder does not fix the app.
