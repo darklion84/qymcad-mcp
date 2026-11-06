@@ -30,6 +30,9 @@ mod patterns;
 mod pngfile;
 mod rename;
 mod render;
+mod reorder;
+#[cfg(test)]
+mod reorder_tests;
 mod revolve;
 mod session;
 mod sketch;
@@ -65,6 +68,7 @@ pub use qymcad_core::model::Id;
 pub use qymcad_core::model::ProjSource;
 pub use rename::{RenameResult, RenameTarget, RenamedTarget};
 pub use render::{Rendered, View, RENDER_BACKGROUND, RENDER_MAX_SIDE, RENDER_MIN_SIDE};
+pub use reorder::{RehostedSketch, ReorderResult, RewiredFeature};
 pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{

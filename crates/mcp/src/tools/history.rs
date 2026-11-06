@@ -27,6 +27,41 @@ struct SuppressArgs {
     suppressed: bool,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ReorderArgs {
+    /// Exact body-producing timeline feature id/name, including consumed, suppressed and rollback-tail features. Single-output B-rep targets only.
+    feature: ObjRef,
+    /// Move "up" or "down" across the nearest body-producing feature of the same parent, as in the app menu. No neighbour returns changed:false.
+    direction: String,
+}
+
+fn reorder_direction(direction: &str) -> Result<(), String> {
+    match direction {
+        "up" | "down" => Ok(()),
+        value => Err(format!("invalid request: unknown reorder direction `{value}`; use up or down")),
+    }
+}
+
+fn reorder_tool() -> Tool {
+    let mut reorder = tool("feature_reorder", "Move a single-output B-rep timeline feature up or down across its same-parent body-feature neighbour, using the app's native reorder and chain rewrite. Consumed, suppressed and rollback-tail feature ids remain addressable. Sketch/datum targets, mesh-born target/neighbour and multi-output target/neighbour are refused; native dependencies and unsafe projected-spline source changes also refuse. Returns feature{id,name}, direction, changed, from_index/to_index (zero-based diagnostics), complete order, rewired body inputs, rehosted_sketches, canonical rollback, lost_body_metadata and rebuild{bodies,warnings,errors}. Rebuilds and checks all timeline bodies atomically; no silent re-pick or dependency repair. The numeric rollback position and suppression flags remain native. Body metadata lost when native rollback membership removes records is reported. Boundary no-op returns changed:false without rebuild or undo; a real move is one undo entry and may run in batch. Re-read topology after a changed move.", |st, a: ReorderArgs| {
+        reorder_direction(&a.direction)?;
+        let s = st.doc()?;
+        let id = a.feature.resolve(s)?;
+        let result = s.feature_reorder(id, &a.direction).map_err(err)?;
+        st.skip_history = !result.changed;
+        Ok(json!(result))
+    });
+    // A direction is a string in the public schema so its stable policy error is shared with
+    // direct calls. Validate it before a batch opens its snapshot or runs any earlier step.
+    let schema = reorder.schema.clone();
+    reorder.validate = Box::new(move |args| {
+        let args = super::decode_arguments::<ReorderArgs>("feature_reorder", &schema, args)?;
+        reorder_direction(&args.direction)
+    });
+    reorder
+}
+
 // Omission selects the other field; explicit null is not a selector.
 fn present<'de, T: Deserialize<'de>, D: Deserializer<'de>>(d: D) -> Result<Option<T>, D::Error> {
     T::deserialize(d).map(Some)
@@ -47,6 +82,7 @@ struct RollbackArgs {
 
 pub fn tools() -> Vec<Tool> {
     vec![
+        reorder_tool(),
         tool("history_rollback", "Move the native history rollback marker with exactly one selector: after keeps that timeline node active, position:start activates no nodes, position:end activates the entire timeline. Sketches and datums count as timeline nodes. After the last node normalizes to end. Returns position, after{id,name} or null, next_feature{id,name} or null, active_nodes, total_nodes, changed, lost_body_metadata[{body,body_name,visible}] and rebuild{bodies,warnings,errors}. Native removal drops body names/visibility; lost_body_metadata lists removed records with non-default names or visible:false, otherwise []; resume uses native defaults while lineage colour survives. Native rebuild errors refuse and restore exact state. Creation inserts at the marker and advances it; the next same-parent consumer is remapped natively. Save preserves the marker; inspection/export/render/measure use only active results. Same-position requests return changed:false with no rebuild or undo entry. Real changes are one undo step and allowed in batch.", |st, a: RollbackArgs| {
             let s = st.doc()?;
             let after = a.after.as_ref().map(|reference| reference.resolve(s)).transpose()?;

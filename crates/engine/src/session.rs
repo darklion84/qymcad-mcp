@@ -554,6 +554,15 @@ impl Session {
     /// A projected curve moves during the rebuild itself, after every solve of its sketch. When it is a
     /// pattern source, settle that pattern and rebuild again; each round can feed the next projection.
     pub(crate) fn rebuild_for_edit(&mut self, only: Option<&HashSet<Id>>) -> Result<Rebuild> {
+        self.rebuild_edit_checked(only, false)
+    }
+
+    /// The reorder contract reports settled projection failures as node-scoped rebuild failures.
+    pub(crate) fn rebuild_for_reorder(&mut self, only: Option<&HashSet<Id>>) -> Result<Rebuild> {
+        self.rebuild_edit_checked(only, true)
+    }
+
+    fn rebuild_edit_checked(&mut self, only: Option<&HashSet<Id>>, reorder: bool) -> Result<Rebuild> {
         let projections_before = self.projection_provenance();
         let mut notes = Vec::new();
         for _ in 0..=self.p.sketches.len() {
@@ -570,7 +579,9 @@ impl Session {
                 .collect();
             notes.append(&mut report.notes);
             if moved.is_empty() {
-                self.refuse_projection_released_by_pattern(&projections_before)?;
+                if let Some((node, error)) = self.projection_released_by_pattern(&projections_before) {
+                    return Err(if reorder { Error::Rebuild(vec![format!("{} ({node}): {error}", self.node_name(node))]) } else { error });
+                }
                 report.notes = notes;
                 return Ok(report);
             }
@@ -595,12 +606,15 @@ impl Session {
     /// Recreated pattern instances lose their edge names, so a projection of them would silently freeze at
     /// the old position (F-140). A live body fed by a patterned sketch must keep its projections, and a pattern
     /// source must stay projected: native reprojection can replace a curve and leave the source behind.
-    fn refuse_projection_released_by_pattern(&self, before: &HashMap<(Id, Id), DetachedProjection>) -> Result<()> {
+    fn projection_released_by_pattern(&self, before: &HashMap<(Id, Id), DetachedProjection>) -> Option<(Id, Error)> {
         let after = self.projection_provenance();
-        let lost: Vec<_> = before.iter().filter(|(key, _)| !after.contains_key(*key)).collect();
+        let mut lost: Vec<_> = before.iter().filter(|(key, _)| !after.contains_key(*key)).collect();
         if lost.is_empty() {
-            return Ok(());
+            return None;
         }
+        lost.sort_by_key(|((sketch, entity), _)| {
+            (self.p.timeline.iter().position(|node| node.id == *sketch).unwrap_or(usize::MAX), *sketch, *entity)
+        });
         let patterned: HashSet<Id> = self.p.sketches.iter().filter(|s| !s.patterns.is_empty()).map(|s| s.id).collect();
         let fed: HashSet<Id> = crate::dependencies::closure(&self.p, patterned)
             .into_iter()
@@ -614,15 +628,15 @@ impl Session {
             self.shapes.contains_key(&projection.body) && (fed.contains(&projection.body) || is_source(*sketch, *entity))
         });
         match released {
-            Some(((sketch, entity), projection)) if is_source(*sketch, *entity) => Err(Error::Invalid(format!(
+            Some(((sketch, entity), projection)) if is_source(*sketch, *entity) => Some((*sketch, Error::Invalid(format!(
                 "projection {} in sketch {sketch} would be released: this edit replaces its curve {entity}, a sketch pattern source, so the copies would stay at the old shape; delete sketch {sketch} with cascade, make the edit, then build it again",
                 projection.id
-            ))),
-            Some(((sketch, _), projection)) => Err(Error::Invalid(format!(
+            )))),
+            Some(((sketch, _), projection)) => Some((*sketch, Error::Invalid(format!(
                 "projection {} in sketch {sketch} would be released: body {} comes from a sketch pattern whose instances this edit recreates; delete sketch {sketch} with cascade, make the edit, then build it again, projecting the pattern's source curves if it must follow later edits",
                 projection.id, projection.body
-            ))),
-            None => Ok(()),
+            )))),
+            None => None,
         }
     }
 

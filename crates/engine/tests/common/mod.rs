@@ -132,6 +132,101 @@ pub fn restore_shapes(breps: Vec<(Id, Vec<u8>)>) -> HashMap<Id, qymcad_kernel::S
         .collect()
 }
 
+/// Native app load/reorder/rebuild state. Deliberately contains no Session or server repairs.
+pub struct GuiReorderModel {
+    pub project: qymcad_core::model::Project,
+    pub shapes: HashMap<Id, qymcad_kernel::Shape>,
+}
+
+/// `finish_project_load`: ensure a document, restore saved faces and B-reps.
+pub fn gui_reorder_load(path: &std::path::Path) -> GuiReorderModel {
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    project.ensure_document();
+    for i in 0..project.bodies.len() {
+        if let Some(body) = project.mesh_id(i) {
+            project.regen_faces.insert(body, project.bodies[i].faces.clone());
+        }
+    }
+    GuiReorderModel { project, shapes: restore_shapes(breps) }
+}
+
+/// GUI rows select same-parent body neighbours; Down raises the next feature.
+pub fn gui_reorder_step(model: &mut GuiReorderModel, feature: Id, direction: &str) -> bool {
+    let p = &mut model.project;
+    let i = p.timeline.iter().position(|n| n.id == feature).unwrap();
+    let matches = |j: usize| p.timeline[j].parent == p.timeline[i].parent && p.timeline[j].kind.body().is_some();
+    let other = match direction {
+        "up" => (0..i).rev().find(|j| matches(*j)),
+        "down" => (i + 1..p.timeline.len()).find(|j| matches(*j)),
+        _ => panic!("invalid GUI reorder direction"),
+    };
+    let Some(other) = other else { return false };
+    let (from, to) = if direction == "up" { (i, other) } else { (other, i) };
+    assert!(p.reorder_feature(from, to), "native GUI order refused");
+    gui_reorder_rebuild(model, false);
+    true
+}
+
+/// Native rebuild plus the app's face copy and keep-live-shapes cleanup, without an outer kernel gate.
+pub fn gui_reorder_rebuild(model: &mut GuiReorderModel, force_all: bool) {
+    if force_all {
+        for node in &mut model.project.timeline {
+            node.dirty = true;
+        }
+    }
+    let (report, mut shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut model.project, std::mem::take(&mut model.shapes));
+    assert!(report.errors.is_empty(), "native GUI reorder rebuild: {:?}", report.errors);
+    for (id, faces) in report.built {
+        model.project.set_body_faces(id, faces);
+    }
+    let imports: std::collections::HashSet<_> = model
+        .project
+        .timeline
+        .iter()
+        .filter_map(|node| match node.kind {
+            qymcad_core::feature::FeatureKind::Import { body, .. } => Some(body),
+            _ => None,
+        })
+        .collect();
+    shapes.retain(|id, _| imports.contains(id) || model.project.mesh_index(*id).is_some());
+    model.shapes = shapes;
+}
+
+/// Active, existing, unconsumed body membership, including a numeric rollback prefix.
+pub fn gui_reorder_results(model: &GuiReorderModel) -> Vec<(Id, f64)> {
+    let p = &model.project;
+    let consumed = p.consumed_bodies();
+    let _gate = qymcad_kernel::kernel_gate();
+    p.timeline
+        .iter()
+        .take(p.rollback_place())
+        .flat_map(|n| n.kind.bodies())
+        .filter(|id| p.mesh_index(*id).is_some() && !consumed.contains(id))
+        .map(|id| (id, model.shapes[&id].volume()))
+        .collect()
+}
+
+/// Native parameter-window schedule on the same loaded/reordered/full-rebuilt model.
+pub fn gui_reorder_edit_param(model: &mut GuiReorderModel, name: &str, expr: &str) {
+    let p = &mut model.project;
+    let seen = p.param_map();
+    p.parameters.iter_mut().find(|q| q.name == name).expect("parameter").expr = expr.into();
+    p.eval_parameters();
+    for si in 0..p.sketches.len() {
+        if p.sketch_reads_names(si) {
+            p.solve_sketch(si);
+        }
+    }
+    let vars = p.param_map();
+    let mut changed: Vec<_> =
+        vars.iter().filter(|(k, v)| seen.get(*k).is_none_or(|old| (old - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
+    changed.extend(seen.keys().filter(|k| !vars.contains_key(*k)).cloned());
+    for name in changed {
+        p.mark_param_dependents_dirty_for(&name);
+    }
+    gui_reorder_rebuild(model, false);
+}
+
 #[path = "../../src/test_support.rs"]
 /// Exact native fixtures shared by engine integration tests.
 pub mod native;

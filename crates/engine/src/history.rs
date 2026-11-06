@@ -382,7 +382,7 @@ impl Session {
         Ok(())
     }
 
-    fn body_metadata_at_risk(&self) -> Vec<LostBodyMetadata> {
+    pub(crate) fn body_metadata_at_risk(&self) -> Vec<LostBodyMetadata> {
         self.p
             .bodies
             .iter()
@@ -398,7 +398,7 @@ impl Session {
             .collect()
     }
 
-    fn removed_body_metadata(&self, mut metadata: Vec<LostBodyMetadata>) -> Vec<LostBodyMetadata> {
+    pub(crate) fn removed_body_metadata(&self, mut metadata: Vec<LostBodyMetadata>) -> Vec<LostBodyMetadata> {
         metadata.retain(|body| self.p.mesh_index(body.body).is_none());
         metadata.sort_by_key(|body| body.body);
         metadata

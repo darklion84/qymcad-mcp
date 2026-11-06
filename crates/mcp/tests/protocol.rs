@@ -287,6 +287,7 @@ fn lists_tools_with_object_schemas() {
         "recognise",
         "feature_delete",
         "feature_suppress",
+        "feature_reorder",
         "history_rollback",
         "undo",
         "rename",
