@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## 0.1.1-dev.20261026.10 — pattern instances follow their source, sketch deletion cleanup, active assembly files, indexed dimensions (ADR 0048–0049)
 
 ### Added
-- `feature_reorder`: checked native same-parent Up/Down for single-output B-rep features, including consumed, suppressed and rollback-tail nodes. Reports native rewires, face hosts and removed body metadata; exact failure restoration and one undo/batch boundary. Mesh/multi-output movers and unsafe projected-spline changes are refused (ADR 0050).
+- `feature_reorder`: checked native same-parent Up/Down for single-output B-rep features, including consumed, suppressed and rollback-tail nodes. Reports native rewires, face hosts and removed body metadata; exact failure restoration and one undo/batch boundary. Mesh/multi-output movers, moves that would release a projection and projected-spline geometry changes are refused (ADR 0050).
 
 ### Fixed
 - A pattern whose source is projected body geometry follows the source after the rebuild moves or resizes it (report and saved `.qcad` were stale); an explicit pick of a nested patterned contour survives a source move instead of being refused (review F).

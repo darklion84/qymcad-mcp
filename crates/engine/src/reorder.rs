@@ -99,16 +99,9 @@ impl Session {
         if !result.changed {
             return Ok(result);
         }
-        check_candidate(&candidate)?;
+        check_candidate(&self.p, &candidate)?;
         let splines = projected_splines(&self.p);
-        let buildable = Self::geometry_check_nodes(&candidate);
-        for spline in &splines {
-            if buildable.contains(&spline.sketch)
-                && crate::dependencies::projection_source(&candidate, spline.sketch, spline.body) != spline.source
-            {
-                return Err(spline_refusal(spline.sketch));
-            }
-        }
+        let projections = self.projection_provenance();
         result.to_index = candidate.timeline.iter().position(|n| n.id == feature).unwrap();
         let metadata = self.body_metadata_at_risk();
         // Native dirties every node. Preserve every output's live handle and its original absence.
@@ -148,6 +141,9 @@ impl Session {
                 }
             }
             let report = report?;
+            if let Some(error) = s.released_projection(&projections) {
+                return Err(error);
+            }
             let mut errors: HashMap<Id, Vec<String>> = HashMap::new();
             for issue in &report.errors {
                 errors.entry(issue.node).or_default().push(issue.message.clone());
@@ -179,6 +175,20 @@ impl Session {
         }
         outcome
     }
+
+    /// Native reprojection releases a curve whose source edge is gone and keeps it as free geometry; a move must not.
+    fn released_projection(&self, before: &HashMap<(Id, Id), crate::session::DetachedProjection>) -> Option<Error> {
+        let after = self.projection_provenance();
+        let buildable = Self::geometry_check_nodes(&self.p);
+        let mut lost: Vec<_> = before.iter().filter(|(key, _)| buildable.contains(&key.0) && !after.contains_key(*key)).collect();
+        lost.sort_by_key(|((sketch, entity), _)| (*sketch, *entity));
+        lost.first().map(|((sketch, entity), projection)| {
+            Error::Invalid(format!(
+                "cannot reorder: projection {} in sketch {sketch} would be released: this move removes the source of its curve {entity} on body {}; delete that sketch with cascade, reorder, then recreate it",
+                projection.id, projection.body
+            ))
+        })
+    }
 }
 
 fn check_mover(p: &Project, index: usize) -> Result<()> {
@@ -200,8 +210,35 @@ fn check_mover(p: &Project, index: usize) -> Result<()> {
 }
 
 /// Check the rewritten graph, including suppressed and rollback-tail recipes. This validates dependencies;
-/// it never edits them or interprets every driving formula owner as a geometry producer.
-fn check_candidate(p: &Project) -> Result<()> {
+/// it never edits them or interprets every driving formula owner as a geometry producer. A forward relation the
+/// file already had is not caused by the move, and the file rebuilds with it, so only new ones refuse.
+fn check_candidate(before: &Project, p: &Project) -> Result<()> {
+    let existing = forward_references(before);
+    if let Some((node, producer)) = forward_references(p).into_iter().find(|pair| !existing.contains(pair)) {
+        return Err(Error::Invalid(format!("cannot reorder: feature {node} would precede required object {producer}")));
+    }
+    for node in &p.timeline {
+        // Body/sketch isolation is native policy, including its intentional Piece exception. A reorder
+        // cannot introduce a cross-parent operand through the adjacent suffix rewrite.
+        if let Some(owner) = node.parent {
+            if !matches!(node.kind, FeatureKind::Piece { .. }) {
+                if let Some(input) = node.kind.inputs().into_iter().find(|id| p.ref_owner(*id).is_some_and(|o| o != owner)) {
+                    return Err(Error::Rebuild(vec![format!(
+                        "{} ({}): {}",
+                        crate::localization::name(&node.name),
+                        node.id,
+                        crate::localization::error(&qymcad_core::errors::CoreError::CrossComponentInput { input })
+                    )]));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every (node, required object) pair where the object is declared at or after the node.
+fn forward_references(p: &Project) -> HashSet<(Id, Id)> {
+    let mut forward = HashSet::new();
     let producers: HashMap<Id, usize> =
         p.timeline.iter().enumerate().flat_map(|(i, n)| n.kind.declares().into_iter().map(move |id| (id, i))).collect();
     for (index, node) in p.timeline.iter().enumerate() {
@@ -263,27 +300,9 @@ fn check_candidate(p: &Project) -> Result<()> {
             _ => {}
         }
         refs.extend(measured_sources(p, expressions).into_iter().filter(|id| !node.kind.declares().contains(id)));
-        refs.sort_unstable();
-        refs.dedup();
-        if let Some(producer) = refs.into_iter().find(|id| producers.get(id).is_some_and(|i| *i >= index)) {
-            return Err(Error::Invalid(format!("cannot reorder: feature {} would precede required object {producer}", node.id)));
-        }
-        // Body/sketch isolation is native policy, including its intentional Piece exception. A reorder
-        // cannot introduce a cross-parent operand through the adjacent suffix rewrite.
-        if let Some(owner) = node.parent {
-            if !matches!(node.kind, FeatureKind::Piece { .. }) {
-                if let Some(input) = node.kind.inputs().into_iter().find(|id| p.ref_owner(*id).is_some_and(|o| o != owner)) {
-                    return Err(Error::Rebuild(vec![format!(
-                        "{} ({}): {}",
-                        crate::localization::name(&node.name),
-                        node.id,
-                        crate::localization::error(&qymcad_core::errors::CoreError::CrossComponentInput { input })
-                    )]));
-                }
-            }
-        }
+        forward.extend(refs.into_iter().filter(|id| producers.get(id).is_some_and(|i| *i >= index)).map(|id| (node.id, id)));
     }
-    Ok(())
+    forward
 }
 
 /// Only values measured from geometry need timeline scheduling. Driving values are scope inputs.
@@ -319,8 +338,6 @@ fn measured_sources(p: &Project, expressions: Vec<String>) -> Vec<Id> {
 struct ProjectedSpline {
     sketch: Id,
     projection: Id,
-    body: Id,
-    source: Id,
     entities: Vec<Id>,
     geometry: Vec<f64>,
 }
@@ -336,8 +353,6 @@ fn projected_splines(p: &Project) -> Vec<ProjectedSpline> {
                 .map(|pr| ProjectedSpline {
                     sketch: sk.id,
                     projection: pr.id,
-                    body: pr.body,
-                    source: crate::dependencies::projection_source(p, sk.id, pr.body),
                     entities: pr.entities.clone(),
                     geometry: crate::sketch::patterns::curve_geometry(sk, &pr.entities),
                 })
