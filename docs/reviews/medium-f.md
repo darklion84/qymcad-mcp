@@ -1,4 +1,4 @@
-# Review log: package F (pattern instances, sketch deletion metadata, active assembly, indexed dimensions, plane_offset docs)
+# Review log: package F (pattern instances, sketch deletion metadata, active assembly, indexed dimensions, plane_offset docs; 0.1.1-dev.20261026.10)
 
 Authors: Codex (gpt-6.1-sol) for research and most of F5; Claude (Opus 5.5) finished F5 and wrote F3, F1, F2, F4 and the fixes below.
 

@@ -68,6 +68,7 @@ startup the server warns when the installed QymCAD.app is a different release.
 
 | qymcad-mcp | QymCAD release | OpenCASCADE |
 |---|---|---|
+| 0.1.1-dev.20261026.10 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.9 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.8 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.7 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
