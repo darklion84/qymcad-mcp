@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.11 — feature reorder (ADR 0050)
 
 ### Added
 - `feature_reorder`: checked native same-parent Up/Down for single-output B-rep features, including consumed, suppressed and rollback-tail nodes. Reports native rewires, face hosts and removed body metadata; exact failure restoration and one undo/batch boundary. Mesh/multi-output movers, moves that would release a projection and projected-spline geometry changes are refused (ADR 0050).

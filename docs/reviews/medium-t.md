@@ -1,4 +1,4 @@
-# Package T review log
+# Package T review log (0.1.1-dev.20261026.11)
 
 Subject: `feature_reorder` (ADR 0050, F-142), branch medium-t on top of medium-f.
 
