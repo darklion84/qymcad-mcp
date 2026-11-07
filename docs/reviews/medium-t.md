@@ -21,8 +21,9 @@ Subject: `feature_reorder` (ADR 0050, F-142), branch medium-t on top of medium-f
 - Live stdio run on the 71390ae binary with an id-picked face: 1937.168147 mm³ becomes 1968.584073 mm³ (2000−20π, 2000−10π by hand), the same after save and reopen; undo, bad direction, boundary no-op, failed batch and the R1 refusal all behaved as specified.
 - Round 2 compared 16 saved models with fresh-process native full rebuilds: maximum volume, bound and projected-geometry differences were 0.
 
+- QymCAD.app check, 2026-11-07, run by ChatGPT computer use on the owner's machine, six files saved from 82eeff5. All six opened without model errors, and every order, view, menu and undo item passed. The checker marked 5/6 FAIL for two kit errors. First, the 0.1 mm³ tolerance was too tight: the app's maximum 3MF export draws each Ø2 hole as a 45-gon, and that adds 10·(π − 22.5·sin 8°) = 0.10198 mm³ per hole. I recomputed every export: 1968.686, 2368.686, 1937.372, 1035 (1000 + 27 + 8) and 2000, which is 2000 − 10π, 2400 − 10π and 2000 − 20π plus exactly that error. Second, the kit asked to see `on_top`'s dependency on `bore` in the properties panel, but the app only shows «На: грань детали». The saved file has `plane: Face(22, …)`, where 22 is `bore`, and the timeline order is stock, arr, bore, on_top, pin. The app's own «Ниже» on `bore` gave the same mesh as the server's move, and undo restored the original. After toggling suppression and rollback, undo was checked visually only, with no new export. The six source hashes still match.
+
 ## Not covered
 
-- QymCAD.app: no visible-app check of a reordered file or of the app's own undo.
 - Round 2 could not construct a projected entity whose id changes while its association survives, or a sketch going from dormant to active. If the first case exists, the R1 guard refuses it, which is safe but a false refusal.
 - External-reference and Piece transfers, component patterns and every datum-axis, datum-point and measured-value variant were not run individually.
