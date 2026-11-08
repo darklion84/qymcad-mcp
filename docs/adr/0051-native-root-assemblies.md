@@ -32,7 +32,7 @@ requires an id. Names use the existing trimmed, case-preserving object-name poli
 | `part_new` | `{name}` | Create and activate a new root-child Part, regardless of navigation; return `part:{id,name,parent}`, `active_component`, `changed:true`. |
 | `part_select` | `{part}` | Select the Part or `{root:true}`; return previous/active components, `context_kind`, `changed`. A changed selection is persisted and undoable; no-op standalone selection adds no history. Root navigation retains ADR 0048's modelling ambiguity refusal. |
 | `part_place` | `{part,translation_mm:[x,y,z],rotation?:{axis:[x,y,z],angle_deg}}` | Replace a free, ungrounded, unconstrained root-child Part's parent-local placement. Rotation is literal finite axis-angle; omitted rotation is identity. Return local/world matrices and affected current body ids. |
-| `ground` | `{part,grounded:bool}` | Set native grounding, solve and validate the complete mechanism; return Part/grounding, placements, diagnostics and `changed`. Joint creation never grounds implicitly. |
+| `ground` | `{part,grounded:bool}` | Set native grounding, solve and validate the complete mechanism; refuse ungrounding a joint's anchor A Part or grounding a Slider's B Part; return Part/grounding, placements, diagnostics and `changed`. Joint creation never grounds implicitly. |
 | `joint_create` | `{name?,kind:"rigid"\|"slider",a:{body,face},b:{body,face},mode:"align"\|"as_built",axis?:{base_plane:"XY"\|"XZ"\|"YZ"},offset?:Num}` | Make native connectors and one joint; return joint id/name/kind, connector ids, resolved anchors/local frames, as-built/side state, drive/read/formula/limits, actual signed world axis, placements and diagnostics. |
 | `joint_set` | `{joint,offset:Num}` or `{joint,release:"offset"}` | Exactly one Slider action. Return prior/requested/evaluated travel, current `offset` readout, drive/formula state, pose/axis, limits, `changed` and diagnostics. |
 | `joint_delete` | `{joint}` | Remove that joint and its unshared, non-standalone auto-connectors, retain current placements and solve the remainder. Return removed ids, placements and diagnostics. |
@@ -51,7 +51,9 @@ rollback remains one global timeline prefix, and feature reorder remains same-pa
 the existing exactly-one-face rule resolves it before mutation. Descriptions let a batch create joints without
 a topology read. Each creation anchor must resolve to one current, unambiguous planar face with a fully oriented
 native frame. The stored native FaceCenter is Part-local; no global face-id or world-coordinate anchor is stored.
-The owners must be different root-child Parts. A must be grounded. Slider B must be ungrounded.
+The owners must be different root-child Parts. A must be grounded. Slider B must be ungrounded. `ground` keeps this
+invariant for existing joints: it refuses a change that ungrounds an anchor A Part or grounds a Slider's B Part
+(violations already present in an opened file do not block unrelated grounding).
 
 Slider requires `axis.base_plane`, stored as an explicit native `axis_ref` on both connectors. XZ selects native
 −Y travel; do not infer travel from the selected face normal. Rigid refuses axis and offset. `as_built` captures
@@ -130,6 +132,7 @@ part_place rotation axis must be finite and nonzero
 joint_create requires anchors in two different parts; both bodies belong to part <id>
 joint_create requires root-child parts; part <id> is nested
 joint_create requires grounded anchor A; ground part <id> first
+joint_create requires grounded anchor A; part <id> is moved by slider joint <id>, so chained mechanisms are not supported in package A
 joint_create supports planar face anchors in package A; body <id> face <face> is <kind>
 joint_create requires a current body; body <id> is consumed, suppressed or rolled back
 joint_create cannot resolve a fully oriented frame for body <id> face <face>; rebuild and choose a usable planar face
@@ -140,7 +143,10 @@ slider target part <id> is grounded; unground it first
 joint_set requires exactly one of offset or release
 joint <id> has no editable offset slot for kind <kind>
 joint <id> offset <value> mm is outside [<min>, <max>] mm; nothing was changed
-assembly solve failed: faulty joints <ids>; violated joints <ids>; conflict=<bool>; nothing was changed
+assembly solve failed: <present causes: faulty joints, violated joints, solver errors, requested joint values not reached, non-finite joint values, non-rigid part transforms, formula/constraint/relation/feature errors, conflicting joints or drives>; nothing was changed
+edit leaves joints <ids> unsatisfied (conflicting joints, drives or grounding); nothing was changed
+joint <id> needs its anchor part <id> grounded; nothing was changed
+slider joint <id> moves part <id>, which must stay ungrounded; nothing was changed
 edit would invalidate anchors of joints <ids>; delete those joints first; nothing was changed
 assembly edit touches unsupported constraints or relations <ids>; package A supports root-level Rigid and Slider joints
 part instances are not supported for multi-body source parts in package A

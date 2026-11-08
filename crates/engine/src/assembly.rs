@@ -192,10 +192,31 @@ fn rigid(t: &[f64; 12]) -> bool {
         && (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]) - 1.).abs() < 1e-5
 }
 fn solve_refusal(d: &Value) -> Error {
-    refusal(format!(
-        "assembly solve failed: faulty joints {}; violated joints {}; conflict={}; nothing was changed",
-        d["faulty_joints"], d["violated_joints"], d["conflict"]
-    ))
+    // Name only the causes that are present: an all-empty list reads as "nothing failed".
+    let mut causes = Vec::new();
+    for (key, label) in [
+        ("faulty_joints", "faulty joints"),
+        ("violated_joints", "violated joints"),
+        ("solve_errors", "solver errors"),
+        ("request_mismatches", "requested joint values not reached"),
+        ("invalid_slots", "non-finite joint values"),
+        ("invalid_transforms", "non-rigid part transforms"),
+        ("formula_errors", "formula errors"),
+        ("constraint_faults", "constraint faults"),
+        ("relation_faults", "relation faults"),
+        ("feature_errors", "feature errors"),
+    ] {
+        if d[key].as_array().is_some_and(|a| !a.is_empty()) {
+            causes.push(format!("{label} {}", d[key]));
+        }
+    }
+    if d["conflict"] == true {
+        causes.push("conflicting joints or drives".into());
+    }
+    if causes.is_empty() {
+        causes.push("unhealthy mechanism".into());
+    }
+    refusal(format!("assembly solve failed: {}; nothing was changed", causes.join("; ")))
 }
 impl Session {
     pub fn resolve_part(&self, part: &PartRef) -> Result<Id> {
@@ -364,11 +385,31 @@ impl Session {
         if self.p.components.iter().find(|c| c.id == id).unwrap().grounded == grounded {
             return Ok(self.part_result(id, false));
         }
+        let before = self.grounding_violations();
         self.assembly_edit("ground", json!({"part":part,"grounded":grounded}), |s| {
             s.p.set_grounded(id, grounded);
+            let new: Vec<_> = s.grounding_violations().into_iter().filter(|v| !before.contains(v)).collect();
+            if !new.is_empty() {
+                return Err(refusal(format!("{}; nothing was changed", new.join("; "))));
+            }
             s.assembly_accept(None)?;
             Ok(s.part_result(id, true))
         })
+    }
+    /// Package A policy, also enforced by joint_create: anchor A's part grounded, a Slider's B part free.
+    fn grounding_violations(&self) -> Vec<String> {
+        let owner = |cid: Id| self.p.connector(cid).map(|c| c.owner);
+        let mut out = Vec::new();
+        for j in &self.p.joints {
+            let (Some(a), Some(b)) = (owner(j.a), owner(j.b)) else { continue };
+            if !self.p.is_effectively_grounded(a) {
+                out.push(format!("joint {} needs its anchor part {a} grounded", j.id));
+            }
+            if j.kind == JointKind::Slider && self.p.is_effectively_grounded(b) {
+                out.push(format!("slider joint {} moves part {b}, which must stay ungrounded", j.id));
+            }
+        }
+        out
     }
     fn part_result(&self, id: Id, changed: bool) -> Value {
         let c = self.p.components.iter().find(|c| c.id == id).unwrap();
@@ -428,6 +469,13 @@ impl Session {
                 return Err(refusal(format!("joint_create requires anchors in two different parts; both bodies belong to part {a}")));
             }
             if !s.p.is_effectively_grounded(a) {
+                let moving = s.p.joints.iter().find(|j| j.kind == JointKind::Slider && s.p.connector(j.b).is_some_and(|c| c.owner == a));
+                if let Some(j) = moving {
+                    return Err(refusal(format!(
+                        "joint_create requires grounded anchor A; part {a} is moved by slider joint {}, so chained mechanisms are not supported in package A",
+                        j.id
+                    )));
+                }
                 return Err(refusal(format!("joint_create requires grounded anchor A; ground part {a} first")));
             }
             if o.kind == AssemblyJointKind::Slider && s.p.is_effectively_grounded(b) {
@@ -666,18 +714,27 @@ impl Session {
         if d["healthy"] == true {
             return Ok(());
         }
-        let mut affected: Vec<_> = d["faulty_joints"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .chain(d["violated_joints"].as_array().into_iter().flatten())
-            .filter_map(Value::as_u64)
-            .filter(|id| before.joints.iter().any(|j| j.id == *id))
-            .collect();
-        affected.sort_unstable();
-        affected.dedup();
-        if !affected.is_empty() {
-            Err(refusal(format!("edit would invalidate anchors of joints {affected:?}; delete those joints first; nothing was changed")))
+        let existing = |key: &str| -> Vec<u64> {
+            let mut ids: Vec<_> = d[key]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_u64)
+                .filter(|id| before.joints.iter().any(|j| j.id == *id))
+                .collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+        // Lost anchors and unsatisfiable joints need different remedies; do not call a conflict a lost anchor.
+        let lost = existing("faulty_joints");
+        let violated = existing("violated_joints");
+        if !lost.is_empty() {
+            Err(refusal(format!("edit would invalidate anchors of joints {lost:?}; delete those joints first; nothing was changed")))
+        } else if !violated.is_empty() {
+            Err(refusal(format!(
+                "edit leaves joints {violated:?} unsatisfied (conflicting joints, drives or grounding); nothing was changed"
+            )))
         } else {
             Err(solve_refusal(&d))
         }

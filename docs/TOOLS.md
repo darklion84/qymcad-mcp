@@ -6502,7 +6502,7 @@ Replace a free ungrounded root-child Part's parent-local rigid placement. Leaves
 
 ## ground
 
-Set grounding on a root-child native Part, then solve and verify the mechanism atomically. No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.
+Set grounding on a root-child native Part, then solve and verify the mechanism atomically. Refuses ungrounding a joint's anchor A Part or grounding a Slider's moving B Part. No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.
 
 ```json
 {

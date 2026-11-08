@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 - Geometry/history/parameter/dimension mutations that lose or violate an existing joint refuse atomically with original recipe, live B-reps and diagnostics restored. Open/rebuild explicitly report unhealthy native joints even when feature regeneration succeeds.
 - While a Part is active, `sketch_create` on a datum plane owned by another Part is refused instead of silently building the new geometry into that other Part; face sketches keep body-owner routing and report `owner_part` (ADR 0051).
 - Plain single-Part documents keep their previous result shapes: body placement fields appear only with several Parts or a placement, and rebuild `assembly` only with joints, mates or relations.
+- `ground` refuses to ground a Slider's moving Part or unground a joint's anchor Part, the states `joint_create` already refuses; before, one call locked a drawer or made its formula slide the carcass instead. The chained-slider refusal no longer advises grounding the moving Part.
+- Assembly refusals name the actual cause: a conflicting joint or drive is no longer reported as lost anchors with advice to delete joints, and a solve refusal lists only present causes (for example, a requested travel not reached) instead of empty lists.
+- `hole.at` is applied in world coordinates as documented; on a placed or travelled Part it was used as Part-local and the hole landed shifted by the Part placement.
 - Render bounds no longer apply mesh Part placement twice. Legacy `bbox` keeps its existing frame, now explicit via `bbox_frame`; new consumers can use `bbox_local`/`bbox_world`.
 
 ## 0.1.1-dev.20261026.11 — feature reorder (ADR 0050)

@@ -175,17 +175,89 @@ fn a_anchor_lifecycle_refuses_and_unrelated_edits_succeed() {
 }
 #[test]
 fn a_violated_joint_refuses_atomic_ground_change_and_disconnected_control() {
-    let (mut s, _, b, ba, bb) = fixture();
+    let (mut s, a, b, ba, bb) = fixture();
     let j = create(&mut s, ba, bb, AssemblyJointKind::Slider);
-    // A grounded B can coexist at the reached pose, but a requested incompatible travel cannot.
-    s.ground(&PartRef::Id(b), true).unwrap();
+    s.param_set("pa", &0.0.into()).unwrap();
+    s.joint_set(&JointRef::Id(j), Some(&"pa".into()), None).unwrap();
+    // Review F1: grounding the slider's moving part, or ungrounding its anchor, is refused like joint_create.
+    let before = state(&s);
+    let e = s.ground(&PartRef::Id(b), true).unwrap_err().to_string();
+    assert!(e.contains(&format!("slider joint {j} moves part {b}, which must stay ungrounded")), "{e}");
+    assert_eq!(state(&s), before);
+    let e = s.ground(&PartRef::Id(a), false).unwrap_err().to_string();
+    assert!(e.contains(&format!("joint {j} needs its anchor part {a} grounded")), "{e}");
+    assert_eq!(state(&s), before);
+    // Chained slider: the remedy must not be "ground the moving part".
+    let (_, tray) = {
+        let t = s.part_new("tray").unwrap()["part"]["id"].as_u64().unwrap();
+        let tb = s.p.add_box(100., 100., 20.);
+        assert!(s.rebuild().errors.is_empty());
+        (t, tb)
+    };
+    let e = s
+        .joint_create(&JointCreate {
+            name: Some("tray_rail".into()),
+            kind: AssemblyJointKind::Slider,
+            a: JointAnchor { body: bb, face: Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. } },
+            b: JointAnchor { body: tray, face: Sel::Facing { dir: [0., 0., -1.], tol_deg: 1. } },
+            mode: JointMode::AsBuilt,
+            axis: Some(BaseName::XZ),
+            offset: None,
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains(&format!("part {b} is moved by slider joint {j}")) && !e.contains("ground part"), "{e}");
+    // Review F2: a user Rigid that conflicts with the slider is reported as a conflict, not as lost anchors.
+    s.joint_create(&JointCreate {
+        name: Some("lock".into()),
+        kind: AssemblyJointKind::Rigid,
+        a: JointAnchor { body: ba, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
+        b: JointAnchor { body: bb, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+        mode: JointMode::AsBuilt,
+        axis: None,
+        offset: None,
+    })
+    .unwrap();
     let before = state(&s);
     let shapes = breps(&s);
-    assert!(s.joint_set(&JointRef::Id(j), Some(&300.0.into()), None).is_err());
+    let e = s.param_set("pa", &300.0.into()).unwrap_err().to_string();
+    assert!(e.contains("unsatisfied") && !e.contains("invalidate anchors"), "{e}");
+    let e = s.joint_set(&JointRef::Id(j), Some(&300.0.into()), None).unwrap_err().to_string();
+    assert!(!e.contains("[]"), "a refusal must name a present cause: {e}");
     assert_eq!(state(&s), before);
     assert_eq!(breps(&s), shapes);
     s.part_new("unrelated").unwrap();
     s.param_set("unrelated", &4.0.into()).unwrap();
+}
+#[test]
+fn a_huge_travel_refusal_names_its_cause() {
+    let (mut s, _, _, ba, bb) = fixture();
+    let j = create(&mut s, ba, bb, AssemblyJointKind::Slider);
+    let e = s.joint_set(&JointRef::Id(j), Some(&1e308.into()), None).unwrap_err().to_string();
+    assert!(!e.contains("[]") && !e.contains("conflict=false"), "review F2: {e}");
+}
+#[test]
+fn a_hole_at_is_world_on_a_placed_part() {
+    let (mut s, _, b, _, bb) = fixture();
+    s.part_place(&PartRef::Id(b), [400., 0., 250.], None).unwrap();
+    let top = s.topology(Some(bb), false).unwrap().faces.into_iter().find(|f| f.normal.is_some_and(|n| n[2] > 0.99)).unwrap().id;
+    let (h, _) = s
+        .hole(&crate::modifiers::Hole {
+            body: Some(bb),
+            face: Sel::Ids(vec![top]),
+            at: Some([630., 0., 0.]), // World x 630 = Part-local x 230 (placed at x 400); box spans local x ±250.
+            offset: None,
+            diameter: 20.0.into(),
+            depth: Some(10.0.into()),
+            kind: crate::modifiers::HoleKind::Plain,
+            dia2: None,
+            depth2: None,
+            name: None,
+        })
+        .unwrap();
+    let cyl = s.topology(Some(h), false).unwrap().faces.into_iter().find(|f| f.kind == crate::FaceKind::Cylinder).expect("hole wall");
+    close(cyl.centroid[0], 230.);
+    close(cyl.centroid[1], 0.);
 }
 #[test]
 fn a_parts_history_noop_and_native_connector_cleanup() {

@@ -122,7 +122,7 @@ pub fn tools() -> Vec<Tool> {
             let result = st.doc()?.part_place(&a.part, a.translation_mm, rotation.as_ref()).map_err(err)?;
             Ok(changed(st, result))
         }),
-        tool("ground", "Set grounding on a root-child native Part, then solve and verify the mechanism atomically. No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.", |st, a: Ground| {
+        tool("ground", "Set grounding on a root-child native Part, then solve and verify the mechanism atomically. Refuses ungrounding a joint's anchor A Part or grounding a Slider's moving B Part. No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.", |st, a: Ground| {
             let result = st.doc()?.ground(&a.part, a.grounded).map_err(err)?;
             Ok(changed(st, result))
         }),

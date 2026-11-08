@@ -616,7 +616,8 @@ impl Session {
             };
             let at = match (a.at, &a.offset) {
                 (Some(_), Some(_)) => return Err(Error::Invalid("give `at` or `offset`, not both".into())),
-                (Some(at), None) => at,
+                // `at` is world; the native hole lives in the body's Part frame.
+                (Some(at), None) => qymcad_core::feature::apply12(&qymcad_core::feature::mat_inv12(&s.p.body_world_transform(src)), at),
                 (None, Some([u, v])) => {
                     let vars = s.p.param_map();
                     let face = qymcad_core::feature::FaceAt { centre: key.centroid, normal: key.normal };
