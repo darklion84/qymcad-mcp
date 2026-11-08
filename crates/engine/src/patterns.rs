@@ -131,7 +131,7 @@ impl Session {
                 return Err(Error::Invalid("an array needs at least 2 copies".into()));
             }
             check_total(total)?;
-            let id = s.p.add_linear_array_grid(src, a, b);
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_linear_array_grid(src, a, b));
             for (sfx, d) in [("", Some(d1)), ("2", d2)] {
                 if let Some(d) = d {
                     dim(s, id, &format!("dx{sfx}"), &d.dx);
@@ -171,7 +171,7 @@ impl Session {
                 Some(a) => s.datum_axis_for(a)?,
                 None => 0,
             };
-            let id = s.p.add_circular_array_axis(src, n, ang, ax);
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_circular_array_axis(src, n, ang, ax));
             dim(s, id, "count", count);
             dim(s, id, "angle", angle);
             s.set_node_name(id, name)?;
@@ -186,21 +186,23 @@ impl Session {
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let id = match plane {
-                PlaneRef::Base(b) => s.p.add_mirror(
-                    src,
-                    match b {
-                        BaseName::XY => 0,
-                        BaseName::XZ => 1,
-                        BaseName::YZ => 2,
-                    },
-                    keep,
-                    0,
-                ),
+                PlaneRef::Base(b) => s.in_component(s.p.body_owner(src), |p| {
+                    p.add_mirror(
+                        src,
+                        match b {
+                            BaseName::XY => 0,
+                            BaseName::XZ => 1,
+                            BaseName::YZ => 2,
+                        },
+                        keep,
+                        0,
+                    )
+                }),
                 PlaneRef::Plane(d) => {
                     if !s.p.planes.iter().any(|w| w.id == *d) {
                         return Err(Error::NotFound(format!("datum plane {d}")));
                     }
-                    s.p.add_mirror(src, 0, keep, *d)
+                    s.in_component(s.p.body_owner(src), |p| p.add_mirror(src, 0, keep, *d))
                 }
                 PlaneRef::Face { body: fb, face } => {
                     let f =
@@ -212,7 +214,7 @@ impl Session {
                     if !s.face_is_planar(*fb, *face) {
                         return Err(Error::Invalid(format!("face {face} of body {fb} is not planar")));
                     }
-                    let id = s.p.add_mirror(src, 0, keep, 0);
+                    let id = s.in_component(s.p.body_owner(src), |p| p.add_mirror(src, 0, keep, 0));
                     s.p.set_op_face(id, *fb, key);
                     id
                 }

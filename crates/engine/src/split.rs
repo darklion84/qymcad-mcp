@@ -89,7 +89,7 @@ impl Session {
             let count = qymcad_kernel::ask::split_pieces(shape, at)
                 .filter(|n| *n >= 2)
                 .ok_or_else(|| Error::Invalid("split plane cuts nothing: it must divide the body into at least two pieces".into()))?;
-            let ids = s.p.add_split_body(src, plane, datum, offset, count);
+            let ids = s.in_component(s.p.body_owner(src), |p| p.add_split_body(src, plane, datum, offset, count));
             let feature = ids[0]; // count>=2 checked before the native adder's assertion.
             if let Some((body, key)) = face {
                 s.p.set_op_face(feature, body, key);

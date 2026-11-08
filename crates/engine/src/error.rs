@@ -4,6 +4,8 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
+    /// Assembly contract refusals are already complete, stable messages.
+    Assembly(String),
     /// A referenced object (sketch, feature, body, parameter, file) does not exist.
     NotFound(String),
     /// The request itself is invalid (bad name, wrong kind of object, missing body to cut, ...).
@@ -21,6 +23,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::Assembly(s) => write!(f, "{s}"),
             Error::NotFound(s) => write!(f, "not found: {s}"),
             Error::Invalid(s) => write!(f, "invalid request: {s}"),
             Error::Expr(s) => write!(f, "expression error: {s}"),

@@ -2572,3 +2572,82 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Rollback/suppression:** the same executed probe keeps numeric rollback `Some(2)`, changes its active result to `1000−10π`, and drops the tail body. A moved suppressed hole keeps its flag and yields 2000. Reorder itself does not set/clear rollback or suppression. Removal/recreation loses body metadata as separately observed in F-136.
 - **Native omissions:** `model/keys.rs:457-499` checks body/sketch/datum refs but omits sketch-hole markers and projection sources; Hole.inputs contains only src. `tasks/research-medT/contracts.log` verifies native acceptance of hole-before-marker and refusal of adjacent Combine Cut/Add (each has body and sketch inputs). These supplemental cases are recipe-only probes, not successful geometry rebuilds. Chain rewriting does not rerun native order validity after remapping. It remaps body operands and Face sketch hosts, but not datum definitions or projection associations.
 - **Persistence evidence:** `run-final.log` saves/loads reordered native nodes and independently forces a full rebuild to `2000−10π`; `app-path.log` loads/restores and follows native parameter scheduling w10→12 to `2400−10π`, errors empty. These are headless native probes, not visible-app or GUI undo verification. Native projection/pattern limitations remain F-137/F-140/F-141. Server acceptance policy is ADR 0050.
+
+## F-143 Joint readings, specified drives and dragged values are distinct
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** `crates/qymcad-core/src/feature/mates.rs:450-468` separates measured `angle/offset/offset2`
+  from `drive:[Option<f64>;3]`; `None` is free and `Some(0)` specifies zero. Native
+  `asm/bridge.rs:775-801` updates readings after solving and updates an existing numeric drive after dragging.
+  Source paths in F-143–F-147 are relative to `.upstream/qymcad-f25f27d/`.
+- **Executed native evidence:** `tasks/research-medA/src/main.rs:145-190` and `run-final.log` request
+  Slider slot1=0 then300 and observe drawer placement `[0,0,250]` then approximately `[0,-300,250]`.
+  Five further solves retain it. Dragging a numeric-driven drawer to −140 updates drive1 to approximately140.
+  Writing only `Joint.offset=300` after a free drag to120 does not move the drawer: solving overwrites that
+  readout. The native saved-file test
+  `golden_assembly_app::assembly_native_released_formula_and_numeric_drag_survive_regenerate_save_reopen`
+  independently checks numeric300→drag120, regeneration, cached/forced reopen and drive120 persistence.
+- **Boundary:** these are native core/solver requests, not visible mouse-hit-test or GUI execution. The
+  server's absolute-offset and zero-request contract is ADR 0051.
+
+## F-144 Joint formulas reassert on regeneration; removing a formula does not release its drive
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** `crates/qymcad-core/src/model/regen/run.rs:729-749` evaluates nonempty native
+  `feat_dims[joint][angle|offset|offset2]` into drive slots and solves placements unconditionally, including
+  when no body is dirty. An empty/missing formula does not clear the previous drive. Native `set_joint_drive`
+  independently writes a slot (`model/assembly/joints.rs:371-388`).
+- **Executed native evidence:** research `src/main.rs:193-235` and `run-final.log` retain offset formula
+  `opening`, drive300 and approximately −300Y placement. Native drag to120 changes the numeric drive but
+  leaves the expression; regeneration returns to parameter300. Clearing formula and drive permits free
+  motion. Saved archives retain the expression and rebuild at its target.
+  `golden_assembly_app::assembly_native_cached_forced_and_parameter_window_follow_formula_without_brep_builds`
+  loads saved B-reps/faces, checks cached and forced builds, then runs native parameter-window scheduling
+  opening0→300→0 repeatedly: only placement changes, with zero rebuilt bodies and identical local B-reps.
+  The companion native drag test verifies formula release and numeric-drive persistence through save/reopen.
+- **Boundary:** tests use the app's native data/parameter/kernel path without Session repairs, not the full
+  GUI wrapper. Exposing `release:"offset"` to clear both records is server policy (ADR 0051).
+
+## F-145 A planar-face Slider travels in-plane; explicit axis and as-built capture control its pose
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** `crates/qymcad-core/src/model/assembly/anchors.rs:397-444` gives an explicit connector
+  `axis_ref` precedence as Slider travel direction. Otherwise a planar face uses its principal in-plane
+  direction, falling back to the frame's in-plane axis; a cylindrical face keeps its cylinder axis. This
+  fallback description is source evidence, not separately measured default-principal-direction behaviour.
+- **Executed native evidence:** `tasks/research-medA/src/main.rs:70-87,140-164,237-244` and
+  `run-final.log` use facing ±X box faces with both `axis_ref=BasePlane(XZ)`: reported signed travel is −Y.
+  Capturing `set_joint_as_built` before the first solve retains initial drawer `[0,0,250]`; drive300 gives
+  approximately `[0,-300,250]`. Without as-built, align chooses `flip=false,roll_flip=true` and drawer
+  `[550,0,275]`: face centres require X=300−(−250)=550 and Z=350−75=275. For the as-built variant,
+  native cached and forced saved-file rebuilds preserve the captured pose. The app-path and cabinet acceptance tests repeat explicit-XZ
+  as-built Slider travel and verify all bodies owned by a drawer share its placement.
+- **Boundary:** no collision/interference assertion follows from an assembled pair of envelope boxes.
+  Requiring explicit Slider axes and planar fully oriented creation frames is server policy (ADR 0051).
+
+## F-146 A native PartInstance copies only the active body of a multi-body Part
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** `crates/qymcad-core/src/model/assembly/tree.rs:283-298` makes a new Part and one
+  `FeatureKind::PartInstance` output id. `model/regen/prep_bodies.rs:31-40` copies
+  `active_body_before(src_comp,at)` using an identity geometry transform; placement belongs to the new
+  component. It does not enumerate all source bodies.
+- **Executed native evidence:** `tasks/research-medA/src/bin/multibody.rs:45-108` and
+  `multibody-final.log` build source boxes V=10×20×30=6000 and 7×11×13=1001 mm³. Both source bodies
+  remain current, but the clone contains exactly one new body of 1001 mm³ rather than 7001. Both source bodies
+  share the source Part placement and the clone has its own placement.
+- **Boundary:** this does not establish a general export traversal defect or full multi-body instance
+  support. Package A's exclusion/refusal policy is ADR 0051.
+
+## F-147 Native feature regeneration can succeed while a joint is faulty
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** `crates/qymcad-core/src/model/regen/run.rs:749` discards the returned `JointReport` from
+  `solve_joints`. `model/assembly/drive.rs:362-408` separately records faults in solve errors, conflict and
+  violated ids. Feature-error reporting alone does not contain these categories.
+- **Executed native evidence:** `tasks/research-medA/src/bin/multibody.rs:110-120` and
+  `multibody-final.log` create Slider8 with a missing B connector: native regeneration errors are empty,
+  conflict=false and violated=[] while `joint_faults=[(8,"j-fault-connector-lost")]`. Thus a static body
+  and successful feature pass are insufficient evidence that its attachment acts.
+- **Boundary:** server anchor-witness validation, atomic refusals and separate open/rebuild/inspection
+  diagnostics are ADR 0051 policy. Native execution here is headless; no visible-app check was performed.

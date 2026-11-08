@@ -1,0 +1,312 @@
+{
+  "status": "proposed acceptance fixture; not executed through MCP",
+  "units": "mm",
+  "parts": [
+    {
+      "name": "carcass",
+      "translation_mm": [
+        0,
+        0,
+        0
+      ],
+      "plates": [
+        {
+          "name": "carcass-left",
+          "bbox_local": [
+            -300,
+            -250,
+            0,
+            -282,
+            250,
+            700
+          ],
+          "volume_mm3": 6300000
+        },
+        {
+          "name": "carcass-right",
+          "bbox_local": [
+            282,
+            -250,
+            0,
+            300,
+            250,
+            700
+          ],
+          "volume_mm3": 6300000
+        },
+        {
+          "name": "carcass-bottom",
+          "bbox_local": [
+            -282,
+            -250,
+            0,
+            282,
+            250,
+            18
+          ],
+          "volume_mm3": 5076000
+        },
+        {
+          "name": "carcass-top",
+          "bbox_local": [
+            -282,
+            -250,
+            682,
+            282,
+            250,
+            700
+          ],
+          "volume_mm3": 5076000
+        },
+        {
+          "name": "carcass-back",
+          "bbox_local": [
+            -282,
+            232,
+            18,
+            282,
+            250,
+            682
+          ],
+          "volume_mm3": 6740928
+        },
+        {
+          "name": "carcass-mid",
+          "bbox_local": [
+            -282,
+            -250,
+            341,
+            282,
+            232,
+            359
+          ],
+          "volume_mm3": 4893264
+        },
+        {
+          "name": "carcass-toe",
+          "bbox_local": [
+            -282,
+            -250,
+            18,
+            282,
+            -232,
+            78
+          ],
+          "volume_mm3": 609120
+        },
+        {
+          "name": "carcass-stretcher",
+          "bbox_local": [
+            -282,
+            -250,
+            640,
+            282,
+            -190,
+            658
+          ],
+          "volume_mm3": 609120
+        }
+      ],
+      "sum_body_volume_mm3": 35604432
+    },
+    {
+      "name": "drawer1",
+      "translation_mm": [
+        0,
+        0,
+        100
+      ],
+      "plates": [
+        {
+          "name": "drawer1-left",
+          "bbox_local": [
+            -260,
+            -220,
+            18,
+            -242,
+            220,
+            198
+          ],
+          "volume_mm3": 1425600
+        },
+        {
+          "name": "drawer1-right",
+          "bbox_local": [
+            242,
+            -220,
+            18,
+            260,
+            220,
+            198
+          ],
+          "volume_mm3": 1425600
+        },
+        {
+          "name": "drawer1-front",
+          "bbox_local": [
+            -242,
+            -220,
+            18,
+            242,
+            -202,
+            198
+          ],
+          "volume_mm3": 1568160
+        },
+        {
+          "name": "drawer1-back",
+          "bbox_local": [
+            -242,
+            202,
+            18,
+            242,
+            220,
+            198
+          ],
+          "volume_mm3": 1568160
+        },
+        {
+          "name": "drawer1-bottom",
+          "bbox_local": [
+            -260,
+            -220,
+            0,
+            260,
+            220,
+            18
+          ],
+          "volume_mm3": 4118400
+        },
+        {
+          "name": "drawer1-fascia",
+          "bbox_local": [
+            -280,
+            -238,
+            -11,
+            280,
+            -220,
+            209
+          ],
+          "volume_mm3": 2217600
+        }
+      ],
+      "sum_body_volume_mm3": 12323520
+    },
+    {
+      "name": "drawer2",
+      "translation_mm": [
+        0,
+        0,
+        390
+      ],
+      "plates": [
+        {
+          "name": "drawer2-left",
+          "bbox_local": [
+            -260,
+            -220,
+            18,
+            -242,
+            220,
+            198
+          ],
+          "volume_mm3": 1425600
+        },
+        {
+          "name": "drawer2-right",
+          "bbox_local": [
+            242,
+            -220,
+            18,
+            260,
+            220,
+            198
+          ],
+          "volume_mm3": 1425600
+        },
+        {
+          "name": "drawer2-front",
+          "bbox_local": [
+            -242,
+            -220,
+            18,
+            242,
+            -202,
+            198
+          ],
+          "volume_mm3": 1568160
+        },
+        {
+          "name": "drawer2-back",
+          "bbox_local": [
+            -242,
+            202,
+            18,
+            242,
+            220,
+            198
+          ],
+          "volume_mm3": 1568160
+        },
+        {
+          "name": "drawer2-bottom",
+          "bbox_local": [
+            -260,
+            -220,
+            0,
+            260,
+            220,
+            18
+          ],
+          "volume_mm3": 4118400
+        },
+        {
+          "name": "drawer2-fascia",
+          "bbox_local": [
+            -280,
+            -238,
+            -11,
+            280,
+            -220,
+            209
+          ],
+          "volume_mm3": 2217600
+        }
+      ],
+      "sum_body_volume_mm3": 12323520
+    }
+  ],
+  "current_bodies": 20,
+  "joints": [
+    {
+      "name": "drawer1-slide",
+      "a_body": "carcass-left",
+      "a_face": {
+        "facing": "+x"
+      },
+      "b_body": "drawer1-left",
+      "b_face": {
+        "facing": "-x"
+      },
+      "mode": "as_built",
+      "axis": {
+        "base_plane": "XZ"
+      }
+    },
+    {
+      "name": "drawer2-slide",
+      "a_body": "carcass-left",
+      "a_face": {
+        "facing": "+x"
+      },
+      "b_body": "drawer2-left",
+      "b_face": {
+        "facing": "-x"
+      },
+      "mode": "as_built",
+      "axis": {
+        "base_plane": "XZ"
+      }
+    }
+  ]
+}

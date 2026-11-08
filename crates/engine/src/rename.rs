@@ -1,4 +1,4 @@
-//! Independent native feature, sketch and body label edits.
+//! Independent native feature, sketch, body, Part and joint label edits.
 use crate::{Error, Id, Result, Session};
 use serde::Serialize;
 
@@ -7,6 +7,8 @@ pub enum RenameTarget {
     Feature(Id),
     Sketch(Id),
     Body(Id),
+    Part(Id),
+    Joint(Id),
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -51,6 +53,20 @@ impl Session {
                 let index = self.p.mesh_index(id).ok_or_else(|| Error::Invalid(format!("object {id} is not a body")))?;
                 ("body", id, index, self.p.bodies[index].name.clone())
             }
+            RenameTarget::Part(id) => {
+                let index = self
+                    .p
+                    .components
+                    .iter()
+                    .position(|c| c.id == id && c.kind == qymcad_core::feature::ComponentKind::Part)
+                    .ok_or_else(|| Error::NotFound(format!("no part with id {id}")))?;
+                ("part", id, index, self.p.components[index].name.clone())
+            }
+            RenameTarget::Joint(id) => {
+                let index =
+                    self.p.joints.iter().position(|j| j.id == id).ok_or_else(|| Error::NotFound(format!("no joint with id {id}")))?;
+                ("joint", id, index, self.p.joints[index].name.clone())
+            }
         };
         let changed = previous_name != name;
         let snapshot = if changed && !self.tool_edit_active {
@@ -67,11 +83,35 @@ impl Session {
                 }
                 RenameTarget::Sketch(_) => self.p.sketches[index].name = name.into(),
                 RenameTarget::Body(_) => self.p.set_mesh_name(index, name.into()),
+                RenameTarget::Part(_) => self.p.components[index].name = name.into(),
+                RenameTarget::Joint(_) => self.p.joints[index].name = name.into(),
             }
         }
         let display_name = crate::localization::name(name);
-        let mut duplicates = self.name_matches(name);
-        duplicates.extend(self.name_matches(&display_name));
+        let mut duplicates = match target {
+            RenameTarget::Part(_) => self
+                .p
+                .components
+                .iter()
+                .filter(|c| {
+                    c.kind == qymcad_core::feature::ComponentKind::Part
+                        && (c.name == name || crate::localization::name(&c.name) == display_name)
+                })
+                .map(|c| c.id)
+                .collect(),
+            RenameTarget::Joint(_) => self
+                .p
+                .joints
+                .iter()
+                .filter(|j| j.name == name || crate::localization::name(&j.name) == display_name)
+                .map(|j| j.id)
+                .collect(),
+            _ => {
+                let mut ids = self.name_matches(name);
+                ids.extend(self.name_matches(&display_name));
+                ids
+            }
+        };
         duplicates.retain(|other| *other != id);
         duplicates.sort_unstable();
         duplicates.dedup();

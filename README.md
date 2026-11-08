@@ -4,13 +4,14 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI agent build **n
 [QymCAD](https://github.com/QymIs-Tech/QymCAD) parts** — sketches, extrusions, cuts, fillets, holes, driven by
 named parameters — and save them as `.qcad` files you open and edit in the QymCAD app.
 
-> Status: **pre-release.** 44 tools for QymCAD 0.1.1: documents, parameters and named driving dimensions;
+> Status: **pre-release.** Tools for QymCAD 0.1.1: documents, parameters and named driving dimensions;
 > sketches (rotated rectangle, circle, tangent circle, line, polyline, spline, arc, ellipse, ellipse arc,
 > polygon, slot) fully dimensioned with expressions, plus curve constraints and curve editing (trim, extend,
 > break, offset, corner fillet/chamfer, point mirror); datum planes;
 > extrude / cut / revolve / sweep / loft; fillet, chamfer, hole, shell, push face, remove face; linear / circular arrays and mirror;
 > topology and descriptive selections; re-picking the edges/faces of an existing fillet, chamfer, shell, push face or remove face;
-> renaming features, sketches and bodies; feature suppression and the history rollback marker; body visibility and colour;
+> root-level multi-body Parts, placement, grounding and native Rigid/Slider joints;
+> renaming features, sketches, bodies, Parts and joints; feature suppression and the history rollback marker; body visibility and colour;
 > measuring distances, angles, lengths and radii; atomic modelling batches, feature deletion and undo;
 > STEP/IGES, DXF/SVG and mesh import (STL, OBJ, PLY, glTF/GLB, 3MF, AMF) with recognition into B-reps;
 > export to STEP / STL / 3MF / GLB / OBJ (body colour in 3MF/GLB/STEP) and a rendered PNG preview.
@@ -53,6 +54,21 @@ batch is one undo entry, labelled `Batch (N steps)`, among the 16 retained calls
 default, with created-node ids/names and final bodies/warnings/errors; `"verbose": true` adds each tool's
 full result. Use individual calls when you need to inspect `topology`, `sketch_info`, `select` or a `render`
 between operations. Document tools, undo, output, inspection and nested batches are refused inside `batch`.
+
+For a root assembly, rename the initial Part with `rename {target:{part:id},name:"carcass"}`. Use `part_new`
+to create each moving multi-body Part, `part_select` to choose its modelling context, `part_place` for a free
+Part's placement and `ground` to fix the carcass. `joint_create` connects planar face anchors with native
+Rigid or Slider joints: A must be grounded; Slider B must be ungrounded and requires an explicit
+`axis:{base_plane:"XZ"}` for −Y travel. `mode:"as_built"` retains the assembled pose before solving.
+`joint_set` sets absolute travel, including zero; a formula follows its global parameter on regeneration.
+Use `release:"offset"` to clear formula and drive for persistent free dragging. `joint_delete` removes an
+attachment, and `assembly_info` reports native placements, drives, limits and mechanism health. These edits
+support batch/undo; nested assembly edits, instances/clones, other joint kinds, relations and limit editing
+are excluded. Saved-file native app-data tests pass; a visible-app assembly check is unavailable.
+
+Geometry stays Part-local: `topology`/`select` report that coordinate frame, while measurement, export and
+render use world placement. `doc_info` reports ownership, `world_transform`, `bbox_local` and `bbox_world`.
+Legacy `bbox` remains local for B-reps and world-space for mesh bodies, identified by `bbox_frame`.
 
 ## Versions and compatibility
 

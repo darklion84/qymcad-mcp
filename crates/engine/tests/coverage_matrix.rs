@@ -115,7 +115,8 @@ fn separate_associative_parts_are_classified_as_assembly_operations() {
             .find(|cells| cells.len() == 6 && cells[5].split(',').any(|s| s.trim().trim_matches('`') == key))
             .unwrap_or_else(|| panic!("missing coverage for {key}"));
         assert_eq!(row[1], "Assemblies", "{key} creates a separate associative part");
-        assert_eq!(row[2], "out of scope", "{key} has no server modelling tool");
-        assert_eq!(row[4], "none", "{key} must not advertise split or mirror as implementing it");
+        assert_eq!(row[2], "partial", "package A implements a subset of assemblies");
+        assert!(row[3].contains("Excludes") && row[3].contains("Piece/MirrorPart"), "{key} remains explicitly excluded");
+        assert!(!row[4].contains("`split`") && !row[4].contains("`mirror`"), "{key} must not advertise same-part split or mirror");
     }
 }

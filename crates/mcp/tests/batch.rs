@@ -237,6 +237,13 @@ fn limits_allowlist_and_outer_schema() {
         "history_rollback",
         "rename",
         "appearance",
+        "part_new",
+        "part_select",
+        "part_place",
+        "ground",
+        "joint_create",
+        "joint_set",
+        "joint_delete",
     ];
     for name in r.list().iter().map(|t| t["name"].as_str().unwrap()).filter(|n| !allowed.contains(n)).chain(["unknown"]) {
         let message = error(&mut r, json!({"steps":[step(name,json!({}))]}));

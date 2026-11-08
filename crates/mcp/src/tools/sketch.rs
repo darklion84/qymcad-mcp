@@ -249,12 +249,17 @@ pub fn tools() -> Vec<Tool> {
              A face sketch's origin is the world origin projected onto the face plane (in the owning component's local coordinates, \
              then carried by its placement). Its x/y directions are positive coordinate axes of that component in right-handed order: \
              +Z: +X/+Y, -Z: +Y/+X, +X: +Y/+Z, -X: +Z/+Y, +Y: +Z/+X, -Y: +X/+Z. \
-             For tilted faces x = normalize(+Z cross normal), y = normal cross x. Read sketch_info.world_frame for the resolved world axes. Returns its id.",
+             For tilted faces x = normalize(+Z cross normal), y = normal cross x. Read sketch_info.world_frame for the resolved world axes. \
+             The sketch belongs to the Part owning its datum or face (base planes: the active Part). While a Part is active, a datum of another Part is refused: part_select that Part or make a datum in the active one. Returns its id and owner_part when the document has several Parts or a placement.",
             |st, a: CreateArgs| {
                 let s = st.doc()?;
                 let plane = a.plane.resolve(s)?;
                 let id = s.sketch_create(&plane, a.name.as_deref()).map_err(err)?;
-                Ok(json!({ "sketch": id }))
+                let mut out = json!({ "sketch": id });
+                if s.has_assembly_structure() {
+                    out["owner_part"] = json!(s.project().sketch_owner(id));
+                }
+                Ok(out)
             },
         ),
         tool(

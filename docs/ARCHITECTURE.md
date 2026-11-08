@@ -6,7 +6,7 @@ MCP client (Claude, ...)
    │  JSON-RPC over stdio
 crates/mcp  (qymcad-mcp)      transport, tool registry, argument schemas (schemars), result formatting
    │  typed Rust calls
-crates/engine (qymcad-engine) Session: one open document; params, sketches, features, topology, export, render
+crates/engine (qymcad-engine) Session: one open document; Parts/joints, params, sketches, features, topology, export, render
    │  QymCAD API
 qymcad-core / -io / -kernel / -testkit   (git dependency, pinned tag — ADR 0003)
    │
@@ -18,6 +18,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | Module | Owns |
 |---|---|
 | `session.rs` | `Session` (one `Project` + live `Shape`s + path); `rebuild()`; `atomic()` / `transact()`; result bodies; name/id resolution |
+| `assembly.rs` | Typed Part/joint refs; root-child Part creation/navigation/placement/grounding; planar Rigid/Slider FaceCenter connectors; absolute numeric/formula drive and release; native assembly inspection, affected-state guards and shared acceptance (ADR 0051) |
 | `params.rs` | parameters: case-sensitive names with case-twin refusal (ADR 0021), evaluation, propagation to sketches and features (F-002), usage lookup |
 | `sketch.rs` | sketches on base/datum planes or faces; persisted datum placement/ancestor-driver dependencies (F-017/F-113, ADR 0007/0031); rect/circle; driven edge/face projections and state inspection (F-109); pinning; `sketch_edit` (rebuild dependents); settled solve |
 | `sketch/entities.rs` | line, polyline, arc, polygon, slot: QymCAD adders + independent driving dimensions |
@@ -57,9 +58,17 @@ Before regeneration, reconcile persisted datum ancestry barriers and run scope-i
 4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
    Check every rebuilt fillet: a non-tangent join between the blends of two edges that share no vertex
    (overlapping blends) is a rebuild error, kept in `regen_errors`; `Session::open` checks fillets kept from the file too (F-074, ADR 0021).
-5. Report errors, warnings (`regen_warnings` plus session advisories) and the result bodies (unconsumed, with volume and bbox).
+5. Report errors, warnings (`regen_warnings` plus session advisories), result bodies (unconsumed, with volume and explicit local/world bounds) and separate native assembly diagnostics. Assembly health additionally checks actual anchors, joint faults, solve errors, violated/conflict state, finite rigid transforms and requested-versus-read slot values (ADR 0051).
 
 ## Edits are atomic
+
+Assembly mutations and geometry/history/parameter/dimension edits use one native assembly acceptance policy.
+An edit that loses or violates an existing joint refuses with the joint ids and restores the whole Project,
+original live B-reps/absence and diagnostics without repair regeneration. Read inspection solves an independent
+Project; open/rebuild report existing unhealthy joints even when feature regeneration has no error. Unsupported
+affected mechanism state refuses without flattening native records; independent healthy mechanisms remain editable.
+Part placement changes component matrices, not local geometry. A changed `part_select` is persisted/undoable;
+same-context standalone selection is a no-op. All seven new mutations join the existing batch/history boundary.
 
 `sketch_edit` and `param_set` share `with_rebuild_copies`: retain planned original live handles, regenerate
 on independent B-rep copies, and restore Project/handles/diagnostics on failure. Callers keep their own retry
@@ -146,6 +155,11 @@ point takes the innermost closed contour around it (even-odd test on the contour
 feature stores ids exactly as an app click would.
 
 ## Topology and selections
+Coordinates, normals, axes and directional predicates in `topology` and `select` remain Part-local and results
+say `coordinate_frame:"part_local"`. A placed Part does not reinterpret existing picks as world-space directions.
+`measure` remains world-space. Joint creation resolves a body-scoped id/description through the same one-face
+rule and stores native Part-local FaceCenter anchors, with explicit Slider `axis_ref` (ADR 0051).
+
 Face and edge ids are QymCAD's persistent names (F-010), valid for one body after a rebuild; every feature makes a
 new body, so the agent re-reads `topology` after each one. Selections are explicit ids or descriptions (`Sel`,
 mapped onto `refs::Query`, with engine-only local-corner and kind filters lowered to ids). Topology lists,
@@ -202,6 +216,7 @@ read the sketch are rebuilt; a newly failing feature rolls the edit back.
 | `tools/mod.rs` | `Registry`, `tool()` / `tool_content()` constructors (schema and validation from the argument type), batch dispatch/history boundary, `State` (the open `Session`), `markdown()` for docs/TOOLS.md |
 | `tools/common.rs` | `ObjRef` (id or name), `PlaneArg`, compact rebuild JSON |
 | `tools/{doc,params,sketch,features,history,output}.rs` | one tool group each, `fn tools() -> Vec<Tool>`; `output` = `export`, `render` (image item, base64) |
+| `tools/assembly.rs` | Strict schemas for `part_new`, `part_select`, `part_place`, `ground`, `joint_create`, `joint_set`, `joint_delete`, `assembly_info`; typed refs and descriptive face anchors shared with existing selections |
 | `tools/topology.rs` | `topology`, `select`; JSON forms of selections, axes and directions (hand-parsed for precise errors), shared with `tools/features.rs` |
 | `lib.rs` | agent instructions and optional call-log-path helper; installed-app release check (F-018) |
 | `main.rs` | moves fd 1 to stderr and serves the protocol on a duplicate of stdout (ADR 0005, F-019); opens the call log and installs its chained panic hook only when serving |
@@ -238,6 +253,16 @@ round it for presentation. Mesh export reports per-body `mesh_volume_mm3`, also 
 and omits it for exact STEP exports. Bboxes measure a fresh independent B-rep copy tessellated at nominal deflection
 max(0.005 mm, 1e-5 of body diagonal), plus f32 coordinate rounding, consistently after open and rebuild (F-066). Curve extrema may be slightly
 under-bounded; incomplete/failed tessellation falls back to conservative native padded bounds. Use volume and topology positions for accurate size/placement checks.
+Document/rebuild bodies expose `owner_part`, row-major 3×4 `world_transform`, `bbox_local` and `bbox_world`.
+Legacy `bbox` retains its existing meaning: B-rep bounds are Part-local (`bbox_frame:"part_local"`), mesh bounds
+are world-space (`bbox_frame:"world"`). B-rep world bounds transform the eight local bbox corners; this is a
+conservative bound for arbitrary rotations, exact for orthogonal box fixtures. Mesh world bounds use transformed
+mesh vertices. Render consumes world bounds directly, avoiding the reproduced mesh double transform. Export
+continues applying placement exactly once to independent flat world-coordinate geometry (ADR 0045/0051).
+Document info also exposes component hierarchy/placements/grounding, active component, owners on sketches and
+timeline nodes, and assembly diagnostics separate from feature errors. Existing unsupported native joint kinds,
+constraints, relations and limits are reported/preserved; package A creates only root-child Rigid/Slider mechanisms.
+
 JSON bbox, sketch point x/y and world_frame coordinates/directions serialize to four decimal places
 for presentation, rounded half away from zero, with
 negative zero normalized to zero. Internal measurements retain full precision; decimal rounding can slightly
@@ -272,6 +297,8 @@ argument path; the normal deserializer still rejects unknown fields and invalid 
   output creation and hard-link replacement. Renders are decoded with the `png`
   crate (size, coverage, plate aspect 1.5, holes show background).
 - `tests/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
+- `tests/golden_assembly_frames.rs` — local/world owner reporting, anchored 10×20×30 box placement, translated/rotated B-rep and mesh render bounds, STEP/3MF geometry readback and legacy bbox compatibility.
+- `tests/golden_assembly_app.rs` — saved native cached/forced open, parameter-window formula0→300→0 with no B-rep rebuild, released/numeric drag persistence, and three Parts/twenty plates/two Sliders with exactly six moving drawer bodies. `common::native_assembly_*` uses only native Project/kernel operations, with no Session repairs; this is not visible-app acceptance.
 - `crates/mcp/tests/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
   edits the golden plate purely through tool calls.
 - `crates/mcp/tests/docs_fresh.rs` — docs/TOOLS.md equals the generated registry docs.
@@ -281,8 +308,10 @@ argument path; the normal deserializer still rejects unknown fields and invalid 
 
 ## Roadmap
 
-Released packages through `0.1.1-dev.20261026.8` include the modelling core, sketch tools/patterns/import,
-body booleans and import, mesh recognition, RemoveFace and focused feature re-picks. See CHANGELOG.md for
-package details. Next: package E, starting with feature/sketch/body rename (ADR 0042).
+The modelling core includes sketch tools/patterns/import, body booleans, mesh recognition, feature re-picks,
+rename/measure/appearance and checked history edits. Package A adds root-child multi-body Parts and native
+Rigid/Slider motion (ADR 0051). Remaining assembly work includes nested mechanisms, instances/clones, component
+patterns, Piece/MirrorPart, other joint kinds, relations, limit editing and libraries. Visible-app assembly
+acceptance remains unavailable. See CHANGELOG.md and COVERAGE.md for the implemented scope.
 
 Explicit Point preservation uses the native orphan-pruner rule: otherwise unprotected Points receive an unnamed non-driving origin Distance. Existing native protection is reused without extra rows. This persists across native saved-file offset relays, adds no solver DOF restriction or geometric entity, and may display a reference annotation (ADR0030, F-112). Engine record restoration remains for legacy inputs.

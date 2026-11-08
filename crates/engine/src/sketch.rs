@@ -129,6 +129,9 @@ pub struct SketchWorldFrame {
 pub struct SketchInfo {
     pub id: Id,
     pub name: String,
+    /// Owning Part; omitted in documents without assembly structure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_part: Option<Id>,
     pub plane: String,
     /// Resolved world frame, or null when the sketch's host cannot be resolved.
     pub world_frame: Option<SketchWorldFrame>,
@@ -344,26 +347,50 @@ impl Session {
 
     /// Create an empty sketch on `plane`. Returns the sketch id (also its timeline node id).
     pub fn sketch_create(&mut self, plane: &PlaneRef, name: Option<&str>) -> Result<Id> {
-        let name = Self::optional_object_name(name);
-        if let Some(name) = name {
-            Self::check_object_name(name)?;
+        self.transaction(|s| {
+            let name = Self::optional_object_name(name);
+            if let Some(name) = name {
+                Self::check_object_name(name)?;
+            }
+            let sp = s.sketch_plane(plane)?;
+            let n = s.p.sketches.len() + 1;
+            let name = name.map(str::to_string).unwrap_or_else(|| format!("Sketch {n}"));
+            let owner = match plane {
+                PlaneRef::Face { body, .. } => s.p.body_owner(*body),
+                _ => s.modelling_part(plane)?,
+            };
+            s.check_sketch_host_owner(plane, owner)?;
+            let sid = s.in_component(owner, |p| {
+                let sid = p.add_sketch(name.clone(), vec![], None);
+                p.add_sketch_node(sid, name);
+                sid
+            });
+            let si = s.sketch_si(sid)?;
+            s.p.sketches[si].plane = sp;
+            s.track_datum_dependencies(sid);
+            Ok(sid)
+        })
+    }
+
+    /// A sketch follows its host's Part. While a Part is active, a datum owned by another Part would silently put
+    /// new geometry there, so it is refused (ADR 0051). Faces are an explicit body pick and keep owner routing;
+    /// with the root Assembly active, ADR 0048 routing applies.
+    fn check_sketch_host_owner(&self, plane: &PlaneRef, owner: Option<Id>) -> Result<()> {
+        let active = self.p.current_ctx();
+        let Some(owner) = owner else { return Ok(()) };
+        // Faces keep body-owner routing (review R1: a sketch on an imported body builds into its Part).
+        if !matches!(plane, PlaneRef::Plane(_)) || !self.p.component_is_part(active) || owner == active {
+            return Ok(());
         }
-        let sp = self.sketch_plane(plane)?;
-        let n = self.p.sketches.len() + 1;
-        let name = name.map(str::to_string).unwrap_or_else(|| format!("Sketch {n}"));
-        let owner = match plane {
-            PlaneRef::Face { body, .. } => self.p.body_owner(*body),
-            _ => self.modelling_part(plane)?,
+        let name = |id: Id| {
+            self.p.components.iter().find(|c| c.id == id).map(|c| crate::localization::name(&c.name)).unwrap_or_else(|| id.to_string())
         };
-        let sid = self.in_component(owner, |p| {
-            let sid = p.add_sketch(name.clone(), vec![], None);
-            p.add_sketch_node(sid, name);
-            sid
-        });
-        let si = self.sketch_si(sid)?;
-        self.p.sketches[si].plane = sp;
-        self.track_datum_dependencies(sid);
-        Ok(sid)
+        Err(Error::Invalid(format!(
+            "this datum plane belongs to part '{}' but part '{}' is active; part_select '{}' first, or create a datum in the active part",
+            name(owner),
+            name(active),
+            name(owner)
+        )))
     }
 
     /// The part an unanchored new sketch belongs to (ADR 0048). A part-owned datum supplies its part; else
@@ -661,6 +688,7 @@ impl Session {
         Ok(SketchInfo {
             id: s.id,
             name: crate::localization::name(&s.name),
+            owner_part: self.p.sketch_owner(s.id).filter(|_| self.has_assembly_structure()),
             plane: plane_desc(self, &s.plane),
             world_frame,
             dof: self.p.sketch_dof(si),

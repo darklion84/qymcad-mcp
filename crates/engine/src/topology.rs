@@ -149,6 +149,8 @@ pub struct EdgeInfo {
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct Topology {
+    /// All positions, normals, axes and directional selection rules use the owning Part's local frame.
+    pub coordinate_frame: &'static str,
     /// The body the ids belong to.
     pub body: Id,
     /// Localised native body label, independent of the producing feature's name.
@@ -161,7 +163,7 @@ pub struct Topology {
     pub warnings: Vec<String>,
 }
 
-/// World axis, for `Sel::Extreme` and axis directions.
+/// Part-local axis, for `Sel::Extreme` and axis directions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum Axis {
     X,
@@ -238,7 +240,7 @@ pub enum Sel {
     Concave,
     /// Outward corners between two distinct faces, including curved junctions; excludes seams and G1 junctions.
     Convex,
-    /// The elements whose centre (faces) or midpoint (edges) is extreme along a world axis (all ties).
+    /// The elements whose centre (faces) or midpoint (edges) is extreme along a Part-local axis (all ties).
     Extreme { axis: Axis, max: bool },
     /// The largest face by area / the longest edge (all ties).
     Largest,
@@ -568,7 +570,14 @@ impl Session {
         out_faces.sort_unstable_by_key(|f| f.id);
         out_edges.sort_unstable_by_key(|e| e.id);
         let warnings = self.ambiguous_face_warning(body).into_iter().collect();
-        Ok(Topology { body, body_name: self.native_body_name(body), faces: out_faces, edges: out_edges, warnings })
+        Ok(Topology {
+            coordinate_frame: "part_local",
+            body,
+            body_name: self.native_body_name(body),
+            faces: out_faces,
+            edges: out_edges,
+            warnings,
+        })
     }
 
     /// Native naming diagnostics require only the restored face pool, never tessellation or a kernel gate.

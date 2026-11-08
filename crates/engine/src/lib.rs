@@ -4,6 +4,13 @@
 //! and nowhere else (see docs/ARCHITECTURE.md and docs/UPGRADING.md).
 
 mod appearance;
+mod assembly;
+#[cfg(test)]
+mod assembly_contract_tests;
+#[cfg(test)]
+mod assembly_lifecycle_tests;
+#[cfg(test)]
+mod assembly_tests;
 mod body_boolean;
 mod dependencies;
 mod dimensions;
@@ -25,6 +32,8 @@ mod mesh_import;
 mod mesh_recognise;
 mod modifiers;
 mod move_body;
+#[cfg(test)]
+mod ownership_tests;
 mod params;
 mod patterns;
 mod pngfile;
@@ -46,6 +55,7 @@ mod topology;
 mod value;
 
 pub use appearance::{AppearanceBody, AppearanceResult, AppearanceScope};
+pub use assembly::{AssemblyJointKind, JointAnchor, JointCreate, JointMode, JointRef, PartRef, PartRotation};
 pub use body_boolean::{BodyBooleanOptions, BodyBooleanResult, BooleanOp};
 pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};
@@ -56,7 +66,7 @@ pub use history::{
 };
 pub use hole_sketch::HoleSketch;
 pub use import_tool::{ImportResult, ImportedBody};
-pub use info::{DocInfo, NodeInfo};
+pub use info::{ComponentInfo, DocInfo, NodeInfo};
 pub use measure::{MeasureAt, MeasureOperand, MeasureResult, ResolvedMeasure};
 pub use mesh_import::{MeshFormat, MeshImportResult, MeshPieceResult, MeshUnit};
 pub use mesh_recognise::{MeshRecogniseMode, MeshRecogniseResult};

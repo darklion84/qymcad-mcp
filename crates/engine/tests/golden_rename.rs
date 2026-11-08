@@ -96,6 +96,7 @@ fn three_stores_change_exactly_one_native_field_and_no_geometry() {
                 expected.bodies[i].name = name.into();
                 (id, old)
             }
+            RenameTarget::Part(_) | RenameTarget::Joint(_) => unreachable!("this fixture covers the three original label stores"),
         };
         let result = s.rename(target, name).unwrap();
         assert_eq!(

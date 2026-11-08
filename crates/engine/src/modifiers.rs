@@ -451,7 +451,9 @@ impl Session {
                 Side::Outward => ShellSide::Outward,
                 Side::Centred => ShellSide::Centred,
             };
-            let id = s.p.add_shell_mode(src, t, if open_faces.is_ids() { ids.clone() } else { Vec::new() }, qside);
+            let id = s.in_component(s.p.body_owner(src), |p| {
+                p.add_shell_mode(src, t, if open_faces.is_ids() { ids.clone() } else { Vec::new() }, qside)
+            });
             if !open_faces.is_ids() {
                 if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
                     *faces = faces_ref;
@@ -622,7 +624,7 @@ impl Session {
                 }
                 (None, None) => key.centroid,
             };
-            let id = s.p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 });
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 }));
             if !a.face.is_ids() {
                 let q = s.face_query(&a.face, &[key.id])?;
                 if let Some(FeatureKind::Hole { face: r, .. }) = s.node_kind_mut(id) {

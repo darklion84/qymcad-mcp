@@ -2,6 +2,7 @@
 //! means adding a module and one line in `Registry::new` (keeps parallel work conflict-free).
 
 mod appearance;
+mod assembly;
 mod batch;
 mod common;
 mod doc;
@@ -68,7 +69,11 @@ where
             st.created_node = if name == "sketch_project" {
                 None // Projection returns its source body and target sketch; neither node was created.
             } else {
-                ["body", "plane", "sketch", "pattern"].iter().find_map(|key| v[*key].as_u64())
+                ["body", "plane", "sketch", "pattern"].iter().find_map(|key| v[*key].as_u64()).or_else(|| match name {
+                    "part_new" => v["part"]["id"].as_u64(),
+                    "joint_create" => v["joint"]["id"].as_u64(),
+                    _ => None,
+                })
             };
             vec![json!({ "type": "text", "text": v.to_string() })]
         })
@@ -140,6 +145,13 @@ fn modelling_tool(name: &str) -> bool {
             | "history_rollback"
             | "rename"
             | "appearance"
+            | "part_new"
+            | "part_select"
+            | "part_place"
+            | "ground"
+            | "joint_create"
+            | "joint_set"
+            | "joint_delete"
     )
 }
 
@@ -252,6 +264,7 @@ impl Registry {
         tools.extend(history::tools());
         tools.extend(rename::tools());
         tools.extend(appearance::tools());
+        tools.extend(assembly::tools());
         tools.extend(topology::tools());
         tools.extend(measure::tools());
         tools.push(batch::tool());

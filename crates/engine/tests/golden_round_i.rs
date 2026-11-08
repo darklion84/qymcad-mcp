@@ -64,6 +64,8 @@ fn bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_va
         let body = BodyInfo {
             id: 1,
             name: String::new(),
+            owner_part: None,
+            world_transform: qymcad_core::feature::PLACE_IDENTITY,
             body_name: String::new(),
             visible: true,
             // Synthetic first-lineage metadata; native palette from retained T7 appearance probe.
@@ -72,9 +74,15 @@ fn bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_va
             volume: 1.23456789,
             // ±.00001 mm are closer to zero; 10^305 cannot be scaled by 10^4 in f64.
             bbox: [-tie, -0.00001, -0.0, tie, 0.00001, 1e305],
+            bbox_frame: "part_local",
+            bbox_local: [-tie, -0.00001, -0.0, tie, 0.00001, 1e305],
+            bbox_world: [-tie, -0.00001, -0.0, tie, 0.00001, 1e305],
+            placement_fields: true,
         };
         let json = serde_json::to_value(&body).unwrap();
         assert_eq!(json["bbox"], serde_json::json!([-expected, 0.0, 0.0, expected, 0.0, 1e305]));
+        assert_eq!(json["bbox_local"], json["bbox"], "placement bounds round like the legacy bbox");
+        assert_eq!(json["bbox_world"], json["bbox"]);
         assert_eq!(json["volume_mm3"], serde_json::json!(1.23456789));
         for i in [1, 2, 4] {
             assert_eq!(json["bbox"][i].as_f64().unwrap().to_bits(), 0.0_f64.to_bits());

@@ -33,10 +33,15 @@ impl AdvisoryWarning {
 }
 
 /// A body that is a current result of the model (not consumed by a later feature).
-#[derive(Clone, Debug, Serialize, PartialEq)]
+/// Serialized through [`BodyWire`]: placement fields appear only in documents with assembly structure.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BodyInfo {
     pub id: Id,
     pub name: String,
+    /// Native Part owning this body's producing feature, when present.
+    pub owner_part: Option<Id>,
+    /// Body-local to world rigid placement, row-major 3×4.
+    pub world_transform: [f64; 12],
     /// Localised native body label, independent of the producing feature's name.
     pub body_name: String,
     /// This body id's own persisted visibility, independent of consumed sources.
@@ -46,13 +51,69 @@ pub struct BodyInfo {
     /// Map membership of the lineage root: manual or palette.
     pub color_source: &'static str,
     /// mm³, serialized as `volume_mm3` at native floating-point precision.
-    #[serde(rename = "volume_mm3")]
     pub volume: f64,
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm, from fresh nominal-deflection tessellation
     /// (.005 mm, scaled to 1e-5 of diagonals over 500 mm) plus f32 coordinate rounding; native bounds are a fallback if meshing fails (F-066).
     /// JSON coordinates use four decimals, rounded half away from zero, with negative zero normalized.
-    #[serde(serialize_with = "serialize_coordinates")]
     pub bbox: [f64; 6],
+    /// Frame of legacy `bbox`: B-reps remain part-local; mesh bodies remain world-space.
+    pub bbox_frame: &'static str,
+    /// Bounds in the owning Part's local frame, mm.
+    pub bbox_local: [f64; 6],
+    /// Bounds in world space, mm; rotated B-reps use the transformed local bound corners.
+    pub bbox_world: [f64; 6],
+    /// Whether the document has assembly structure (several Parts or a non-identity placement). Plain
+    /// single-Part documents omit the placement fields so their results keep the pre-assembly shape.
+    pub placement_fields: bool,
+}
+
+#[derive(Serialize)]
+struct BodyWire<'a> {
+    id: Id,
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner_part: Option<Option<Id>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    world_transform: Option<&'a [f64; 12]>,
+    body_name: &'a str,
+    visible: bool,
+    color_rgb: [u8; 3],
+    color_source: &'static str,
+    volume_mm3: f64,
+    #[serde(serialize_with = "serialize_coordinates")]
+    bbox: &'a [f64; 6],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bbox_frame: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_opt_coordinates")]
+    bbox_local: Option<&'a [f64; 6]>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "serialize_opt_coordinates")]
+    bbox_world: Option<&'a [f64; 6]>,
+}
+
+fn serialize_opt_coordinates<S: serde::Serializer>(values: &Option<&[f64; 6]>, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    values.map(|v| v.map(round_coordinate)).serialize(serializer)
+}
+
+impl Serialize for BodyInfo {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let extra = self.placement_fields;
+        BodyWire {
+            id: self.id,
+            name: &self.name,
+            owner_part: extra.then_some(self.owner_part),
+            world_transform: extra.then_some(&self.world_transform),
+            body_name: &self.body_name,
+            visible: self.visible,
+            color_rgb: self.color_rgb,
+            color_source: self.color_source,
+            volume_mm3: self.volume,
+            bbox: &self.bbox,
+            bbox_frame: extra.then_some(self.bbox_frame),
+            bbox_local: extra.then_some(&self.bbox_local),
+            bbox_world: extra.then_some(&self.bbox_world),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Four-decimal presentation only; internal model values retain full precision.
@@ -86,6 +147,10 @@ pub struct Rebuild {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
     pub bodies: Vec<BodyInfo>,
+    /// Native assembly state and separate joint diagnostics.
+    /// Null (and omitted) for documents without joints, mates or relations.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub assembly: serde_json::Value,
 }
 
 struct BodyMetrics {
@@ -563,6 +628,9 @@ impl Session {
     }
 
     fn rebuild_edit_checked(&mut self, only: Option<&HashSet<Id>>, reorder: bool) -> Result<Rebuild> {
+        // Native regeneration silently falls back for invalid mate formulas and clamps drives.
+        // Validate the settled edit scope before handing formulas to that evaluator.
+        self.validate_joint_formulas()?;
         let projections_before = self.projection_provenance();
         let mut notes = Vec::new();
         for _ in 0..=self.p.sketches.len() {
@@ -835,7 +903,7 @@ impl Session {
         warnings.extend(self.cross_part_projection_warnings());
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
-        Ok((Rebuild { errors, warnings, bodies, ..Default::default() }, rebuilt))
+        Ok((Rebuild { errors, warnings, bodies, assembly: self.rebuild_assembly(), ..Default::default() }, rebuilt))
     }
 
     /// Fillet nodes picked by `check` whose built result fails `modifiers::fillet_acceptance` (F-074), with the reason.
@@ -957,6 +1025,8 @@ impl Session {
                 return Err(Error::Rebuild(new_errors));
             }
             let value = post(self, value, &mut rebuild)?;
+            self.assembly_accept_edit(&before)?;
+            rebuild.assembly = self.rebuild_assembly();
             Ok((value, rebuild))
         })();
         if result.is_err() {
@@ -1047,6 +1117,7 @@ impl Session {
             if !refused.is_empty() {
                 return Err(Error::Rebuild(refused.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect()));
             }
+            self.assembly_accept_edit(&before)?;
             Ok(value)
         });
         if result.is_err() {
@@ -1065,6 +1136,7 @@ impl Session {
         let before = self.p.clone();
         let r = edit(self).and_then(|value| {
             self.check_fixed_text_geometry(&before)?;
+            self.assembly_accept_edit(&before)?;
             Ok(value)
         });
         if r.is_err() {
@@ -1077,6 +1149,7 @@ impl Session {
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
     /// bbox reporting acquires that non-reentrant mutex.
     pub fn result_bodies(&self) -> Vec<BodyInfo> {
+        let placement_fields = self.has_assembly_structure();
         self.current_body_ids()
             .into_iter()
             .filter_map(|b| {
@@ -1084,21 +1157,45 @@ impl Session {
                 let visible = self.p.bodies[index].visible;
                 let color_rgb = self.p.mesh_color(index);
                 let color_source = self.body_color_source(b);
+                let owner_part = self.p.body_owner(b);
+                let world_transform = self.p.body_world_transform(b);
                 if let Some(sh) = self.shapes.get(&b) {
+                    let bbox_local = reporting_bbox(sh).unwrap_or([0.0; 6]);
+                    let mut bbox_world =
+                        [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+                    for i in 0..8 {
+                        let corner = [
+                            bbox_local[if i & 1 == 0 { 0 } else { 3 }],
+                            bbox_local[if i & 2 == 0 { 1 } else { 4 }],
+                            bbox_local[if i & 4 == 0 { 2 } else { 5 }],
+                        ];
+                        let point = qymcad_core::feature::apply12(&world_transform, corner);
+                        for axis in 0..3 {
+                            bbox_world[axis] = bbox_world[axis].min(point[axis]);
+                            bbox_world[axis + 3] = bbox_world[axis + 3].max(point[axis]);
+                        }
+                    }
                     return Some(BodyInfo {
                         id: b,
                         name: self.body_name(b),
+                        owner_part,
+                        world_transform,
                         body_name: self.native_body_name(b),
                         visible,
                         color_rgb,
                         color_source,
                         volume: sh.volume(),
-                        bbox: reporting_bbox(sh).unwrap_or([0.0; 6]),
+                        bbox: bbox_local,
+                        bbox_frame: "part_local",
+                        bbox_local,
+                        bbox_world,
+                        placement_fields,
                     });
                 }
                 let mesh = self.p.mesh_index(b).map(|index| &self.p.bodies[index].mesh)?;
-                let transform = self.p.body_world_transform(b);
+                let transform = world_transform;
                 let mut bbox = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+                let mut bbox_local = bbox;
                 for vertex in &mesh.verts {
                     let point = [
                         transform[0] * vertex.x + transform[1] * vertex.y + transform[2] * vertex.z + transform[3],
@@ -1108,20 +1205,36 @@ impl Session {
                     for axis in 0..3 {
                         bbox[axis] = bbox[axis].min(point[axis]);
                         bbox[axis + 3] = bbox[axis + 3].max(point[axis]);
+                        let local = [vertex.x, vertex.y, vertex.z][axis];
+                        bbox_local[axis] = bbox_local[axis].min(local);
+                        bbox_local[axis + 3] = bbox_local[axis + 3].max(local);
                     }
                 }
                 Some(BodyInfo {
                     id: b,
                     name: self.body_name(b),
+                    owner_part,
+                    world_transform,
                     body_name: self.native_body_name(b),
                     visible,
                     color_rgb,
                     color_source,
                     volume: mesh.volume(),
                     bbox,
+                    bbox_frame: "world",
+                    bbox_local,
+                    bbox_world: bbox,
+                    placement_fields,
                 })
             })
             .collect()
+    }
+
+    /// Several Parts, or any non-identity placement: body results then report owner and frames.
+    pub fn has_assembly_structure(&self) -> bool {
+        const IDENTITY: [f64; 12] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        self.p.components.iter().filter(|c| self.p.component_is_part(c.id)).count() > 1
+            || self.p.components.iter().any(|c| c.transform != IDENTITY)
     }
 
     /// Bodies in the native active prefix with an actual document record. Imported originals may
@@ -1175,7 +1288,15 @@ impl Session {
 
     /// Localized timeline node name for creation results and diagnostics.
     pub fn node_name(&self, id: Id) -> String {
-        self.p.timeline.iter().find(|n| n.id == id).map(|n| crate::localization::name(&n.name)).unwrap_or_default()
+        self.p
+            .timeline
+            .iter()
+            .find(|n| n.id == id)
+            .map(|n| &n.name)
+            .or_else(|| self.p.components.iter().find(|c| c.id == id).map(|c| &c.name))
+            .or_else(|| self.p.joints.iter().find(|j| j.id == id).map(|j| &j.name))
+            .map(|name| crate::localization::name(name))
+            .unwrap_or_default()
     }
 
     /// Current bodies and regeneration diagnostics, including live topology naming warnings, without
@@ -1187,7 +1308,7 @@ impl Session {
         warnings.extend(self.cross_part_projection_warnings());
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
-        Rebuild { errors, warnings, bodies, ..Default::default() }
+        Rebuild { errors, warnings, bodies, assembly: self.rebuild_assembly(), ..Default::default() }
     }
 
     /// Empty optional object names request the native/default name, including Unicode whitespace.

@@ -132,10 +132,11 @@ impl Session {
         self.tool_edit_active = false;
         if success {
             if let Some(call) = &mut snapshot.call {
-                if let Some(node) = snapshot.created_node.and_then(|id| self.p.timeline.iter().find(|node| node.id == id)) {
+                if let Some(id) = snapshot.created_node {
                     let blank_name = call.arguments["name"].as_str().is_some_and(|name| Self::optional_object_name(Some(name)).is_none());
-                    if !blank_name && !node.name.trim().is_empty() {
-                        call.label = crate::localization::name(&node.name);
+                    let name = self.node_name(id);
+                    if !blank_name && !name.trim().is_empty() {
+                        call.label = name;
                     }
                 }
             }
@@ -463,6 +464,7 @@ impl Session {
             return Err(Error::NotFound(format!("no feature {feature}")));
         }
         let gone = self.deletion_closure(feature);
+        self.check_joint_anchor_removal(&gone)?;
         // Native deletion cannot reliably distinguish a detached source from an unbuilt one. Refuse
         // before touching state, including cascades: callers must explicitly delete projecting sketches.
         let projections: Vec<_> = self
@@ -533,9 +535,11 @@ impl Session {
                     DimTarget::Feature { node, .. } => owned.contains(node),
                 }
         };
-        // MCP already isolates shapes and retains rollback state for the whole tool call.
-        // Direct engine callers still need their own atomic deletion boundary.
-        let snapshot = if self.tool_edit_active { None } else { Some(self.begin_tool_edit()?) };
+        // Keep a local boundary even inside MCP/batch: a refused engine call must already have
+        // restored its state when it returns, before the enclosing boundary is closed.
+        let assembly_before = self.p.clone();
+        let enclosing_edit = self.tool_edit_active;
+        let snapshot = self.begin_tool_edit()?;
         let rollback_prefix = self.p.rollback.map(|bar| self.p.timeline.iter().take(bar).map(|n| n.id).collect::<HashSet<_>>());
         let nodes: Vec<_> = self.p.timeline.iter().filter(|n| gone.contains(&n.id)).map(|n| (n.id, n.kind.clone())).collect();
         for (id, kind) in nodes.into_iter().rev() {
@@ -578,13 +582,23 @@ impl Session {
         self.shapes.retain(|id, _| live.contains(id));
         let report = self.rebuild();
         if !report.errors.is_empty() {
-            if let Some(snapshot) = snapshot {
-                self.finish_tool_edit(snapshot, false);
+            self.restore_snapshot(snapshot);
+            self.tool_edit_active = enclosing_edit;
+            if !enclosing_edit {
+                self.prune_retired_sources();
             }
             return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
         }
-        if snapshot.is_some() {
-            self.tool_edit_active = false;
+        if let Err(error) = self.assembly_accept_edit(&assembly_before) {
+            self.restore_snapshot(snapshot);
+            self.tool_edit_active = enclosing_edit;
+            if !enclosing_edit {
+                self.prune_retired_sources();
+            }
+            return Err(error);
+        }
+        self.tool_edit_active = enclosing_edit;
+        if !enclosing_edit {
             self.prune_retired_sources();
         }
         Ok(report)
@@ -595,6 +609,45 @@ impl Session {
 mod snapshot_tests {
     use super::*;
     use qymcad_core::model::SourceFile;
+
+    #[test]
+    fn deletion_refused_inside_tool_boundary_restores_exact_state_before_return() {
+        let mut s = Session::new_part();
+        let a = s.p.active_component.unwrap();
+        let body = s.p.add_box(10., 20., 30.); // V = 10*20*30 = 6000 mm³.
+        let b = s.part_new("group peer").unwrap()["part"]["id"].as_u64().unwrap();
+        s.p.add_box(7., 11., 13.); // V = 7*11*13 = 1001 mm³.
+        assert!(s.rebuild().errors.is_empty());
+        s.p.set_grounded(a, true);
+        let group = s.p.add_group(&[a, b]);
+        assert_eq!(s.assembly_info()["healthy"], true);
+        let snapshot = s.begin_tool_edit().unwrap();
+        let state = |s: &Session| {
+            let shapes: std::collections::BTreeMap<_, _> = {
+                let _gate = qymcad_kernel::kernel_gate();
+                s.shapes.iter().map(|(&id, shape)| (id, shape.to_brep_bytes().unwrap())).collect()
+            };
+            let detached: std::collections::BTreeMap<_, _> = s
+                .detached_projections
+                .iter()
+                .map(|(key, value)| (*key, (value.id, value.body, serde_json::to_value(value.source).unwrap())))
+                .collect();
+            (ron::to_string(&s.p).unwrap(), shapes, s.info(), s.advisory_warnings.clone(), detached, s.undo.len())
+        };
+        let before = state(&s);
+        let result = s.feature_delete(body, false);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid and Slider joints"
+        )
+        );
+        assert_eq!(state(&s), before, "the refused engine call must restore state before its enclosing boundary is closed");
+        assert!(s.tool_edit_active, "the enclosing boundary remains active");
+        s.finish_tool_edit(snapshot, false);
+        s.param_set("unrelated", &2.0.into()).unwrap();
+        assert_eq!(s.assembly_info()["healthy"], true);
+    }
 
     #[test]
     fn rollback_native_tail_error_restores_private_depth_and_live_shapes() {

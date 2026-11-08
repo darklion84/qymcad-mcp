@@ -47,13 +47,13 @@ pub enum SelArg {
         role: Option<Role>,
     },
     Facing {
-        /// World direction to compare with each planar face's outward normal.
+        /// Part-local direction to compare with each planar face's outward normal.
         dir: [f64; 3],
         /// Angular tolerance in degrees, in [0, 90); default 5.
         tol_deg: f64,
     },
     Along {
-        /// World direction of straight edges, in either sense.
+        /// Part-local direction of straight edges, in either sense.
         dir: [f64; 3],
         /// Angular tolerance in degrees, in [0, 90); default 5.
         tol_deg: f64,
@@ -61,7 +61,7 @@ pub enum SelArg {
     Concave,
     Convex,
     Extreme {
-        /// World axis along which to find the extreme faces or edges.
+        /// Part-local axis along which to find the extreme faces or edges.
         axis: Axis,
         /// True selects the positive extreme; false selects the negative extreme.
         max: bool,
@@ -524,7 +524,7 @@ fn topology_json(t: &Topology, a: &TopologyArgs) -> Result<Value, String> {
     let along = a.along.map(|d| unit(d.0)).transpose()?;
     let limit = a.limit.unwrap_or(60);
     let dot = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
-    let mut out = json!({ "body": t.body, "body_name": t.body_name, "faces_total": t.faces.len(), "edges_total": t.edges.len() });
+    let mut out = json!({ "body": t.body, "body_name": t.body_name, "coordinate_frame":"part_local", "faces_total": t.faces.len(), "edges_total": t.edges.len() });
     if !t.warnings.is_empty() {
         out["warnings"] = json!(t.warnings);
     }
@@ -565,7 +565,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             "topology",
-            "List a body's native localised body_name and its faces and edges with persistent ids: faces (kind plane/cylinder/cone/sphere/other, \
+            "List a body's native localised body_name and its part-local faces and edges with persistent ids (coordinate_frame: part_local): faces (kind plane/cylinder/cone/sphere/other, \
              centroid, outward normal for planes, tessellation-based area (areas can be below analytic by up to ~2% on very small curved regions, including flat faces with curved boundaries, \
              as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
              line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE \
@@ -581,7 +581,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "select",
-            "Preview what a face or edge selection resolves to on a body right now (the same rows as `topology`). \
+            "Preview what a part-local face or edge selection resolves to on a body right now (the same rows as `topology`; coordinate_frame: part_local). \
              Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
              a boss/plate curved junction, \
              pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. \
@@ -609,6 +609,7 @@ pub fn tools() -> Vec<Tool> {
                         json!({ "body": body, "count": ids.len(), "edges": rows })
                     }
                 };
+                out["coordinate_frame"] = json!("part_local");
                 if ids.is_empty() && el == Element::Edges {
                     if let Some(hint) = s.empty_corner_hint(body, &sel) {
                         out["hint"] = json!(hint);

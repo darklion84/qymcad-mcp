@@ -10,15 +10,36 @@ use serde::Serialize;
 pub struct NodeInfo {
     pub id: Id,
     pub name: String,
+    /// Native owning Part (assemblies can own datum/skeleton nodes in imported files). Omitted, like body
+    /// placement fields, in documents without assembly structure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_part: Option<Id>,
     /// Feature kind; sketch extrusion booleans expose their operation (`extrude (cut/add/intersect)`).
     pub kind: String,
     pub suppressed: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct ComponentInfo {
+    pub id: Id,
+    pub name: String,
+    pub parent: Option<Id>,
+    pub kind: &'static str,
+    pub local_transform: [f64; 12],
+    pub world_transform: [f64; 12],
+    pub grounded: bool,
+    /// Current body ids owned directly by this component.
+    pub bodies: Vec<Id>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct DocInfo {
     pub qymcad_version: &'static str,
     pub path: Option<String>,
+    pub components: Vec<ComponentInfo>,
+    pub active_component: Option<Id>,
+    /// Native mechanism and its diagnostics, separate from feature regeneration errors.
+    pub assembly: serde_json::Value,
     pub params: Vec<ParamInfo>,
     /// Named native sketch, feature and sketch-item drivers with editable selectors and formulas.
     pub named_dimensions: Vec<crate::dimensions::DimensionInfo>,
@@ -39,6 +60,7 @@ impl Session {
     pub fn info(&self) -> DocInfo {
         let p = self.project();
         let bodies = self.result_bodies();
+        let assembly_view = self.has_assembly_structure();
         let mut warnings: Vec<String> =
             p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {}", self.node_name(*id), crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| {
@@ -59,6 +81,25 @@ impl Session {
         DocInfo {
             qymcad_version: crate::QYMCAD_VERSION,
             path: self.path().map(|p| p.display().to_string()),
+            components: p
+                .components
+                .iter()
+                .map(|c| ComponentInfo {
+                    id: c.id,
+                    name: crate::localization::name(&c.name),
+                    parent: c.parent,
+                    kind: match c.kind {
+                        qymcad_core::feature::ComponentKind::Part => "part",
+                        qymcad_core::feature::ComponentKind::Assembly => "assembly",
+                    },
+                    local_transform: c.transform,
+                    world_transform: p.world_transform(c.id),
+                    grounded: c.grounded,
+                    bodies: bodies.iter().filter(|b| b.owner_part == Some(c.id)).map(|b| b.id).collect(),
+                })
+                .collect(),
+            active_component: p.active_component,
+            assembly: self.assembly_info(),
             params: self.params(),
             named_dimensions: self.named_dimensions(),
             sketches: self.sketches(),
@@ -68,6 +109,7 @@ impl Session {
                 .map(|n| NodeInfo {
                     id: n.id,
                     name: crate::localization::name(&n.name),
+                    owner_part: n.parent.filter(|_| assembly_view),
                     kind: kind_name(&n.kind),
                     suppressed: n.suppressed,
                 })

@@ -64,6 +64,9 @@ pub fn round(v: f64, dp: i32) -> f64 {
 /// A rebuild report: full-precision volume, rounded bounds, empty lists omitted.
 pub fn rebuild_json(r: &Rebuild) -> Value {
     let mut o = json!({ "bodies": r.bodies });
+    if !r.assembly.is_null() {
+        o["assembly"] = r.assembly.clone();
+    }
     if !r.errors.is_empty() {
         o["errors"] = json!(r.errors);
     }
@@ -125,6 +128,13 @@ fn sibling(file: &std::path::Path, suffix: &str) -> PathBuf {
 mod tests {
     use super::round;
     use serde_json::json;
+
+    #[test]
+    fn rebuild_reporting_keeps_separate_assembly_diagnostics() {
+        let assembly = json!({"healthy":false,"faulty_joints":[17],"violated_joints":[],"conflict":false});
+        let report = qymcad_engine::Rebuild { assembly: assembly.clone(), ..Default::default() };
+        assert_eq!(super::rebuild_json(&report)["assembly"], assembly);
+    }
 
     #[test]
     fn rounding_a_large_finite_value_preserves_it() {

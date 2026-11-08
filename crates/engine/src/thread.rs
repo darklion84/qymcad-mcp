@@ -500,7 +500,8 @@ impl Session {
                 return Err(Error::Invalid(crate::localization::error(&reason)));
             }
             let available = s.p.thread_face_span(src, (c, axis, r));
-            let id = s.p.add_thread(src, ids[0], spec, length, values["lead_in"], values["lead_out"]);
+            let id =
+                s.in_component(s.p.body_owner(src), |p| p.add_thread(src, ids[0], spec, length, values["lead_in"], values["lead_out"]));
             for (key, n) in &numbers {
                 let text = n.expr().unwrap_or_else(|| values[key].to_string());
                 s.p.write_feat_formula(&FeatNumber { node: id, key }, &text, PlainNumber::Stands)

@@ -396,9 +396,29 @@ fn projected_spline_through_an_instance_refuses_when_only_geometry_changes() {
     let (mut s, opened) = Session::open(&path).unwrap();
     assert!(opened.errors.is_empty(), "{opened:?}");
     let edges = top_edges(&mut s, instance, 10.0, -100.0..100.0);
-    let projected = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
-    s.sketch_project(projected, instance, &edges).unwrap();
-    extrude(&mut s, projected, 10.0);
+    // Package A refuses new modelling inside a multi-body instance. Prepare the legacy native
+    // archive directly, preserving this reorder/projection regression without weakening that policy.
+    s.save(Some(&path)).unwrap(); // The original source-only fixture had no embedded B-reps.
+    let mut native = native_assembly_load(&path);
+    assert!(native.shapes.contains_key(&instance));
+    native.project = s.project().clone(); // Includes the named-edge cache inspected above.
+    let projected = native.project.add_sketch("legacy projection", vec![], None);
+    native.project.add_sketch_node(projected, "legacy projection");
+    let si = native.project.sketch_index(projected).unwrap();
+    let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(native.shapes), ..Default::default() };
+    {
+        let _gate = qymcad_kernel::kernel_gate();
+        for edge in edges {
+            assert_ne!(native.project.add_sketch_projection(si, instance, edge, &kernel), 0);
+        }
+    }
+    native.shapes = kernel.shapes.into_inner();
+    assert!(native.project.solve_sketch(si) <= 1e-6);
+    native.project.add_extrude_multi(projected, vec![], 10.0, qymcad_core::feature::Reach::Forward, 0.0, vec![]);
+    native_assembly_rebuild(&mut native, false);
+    native_assembly_save(&native, &path);
+    let (mut s, opened) = Session::open(&path).unwrap();
+    assert!(opened.errors.is_empty(), "{opened:?}");
     let before = archive(&mut s, "reorder-spline-instance-before.qcad");
     let error = s.feature_reorder(last, "up").unwrap_err().to_string();
     assert!(error.contains(&format!("projected spline in sketch {projected}")), "{error}");

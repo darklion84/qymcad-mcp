@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- Root-level native multi-body Parts and Rigid/Slider joints: `part_new`, `part_select`, `part_place`, `ground`, `joint_create`, `joint_set`, `joint_delete`, `assembly_info`, and typed Part/joint rename targets (ADR 0051). Planar body-scoped anchors accept ids or descriptions; Slider uses an explicit axis and absolute numeric/formula offset. Release clears formula and drive; native records, grounding and placements persist. Changed mutations support batch/undo with whole-document failure restoration.
+- Explicit components, active component, owners, local/world bounds, world transforms and separate assembly diagnostics in document/rebuild reporting. Topology/selection remain Part-local. Existing unsupported assembly records and limits are preserved/reported; nested assembly editing, instances/clones, other joint kinds, relations and limit editing remain excluded.
+- Native cached/forced saved-file and parameter-window assembly tests, numeric/released drag persistence, translated/rotated B-rep and mesh output readback, and a three-Part twenty-plate two-Slider cabinet test. Visible-app assembly acceptance is unavailable.
+
+### Fixed
+- Body-sourced shell, face-hole, linear/circular arrays, mirror, thread and split route creation through the source Part and restore the previous active Part.
+- Geometry/history/parameter/dimension mutations that lose or violate an existing joint refuse atomically with original recipe, live B-reps and diagnostics restored. Open/rebuild explicitly report unhealthy native joints even when feature regeneration succeeds.
+- While a Part is active, `sketch_create` on a datum plane owned by another Part is refused instead of silently building the new geometry into that other Part; face sketches keep body-owner routing and report `owner_part` (ADR 0051).
+- Plain single-Part documents keep their previous result shapes: body placement fields appear only with several Parts or a placement, and rebuild `assembly` only with joints, mates or relations.
+- Render bounds no longer apply mesh Part placement twice. Legacy `bbox` keeps its existing frame, now explicit via `bbox_frame`; new consumers can use `bbox_local`/`bbox_world`.
+
 ## 0.1.1-dev.20261026.11 — feature reorder (ADR 0050)
 
 ### Added

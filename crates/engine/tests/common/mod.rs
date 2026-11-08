@@ -279,3 +279,83 @@ pub fn gui_edit_driver_model(
     let last = project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).expect("a body");
     (shapes[&last].volume(), shapes[&last].bbox().unwrap_or([0.0; 6]), project.regen_faces[&last].clone(), project)
 }
+
+/// App-data assembly fixture. No Session, engine settlement or server anchor repair is involved.
+pub struct NativeAssemblyModel {
+    pub project: qymcad_core::model::Project,
+    pub shapes: HashMap<Id, qymcad_kernel::Shape>,
+}
+
+/// Native app load: normalize the document, restore B-reps, restore the stored face cache.
+/// The caller subsequently evaluates parameters/regenerates, just as finish_project_load does.
+pub fn native_assembly_load(path: &std::path::Path) -> NativeAssemblyModel {
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    project.ensure_document();
+    let shapes = restore_shapes(breps); // Public restore owns its gate; no outer gate.
+    for body in &project.bodies {
+        if !body.faces.is_empty() {
+            project.regen_faces.insert(body.id, body.faces.clone());
+        }
+    }
+    NativeAssemblyModel { project, shapes }
+}
+
+pub fn native_assembly_health(model: &NativeAssemblyModel) {
+    let p = &model.project;
+    assert!(p.regen_errors.is_empty(), "native feature errors: {:?}", p.regen_errors);
+    assert!(p.joint_faults().is_empty(), "native faulty joints: {:?}", p.joint_faults());
+    assert!(p.mates_violated.is_empty(), "native violated joints: {:?}", p.mates_violated);
+    assert!(!p.mates_conflict, "native assembly conflict");
+    assert!(p.components.iter().all(|c| c.transform.iter().all(|v| v.is_finite())), "nonfinite native placement");
+}
+
+/// Native parameter evaluation, dirty or forced recipe rebuild, app face copy and explicit solve.
+/// Returns the number of rebuilt bodies, allowing placement-only edits to prove no B-rep rebuilt.
+pub fn native_assembly_rebuild(model: &mut NativeAssemblyModel, force_all: bool) -> usize {
+    model.project.eval_parameters();
+    if force_all {
+        model.project.mark_all_dirty();
+    }
+    let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut model.project, std::mem::take(&mut model.shapes));
+    assert!(report.errors.is_empty(), "native assembly regenerate errors: {:?}", report.errors);
+    let count = report.built.len();
+    for (id, faces) in report.built {
+        model.project.set_body_faces(id, faces);
+    }
+    model.shapes = shapes;
+    let solved = model.project.solve_joints();
+    assert!(solved.errors.is_empty(), "native joint solve errors: {:?}", solved.errors);
+    native_assembly_health(model);
+    count
+}
+
+/// Native app parameter-window scheduling, without any Session propagation or repair.
+pub fn native_assembly_parameter(model: &mut NativeAssemblyModel, name: &str, expr: &str) -> usize {
+    let p = &mut model.project;
+    let seen = p.param_map();
+    p.parameters.iter_mut().find(|q| q.name == name).expect("native parameter").expr = expr.into();
+    p.eval_parameters();
+    for si in 0..p.sketches.len() {
+        if p.sketch_reads_names(si) {
+            assert!(p.solve_sketch(si) <= 1e-6);
+        }
+    }
+    let vars = p.param_map();
+    let mut changed: Vec<_> =
+        vars.iter().filter(|(k, v)| seen.get(*k).is_none_or(|old| (old - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
+    changed.extend(seen.keys().filter(|k| !vars.contains_key(*k)).cloned());
+    for name in changed {
+        p.mark_param_dependents_dirty_for(&name);
+    }
+    native_assembly_rebuild(model, false)
+}
+
+pub fn native_assembly_breps(model: &NativeAssemblyModel) -> std::collections::BTreeMap<Id, Vec<u8>> {
+    let _gate = qymcad_kernel::kernel_gate();
+    model.shapes.iter().map(|(id, s)| (*id, s.to_brep_bytes().unwrap())).collect()
+}
+
+pub fn native_assembly_save(model: &NativeAssemblyModel, path: &std::path::Path) {
+    let breps: Vec<_> = native_assembly_breps(model).into_iter().collect();
+    qymcad_io::save_project_guarded_with_brep(&model.project, path.to_str().unwrap(), &breps).unwrap();
+}
