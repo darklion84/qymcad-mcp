@@ -70,7 +70,7 @@ pub use info::{ComponentInfo, DocInfo, NodeInfo};
 pub use measure::{MeasureAt, MeasureOperand, MeasureResult, ResolvedMeasure};
 pub use mesh_import::{MeshFormat, MeshImportResult, MeshPieceResult, MeshUnit};
 pub use mesh_recognise::{MeshRecogniseMode, MeshRecogniseResult};
-pub use modifiers::{Chamfer, ChamferInfo, Hole, HoleKind, Side};
+pub use modifiers::{Chamfer, ChamferInfo, Draft, Hole, HoleKind, Side};
 pub use move_body::{Move, MoveResult, Rotation};
 pub use params::ParamInfo;
 pub use patterns::{ArrayDir, AxisRef};

@@ -600,6 +600,7 @@ impl Session {
         self.check_thread_dimensions()?;
         self.check_datum_values()?;
         self.check_chamfer_values()?;
+        self.check_draft_thicken_values()?;
         self.check_hole_values()
     }
 
@@ -869,6 +870,10 @@ impl Session {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
         }
+        for (node, message) in self.draft_refusals(|n| rebuilt.contains(&n) && !errors.iter().any(|e| e.node == n)) {
+            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            errors.push(self.issue(node, message));
+        }
         for (node, message) in self.split_identity_refusals(&split_identities, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
@@ -922,6 +927,37 @@ impl Session {
                     let message = match self.shapes.get(&src) {
                         Some(source) => crate::modifiers::fillet_acceptance(&self.p, n.id, source, result, radius)?,
                         None => format!("fillet R{radius:.2}: its source body is not built, so the result cannot be checked"),
+                    };
+                    Some((n.id, message))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Draft nodes picked by `check` whose result has fewer faces than their source: native Draft builds a
+    /// shrinking draft that closes a face into an edge or apex (−45° on a 20 mm block 10 mm tall: a pyramid)
+    /// without an error (FINDINGS F-149). A draft only tilts faces, so every source face must survive.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
+    fn draft_refusals(&self, check: impl Fn(Id) -> bool) -> Vec<(Id, String)> {
+        let buildable = Self::geometry_check_nodes(&self.p);
+        let faces = |shape: &Shape| {
+            let _gate = qymcad_kernel::kernel_gate();
+            shape.face_kinds().map(|kinds| kinds.into_iter().sum::<u32>())
+        };
+        self.p
+            .timeline
+            .iter()
+            .filter(|n| buildable.contains(&n.id) && check(n.id))
+            .filter_map(|n| match n.kind {
+                qymcad_core::feature::FeatureKind::Draft { src, body, .. } => {
+                    let message = match (self.shapes.get(&src).map(faces), self.shapes.get(&body).map(faces)) {
+                        (Some(Some(before)), Some(Some(after))) if after < before => format!(
+                            "draft lost {} of the source's {before} faces (a face closed into an edge or apex); reduce the angle",
+                            before - after
+                        ),
+                        (Some(Some(_)), Some(Some(_))) => return None,
+                        _ => "draft: cannot count the faces of its source and result to check it".to_string(),
                     };
                     Some((n.id, message))
                 }

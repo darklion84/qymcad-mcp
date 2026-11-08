@@ -30,7 +30,7 @@ pub fn instructions(app_note: &str) -> String {
                    render (view iso/top/front/...) returns a picture to check the shape; export writes STEP/STL/3MF/GLB/OBJ. For imported meshes, use import_mesh -> recognise -> topology/select/fillet/body_boolean/export.
 \n\
          Finishing: topology lists the current body's faces and edges with persistent ids (re-read it after every \
-         feature: each feature makes a new body). fillet/chamfer/hole/shell/push_face take selections: ids, or \
+         feature: each feature makes a new body). fillet/chamfer/hole/shell/push_face/draft/thicken take selections: ids, or \
          descriptions such as {{\"edges_of\": {{\"facing\": \"+z\"}}}} or {{\"along\": \"z\"}}; preview them with \
          select. revolve turns sketch contours about an axis; linear_array/circular_array/mirror copy the whole body.\n\
          A sketch coordinate keeps the sign it was created with: choose the origin so that a parametric coordinate \

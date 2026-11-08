@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- `draft`: native Draft as the app's Draft command — faces tilted about a planar neutral face of the same body, signed `angle` (number or formula, feature dimension `angle`) in the app's range 0 < |angle| ≤ 60 enforced on creation and on every evaluated `param_set`/`dimension_set`/open rebuild, `flip`, re-pick of faces and neutral through `feature`, batch and one-step undo (ADR 0052).
+- `thicken`: native Thicken — a plate of `thickness` > 0 (number or formula, feature dimension `thickness`) on one planar or curved face, united with the part; the face is frozen to its persistent id; re-pick through `feature` refreshes the face witness; batch and one-step undo (ADR 0052).
+
+### Fixed (protective refusals of silent native results, FINDINGS F-148–F-151)
+- A draft whose result lost faces (a shrinking draft closing a face into an apex, −45° on a 20×10 block) is refused on creation and on later edits; QymCAD builds it green.
+- A curved draft neutral face, a neutral among the drafted faces and a drafted face parallel to the neutral are refused up front.
+- A non-positive thicken thickness is refused on creation and on later evaluated edits; QymCAD builds a negative thickness deeper than the part as material on its far side.
+
 ## 0.1.1-dev.20261026.12 — root assemblies (ADR 0051)
 
 ### Added

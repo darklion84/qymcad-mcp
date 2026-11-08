@@ -2651,3 +2651,64 @@ The same gap applies to a pattern whose source is a projection: the source moves
   and successful feature pass are insufficient evidence that its attachment acts.
 - **Boundary:** server anchor-witness validation, atomic refusals and separate open/rebuild/inspection
   diagnostics are ADR 0051 policy. Native execution here is headless; no visible-app check was performed.
+
+## F-148 Draft's ±60° angle range exists only in the app's command bar
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **App behaviour:** `crates/qymcad-part/src/start.rs:6-19` starts Draft with
+  `CmdParam::new("f-angle", "angle", 3.0, -60.0, 60.0).nonzero()`: default 3°, range ±60°, zero forbidden
+  (`reopen.rs:295` reuses it on edit).
+- **Core:** `crates/qymcad-core/src/model/regen/prep_ops.rs:290-325` (`prep_draft`) refuses only
+  `|angle| < 1e-9` (`DraftAngleZero`); there is no upper bound, also not for a formula evaluated through
+  `feat_dims`.
+- **Executed native evidence:** `tasks/exp-draft-thicken` cases D7/D10/D15 (research-G §4.1): a 20×20×10 box drafted
+  on its four walls about the bottom face builds +60° (14928 mm³), **+89° as a 1165 mm-wide slab (4.6e6 mm³) without
+  an error**, and a formula angle `a = 70` green.
+- **Server policy (ADR 0052):** `draft` enforces the app's range `0 < |angle| <= 60` at creation and on every
+  evaluated edit (`check_draft_thicken_values`). Test: `golden_draft::formula_angle_follows_param_set_and_dimension_set_and_guards_the_range`.
+- **Upstream issue candidate:** a document edited through the parameter table (`a = 70`) leaves the command bar's
+  range unchecked. Minimal reproduction: `p.add_box(20,20,10)`; `add_draft(box, four side faces, bottom face, 89.0,
+  false)`; regenerate → no error, volume ≈ 4.6e6 mm³.
+
+## F-149 A shrinking Draft that closes a face builds silently
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Executed native evidence:** research-G §4.2 (`tasks/exp-draft-thicken`): −45° on the four walls of a 20×20×10 box
+  about its bottom face (each wall moves in by 10·tan 45° = 10 mm, half the width) gives a pyramid of 1333.33 mm³;
+  the top face is gone (6 faces → 5) and `RegenReport.errors` is empty. −60° fails with `DraftFailed`.
+- **Server policy (ADR 0052, protective refusal):** `Session::draft_refusals` counts the result's faces against
+  its source after every rebuild (creation, re-pick, `param_set`, `dimension_set`, open) and refuses a draft that lost
+  any, as a node error. Tests: `golden_draft::refusals_leave_the_document_unchanged`,
+  `golden_draft::collapse_through_a_later_edit_is_refused` (formula −30° → −45° rolled back).
+- **Boundary:** the face-count test is the practical gate; it was measured on the box only.
+- **Upstream issue candidate:** minimal reproduction: `p.add_box(20,20,10)`; `add_draft(box, four side faces,
+  bottom face, -45.0, false)`; regenerate → no error, volume 1333.33, 5 faces.
+
+## F-150 Thicken with a negative thickness can build material on the far side of a solid
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **App behaviour:** `crates/qymcad-part/src/start.rs:315-328` offers thickness 2 with range ±100000, negative
+  allowed; `apply/solids.rs:341-363` refuses only zero (`msg-zero-thickness`).
+- **Core / kernel:** `prep_thicken` (`prep_ops.rs:239-268`) refuses `|t| < 1e-9`; a planar face becomes
+  `BRepPrimAPI_MakePrism` along normal × thickness fused with the source (`occt_io.cpp:2066-…`);
+  `thicken_op` (`kernel/src/ops/shell.rs:82-107`) refuses a result not larger than the source
+  (`ThickenAddedNothing`).
+- **Executed evidence:** research-G T3/T5: top face of a 20×20×10 box, −5 → `ThickenAddedNothing`, but **−15 →
+  6000 mm³ green**: the prism passes through the part and stands 5 mm out of its bottom. Re-observed with this
+  server's guard disabled (mutation run, G2): `param_set t=-15` built volume 6000, bbox z −3..12, no error.
+- **Server policy (ADR 0052, protective refusal):** `thicken` accepts only thickness > 0 (outward) at creation and on
+  every evaluated edit. Test: `golden_thicken::formula_thickness_follows_edits_and_refuses_non_positive_values`.
+- **Upstream issue candidate:** minimal reproduction: `p.add_box(20,20,10)`; `add_thicken(box, top face, -15.0)`;
+  regenerate → no error, volume 6000, bbox z from −5 (below the part) to 10.
+
+## F-151 Draft about a curved neutral face tilts about an averaged plane
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** the neutral `Ref` resolves through `face_by_ref` to one `{centroid, normal}` (`prep_ops.rs:311`,
+  `apply.rs:128-140`); a curved face's mesh normal is not a meaningful plane normal (F-011).
+- **Executed native evidence:** research-G D20: cylinder r10 h20, neutral = its side face, drafting the top +5° builds
+  green, the top tilted about some averaged line (bbox z 20.9).
+- **Server policy (ADR 0052, protective refusal):** the neutral must be a planar face (`face_is_planar`). Test:
+  `golden_draft::refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** the app's neutral pick (`aims.rs:277-284`) accepts any face. Minimal reproduction:
+  extrude a circle d20 by 20; `add_draft(cyl, [top], side face, 5.0, false)`; regenerate → no error, tilted top.

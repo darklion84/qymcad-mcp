@@ -1,4 +1,4 @@
-//! Modifiers of an existing body: fillet, chamfer, shell, push face, hole. Each call is atomic (see
+//! Modifiers of an existing body: fillet, chamfer, shell, push face, draft, thicken, hole. Each call is atomic (see
 //! `Session::atomic`): if the new feature does not build, the document is left unchanged and QymCAD's reason is
 //! returned. Every numeric argument may be an expression; it is stored as a feature dimension so the GUI and
 //! `param_set` keep the feature parametric.
@@ -8,7 +8,7 @@ use crate::session::{Rebuild, Session};
 use crate::topology::{Element, Sel};
 use crate::value::Num;
 use qymcad_core::feature::{ChamferMode, FeatureKind, ShellSide};
-use qymcad_core::model::{ChamferShape, HoleTool, Id};
+use qymcad_core::model::{ChamferShape, ElemSnapshot, HoleTool, Id};
 use qymcad_core::refs::{Cardinality, Fingerprint, Ref};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -102,6 +102,50 @@ pub struct Hole {
     pub name: Option<String>,
 }
 
+/// Arguments of `Session::draft` (native Draft, the app's Draft command).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Draft {
+    /// Body to draft (default: the current body).
+    pub body: Option<Id>,
+    /// Faces to tilt. Ids are stored as native picks, descriptions as the creation query (kind leaves frozen).
+    pub faces: Sel,
+    /// Exactly one planar face of the same body, not among `faces`: its outward normal is the pull direction and
+    /// the plane through its centroid stays fixed.
+    pub neutral: Sel,
+    /// Degrees, signed, `0 < |angle| <= 60` (the app's command range); a formula is kept as feature dimension
+    /// `angle`. Positive widens the solid moving against the pull direction.
+    pub angle: Num,
+    /// The app's flip switch: reverses the pull direction (the same as negating the angle).
+    pub flip: bool,
+    /// Name of the new native feature.
+    pub name: Option<String>,
+}
+
+/// The app's Draft command range (qymcad-part start.rs: `CmdParam("angle", 3, -60, 60).nonzero()`).
+pub(crate) const DRAFT_MAX_DEG: f64 = 60.0;
+
+/// Native's own zero test for draft angles and thicken thicknesses (prep_ops.rs).
+const NATIVE_ZERO: f64 = 1e-9;
+
+fn draft_angle(v: f64) -> Result<f64> {
+    if !(v.is_finite() && v.abs() >= NATIVE_ZERO && v.abs() <= DRAFT_MAX_DEG) {
+        return Err(Error::Invalid(format!(
+            "draft angle must satisfy 0 < |angle| <= {DRAFT_MAX_DEG} degrees (the QymCAD app's Draft range), got {v}"
+        )));
+    }
+    Ok(v)
+}
+
+fn thicken_thickness(v: f64) -> Result<f64> {
+    if !(v.is_finite() && v >= NATIVE_ZERO) {
+        return Err(Error::Invalid(format!(
+            "thicken thickness must be positive (the plate grows outward along the face normal), got {v}; a negative value \
+             would let QymCAD build material on the far side of the part (FINDINGS F-150)"
+        )));
+    }
+    Ok(v)
+}
+
 /// "Through all" for a hole. QymCAD's hole has no through-all extent, only a depth (F-037); the app's own hole
 /// dialog goes up to 10000 mm. Creation refuses stock whose bbox diagonal exceeds this fixed depth; subsequent
 /// stock growth beyond it can make the hole blind.
@@ -170,6 +214,25 @@ impl Session {
                 };
                 check().map_err(|e| (node.id, e))?;
             }
+        }
+        Ok(())
+    }
+
+    /// Recheck evaluated draft angles and thicken thicknesses: native regeneration bounds neither (F-148, F-150).
+    pub(crate) fn check_draft_thicken_values(&self) -> std::result::Result<(), (Id, Error)> {
+        let vars = self.p.param_map();
+        for node in &self.p.timeline {
+            let value = |key: &str, seed: f64| {
+                self.p.feat_dim(node.id, key).filter(|e| !e.is_empty()).map_or(Ok(seed), |e| Num::from(e).eval(&vars))
+            };
+            let checked = match node.kind {
+                FeatureKind::Draft { angle, .. } => value("angle", angle).and_then(draft_angle),
+                // A sheet's whole-sheet offset may go either way; only a solid face grows nonsense (F-150).
+                FeatureKind::Thicken { src, .. } if self.p.bodies.iter().any(|b| b.id == src && b.sheet) => continue,
+                FeatureKind::Thicken { thickness, .. } => value("thickness", thickness).and_then(thicken_thickness),
+                _ => continue,
+            };
+            checked.map_err(|e| (node.id, e))?;
         }
         Ok(())
     }
@@ -517,6 +580,116 @@ impl Session {
         })
     }
 
+    /// Tilt faces about a neutral face (see `Draft`). The app's recipe: `add_draft` with the angle formula kept.
+    pub fn draft(&mut self, a: &Draft) -> Result<(Id, Rebuild)> {
+        self.ensure_topology()?;
+        self.atomic(|s| {
+            let src = s.source_body(a.body)?;
+            let angle = draft_angle(a.angle.eval(&s.p.param_map())?)?;
+            let (ids, faces_ref) = s.draft_face_ref(src, &a.faces)?;
+            let (neutral, neutral_ref) = s.draft_neutral(src, &a.neutral, &ids)?;
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_draft(src, ids.clone(), neutral, angle, a.flip));
+            if let Some(FeatureKind::Draft { faces, neutral, .. }) = s.node_kind_mut(id) {
+                *faces = faces_ref;
+                *neutral = neutral_ref;
+            }
+            dim(s, id, "angle", &a.angle);
+            s.set_node_name(id, a.name.as_deref())?;
+            Ok(id)
+        })
+    }
+
+    /// Replace the drafted faces (and the neutral face when given) of an existing Draft node, preserving its id,
+    /// angle formula and flip and rebuilding dependents. Returns the body, the face ids and the neutral face id.
+    pub fn repick_draft(&mut self, feature: Id, faces: &Sel, neutral: Option<&Sel>) -> Result<(Id, Vec<u32>, u32, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body, old_neutral) = match self.p.timeline.iter().find(|n| n.id == feature) {
+            Some(node) => match &node.kind {
+                FeatureKind::Draft { src, body, neutral, .. } => (*src, *body, neutral.clone()),
+                _ => return Err(Error::Invalid(format!("feature {feature} is not a draft feature"))),
+            },
+            None => return Err(Error::NotFound(format!("feature {feature}"))),
+        };
+        let (ids, faces_ref) = self.draft_face_ref(src, faces)?;
+        let (neutral_id, neutral_ref) = match neutral {
+            Some(sel) => self.draft_neutral(src, sel, &ids)?,
+            None => {
+                let resolved = self
+                    .p
+                    .resolve_face_refs(src, &old_neutral, "draft neutral")
+                    .map_err(|e| Error::Invalid(format!("the stored draft neutral face does not resolve on body {src}: {e:?}")))?;
+                let [id] = resolved.as_slice() else {
+                    return Err(Error::Invalid(format!("the stored draft neutral face resolves to {resolved:?} on body {src}")));
+                };
+                self.check_draft_pair(src, *id, &ids)?;
+                (*id, old_neutral)
+            }
+        };
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "draft re-pick", |s| {
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::Draft { faces: stored, neutral: stored_neutral, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a draft feature")));
+            };
+            *stored = faces_ref;
+            *stored_neutral = neutral_ref;
+            node.dirty = true;
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
+        })?;
+        Ok((body, ids, neutral_id, self.current_rebuild()))
+    }
+
+    /// Add a plate of `thickness` on one face, united with the part (native Thicken; the app's recipe). The face
+    /// is frozen to its persistent id: native Thicken stores a bare id, not a query.
+    pub fn thicken(&mut self, body: Option<Id>, face: &Sel, thickness: &Num, name: Option<&str>) -> Result<(Id, Rebuild)> {
+        self.ensure_topology()?;
+        self.atomic(|s| {
+            let src = s.source_body(body)?;
+            let t = thicken_thickness(thickness.eval(&s.p.param_map())?)?;
+            let key = s.one_face(src, face)?;
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_thicken(src, key.id, t));
+            dim(s, id, "thickness", thickness);
+            s.set_node_name(id, name)?;
+            Ok(id)
+        })
+    }
+
+    /// Replace the face of an existing Thicken node, refreshing its centroid/normal witness (the app's edit
+    /// keeps the old witness), preserving the thickness formula and rebuilding dependents.
+    pub fn repick_thicken(&mut self, feature: Id, face: &Sel) -> Result<(Id, u32, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body) = match self.p.timeline.iter().find(|n| n.id == feature) {
+            Some(node) => match &node.kind {
+                FeatureKind::Thicken { src, body, .. } => (*src, *body),
+                _ => return Err(Error::Invalid(format!("feature {feature} is not a thicken feature"))),
+            },
+            None => return Err(Error::NotFound(format!("feature {feature}"))),
+        };
+        let key = self.one_face(src, face)?;
+        let before = self.p.clone();
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        self.with_rebuild_copies(before, &nodes, "thicken re-pick", |s| {
+            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+            let FeatureKind::Thicken { face: stored, .. } = &mut node.kind else {
+                return Err(Error::Invalid(format!("feature {feature} is not a thicken feature")));
+            };
+            *stored = key.id;
+            node.dirty = true;
+            s.p.face_refs.insert(feature, vec![ElemSnapshot { id: key.id, at: key.centroid, dir: key.normal }]);
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
+        })?;
+        Ok((body, key.id, self.current_rebuild()))
+    }
+
     /// Remove selected faces and heal the source body. Face witnesses are captured from the current topology before mutation.
     pub fn remove_face(&mut self, body: Option<Id>, faces: &Sel, name: Option<&str>) -> Result<(Id, Vec<u32>, Rebuild)> {
         self.ensure_topology()?;
@@ -689,6 +862,53 @@ impl Session {
         }
         let stored = if sel.is_ids() { Ref::picks(&ids) } else { Ref::many(self.face_query(sel, &ids)?) };
         Ok((ids, stored))
+    }
+
+    fn draft_face_ref(&self, src: Id, sel: &Sel) -> Result<(Vec<u32>, Ref)> {
+        let ids = self.resolve_sel(src, Element::Faces, sel)?;
+        if ids.is_empty() {
+            return Err(Error::Invalid(format!("the draft face selection matched no face of body {src}")));
+        }
+        let stored = if sel.is_ids() { Ref::picks(&ids) } else { Ref::many(self.face_query(sel, &ids)?) };
+        Ok((ids, stored))
+    }
+
+    /// The neutral face: exactly one planar face of `src`, outside the drafted set and not parallel to any
+    /// drafted planar face. Stored like a PushFace face (id pick or creation query, with a centroid/normal hint).
+    fn draft_neutral(&self, src: Id, sel: &Sel, faces: &[u32]) -> Result<(u32, Ref)> {
+        let key = self.one_face(src, sel).map_err(|e| match e {
+            Error::Invalid(m) => Error::Invalid(format!("draft neutral: {m}")),
+            other => other,
+        })?;
+        if !self.face_is_planar(src, key.id) {
+            return Err(Error::Invalid(format!(
+                "draft neutral face {} of body {src} is not planar; QymCAD would tilt about an averaged plane (FINDINGS F-151)",
+                key.id
+            )));
+        }
+        self.check_draft_pair(src, key.id, faces)?;
+        Ok((key.id, self.push_face_ref(sel, &key)?))
+    }
+
+    fn check_draft_pair(&self, src: Id, neutral: u32, faces: &[u32]) -> Result<()> {
+        if faces.contains(&neutral) {
+            return Err(Error::Invalid(format!(
+                "draft neutral face {neutral} is also among the drafted faces; leave it out of `faces` (the app removes it)"
+            )));
+        }
+        let normal = |id: u32| self.p.regen_faces.get(&src).and_then(|fs| fs.iter().find(|f| f.id == id)).map(|f| f.normal);
+        let Some(n) = normal(neutral) else {
+            return Err(Error::NotFound(format!("face {neutral} of body {src}")));
+        };
+        for &id in faces.iter().filter(|&&id| self.face_is_planar(src, id)) {
+            let Some(m) = normal(id) else { continue };
+            if (n[0] * m[0] + n[1] * m[1] + n[2] * m[2]).abs() > 0.999 {
+                return Err(Error::Invalid(format!(
+                    "drafted face {id} is parallel to the neutral face {neutral}: a draft tilts faces that run along the pull direction (QymCAD fails it)"
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// The PushFace reference creation and re-pick both store: the native id pick for ids, the creation query

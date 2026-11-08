@@ -220,6 +220,8 @@ fn limits_allowlist_and_outer_schema() {
         "hole",
         "shell",
         "push_face",
+        "draft",
+        "thicken",
         "remove_face",
         "move",
         "linear_array",

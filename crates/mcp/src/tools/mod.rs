@@ -128,6 +128,8 @@ fn modelling_tool(name: &str) -> bool {
             | "hole"
             | "shell"
             | "push_face"
+            | "draft"
+            | "thicken"
             | "remove_face"
             | "move"
             | "linear_array"

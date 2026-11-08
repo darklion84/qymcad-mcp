@@ -12,13 +12,13 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P6 | Chamfer | covered | Symmetric, TwoDist and Leg-and-angle; adjacent support face, evaluated angle/association guards (ADR 0032) | `chamfer` | `FeatureKind::Chamfer,PartTool::Chamfer` |
 | P7 | Shell | covered | — | `shell` | `FeatureKind::Shell,PartTool::Shell` |
 | P8 | Hole | partial | Sketch-point dependency bridge for global/named edits; unnamed/structural in-app edits can leave holes stale. Native recipe requires all isolated points; dynamic datum/projection or independent face support refused (ADR 0034) | `hole` | `FeatureKind::Hole,PartTool::Hole` |
-| P9 | Draft | not covered | Face draft up to 60° | none | `FeatureKind::Draft,PartTool::Draft` |
+| P9 | Draft | covered | App range 0 < abs(angle) ≤ 60 on creation and evaluated edits, flip, formula angle, re-pick; planar neutral and face-loss refusals (ADR 0052, F-148, F-149, F-151) | `draft` | `FeatureKind::Draft,PartTool::Draft` |
 | P10 | Thread | partial | Auger mode | `thread` | `FeatureKind::Thread,FeatureKind::Auger,PartTool::Thread` |
 | P11 | Push face | covered | — | `push_face` | `FeatureKind::PushFace,PartTool::PushFace` |
 | P12 | Remove face | covered | Native face healing, persistent face witnesses, failure rollback, save/open and app-path parameter edits | `remove_face` | `FeatureKind::RemoveFace,PartTool::RemoveFace` |
 | P13 | Split body | covered | — | `split` | `FeatureKind::SplitBody,PartTool::SplitBody` |
 | P14 | Split faces | not covered | Split a face without splitting the body | none | `FeatureKind::SplitFace,PartTool::SplitFace` |
-| P15 | Thicken | not covered | Thicken from a face | none | `FeatureKind::Thicken,PartTool::Thicken` |
+| P15 | Thicken | covered | Solid faces, planar or curved, united with the part; thickness > 0 only (F-150); single frozen face id, re-pick. Sheet sources: the server has no sheet bodies (ADR 0052) | `thicken` | `FeatureKind::Thicken,PartTool::Thicken` |
 | P16 | Mirror body | covered | — | `mirror` | `FeatureKind::Mirror,PartTool::Mirror` |
 | P17 | Linear pattern | partial | Third direction | `linear_array` | `FeatureKind::LinearArray,PartTool::LinearPattern` |
 | P18 | Circular pattern | covered | — | `circular_array` | `FeatureKind::CircularArray,PartTool::CircularPattern` |

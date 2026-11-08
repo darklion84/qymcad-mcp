@@ -1,12 +1,13 @@
-//! Feature tools: datum planes, extrude, revolve, sweep, loft; modifiers (fillet, chamfer, hole, shell, push face); arrays and
+//! Feature tools: datum planes, extrude, revolve, sweep, loft; modifiers (fillet, chamfer, hole, shell, push face, draft,
+//! thicken); arrays and
 //! mirror. Every feature is atomic: if it does not build, nothing changes and QymCAD's reason is returned.
 
 use super::common::{err, rebuild_json, ObjRef, PlaneArg};
 use super::topology::{AxisArg, SelArg};
 use super::{tool, Tool};
 use qymcad_engine::{
-    ArrayDir, Axis, Chamfer, Direction, Extrude, Hole, HoleKind, HoleSketch, Id, Loft, LoftSection, Move, Num, Op, Revolve, Rotation,
-    Session, Side, Sweep, SweepPath,
+    ArrayDir, Axis, Chamfer, Direction, Draft, Extrude, Hole, HoleKind, HoleSketch, Id, Loft, LoftSection, Move, Num, Op, Revolve,
+    Rotation, Session, Side, Sweep, SweepPath,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -344,6 +345,57 @@ pub struct PushFaceArgs {
     #[serde(default)]
     pub dist: Option<Num>,
     /// Existing PushFace feature id/name to re-pick. With this set, `body`, `dist` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DraftArgs {
+    /// Body id or name. Default: the part's current body; not accepted with `feature`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Faces to tilt, at least one, e.g. {"union": [{"facing": "+x"}, {"facing": "-x"}]}. Ids are stored as picks,
+    /// descriptions as a query (kind leaves frozen). With `feature`, replaces the complete drafted-face selection.
+    pub faces: SelArg,
+    /// Exactly one planar face of the same body, not among `faces`, e.g. {"facing": "-z"} for the base. Its outward
+    /// normal is the pull direction; the plane through its centroid stays fixed. Required without `feature`;
+    /// with `feature`, optional: replaces the neutral face.
+    #[serde(default)]
+    pub neutral: Option<SelArg>,
+    /// Degrees (number or expression), signed, 0 < |angle| <= 60 (the app's range), also on later evaluated
+    /// edits. Positive widens the solid moving against the pull direction: on a part standing on its bottom face
+    /// (neutral {"facing": "-z"}) a taper toward the top is negative. Required without `feature`.
+    #[serde(default)]
+    pub angle: Option<Num>,
+    /// The app's flip switch: reverses the pull direction (same as negating the angle). Default false.
+    #[serde(default)]
+    pub flip: Option<bool>,
+    /// Existing Draft feature id/name to re-pick. With this set, `body`, `angle`, `flip` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ThickenArgs {
+    /// Body id or name. Default: the part's current body; not accepted with `feature`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Exactly one face, planar or curved, e.g. {"facing": "+z"}. Frozen to its persistent id (native Thicken stores
+    /// an id, not a query). With `feature`, replaces that node's face.
+    pub face: SelArg,
+    /// Plate thickness, mm (number or expression), > 0, outward along the face normal; also checked on later
+    /// evaluated edits. Required without `feature`.
+    #[serde(default)]
+    pub thickness: Option<Num>,
+    /// Existing Thicken feature id/name to re-pick. With this set, `body`, `thickness` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
     /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
@@ -829,6 +881,48 @@ pub fn tools() -> Vec<Tool> {
                     let body = opt_body(s, &a.body)?;
                     let dist = a.dist.ok_or("`dist` is required unless `feature` is given")?;
                     feature_json(s.push_face(body, &face, &dist, a.name.as_deref()))
+                }
+            },
+        ),
+        tool(
+            "draft",
+            concat!("Tilt faces by `angle` about a planar neutral face using native Draft, as the app's Draft command: e.g. faces {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}, {\"facing\": \"+y\"}, {\"facing\": \"-y\"}]}, neutral {\"facing\": \"-z\"}, angle -3 tapers a block toward its top. The pull direction is the neutral face's outward normal (reversed by `flip`); positive angles widen the solid moving against it. The app's range 0 < |angle| <= 60 holds on creation and on every later param_set/dimension_set/open rebuild. Refused: a curved neutral, a neutral among the faces, a drafted face parallel to the neutral, and a result that lost faces (a shrinking draft that closes a face into an apex builds silently in QymCAD). Draft before filleting adjacent edges: tangent fillets along vertical edges are drafted with the walls, walls under horizontal fillets fail. Give `feature` to replace the faces (and the neutral if given) of an existing draft; the angle formula and flip stay, values via `dimension_set` key `angle`.", stale!()),
+            |st, a: DraftArgs| {
+                let s = st.doc()?;
+                let faces = a.faces.resolve(s)?;
+                let neutral = a.neutral.map(|n| n.resolve(s)).transpose()?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.angle.is_some() || a.flip.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body`, `angle`, `flip` and `name` are not accepted; change the angle with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected_faces, neutral_face, rebuild) = s.repick_draft(feature, &faces, neutral.as_ref()).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected_faces, "neutral_face": neutral_face, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let body = opt_body(s, &a.body)?;
+                    let neutral = neutral.ok_or("`neutral` is required unless `feature` is given")?;
+                    let angle = a.angle.ok_or("`angle` is required unless `feature` is given")?;
+                    feature_json(s.draft(&Draft { body, faces, neutral, angle, flip: a.flip.unwrap_or(false), name: a.name }))
+                }
+            },
+        ),
+        tool(
+            "thicken",
+            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness > 0 on creation and on every later param_set/dimension_set/open rebuild: QymCAD builds a negative thickness deeper than the part as material on its far side without an error. A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`.", stale!()),
+            |st, a: ThickenArgs| {
+                let s = st.doc()?;
+                let face = a.face.resolve(s)?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.thickness.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body`, `thickness` and `name` are not accepted; change values with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_thicken(feature, &face).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": [selected], "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let body = opt_body(s, &a.body)?;
+                    let thickness = a.thickness.ok_or("`thickness` is required unless `feature` is given")?;
+                    feature_json(s.thicken(body, &face, &thickness, a.name.as_deref()))
                 }
             },
         ),
