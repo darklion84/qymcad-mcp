@@ -3,12 +3,12 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.12 — root assemblies (ADR 0051)
 
 ### Added
 - Root-level native multi-body Parts and Rigid/Slider joints: `part_new`, `part_select`, `part_place`, `ground`, `joint_create`, `joint_set`, `joint_delete`, `assembly_info`, and typed Part/joint rename targets (ADR 0051). Planar body-scoped anchors accept ids or descriptions; Slider uses an explicit axis and absolute numeric/formula offset. Release clears formula and drive; native records, grounding and placements persist. Changed mutations support batch/undo with whole-document failure restoration.
 - Explicit components, active component, owners, local/world bounds, world transforms and separate assembly diagnostics in document/rebuild reporting. Topology/selection remain Part-local. Existing unsupported assembly records and limits are preserved/reported; nested assembly editing, instances/clones, other joint kinds, relations and limit editing remain excluded.
-- Native cached/forced saved-file and parameter-window assembly tests, numeric/released drag persistence, translated/rotated B-rep and mesh output readback, and a three-Part twenty-plate two-Slider cabinet test. Visible-app assembly acceptance is unavailable.
+- Native cached/forced saved-file and parameter-window assembly tests, numeric/released drag persistence, translated/rotated B-rep and mesh output readback, and a three-Part twenty-plate two-Slider cabinet test. QymCAD.app check: the saved cabinet opens with its Parts, grounding and formula-driven Sliders, `pa` edits move only their drawer, and a released Slider drags along its axis only.
 
 ### Fixed
 - Body-sourced shell, face-hole, linear/circular arrays, mirror, thread and split route creation through the source Part and restore the previous active Part.
