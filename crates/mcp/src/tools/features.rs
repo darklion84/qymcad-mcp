@@ -361,7 +361,7 @@ pub struct DraftArgs {
     /// Faces to tilt, at least one, e.g. {"union": [{"facing": "+x"}, {"facing": "-x"}]}. Ids are stored as picks,
     /// descriptions as a query (kind leaves frozen). With `feature`, replaces the complete drafted-face selection.
     pub faces: SelArg,
-    /// Exactly one planar face of the same body, not among `faces`, e.g. {"facing": "-z"} for the base. Its outward
+    /// Exactly one planar face of the same body (removed from `faces` if listed there), e.g. {"facing": "-z"} for the base. Its outward
     /// normal is the pull direction; the plane through its centroid stays fixed. Required without `feature`;
     /// with `feature`, optional: replaces the neutral face.
     #[serde(default)]
@@ -886,7 +886,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "draft",
-            concat!("Tilt faces by `angle` about a planar neutral face using native Draft, as the app's Draft command: e.g. faces {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}, {\"facing\": \"+y\"}, {\"facing\": \"-y\"}]}, neutral {\"facing\": \"-z\"}, angle -3 tapers a block toward its top. The pull direction is the neutral face's outward normal (reversed by `flip`); positive angles widen the solid moving against it. The app's range 0 < |angle| <= 60 holds on creation and on every later param_set/dimension_set/open rebuild. Refused: a curved neutral, a neutral among the faces, a drafted face parallel to the neutral, and a result that lost faces (a shrinking draft that closes a face into an apex builds silently in QymCAD). Draft before filleting adjacent edges: tangent fillets along vertical edges are drafted with the walls, walls under horizontal fillets fail. Give `feature` to replace the faces (and the neutral if given) of an existing draft; the angle formula and flip stay, values via `dimension_set` key `angle`.", stale!()),
+            concat!("Tilt faces by `angle` about a planar neutral face using native Draft, as the app's Draft command: e.g. faces {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}, {\"facing\": \"+y\"}, {\"facing\": \"-y\"}]}, neutral {\"facing\": \"-z\"}, angle -3 tapers a block toward its top. The pull direction is the neutral face's outward normal (reversed by `flip`); positive angles widen the solid moving against it. The app's range 0 < |angle| <= 60 holds on creation and on every later param_set/dimension_set/open rebuild. A neutral listed among the faces is removed from them, as the app does (said in `rebuild.notes`; the remaining faces are then stored as picks). Refused: a curved neutral, faces that hold only the neutral, a drafted face parallel to the neutral, and a result that lost faces (a shrinking draft that closes a face into an apex builds silently in QymCAD). Draft before filleting adjacent edges: tangent fillets along vertical edges are drafted with the walls, walls under horizontal fillets fail. Give `feature` to replace the faces (and the neutral if given) of an existing draft; the angle formula and flip stay, values via `dimension_set` key `angle`.", stale!()),
             |st, a: DraftArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;

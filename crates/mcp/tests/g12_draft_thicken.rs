@@ -107,9 +107,11 @@ fn draft_and_thicken_over_stdio_registered_batchable_undoable() {
     let (error, text) = c.tool("thicken", json!({"feature":"plate", "face":{"facing":"+z"}, "thickness":1}));
     assert!(error && text.as_str().unwrap().contains("not accepted"), "{text}");
 
-    let repicked = c.ok("draft", json!({"feature":"taper", "faces":{"facing":"+x"}}));
+    // The neutral listed among the faces is removed, as the app does, and the reply says so.
+    let repicked = c.ok("draft", json!({"feature":"taper", "faces":{"union":[{"facing":"+x"}, {"facing":"-z"}]}}));
     assert_eq!(repicked["feature"], draft["body"]);
     assert_eq!(repicked["selected_faces"].as_array().unwrap().len(), 1);
+    assert!(repicked["rebuild"]["notes"].to_string().contains("removed from the drafted faces"), "{repicked}");
     let undone = c.ok("undo", json!({}));
     assert_eq!(undone["undone"]["tool"], "draft");
 

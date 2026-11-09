@@ -151,6 +151,29 @@ fn thicken_thickness(v: f64) -> Result<f64> {
 /// stock growth beyond it can make the hole blind.
 pub(crate) const THROUGH_DEPTH: f64 = 10000.0;
 
+/// The app's picking removes the neutral face from the drafted set (qymcad-part aims.rs:284) and its edit stores the
+/// faces as picks (apply/update.rs:458); a selection that held the neutral is stored the same way.
+fn drop_neutral(ids: Vec<u32>, stored: Ref, neutral: u32) -> Result<(Vec<u32>, Ref, bool)> {
+    if !ids.contains(&neutral) {
+        return Ok((ids, stored, false));
+    }
+    let kept: Vec<u32> = ids.into_iter().filter(|&id| id != neutral).collect();
+    if kept.is_empty() {
+        return Err(Error::Invalid(format!("the draft faces hold only the neutral face {neutral}; pick the faces to tilt")));
+    }
+    let stored = Ref::picks(&kept);
+    Ok((kept, stored, true))
+}
+
+fn neutral_note((id, mut report): (Id, Rebuild), dropped: Option<u32>) -> (Id, Rebuild) {
+    if let Some(neutral) = dropped {
+        report.notes.push(format!(
+            "neutral face {neutral} removed from the drafted faces, as the app does; the remaining faces are stored as picks"
+        ));
+    }
+    (id, report)
+}
+
 fn seam_note((id, mut report): (Id, Rebuild), dropped: usize) -> (Id, Rebuild) {
     if dropped > 0 {
         report.notes.push(format!("dropped {dropped} seam {}: not blendable", crate::topology::edge_word(dropped)));
@@ -583,11 +606,15 @@ impl Session {
     /// Tilt faces about a neutral face (see `Draft`). The app's recipe: `add_draft` with the angle formula kept.
     pub fn draft(&mut self, a: &Draft) -> Result<(Id, Rebuild)> {
         self.ensure_topology()?;
-        self.atomic(|s| {
+        let mut dropped = None;
+        let result = self.atomic(|s| {
             let src = s.source_body(a.body)?;
             let angle = draft_angle(a.angle.eval(&s.p.param_map())?)?;
             let (ids, faces_ref) = s.draft_face_ref(src, &a.faces)?;
-            let (neutral, neutral_ref) = s.draft_neutral(src, &a.neutral, &ids)?;
+            let (neutral, neutral_ref) = s.draft_neutral(src, &a.neutral)?;
+            let (ids, faces_ref, was_dropped) = drop_neutral(ids, faces_ref, neutral)?;
+            s.check_draft_pair(src, neutral, &ids)?;
+            dropped = was_dropped.then_some(neutral);
             let id = s.in_component(s.p.body_owner(src), |p| p.add_draft(src, ids.clone(), neutral, angle, a.flip));
             if let Some(FeatureKind::Draft { faces, neutral, .. }) = s.node_kind_mut(id) {
                 *faces = faces_ref;
@@ -596,7 +623,8 @@ impl Session {
             dim(s, id, "angle", &a.angle);
             s.set_node_name(id, a.name.as_deref())?;
             Ok(id)
-        })
+        })?;
+        Ok(neutral_note(result, dropped))
     }
 
     /// Replace the drafted faces (and the neutral face when given) of an existing Draft node, preserving its id,
@@ -612,7 +640,7 @@ impl Session {
         };
         let (ids, faces_ref) = self.draft_face_ref(src, faces)?;
         let (neutral_id, neutral_ref) = match neutral {
-            Some(sel) => self.draft_neutral(src, sel, &ids)?,
+            Some(sel) => self.draft_neutral(src, sel)?,
             None => {
                 let resolved = self
                     .p
@@ -621,10 +649,11 @@ impl Session {
                 let [id] = resolved.as_slice() else {
                     return Err(Error::Invalid(format!("the stored draft neutral face resolves to {resolved:?} on body {src}")));
                 };
-                self.check_draft_pair(src, *id, &ids)?;
                 (*id, old_neutral)
             }
         };
+        let (ids, faces_ref, was_dropped) = drop_neutral(ids, faces_ref, neutral_id)?;
+        self.check_draft_pair(src, neutral_id, &ids)?;
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
         self.with_rebuild_copies(before, &nodes, "draft re-pick", |s| {
@@ -641,7 +670,8 @@ impl Session {
             }
             Ok(())
         })?;
-        Ok((body, ids, neutral_id, self.current_rebuild()))
+        let (_, rebuild) = neutral_note((body, self.current_rebuild()), was_dropped.then_some(neutral_id));
+        Ok((body, ids, neutral_id, rebuild))
     }
 
     /// Add a plate of `thickness` on one face, united with the part (native Thicken; the app's recipe). The face
@@ -873,9 +903,9 @@ impl Session {
         Ok((ids, stored))
     }
 
-    /// The neutral face: exactly one planar face of `src`, outside the drafted set and not parallel to any
-    /// drafted planar face. Stored like a PushFace face (id pick or creation query, with a centroid/normal hint).
-    fn draft_neutral(&self, src: Id, sel: &Sel, faces: &[u32]) -> Result<(u32, Ref)> {
+    /// The neutral face: exactly one planar face of `src`. Stored like a PushFace face (id pick or creation
+    /// query, with a centroid/normal hint).
+    fn draft_neutral(&self, src: Id, sel: &Sel) -> Result<(u32, Ref)> {
         let key = self.one_face(src, sel).map_err(|e| match e {
             Error::Invalid(m) => Error::Invalid(format!("draft neutral: {m}")),
             other => other,
@@ -886,16 +916,11 @@ impl Session {
                 key.id
             )));
         }
-        self.check_draft_pair(src, key.id, faces)?;
         Ok((key.id, self.push_face_ref(sel, &key)?))
     }
 
+    /// No drafted planar face may be parallel to the neutral face (`faces` no longer holds the neutral).
     fn check_draft_pair(&self, src: Id, neutral: u32, faces: &[u32]) -> Result<()> {
-        if faces.contains(&neutral) {
-            return Err(Error::Invalid(format!(
-                "draft neutral face {neutral} is also among the drafted faces; leave it out of `faces` (the app removes it)"
-            )));
-        }
         let normal = |id: u32| self.p.regen_faces.get(&src).and_then(|fs| fs.iter().find(|f| f.id == id)).map(|f| f.normal);
         let Some(n) = normal(neutral) else {
             return Err(Error::NotFound(format!("face {neutral} of body {src}")));

@@ -173,7 +173,7 @@ fn refusals_leave_the_document_unchanged() {
         (draft(walls(), facing(BOTTOM), 0.0, false), "draft angle"),
         (draft(walls(), facing(BOTTOM), 61.0, false), "draft angle"),
         (draft(walls(), facing(BOTTOM), -60.5, false), "draft angle"),
-        (draft(Sel::Union(vec![walls(), facing(BOTTOM)]), facing(BOTTOM), 5.0, false), "neutral"),
+        (draft(facing(BOTTOM), facing(BOTTOM), 5.0, false), "only the neutral"),
         (draft(facing(TOP), facing(BOTTOM), 5.0, false), "parallel"),
         (draft(walls(), walls(), 5.0, false), "exactly one face"),
         (draft(facing([1.0, 1.0, 0.0]), facing(BOTTOM), 5.0, false), "matched no face"),
@@ -221,9 +221,27 @@ fn repick_replaces_faces_and_neutral_keeping_the_node() {
     volume(&report, square_frustum(10.0, 5.0));
     assert!(s.project().timeline.iter().any(|n| n.id == feature && matches!(n.kind, FeatureKind::Draft { .. })));
     let before = snapshot(&s);
-    let error = s.repick_draft(feature, &walls(), Some(&facing([1.0, 0.0, 0.0]))).unwrap_err().to_string();
-    assert!(error.contains("neutral"), "{error}");
+    let error = s.repick_draft(feature, &facing(TOP), None).unwrap_err().to_string();
+    assert!(error.contains("only the neutral"), "{error}");
     unchanged(&s, &before);
+}
+
+/// The app's picking removes the neutral face from the drafted set (qymcad-part aims.rs:284); the tool does the
+/// same, stores the remaining faces as picks like the app's edit, and says so in `notes`.
+#[test]
+fn a_neutral_among_the_faces_is_dropped_like_the_app() {
+    let (mut s, _) = block();
+    let (_, report) = s.draft(&draft(Sel::Union(vec![walls(), facing(BOTTOM)]), facing(BOTTOM), 5.0, false)).unwrap();
+    volume(&report, square_frustum(10.0, 5.0));
+    assert!(report.notes.iter().any(|n| n.contains("neutral") && n.contains("removed")), "{:?}", report.notes);
+    let node = s.project().timeline.iter().rev().find(|n| matches!(n.kind, FeatureKind::Draft { .. })).unwrap().id;
+    // Re-pick keeping the stored neutral (bottom) while the new selection holds it again.
+    let (_, selected, neutral, report) = s.repick_draft(node, &Sel::Union(vec![walls(), facing(BOTTOM)]), None).unwrap();
+    assert_eq!(selected.len(), 4, "the bottom neutral left the drafted set");
+    volume(&report, square_frustum(10.0, 5.0));
+    assert!(!selected.contains(&neutral));
+    assert!(report.errors.is_empty(), "{report:?}");
+    assert!(report.notes.iter().any(|n| n.contains("neutral") && n.contains("removed")), "{:?}", report.notes);
 }
 
 #[test]
