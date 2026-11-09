@@ -246,6 +246,8 @@ fn limits_allowlist_and_outer_schema() {
         "joint_create",
         "joint_set",
         "joint_delete",
+        "part_instance",
+        "part_copy",
     ];
     for name in r.list().iter().map(|t| t["name"].as_str().unwrap()).filter(|n| !allowed.contains(n)).chain(["unknown"]) {
         let message = error(&mut r, json!({"steps":[step(name,json!({}))]}));

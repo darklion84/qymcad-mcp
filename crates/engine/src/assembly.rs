@@ -61,13 +61,13 @@ use qymcad_core::{
 };
 use std::collections::HashSet;
 
-fn refusal(message: impl Into<String>) -> Error {
+pub(crate) fn refusal(message: impl Into<String>) -> Error {
     Error::Assembly(message.into())
 }
 fn kind_name(k: JointKind) -> String {
     format!("{k:?}").to_lowercase()
 }
-fn object_name(name: &str) -> Result<&str> {
+pub(crate) fn object_name(name: &str) -> Result<&str> {
     if name.chars().any(char::is_control) {
         return Err(Error::Invalid("object name must not contain Unicode control characters".into()));
     }
@@ -284,7 +284,7 @@ impl Session {
         Ok(())
     }
     /// Retain exact original handles; an enclosing MCP/batch boundary is reused.
-    fn assembly_edit(&mut self, tool: &str, args: Value, edit: impl FnOnce(&mut Self) -> Result<Value>) -> Result<Value> {
+    pub(crate) fn assembly_edit(&mut self, tool: &str, args: Value, edit: impl FnOnce(&mut Self) -> Result<Value>) -> Result<Value> {
         let snapshot = if self.tool_edit_active {
             None
         } else {
@@ -411,7 +411,7 @@ impl Session {
         }
         out
     }
-    fn part_result(&self, id: Id, changed: bool) -> Value {
+    pub(crate) fn part_result(&self, id: Id, changed: bool) -> Value {
         let c = self.p.components.iter().find(|c| c.id == id).unwrap();
         json!({"part":{"id":id,"name":crate::localization::name(&c.name),"parent":c.parent},"grounded":c.grounded,"local_transform":c.transform,"world_transform":self.p.world_transform(id),"local_metrics":self.result_bodies().into_iter().filter(|b|b.owner_part==Some(id)).map(|b|json!({"body":b.id,"volume_mm3":b.volume,"bbox_local":b.bbox_local})).collect::<Vec<_>>(),"affected_bodies":self.current_body_ids().into_iter().filter(|b|self.p.body_owner(*b)==Some(id)).collect::<Vec<_>>(),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
     }
@@ -601,6 +601,7 @@ impl Session {
     }
     pub(crate) fn component_info(&self) -> Vec<crate::ComponentInfo> {
         let bodies = self.current_body_ids();
+        let links = crate::instances::instance_links(&self.p);
         self.p
             .components
             .iter()
@@ -613,6 +614,8 @@ impl Session {
                 world_transform: self.p.world_transform(c.id),
                 grounded: c.grounded,
                 bodies: bodies.iter().copied().filter(|b| self.p.body_owner(*b) == Some(c.id)).collect(),
+                instance_of: links.get(&c.id).copied(),
+                instances: crate::instances::instances_of(&links, c.id),
             })
             .collect()
     }
@@ -698,6 +701,7 @@ impl Session {
         }
     }
     pub(crate) fn assembly_accept_edit(&mut self, before: &Project) -> Result<()> {
+        Self::check_instance_policy(before, &self.p, true)?;
         let touched = self.assembly_touched_parts(before);
         // Deleting the last unsupported recipe node must not bypass the affected-state guard.
         Self::check_supported_parts_in(before, &touched)?;
@@ -902,7 +906,11 @@ impl Session {
             }
             if let qymcad_core::feature::FeatureKind::PartInstance { src_comp, .. } = n.kind {
                 if n.parent.is_some_and(|id| connected.contains(&id)) || connected.contains(&src_comp) {
-                    let count = p.component_bodies(src_comp).into_iter().filter(|b| !p.consumed_bodies().contains(b)).count();
+                    // ADR 0053: a clone of a single-body source is a Part of its own for assembly edits.
+                    let count = crate::instances::solid_bodies(p, src_comp).len();
+                    if count == 1 {
+                        continue;
+                    }
                     if count > 1 {
                         return Err(refusal("part instances are not supported for multi-body source parts in package A"));
                     }

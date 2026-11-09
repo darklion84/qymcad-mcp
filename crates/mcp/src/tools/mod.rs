@@ -70,7 +70,7 @@ where
                 None // Projection returns its source body and target sketch; neither node was created.
             } else {
                 ["body", "plane", "sketch", "pattern"].iter().find_map(|key| v[*key].as_u64()).or_else(|| match name {
-                    "part_new" => v["part"]["id"].as_u64(),
+                    "part_new" | "part_instance" | "part_copy" => v["part"]["id"].as_u64(),
                     "joint_create" => v["joint"]["id"].as_u64(),
                     _ => None,
                 })
@@ -154,6 +154,8 @@ fn modelling_tool(name: &str) -> bool {
             | "joint_create"
             | "joint_set"
             | "joint_delete"
+            | "part_instance"
+            | "part_copy"
     )
 }
 

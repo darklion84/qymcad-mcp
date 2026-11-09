@@ -24,6 +24,7 @@ mod hole_sketch;
 mod import_tool;
 mod imports;
 mod info;
+mod instances;
 mod localization;
 #[cfg(test)]
 mod localization_tests;

@@ -30,6 +30,12 @@ pub struct ComponentInfo {
     pub grounded: bool,
     /// Current body ids owned directly by this component.
     pub bodies: Vec<Id>,
+    /// The source Part this clone repeats (native PartInstance, ADR 0053).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_of: Option<Id>,
+    /// The clone Parts that repeat this source Part.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub instances: Vec<Id>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -78,6 +84,7 @@ impl Session {
                 twins.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
             ));
         }
+        let links = crate::instances::instance_links(p);
         DocInfo {
             qymcad_version: crate::QYMCAD_VERSION,
             path: self.path().map(|p| p.display().to_string()),
@@ -96,6 +103,8 @@ impl Session {
                     world_transform: p.world_transform(c.id),
                     grounded: c.grounded,
                     bodies: bodies.iter().filter(|b| b.owner_part == Some(c.id)).map(|b| b.id).collect(),
+                    instance_of: links.get(&c.id).copied(),
+                    instances: crate::instances::instances_of(&links, c.id),
                 })
                 .collect(),
             active_component: p.active_component,

@@ -301,6 +301,8 @@ fn lists_tools_with_object_schemas() {
         "joint_create",
         "joint_set",
         "joint_delete",
+        "part_instance",
+        "part_copy",
         "assembly_info",
         "measure",
         "batch",

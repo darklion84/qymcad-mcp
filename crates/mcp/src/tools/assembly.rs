@@ -103,6 +103,18 @@ struct Delete {
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct Derived {
+    /// Source root-child Part id or unique name.
+    source: PartRef,
+    /// Required name of the new root-child Part; must differ from every existing component name.
+    name: String,
+    /// Optional parent-local translation [x,y,z] in mm, as part_place. Omitted keeps the app's own placement.
+    translation_mm: Option<[f64; 3]>,
+    /// Optional axis-angle rotation, as part_place; requires translation_mm.
+    rotation: Option<RotationArg>,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct Info {}
 
 fn changed(state: &mut super::State, result: Value) -> Value {
@@ -140,6 +152,14 @@ pub fn tools() -> Vec<Tool> {
             Ok(changed(st, result))
         }),
         tool("joint_delete", "Delete one native joint and its unshared non-standalone auto-connectors while retaining current Part placements; solve and verify the remaining mechanism. Undoable; allowed in batch.", |st, a: Delete| st.doc()?.joint_delete(&a.joint).map_err(err)),
-        tool("assembly_info", "Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.", |st, _: Info| Ok(st.doc()?.assembly_info())),
+        tool("part_instance", "The app's tree action Make a clone (act-clone-part): a new root-child Part whose one native PartInstance body repeats the source Part's single solid body, so every edit of the source reaches it, while it is placed, grounded and jointed as a Part of its own. A clone of a clone repeats the original; the result reports part.instance_of. Without translation_mm the clone stands beside the source along X, as in the app. Refused unless the source has exactly one solid body: a native clone copies only the last body (FINDINGS F-146); use part_copy for multi-body Parts. Later edits that would make a cloned source multi-body, and any modelling inside a clone, are refused; edit the source part. Undoable; allowed in batch.", |st, a: Derived| {
+            let rotation = a.rotation.map(|rotation| PartRotation {axis:rotation.axis, angle_deg:rotation.angle_deg});
+            st.doc()?.part_instance(&a.source, &a.name, a.translation_mm, rotation.as_ref()).map_err(err)
+        }),
+        tool("part_copy", "The app's tree Copy then Paste here of a Part (clone_component into the Part's parent assembly): a deep copy of every body with an independent recipe, so later feature edits of either Part do not reach the other; formulas are copied verbatim, so global parameters drive both. Joints and connectors are not copied; grounding is. Without translation_mm the copy stands exactly where the source stands, as in the app. Returns copied_from and body_map [[source body, copy body], ...]. Undoable; allowed in batch.", |st, a: Derived| {
+            let rotation = a.rotation.map(|rotation| PartRotation {axis:rotation.axis, angle_deg:rotation.angle_deg});
+            st.doc()?.part_copy(&a.source, &a.name, a.translation_mm, rotation.as_ref()).map_err(err)
+        }),
+        tool("assembly_info", "Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, clone links (instance_of on clones, instances on sources), connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.", |st, _: Info| Ok(st.doc()?.assembly_info())),
     ]
 }

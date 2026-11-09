@@ -1049,6 +1049,8 @@ impl Session {
         let old_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
         let result = (|| {
             let value = edit(self)?;
+            // Refuse modelling inside a clone before its rebuild can fail for another reason (ADR 0053).
+            Self::check_instance_policy(&before, &self.p, false)?;
             let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
             let mut rebuild = self.rebuild_for_edit(Some(&new_nodes))?;
             let new_errors: Vec<String> = rebuild
