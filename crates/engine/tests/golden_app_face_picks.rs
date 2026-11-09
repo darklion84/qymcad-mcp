@@ -177,3 +177,53 @@ fn described_draft_repick_reopens_with_its_faces_and_neutral_in_the_app() {
     assert_close(report.bodies[0].volume, square_frustum(10.0, 5.0), 1e-3, "draft re-pick");
     check_app_reopen(&mut s, node, &[wall_ids, top], "g-picks-draft-repick.qcad", square_frustum(12.0, 5.0));
 }
+
+/// `qymcad_part::params::face_desc_of`: the hole's reopen reads only a single `Id` query.
+fn face_desc_of(r: &Ref) -> Option<u32> {
+    match r.query {
+        qymcad_core::refs::Query::Id(d) if d != 0 => Some(d),
+        _ => None,
+    }
+}
+
+fn hole_face(p: &Project, node: Id) -> (Id, Ref) {
+    match &p.timeline.iter().find(|n| n.id == node).unwrap().kind {
+        FeatureKind::Hole { src, face, .. } => (*src, face.clone()),
+        other => panic!("unexpected kind {other:?}"),
+    }
+}
+
+#[test]
+fn described_hole_reopens_with_its_face_in_the_app() {
+    let (mut s, _) = box_stock();
+    let top = ids(&mut s, &facing([0.0, 0.0, 1.0]));
+    let (node, report) = s
+        .hole(&Hole {
+            body: None,
+            face: facing([0.0, 0.0, 1.0]),
+            at: None,
+            offset: None,
+            diameter: 2.0.into(),
+            depth: Some(3.0.into()),
+            kind: HoleKind::Plain,
+            dia2: None,
+            depth2: None,
+            name: None,
+        })
+        .unwrap();
+    // V = 20*20*h - pi*1^2*3.
+    let hole = 3.0 * std::f64::consts::PI;
+    assert_close(report.bodies[0].volume, 4000.0 - hole, 1e-6, "hole");
+    let hint = hole_face(s.project(), node).1.hint;
+    assert_eq!(hint.normal, [0.0, 0.0, 1.0], "the app's adder writes the face's centroid/normal hint");
+    let path = scratch("g-picks-hole.qcad");
+    s.save(Some(&path)).unwrap();
+    let loaded = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap().project;
+    let (_, stored) = hole_face(&loaded, node);
+    assert_eq!(face_desc_of(&stored).map(|d| vec![d]), Some(top.clone()), "app reopen would find no face: {stored:?}");
+    let (volume, _, _, project) = gui_edit_param_model(&path, "h", "12");
+    assert_close(volume, 4800.0 - hole, 1e-3, "app rebuild after h edit keeps the hole");
+    let (src, stored) = hole_face(&project, node);
+    let d = face_desc_of(&stored).expect("hole face id after app regen");
+    assert!(project.regen_faces[&src].iter().any(|f| f.id == d), "hole face {d} is not live after app regen");
+}

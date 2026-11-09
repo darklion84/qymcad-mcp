@@ -61,3 +61,11 @@ push_face). QymCAD's edit mode (qymcad-part `reopen.rs` → `params.rs::live_pic
 stored query opened «Править» with nothing selected and OK would destroy the feature. Re-resolving a description
 after upstream edits was our extension beyond the app and is dropped. `hole` is unchanged by this addendum.
 Evidence: `crates/engine/tests/golden_app_face_picks.rs`.
+
+## 2026-11-09 addendum (2) — hole too
+
+A face-placed `hole` now also stores its face as the app's `add_hole_at` and edit (`apply/update.rs`) write it:
+`Ref::one(id, centroid/normal hint)`, for ids and descriptions alike. The app reopens a hole through
+`params.rs::face_desc_of`, which reads only a `Query::Id`; a stored query (or a frozen `Ids` list) reopened with no
+face. With no face modifier left storing a query, the kind-only freezing above and `face_query` are removed.
+Evidence: `golden_app_face_picks::described_hole_reopens_with_its_face_in_the_app`.

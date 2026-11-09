@@ -23,3 +23,9 @@ A selection stored as a query stays a query. After a move it is evaluated on the
 Save the native ordered nodes and remapped references, with normal dependency reconciliation, numeric rollback and suppression. No format fields, pin change or server-only timeline are added. Native saved-file forced rebuilding and parameter scheduling are tested separately from Session rebuilding. Native F-137 pattern source-only scheduling and F-141 general projection limitations remain; reorder does not fix the app.
 
 Excluded: arbitrary index/before/after placement, sketch/datum targets, cross-parent moves, mesh-born/multi-output movers, general sketch-based Cut/Add chain rewriting, dependency relocation, forced unsuppression and silent pick repair. Visible-app verification is unavailable in this stage. Executed acceptance and mutation evidence, including any remaining limitations, belongs in `tasks/T-report.md`.
+
+## 2026-11-09 addendum — no face query left to re-evaluate
+
+"A selection stored as a query stays a query" no longer applies to hole, shell, push_face or draft faces: a
+description is stored as the app's pick (ADR 0013 addenda 2026-11-09). A hole placed on `facing +z` and moved after
+an array therefore succeeds like an id pick (`t_reorder::t_stdio_hole_face_given_by_a_description_moves_like_a_pick`).

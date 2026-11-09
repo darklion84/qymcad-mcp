@@ -804,7 +804,7 @@ pub fn tools() -> Vec<Tool> {
              Every requested point must retain a nonzero bore face or the call refuses atomically, naming the missing point. `at`/`offset` are face-only; `points`/`flip` are sketch-only. \
              Persisted sketch dependency metadata bridges global and named coordinate edits in the engine and app; unnamed in-app sketch dimension edits leave holes stale until an upstream fix. Reopen/save through the engine after app structural sketch edits to refresh metadata. \
              The face may be described ({\"facing\": \"+z\"}, {\"of_feature\": \"plate\", \"role\": \"cap_end\"}): \
-             such a description is stored and keeps working after upstream edits. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. `at` is a world point. \
+             it is stored as the app's pick: frozen to the persistent face id it matched, not re-resolved after upstream edits. `at` is a world point. \
              `through` stores a fixed 10000 mm depth: face creation checks the body bbox diagonal; sketch creation checks the full directed span from the marker plane over all eight source bbox corners. \
              A span over 10000 mm refuses, rechecked on engine sketch-hole edits/open/rebuild. Later native app stock growth can make the hole blind. Explicit depth edits switch to blind. Sketch holes refuse off_u/off_v dimension edits.",
                 stale!()

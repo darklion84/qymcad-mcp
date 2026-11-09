@@ -287,17 +287,6 @@ impl Sel {
         self.corner_filters() == (true, true) && self.replace_corner_filters(&[]).is_some()
     }
 
-    /// Whether a composition contains an engine-only kind leaf.
-    fn has_kind(&self) -> bool {
-        match self {
-            Self::Kind(_) => true,
-            Self::Union(v) => v.iter().any(Self::has_kind),
-            Self::And(a, b) | Self::Minus(a, b) | Self::Between(a, b) => a.has_kind() || b.has_kind(),
-            Self::EdgesOf(s) | Self::TangentChain { seed: s, .. } => s.has_kind(),
-            _ => false,
-        }
-    }
-
     /// An explicit pick list (`Ids`), as opposed to a description.
     pub fn is_ids(&self) -> bool {
         matches!(self, Sel::Ids(_))
@@ -964,16 +953,6 @@ impl Session {
             self.check_face_names(body, &found)?;
         }
         Ok(found)
-    }
-
-    /// Freeze the complete resolved selection when it contains a kind leaf (ADR 0013).
-    /// A pick list preserves QymCAD's asked-versus-opened guard if some faces vanish.
-    pub(crate) fn face_query(&self, sel: &Sel, ids: &[u32]) -> Result<Query> {
-        if sel.has_kind() {
-            Ok(Query::Ids(ids.to_vec()))
-        } else {
-            sel.to_query(Element::Faces)
-        }
     }
 
     /// Resolve a selection that must name exactly one face; returns its key (id, centroid, normal).

@@ -12,7 +12,7 @@ All notable changes to this project are documented here. The format follows
 - `thicken`: native Thicken — a plate of `thickness` > 0 (number or formula, feature dimension `thickness`) on one planar or curved face, united with the part; the face is frozen to its persistent id; re-pick through `feature` refreshes the face witness; batch and one-step undo (ADR 0052).
 
 ### Fixed
-- `shell`, `push_face` and `draft` given faces (or the draft neutral) as descriptions now store them as the app does — the resolved ids as picks, a single face as `Ref::one` with its centroid/normal hint — so QymCAD's «Править» reopens them with their faces selected; they were stored as queries the app's edit mode does not read («Наклоняемых: 0», empty neutral, OK would destroy the feature). A description is no longer re-resolved after upstream edits (ADR 0013/0041/0052 addenda 2026-11-09).
+- `shell`, `push_face`, `draft` and face-placed `hole` given faces (or the draft neutral) as descriptions now store them as the app does — the resolved ids as picks, a single face as `Ref::one` with its centroid/normal hint — so QymCAD's «Править» reopens them with their faces selected (a hole reopened with no face: the app reads only an `Id`); they were stored as queries the app's edit mode does not read («Наклоняемых: 0», empty neutral, OK would destroy the feature). A description is no longer re-resolved after upstream edits (ADR 0013/0041/0050/0052 addenda 2026-11-09).
 
 ### Fixed (protective refusals of silent native results, FINDINGS F-148–F-151)
 - A draft whose result lost faces (a shrinking draft closing a face into an apex, −45° on a 20×10 block) is refused on creation and on later edits; QymCAD builds it green.

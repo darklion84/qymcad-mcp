@@ -63,7 +63,7 @@ fn kind_top() -> Sel {
 }
 
 fn kind_face_modifier(tool: &str) {
-    use qymcad_core::{feature::FeatureKind, refs::Query};
+    use qymcad_core::feature::FeatureKind;
     let mut s = Session::new_part();
     s.param_set("h", &10.0.into()).unwrap();
     let sketch = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
@@ -105,8 +105,8 @@ fn kind_face_modifier(tool: &str) {
         FeatureKind::Shell { faces, .. } => &faces.query,
         _ => unreachable!(),
     };
-    // Shell and push_face store the app's own pick (`Ref::picks`/`Ref::one`, a single face is `Id`); hole keeps `Ids`.
-    let frozen = if tool == "hole" { Query::Ids(picks) } else { qymcad_core::refs::Ref::picks(&picks).query };
+    // Every face modifier stores the app's own pick (`Ref::picks`/`Ref::one`): a single face is `Id`.
+    let frozen = qymcad_core::refs::Ref::picks(&picks).query;
     assert_eq!(*query, frozen, "freeze the whole kind-containing face selection");
     assert!(query.is_pick_list(), "retain the native asked-versus-opened guard");
     // Stock V=20*16*h. Hole removes a radius-1 depth-3 cylinder; shell removes an

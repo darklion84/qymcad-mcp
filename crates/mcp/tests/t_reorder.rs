@@ -176,10 +176,10 @@ fn t_stdio_reorder_strict_schema_refusals_and_ambiguous_names() {
         format!("invalid request: several objects are named `duplicate` ({ids:?}); use the id")
     );
 }
-/// A face stored as a query is evaluated on the new source: `facing +z` matches both array tops there,
-/// and a hole needs exactly one. The same move with the face picked by id succeeds (next test).
+/// A described hole face is stored as the app's pick (`Ref::one`, 2026-11-09), so it is not re-resolved on the new
+/// source: `facing +z` would match both array tops there, yet the move succeeds exactly as with an id pick.
 #[test]
-fn t_stdio_hole_face_picked_by_a_query_refuses_a_move_that_makes_it_ambiguous() {
+fn t_stdio_hole_face_given_by_a_description_moves_like_a_pick() {
     let mut c = Client::start();
     c.ok("doc_new", json!({}));
     let sketch = c.ok("sketch_create", json!({"plane":"XY"}))["sketch"].clone();
@@ -187,10 +187,12 @@ fn t_stdio_hole_face_picked_by_a_query_refuses_a_move_that_makes_it_ambiguous() 
     let stock = c.ok("extrude", json!({"sketch":sketch,"height":10}))["body"].clone();
     let hole = c.ok("hole", json!({"body":stock,"face":{"facing":"+z"},"at":[0,0,10],"diameter":2,"through":true}))["body"].clone();
     c.ok("linear_array", json!({"body":hole,"dx":20,"count":2}));
-    let error = c.refuse_unchanged("feature_reorder", json!({"feature":hole,"direction":"down"}));
-    assert!(error.contains("operation rolled back") && error.contains(&format!("({hole})")), "{error}");
-    // Two copies of 1000 - pi*1^2*10.
-    volume(&c.ok("doc_info", json!({}))["bodies"][0], 2000.0 - 20.0 * std::f64::consts::PI);
+    let moved = c.ok("feature_reorder", json!({"feature":hole,"direction":"down"}));
+    assert_eq!(moved["changed"], true);
+    let bodies = moved["rebuild"]["bodies"].as_array().unwrap();
+    assert_eq!(bodies.len(), 1);
+    // The single bore drills only the original copy: 2·1000 − π·1²·10.
+    volume(&bodies[0], 2000.0 - 10.0 * std::f64::consts::PI);
 }
 #[test]
 fn t_stdio_consumed_hole_down_and_array_up_rewire_geometry_one_undo() {

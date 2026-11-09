@@ -828,12 +828,6 @@ impl Session {
                 (None, None) => key.centroid,
             };
             let id = s.in_component(s.p.body_owner(src), |p| p.add_hole_at(src, key, at, HoleTool { kind, diameter, depth, dia2, depth2 }));
-            if !a.face.is_ids() {
-                let q = s.face_query(&a.face, &[key.id])?;
-                if let Some(FeatureKind::Hole { face: r, .. }) = s.node_kind_mut(id) {
-                    r.query = q;
-                }
-            }
             dim(s, id, "diameter", &a.diameter);
             if let Some([u, v]) = &a.offset {
                 dim(s, id, "off_u", u);
