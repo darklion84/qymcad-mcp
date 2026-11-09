@@ -2628,6 +2628,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-146 A native PartInstance copies only the active body of a multi-body Part
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#376.
 - **Source:** `crates/qymcad-core/src/model/assembly/tree.rs:283-298` makes a new Part and one
   `FeatureKind::PartInstance` output id. `model/regen/prep_bodies.rs:31-40` copies
   `active_body_before(src_comp,at)` using an identity geometry transform; placement belongs to the new
@@ -2658,6 +2659,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-148 Draft's ±60° angle range exists only in the app's command bar
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#377.
 - **App behaviour:** `crates/qymcad-part/src/start.rs:6-19` starts Draft with
   `CmdParam::new("f-angle", "angle", 3.0, -60.0, 60.0).nonzero()`: default 3°, range ±60°, zero forbidden
   (`reopen.rs:295` reuses it on edit).
@@ -2676,6 +2678,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-149 A shrinking Draft that closes a face builds silently
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#378.
 - **Executed native evidence:** research-G §4.2 (`tasks/exp-draft-thicken`): −45° on the four walls of a 20×20×10 box
   about its bottom face (each wall moves in by 10·tan 45° = 10 mm, half the width) gives a pyramid of 1333.33 mm³;
   the top face is gone (6 faces → 5) and `RegenReport.errors` is empty. −60° fails with `DraftFailed`.
@@ -2690,6 +2693,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-150 Thicken with a negative thickness can build material on the far side of a solid
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#301.
 - **App behaviour:** `crates/qymcad-part/src/start.rs:315-328` offers thickness 2 with range ±100000, negative
   allowed; `apply/solids.rs:341-363` refuses only zero (`msg-zero-thickness`).
 - **Core / kernel:** `prep_thicken` (`prep_ops.rs:239-268`) refuses `|t| < 1e-9`; a planar face becomes
@@ -2707,6 +2711,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-151 Draft about a curved neutral face tilts about an averaged plane
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#379.
 - **Source:** the neutral `Ref` resolves through `face_by_ref` to one `{centroid, normal}` (`prep_ops.rs:311`,
   `apply.rs:128-140`); a curved face's mesh normal is not a meaningful plane normal (F-011).
 - **Executed native evidence:** research-G D20: cylinder r10 h20, neutral = its side face, drafting the top +5° builds
@@ -2719,6 +2724,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-152 A clone made while the history is rolled back is inserted at the bar and misses the source's later features
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#380.
 - **Source:** `Project::clone_part` (`model/assembly/tree.rs:283-298`) pushes the PartInstance through `push_timeline`
   (`model/timeline/order.rs:31-45`), which inserts it **at the rollback bar**. `bring_instances_after` (`order.rs:65`)
   moves clones below a source's node only when that node is pushed later; the source's nodes already past the bar stay
@@ -2737,6 +2743,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-153 Suppressing a cloned source's base leaves the clone's old body with no error
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#381.
 - **Source:** a suppressed base node cascades its body into `unbuilt` (`regen/run.rs:289-317`), but a PartInstance has
   no `inputs`; `node_reads_any` (`run.rs:25-35`) and `regen_partinstance` use `active_body_before`
   (`timeline/state.rs:214-226`), which does not skip a suppressed node's body, so the clone either is not rebuilt or
