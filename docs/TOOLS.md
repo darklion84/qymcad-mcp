@@ -4444,7 +4444,7 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
 
 ## shell
 
-Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {"facing": "+z"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the complete face selection of an existing shell; its thickness/side formulas are unchanged and values remain editable with `dimension_set`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {"facing": "+z"} for an open box). Any selection is stored as the app's picks: a description is frozen to the persistent face ids it matched and does not rediscover later faces. Give `feature` to replace the complete face selection of an existing shell; its thickness/side formulas are unchanged and values remain editable with `dimension_set`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -4586,7 +4586,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
 
 ## push_face
 
-Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {"facing": "+z"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the selected face of an existing push_face; its distance formula stays unchanged and remains editable with `dimension_set`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {"facing": "+z"} for the top. Stored as the app's pick: a description is frozen to the persistent face id it matched and does not rediscover later faces. Give `feature` to replace the selected face of an existing push_face; its distance formula stays unchanged and remains editable with `dimension_set`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -4775,7 +4775,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
           "type": "object"
         }
       ],
-      "description": "Faces to tilt, at least one, e.g. {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}]}. Ids are stored as picks,\ndescriptions as a query (kind leaves frozen). With `feature`, replaces the complete drafted-face selection."
+      "description": "Faces to tilt, at least one, e.g. {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}]}. Stored as the app's picks:\na description is frozen to the face ids it matched. With `feature`, replaces the complete drafted-face selection."
     },
     "feature": {
       "anyOf": [

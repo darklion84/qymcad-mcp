@@ -9,7 +9,7 @@ use crate::topology::{Element, Sel};
 use crate::value::Num;
 use qymcad_core::feature::{ChamferMode, FeatureKind, ShellSide};
 use qymcad_core::model::{ChamferShape, ElemSnapshot, HoleTool, Id};
-use qymcad_core::refs::{Cardinality, Fingerprint, Ref};
+use qymcad_core::refs::{Fingerprint, Ref};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -163,6 +163,12 @@ fn drop_neutral(ids: Vec<u32>, stored: Ref, neutral: u32) -> Result<(Vec<u32>, R
     }
     let stored = Ref::picks(&kept);
     Ok((kept, stored, true))
+}
+
+/// The PushFace reference creation and re-pick both store, as the app's adder and edit do: the id pick, with
+/// the face's centroid/normal hint (for ids and descriptions alike).
+fn push_face_ref(key: &qymcad_core::feature::FaceKey) -> Ref {
+    Ref::one(key.id, Fingerprint { centroid: key.centroid, normal: key.normal })
 }
 
 fn neutral_note((id, mut report): (Id, Rebuild), dropped: Option<u32>) -> (Id, Rebuild) {
@@ -531,20 +537,13 @@ impl Session {
         self.atomic(|s| {
             let src = s.source_body(body)?;
             let t = positive(s, thickness, "shell thickness")?;
-            let (ids, faces_ref) = s.shell_face_ref(src, open_faces)?;
+            let (ids, _) = s.shell_face_ref(src, open_faces)?;
             let qside = match side {
                 Side::Inward => ShellSide::Inward,
                 Side::Outward => ShellSide::Outward,
                 Side::Centred => ShellSide::Centred,
             };
-            let id = s.in_component(s.p.body_owner(src), |p| {
-                p.add_shell_mode(src, t, if open_faces.is_ids() { ids.clone() } else { Vec::new() }, qside)
-            });
-            if !open_faces.is_ids() {
-                if let Some(FeatureKind::Shell { faces, .. }) = s.node_kind_mut(id) {
-                    *faces = faces_ref;
-                }
-            }
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_shell_mode(src, t, ids, qside));
             dim(s, id, "thickness", thickness);
             s.set_node_name(id, name)?;
             Ok(id)
@@ -566,7 +565,7 @@ impl Session {
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
         self.with_rebuild_copies(before, &nodes, "push_face re-pick", |s| {
-            let stored_ref = s.push_face_ref(face, &key)?;
+            let stored_ref = push_face_ref(&key);
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::PushFace { face: stored, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a push_face feature")));
@@ -592,7 +591,7 @@ impl Session {
                 return Err(Error::Invalid("push distance must not be zero".into()));
             }
             let key = s.planar_face(src, face)?;
-            let stored_ref = s.push_face_ref(face, &key)?;
+            let stored_ref = push_face_ref(&key);
             let id = s.in_component(s.p.body_owner(src), |p| p.add_push_face(src, key, d));
             if let Some(FeatureKind::PushFace { face: r, .. }) = s.node_kind_mut(id) {
                 *r = stored_ref;
@@ -890,7 +889,8 @@ impl Session {
         if ids.is_empty() {
             return Err(Error::Invalid(format!("the open-face selection matched no face of body {src}")));
         }
-        let stored = if sel.is_ids() { Ref::picks(&ids) } else { Ref::many(self.face_query(sel, &ids)?) };
+        // Stored as the app's picks for ids and descriptions alike: its edit mode reopens only picked ids.
+        let stored = Ref::picks(&ids);
         Ok((ids, stored))
     }
 
@@ -899,12 +899,13 @@ impl Session {
         if ids.is_empty() {
             return Err(Error::Invalid(format!("the draft face selection matched no face of body {src}")));
         }
-        let stored = if sel.is_ids() { Ref::picks(&ids) } else { Ref::many(self.face_query(sel, &ids)?) };
+        // Stored as the app's picks for ids and descriptions alike: its edit mode reopens only picked ids.
+        let stored = Ref::picks(&ids);
         Ok((ids, stored))
     }
 
-    /// The neutral face: exactly one planar face of `src`. Stored like a PushFace face (id pick or creation
-    /// query, with a centroid/normal hint).
+    /// The neutral face: exactly one planar face of `src`. Stored like a PushFace face (an id pick with a
+    /// centroid/normal hint).
     fn draft_neutral(&self, src: Id, sel: &Sel) -> Result<(u32, Ref)> {
         let key = self.one_face(src, sel).map_err(|e| match e {
             Error::Invalid(m) => Error::Invalid(format!("draft neutral: {m}")),
@@ -916,7 +917,7 @@ impl Session {
                 key.id
             )));
         }
-        Ok((key.id, self.push_face_ref(sel, &key)?))
+        Ok((key.id, push_face_ref(&key)))
     }
 
     /// No drafted planar face may be parallel to the neutral face (`faces` no longer holds the neutral).
@@ -934,16 +935,6 @@ impl Session {
             }
         }
         Ok(())
-    }
-
-    /// The PushFace reference creation and re-pick both store: the native id pick for ids, the creation query
-    /// for descriptions; either way with the face's centroid/normal hint.
-    fn push_face_ref(&self, sel: &Sel, key: &qymcad_core::feature::FaceKey) -> Result<Ref> {
-        let hint = Fingerprint { centroid: key.centroid, normal: key.normal };
-        if sel.is_ids() {
-            return Ok(Ref::one(key.id, hint));
-        }
-        Ok(Ref { query: self.face_query(sel, &[key.id])?, expect: Cardinality::One, hint })
     }
 
     fn planar_face(&self, src: Id, sel: &Sel) -> Result<qymcad_core::feature::FaceKey> {

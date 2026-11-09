@@ -23,3 +23,10 @@ The QymCAD app edits an existing fillet or chamfer node by replacing its complet
 Successful results report `feature`, `body`, `name`, `selected_edges` or `selected_faces` and rebuild diagnostics; chamfer results also report retained mode/reference/flip. T2 is covered for RemoveFace, fillet, chamfer, shell and push_face re-picks.
 
 Evidence: `crates/engine/tests/golden_repick.rs`, `crates/engine/tests/golden_repick_faces.rs`, `crates/mcp/tests/d1_repick.rs`, `crates/mcp/tests/d2_repick_faces.rs`, and generated `docs/TOOLS.md`. Acceptance mutations (append instead of replace, an old PushFace hint, no planar check, no refusal on a downstream rebuild error) each turned a named test red.
+
+## 2026-11-09 addendum — descriptions stored as picks
+
+Shell and PushFace re-picks (and creations) now store a description exactly as an id selection: the resolved
+face ids as the app's picks, PushFace with the centroid/normal hint. "Descriptions retain the creation query"
+above no longer holds: the app's edit mode reads only picked ids (`live_picks`) and reopened such nodes empty.
+See ADR 0013 addendum 2026-11-09; evidence `crates/engine/tests/golden_app_face_picks.rs`.

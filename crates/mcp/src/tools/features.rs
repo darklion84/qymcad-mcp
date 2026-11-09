@@ -358,8 +358,8 @@ pub struct DraftArgs {
     /// Body id or name. Default: the part's current body; not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
-    /// Faces to tilt, at least one, e.g. {"union": [{"facing": "+x"}, {"facing": "-x"}]}. Ids are stored as picks,
-    /// descriptions as a query (kind leaves frozen). With `feature`, replaces the complete drafted-face selection.
+    /// Faces to tilt, at least one, e.g. {"union": [{"facing": "+x"}, {"facing": "-x"}]}. Stored as the app's picks:
+    /// a description is frozen to the face ids it matched. With `feature`, replaces the complete drafted-face selection.
     pub faces: SelArg,
     /// Exactly one planar face of the same body (removed from `faces` if listed there), e.g. {"facing": "-z"} for the base. Its outward
     /// normal is the pull direction; the plane through its centroid stays fixed. Required without `feature`;
@@ -844,7 +844,7 @@ pub fn tools() -> Vec<Tool> {
         tool(
             "shell",
             concat!(
-                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box). Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the complete face selection of an existing shell; its thickness/side formulas are unchanged and values remain editable with `dimension_set`.",
+                "Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.g. {\"facing\": \"+z\"} for an open box). Any selection is stored as the app's picks: a description is frozen to the persistent face ids it matched and does not rediscover later faces. Give `feature` to replace the complete face selection of an existing shell; its thickness/side formulas are unchanged and values remain editable with `dimension_set`.",
                 stale!()
             ),
             |st, a: ShellArgs| {
@@ -866,7 +866,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "push_face",
-            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {\"facing\": \"+z\"} for the top. Kind-filter leaves are frozen to persistent face ids at creation and do not rediscover later faces. Give `feature` to replace the selected face of an existing push_face; its distance formula stays unchanged and remains editable with `dimension_set`.", stale!()),
+            concat!("Move one planar face along its outward normal by `dist` (negative = into the body), e.g. {\"facing\": \"+z\"} for the top. Stored as the app's pick: a description is frozen to the persistent face id it matched and does not rediscover later faces. Give `feature` to replace the selected face of an existing push_face; its distance formula stays unchanged and remains editable with `dimension_set`.", stale!()),
             |st, a: PushFaceArgs| {
                 let s = st.doc()?;
                 let face = a.face.resolve(s)?;

@@ -105,7 +105,9 @@ fn kind_face_modifier(tool: &str) {
         FeatureKind::Shell { faces, .. } => &faces.query,
         _ => unreachable!(),
     };
-    assert_eq!(*query, Query::Ids(picks), "freeze the whole kind-containing face selection");
+    // Shell and push_face store the app's own pick (`Ref::picks`/`Ref::one`, a single face is `Id`); hole keeps `Ids`.
+    let frozen = if tool == "hole" { Query::Ids(picks) } else { qymcad_core::refs::Ref::picks(&picks).query };
+    assert_eq!(*query, frozen, "freeze the whole kind-containing face selection");
     assert!(query.is_pick_list(), "retain the native asked-versus-opened guard");
     // Stock V=20*16*h. Hole removes a radius-1 depth-3 cylinder; shell removes an
     // 18*14*(h-1) rectangular cavity; pushing the top by 2 adds 20*16*2.

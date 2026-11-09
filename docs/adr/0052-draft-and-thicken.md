@@ -42,3 +42,13 @@ QymCAD has native Draft (`FeatureKind::Draft`) and Thicken (`FeatureKind::Thicke
 ## Consequences
 
 Both tools are modelling tools: batch-allowed, one undo entry, created in the source body's Part (`in_component(body_owner)`), named through `set_node_name`. Evidence: `crates/engine/tests/golden_draft.rs`, `crates/engine/tests/golden_thicken.rs` (hand volumes 3660.25/4360.16/7446.72 and 5200/9047.79, tilt by topology normals, formulas, refusals with byte-identical state, save/reopen and the app's parameter-edit path), `crates/mcp/tests/g12_draft_thicken.rs` (stdio registry, batch, undo). Removing `check_draft_thicken_values` or the face-loss check turns named tests red (G1/G2 mutation runs).
+
+## 2026-11-09 addendum — faces and neutral stored as picks
+
+The Draft bullet above ("descriptions as their creation query", "id pick or creation query") is superseded:
+drafted faces are always stored as `Ref::picks` of the resolved ids and the neutral as `Ref::one(id, hint)`, for ids
+and descriptions alike, as the app's `add_draft` and edit (`apply/update.rs`) write them. The app reopens a Draft
+through `live_picks`, which reads only picked ids: a stored query showed «Наклоняемых: 0» and an empty neutral.
+The neutral keeps our centroid/normal hint where the app's adder leaves it at default (its edit keeps whatever hint
+is stored); the hint does not affect `live_picks`. A description is no longer re-resolved after upstream edits.
+Evidence: `crates/engine/tests/golden_app_face_picks.rs`.

@@ -101,7 +101,7 @@ fn shell_repick_replaces_faces_preserves_formula_and_undoes_once() {
 }
 
 #[test]
-fn shell_descriptive_repick_stores_creation_query_and_app_edit_survives() {
+fn shell_descriptive_repick_stores_app_picks_and_app_edit_survives() {
     let (mut s, body) = box_stock();
     let (feature, first) =
         s.shell(None, &Sel::Facing { dir: [0.0, 0.0, 1.0], tol_deg: 1.0 }, &"t".into(), Side::Inward, Some("shell")).unwrap();
@@ -121,8 +121,8 @@ fn shell_descriptive_repick_stores_creation_query_and_app_edit_survives() {
         _ => panic!("shell"),
     };
     assert_eq!(&stored, fresh_ref);
-    // A description is stored as the creation query, not frozen to the ids it matched today.
-    assert_ne!(stored, qymcad_core::refs::Ref::picks(&selected), "descriptive shell re-pick froze its faces to picks");
+    // A description is stored as the app stores a hand pick (2026-11-09): the app's edit mode reopens only picked ids.
+    assert_eq!(stored, qymcad_core::refs::Ref::picks(&selected), "descriptive shell re-pick must store the app's picks");
     let path = scratch("d2-shell-repick.qcad");
     s.save(Some(&path)).unwrap();
     let (mut opened, opened_report) = Session::open(&path).unwrap();

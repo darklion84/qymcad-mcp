@@ -52,3 +52,12 @@ outward sign, counts the opposite sign across the body, and offers a `between` e
 consumed-source chain has at least two solid-creating extrude/revolve features. Topology and resolved selections sort ids for
 stable output. Public body volume uses `volume_mm3` at native floating-point precision, while existing bounds
 and topology display rounding remain independent presentation choices.
+
+## 2026-11-09 addendum — app picks for shell and push_face
+
+`shell` and `push_face` no longer keep a native dynamic query for a description without kinds: every selection is
+stored as the app's adder and edit store it (`Ref::picks` for shell, `Ref::one(id, centroid/normal hint)` for
+push_face). QymCAD's edit mode (qymcad-part `reopen.rs` → `params.rs::live_picks`) reopens only picked ids, so a
+stored query opened «Править» with nothing selected and OK would destroy the feature. Re-resolving a description
+after upstream edits was our extension beyond the app and is dropped. `hole` is unchanged by this addendum.
+Evidence: `crates/engine/tests/golden_app_face_picks.rs`.
