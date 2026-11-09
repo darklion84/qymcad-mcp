@@ -7,11 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - `draft`: native Draft as the app's Draft command — faces tilted about a planar neutral face of the same body, signed `angle` (number or formula, feature dimension `angle`) in the app's range 0 < |angle| ≤ 60 enforced on creation and on every evaluated `param_set`/`dimension_set`/open rebuild, `flip`, re-pick of faces and neutral through `feature`, batch and one-step undo (ADR 0052).
+- `part_instance`: the app's tree "Create duplicate" (`clone_part`) — a live native clone of a single-body Part with a required unique name, optional placement (else the app's "beside" spot), `instance_of`/`instances` in `doc_info`/`assembly_info`; clones take placement, grounding and Rigid/Slider joints; batch and one-step undo (ADR 0053). Multi-body sources are refused (F-146: native copies only the last body).
+- `part_copy`: the app's tree Copy / Paste here (`clone_component`) — an independent deep copy of every body of a Part into the source's parent; global parameters drive both; joints and connectors are not copied, grounding is (ADR 0053).
 - `thicken`: native Thicken — a plate of `thickness` > 0 (number or formula, feature dimension `thickness`) on one planar or curved face, united with the part; the face is frozen to its persistent id; re-pick through `feature` refreshes the face witness; batch and one-step undo (ADR 0052).
 
 ### Fixed (protective refusals of silent native results, FINDINGS F-148–F-151)
 - A draft whose result lost faces (a shrinking draft closing a face into an apex, −45° on a 20×10 block) is refused on creation and on later edits; QymCAD builds it green.
-- A curved draft neutral face, a neutral among the drafted faces and a drafted face parallel to the neutral are refused up front.
+- A curved draft neutral face and a drafted face parallel to the neutral are refused up front. A neutral listed among the drafted faces is removed from them, as the app's picking does, and reported in `rebuild.notes`.
+- Modelling inside a clone and an edit that makes a cloned source multi-body are refused atomically (the app redirects editing into the original; F-146).
 - A non-positive thicken thickness is refused on creation and on later evaluated edits; QymCAD builds a negative thickness deeper than the part as material on its far side.
 
 ## 0.1.1-dev.20261026.12 — root assemblies (ADR 0051)

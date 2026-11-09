@@ -2638,6 +2638,9 @@ The same gap applies to a pattern whose source is a projection: the source moves
   share the source Part placement and the clone has its own placement.
 - **Boundary:** this does not establish a general export traversal defect or full multi-body instance
   support. Package A's exclusion/refusal policy is ADR 0051.
+- **Server policy since ADR 0053:** `part_instance` refuses a source with more than one current solid body and
+  any later edit that would make a cloned source multi-body; `part_copy` (the app's Copy / Paste) copies every
+  body. Upstream issue candidate: an instance of a multi-body Part should copy all its bodies.
 
 ## F-147 Native feature regeneration can succeed while a joint is faulty
 
