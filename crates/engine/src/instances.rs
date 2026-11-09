@@ -105,6 +105,20 @@ impl Session {
             }
         }
         for (clone, source) in &clones {
+            // Deleting or suppressing the clone's own node would leave an empty Part; the app's tree Delete removes
+            // the whole clone Part (`delete_component`), for which the server has no tool.
+            let alone = |p: &Project| {
+                p.timeline
+                    .iter()
+                    .find(|n| n.parent == Some(*clone) && matches!(n.kind, FeatureKind::PartInstance { .. }))
+                    .map(|n| (n.id, n.suppressed))
+            };
+            let (was, now) = (alone(before), alone(after));
+            if was.is_some() && (now.is_none() || now.map(|n| n.1) != was.map(|n| n.1)) {
+                return Err(refusal(format!(
+                    "part {clone} is an instance of {source}; its instance node cannot be deleted or suppressed alone: the app removes a clone as a whole Part, which this server has no tool for; undo the call that made it to remove the clone"
+                )));
+            }
             if part_modelled(before, after, *clone) {
                 return Err(refusal(format!("part {clone} is an instance of {source}; edit the source part")));
             }
@@ -118,18 +132,19 @@ impl Session {
             if kept.is_empty() || solid_bodies(before, source).len() != 1 {
                 continue;
             }
-            match solid_bodies(after, source).len() {
-                1 => {}
-                0 => {
-                    return Err(refusal(format!(
-                        "edit leaves part {source} without a solid body while instances {kept:?} copy it; nothing was changed"
-                    )))
-                }
-                _ => {
-                    return Err(refusal(format!(
-                        "edit makes part {source} multi-body while instances {kept:?} copy it (native clones copy only the last body, F-146); nothing was changed"
-                    )))
-                }
+            // A clone past the rollback bar is not built, so rolling a bodiless source back is not silent.
+            let now = solid_bodies(after, source).len();
+            // A suppressed base leaves the source bodiless while every rebuild keeps the clone's old body (F-153).
+            let stale: Vec<Id> = kept.iter().copied().filter(|c| !solid_bodies(after, *c).is_empty()).collect();
+            if now == 0 && !stale.is_empty() {
+                return Err(refusal(format!(
+                    "edit leaves part {source} without a solid body, but QymCAD keeps the old body in its instances {stale:?} without an error (F-153); nothing was changed"
+                )));
+            }
+            if now > 1 {
+                return Err(refusal(format!(
+                    "edit makes part {source} multi-body while instances {kept:?} copy it (native clones copy only the last body, F-146); nothing was changed"
+                )));
             }
         }
         Ok(())
@@ -164,11 +179,19 @@ impl Session {
     ) -> Result<Value> {
         let (src, name) = self.derived_part_source("part_instance", source, name)?;
         let place = placement("part_instance", translation_mm, rotation)?;
+        if self.p.rollback_place() < self.p.timeline.len() {
+            return Err(refusal(
+                "part_instance is refused while a history rollback is active: QymCAD inserts the clone at the rollback bar, where it misses the source's later features and a later second body passes unseen (F-152); roll the history to the end first",
+            ));
+        }
         let args = json!({"source":source,"name":name,"translation_mm":translation_mm,"rotation":rotation});
         self.assembly_edit("part_instance", args, |s| {
             let ((clone, origin), _) = s.atomic(|s| {
                 let origin = s.p.instance_origin(src);
                 let bodies = solid_bodies(&s.p, origin);
+                if bodies.is_empty() {
+                    return Err(refusal(format!("part_instance requires a single-body source; part {origin} has no solid body yet; model it first")));
+                }
                 if bodies.len() != 1 {
                     return Err(refusal(format!(
                         "part_instance requires a single-body source; part {origin} has {} solid bodies {bodies:?} and a native clone copies only the last one (F-146); part_copy copies all bodies",
@@ -202,6 +225,11 @@ impl Session {
     ) -> Result<Value> {
         let (src, name) = self.derived_part_source("part_copy", source, name)?;
         let place = placement("part_copy", translation_mm, rotation)?;
+        if place.is_some() && self.p.components.iter().any(|c| c.id == src && c.grounded) {
+            return Err(refusal(format!(
+                "part_copy cannot place a copy of grounded part {src}: the copy keeps its grounding, as in the app, and part_place does not move grounded parts; copy without translation_mm, then unground the copy (ground grounded:false) and part_place it"
+            )));
+        }
         let args = json!({"source":source,"name":name,"translation_mm":translation_mm,"rotation":rotation});
         self.assembly_edit("part_copy", args, |s| {
             let ((copy, pairs), _) = s.atomic(|s| {

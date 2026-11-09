@@ -7092,7 +7092,7 @@ Delete one native joint and its unshared non-standalone auto-connectors while re
 
 ## part_instance
 
-The app's tree action Make a clone (act-clone-part): a new root-child Part whose one native PartInstance body repeats the source Part's single solid body, so every edit of the source reaches it, while it is placed, grounded and jointed as a Part of its own. A clone of a clone repeats the original; the result reports part.instance_of. Without translation_mm the clone stands beside the source along X, as in the app. Refused unless the source has exactly one solid body: a native clone copies only the last body (FINDINGS F-146); use part_copy for multi-body Parts. Later edits that would make a cloned source multi-body, and any modelling inside a clone, are refused; edit the source part. Undoable; allowed in batch.
+The app's tree action Make a clone (act-clone-part): a new root-child Part whose one native PartInstance body repeats the source Part's single solid body, so every edit of the source reaches it, while it is placed, grounded and jointed as a Part of its own. A clone of a clone repeats the original; the result reports part.instance_of. Without translation_mm the clone stands beside the source along X, as in the app. Refused unless the source has exactly one solid body: a native clone copies only the last body (FINDINGS F-146); use part_copy for multi-body Parts. Refused while a history rollback is active (the native clone would miss later source features, F-152). Later edits that would make a cloned source multi-body, or leave it bodiless while the clone keeps its old body (F-153), and any modelling inside a clone are refused; edit the source part. A clone is removed by undo: the app deletes a clone as a whole Part, and there is no part delete tool. Undoable; allowed in batch.
 
 ```json
 {
@@ -7193,7 +7193,7 @@ The app's tree action Make a clone (act-clone-part): a new root-child Part whose
 
 ## part_copy
 
-The app's tree Copy then Paste here of a Part (clone_component into the Part's parent assembly): a deep copy of every body with an independent recipe, so later feature edits of either Part do not reach the other; formulas are copied verbatim, so global parameters drive both. Joints and connectors are not copied; grounding is. Without translation_mm the copy stands exactly where the source stands, as in the app. Returns copied_from and body_map [[source body, copy body], ...]. Undoable; allowed in batch.
+The app's tree Copy then Paste here of a Part (clone_component into the Part's parent assembly): a deep copy of every body with an independent recipe, so later feature edits of either Part do not reach the other; formulas are copied verbatim, so global parameters drive both. Sketch, feature and body names are copied verbatim, so later references to them by name become ambiguous: use ids (body_map) or rename. A copy of a clone is natively another clone (part.instance_of). Joints and connectors are not copied; grounding is, and a grounded copy is not placed (as part_place), so translation_mm is refused for a grounded source. Without translation_mm the copy stands exactly where the source stands, as in the app. During a history rollback the copied nodes land past the bar and build when the history is rolled forward. Returns copied_from and body_map [[source body, copy body], ...] for built bodies. Undoable; allowed in batch.
 
 ```json
 {

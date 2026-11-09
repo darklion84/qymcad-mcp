@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows
 - A draft whose result lost faces (a shrinking draft closing a face into an apex, −45° on a 20×10 block) is refused on creation and on later edits; QymCAD builds it green.
 - A curved draft neutral face and a drafted face parallel to the neutral are refused up front. A neutral listed among the drafted faces is removed from them, as the app's picking does, and reported in `rebuild.notes`.
 - Modelling inside a clone and an edit that makes a cloned source multi-body are refused atomically (the app redirects editing into the original; F-146).
+- `part_instance` is refused while a history rollback is active: the native clone lands at the bar and misses the source's later features (F-152). Suppressing a cloned source's base is refused: QymCAD keeps the clone's old body with no error (F-153). Rolling the history back above a cloned source and forward again works.
+- `part_copy` refuses `translation_mm` for a grounded source, as `part_place` does; deleting or suppressing a clone's instance node says that a clone is removed by undo.
 - A non-positive thicken thickness is refused on creation and on later evaluated edits; QymCAD builds a negative thickness deeper than the part as material on its far side.
 
 ## 0.1.1-dev.20261026.12 — root assemblies (ADR 0051)

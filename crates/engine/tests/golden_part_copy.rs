@@ -182,8 +182,10 @@ fn copy_without_placement_stands_on_the_source_as_the_app_pastes_it_and_undo_rem
     assert_eq!(copy.transform, source.transform, "clone_subtree_into copies the placement");
     assert_eq!(copy.parent, source.parent, "pasted into the source's parent assembly");
     assert_eq!(copy.grounded, source.grounded);
-    // The grounded carcass copies grounded, as natively.
-    let r = s.part_copy(&PartRef::Id(carcass), "carcass2", Some([1000., 0., 0.]), None).unwrap();
+    // The grounded carcass copies grounded, as natively; like part_place, a grounded Part is not placed.
+    let error = s.part_copy(&PartRef::Id(carcass), "carcass2", Some([1000., 0., 0.]), None).unwrap_err().to_string();
+    assert!(error.contains("grounded"), "{error}");
+    let r = s.part_copy(&PartRef::Id(carcass), "carcass2", None, None).unwrap();
     assert_eq!(r["grounded"], true);
     // Names stay unique.
     let error = s.part_copy(&PartRef::Id(drawer), "drawer2", None, None).unwrap_err().to_string();
@@ -194,4 +196,20 @@ fn copy_without_placement_stands_on_the_source_as_the_app_pastes_it_and_undo_rem
     now.as_object_mut().unwrap().remove("next_id");
     assert!(now == before.0, "undo restores the recipe");
     assert_eq!(s.info(), before.1);
+}
+
+#[test]
+fn copy_during_a_history_rollback_builds_the_whole_recipe_when_rolled_forward() {
+    // Native clone_subtree_into appends the copied nodes after the bar: the copy is empty while rolled back
+    // and becomes a full copy of the source, every plate, when the history is rolled forward.
+    let Cabinet { mut s, drawer, bodies, .. } = cabinet();
+    s.history_rollback(Some(bodies["drawer-back"]), None).unwrap();
+    let r = s.part_copy(&PartRef::Id(drawer), "drawer2", Some([0., 0., 390.]), None).unwrap();
+    let drawer2 = r["part"]["id"].as_u64().unwrap();
+    assert!(part_bodies(&s, drawer2).is_empty(), "the copied nodes are past the bar");
+    assert_eq!(r["body_map"], json!([]));
+    let report = s.history_rollback(None, Some("end")).unwrap().rebuild;
+    assert!(report.errors.is_empty(), "{report:?}");
+    assert_eq!(part_bodies(&s, drawer2).len(), 5);
+    assert_close(part_volume(&s, drawer2), DRAWER_170, 1e-3, "full copy after rolling forward");
 }

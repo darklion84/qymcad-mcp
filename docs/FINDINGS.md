@@ -2715,3 +2715,37 @@ The same gap applies to a pattern whose source is a projection: the source moves
   `golden_draft::refusals_leave_the_document_unchanged`.
 - **Upstream issue candidate:** the app's neutral pick (`aims.rs:277-284`) accepts any face. Minimal reproduction:
   extrude a circle d20 by 20; `add_draft(cyl, [top], side face, 5.0, false)`; regenerate → no error, tilted top.
+
+## F-152 A clone made while the history is rolled back is inserted at the bar and misses the source's later features
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** `Project::clone_part` (`model/assembly/tree.rs:283-298`) pushes the PartInstance through `push_timeline`
+  (`model/timeline/order.rs:31-45`), which inserts it **at the rollback bar**. `bring_instances_after` (`order.rs:65`)
+  moves clones below a source's node only when that node is pushed later; the source's nodes already past the bar stay
+  below the clone, and regeneration copies `active_body_before(src, at)` (`regen/prep_bodies.rs:29-40`), the body as it
+  stands above the clone. The same ordering also hides a second source body past the bar from any single-body check.
+- **Executed native evidence:** `golden_instances::native_clone_at_the_rollback_bar_misses_later_source_features_f152`
+  (app data path, no Session): knob 40×30×20 with a 2 mm fillet on the top edges; roll back after the extrude;
+  `clone_part`; roll to the end and force a rebuild → no error, source filleted (< 24000 mm³), clone the unfilleted
+  24000 mm³ box. The independent review's probes P3/P15 showed the same through the server before the fix, including a
+  clone of a two-body source that then could not be rolled forward.
+- **Server policy (ADR 0053, protective refusal):** `part_instance` is refused while a history rollback is active. Test:
+  `golden_instances::part_instance_while_a_history_rollback_is_active_is_refused`.
+- **Upstream issue candidate:** clone at the bar, roll forward: the clone silently differs from its source. Minimal
+  reproduction as the test above.
+
+## F-153 Suppressing a cloned source's base leaves the clone's old body with no error
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Source:** a suppressed base node cascades its body into `unbuilt` (`regen/run.rs:289-317`), but a PartInstance has
+  no `inputs`; `node_reads_any` (`run.rs:25-35`) and `regen_partinstance` use `active_body_before`
+  (`timeline/state.rs:214-226`), which does not skip a suppressed node's body, so the clone either is not rebuilt or
+  copies the kernel's retained shape of the suppressed body. `CoreError::SourcePartHasNoBody` is never raised.
+- **Executed native evidence:** `golden_instances::native_suppressed_source_base_keeps_a_stale_clone_body_f153` (app
+  data path, no Session): knob 24000 mm³ and its clone; suppress the knob's extrude; regenerate, then force a full
+  rebuild → no error, the source has no mesh, the clone keeps a 24000 mm³ body.
+- **Server policy (ADR 0053, protective refusal):** an edit that leaves a cloned source with no solid body while a
+  built clone still has one is refused atomically. Rolling the history back above the source is allowed: the clone is
+  then past the bar and not built. Test: `golden_instances::suppressing_a_cloned_source_feature_reaches_the_clone_but_its_base_is_refused`.
+- **Upstream issue candidate:** suppress the base of a cloned part → the clone still shows the old solid. Minimal
+  reproduction as the test above.

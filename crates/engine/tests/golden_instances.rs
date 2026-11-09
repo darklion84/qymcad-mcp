@@ -261,3 +261,118 @@ fn a_slider_on_a_clone_moves_only_the_clone() {
     let t = opened.project().world_transform(clone);
     assert_close(t[7], -40.0, 1e-5, "reopened slider travel");
 }
+
+#[test]
+fn part_instance_while_a_history_rollback_is_active_is_refused() {
+    // Native clone_part inserts the PartInstance at the bar: the clone misses the source's later features (a
+    // filleted source, an unfilleted clone) and a source that is multi-body past the bar passes the guard
+    // (FINDINGS F-152).
+    let (mut s, _, body) = knob();
+    s.fillet(None, &Sel::EdgesOf(Box::new(Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. })), &2.0.into(), Some("round")).unwrap();
+    s.history_rollback(Some(body), None).unwrap();
+    let before = snapshot(&s);
+    let error = s.part_instance(&PartRef::Name("knob".into()), "knob2", None, None).unwrap_err().to_string();
+    assert!(error.contains("part_instance is refused while a history rollback is active"), "{error}");
+    assert!(error.contains("F-152"), "{error}");
+    unchanged(&s, &before);
+    s.history_rollback(None, Some("end")).unwrap();
+    instance(&mut s, "knob", "knob2", None);
+}
+
+#[test]
+fn rollback_to_start_and_back_keeps_a_clone_healthy() {
+    let (mut s, _, _) = knob();
+    let (clone, _) = instance(&mut s, "knob", "knob2", Some([100.0, 0.0, 0.0]));
+    let r = s.history_rollback(None, Some("start")).unwrap();
+    assert!(r.rebuild.errors.is_empty(), "{:?}", r.rebuild);
+    assert!(part_bodies(&s, clone).is_empty(), "the clone node is past the bar");
+    let r = s.history_rollback(None, Some("end")).unwrap();
+    assert!(r.rebuild.errors.is_empty(), "{:?}", r.rebuild);
+    assert_close(part_bodies(&s, clone)[0].volume, 24000.0, 1e-6, "clone back after rolling forward");
+    assert_eq!(s.assembly_info()["healthy"], true);
+}
+
+#[test]
+fn suppressing_a_cloned_source_feature_reaches_the_clone_but_its_base_is_refused() {
+    let (mut s, knob, body) = knob();
+    let (round, _) =
+        s.fillet(None, &Sel::EdgesOf(Box::new(Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. })), &2.0.into(), Some("round")).unwrap();
+    let (clone, _) = instance(&mut s, "knob", "knob2", Some([100.0, 0.0, 0.0]));
+    let filleted = part_bodies(&s, knob)[0].volume;
+    assert!(filleted < 24000.0);
+    assert_close(part_bodies(&s, clone)[0].volume, filleted, 1e-6, "clone filleted");
+    // A modifier suppressed in the source reaches the clone, and back.
+    s.feature_suppress(round, true).unwrap();
+    assert_close(part_bodies(&s, clone)[0].volume, 24000.0, 1e-6, "clone follows the suppressed fillet");
+    s.feature_suppress(round, false).unwrap();
+    assert_close(part_bodies(&s, clone)[0].volume, filleted, 1e-6, "clone follows the restored fillet");
+    // Suppressing the base leaves the source bodiless while QymCAD keeps the clone's old body (F-153).
+    let before = snapshot(&s);
+    let error = s.feature_suppress(body, true).unwrap_err().to_string();
+    assert_eq!(
+        error,
+        format!("edit leaves part {knob} without a solid body, but QymCAD keeps the old body in its instances [{clone}] without an error (F-153); nothing was changed")
+    );
+    unchanged(&s, &before);
+}
+
+#[test]
+fn deleting_or_suppressing_a_clone_node_says_how_to_remove_a_clone() {
+    let (mut s, _, _) = knob();
+    let (clone, _) = instance(&mut s, "knob", "knob2", Some([100.0, 0.0, 0.0]));
+    let node = s.project().timeline.iter().find(|n| n.parent == Some(clone)).unwrap().id;
+    let before = snapshot(&s);
+    for error in [s.feature_delete(node, false).unwrap_err().to_string(), s.feature_suppress(node, true).unwrap_err().to_string()] {
+        assert!(error.contains("the app removes a clone as a whole Part"), "{error}");
+        assert!(error.contains("undo"), "{error}");
+        assert!(!error.contains("edit the source part"), "{error}");
+    }
+    unchanged(&s, &before);
+}
+
+/// F-153 native evidence (app data path, no Session): suppressing a cloned source's base removes the source's
+/// body, while the clone keeps a body and no error is reported, even after a forced rebuild.
+#[test]
+fn native_suppressed_source_base_keeps_a_stale_clone_body_f153() {
+    let (mut s, _, body) = knob();
+    let (clone, _) = instance(&mut s, "knob", "knob2", Some([100.0, 0.0, 0.0]));
+    let clone_body = part_bodies(&s, clone)[0].id;
+    let path = scratch("g3-native-suppress.qcad");
+    s.save(Some(&path)).unwrap();
+    let mut m = native_assembly_load(&path);
+    let ti = m.project.timeline.iter().position(|n| n.id == body).unwrap();
+    m.project.set_feature_suppressed(ti, true);
+    for force in [false, true] {
+        native_assembly_rebuild(&mut m, force); // asserts no native errors
+        assert!(m.project.mesh_index(body).is_none(), "the suppressed source has no body");
+        assert!(m.project.mesh_index(clone_body).is_some(), "the clone still shows a body");
+        let _gate = qymcad_kernel::kernel_gate();
+        assert_close(m.shapes[&clone_body].volume(), 24000.0, 1e-6, "stale clone volume");
+    }
+}
+
+/// F-152 native evidence (app data path, no Session): a clone made while the history is rolled back is inserted at
+/// the bar; rolled forward, the source is filleted and the clone is not, with no error.
+#[test]
+fn native_clone_at_the_rollback_bar_misses_later_source_features_f152() {
+    let (mut s, knob, body) = knob();
+    s.fillet(None, &Sel::EdgesOf(Box::new(Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. })), &2.0.into(), Some("round")).unwrap();
+    let path = scratch("g3-native-rollback-clone.qcad");
+    s.save(Some(&path)).unwrap();
+    let mut m = native_assembly_load(&path);
+    let ti = m.project.timeline.iter().position(|n| n.id == body).unwrap();
+    m.project.set_rollback(Some(ti + 1));
+    native_assembly_rebuild(&mut m, false);
+    let root = m.project.root;
+    let clone = m.project.clone_part(knob, root).unwrap();
+    native_assembly_rebuild(&mut m, false);
+    m.project.set_rollback(None);
+    native_assembly_rebuild(&mut m, true); // asserts no native errors
+    let volume = |m: &NativeAssemblyModel, part: Id| {
+        let b = m.project.active_body(part).unwrap();
+        let _gate = qymcad_kernel::kernel_gate();
+        m.shapes[&b].volume()
+    };
+    assert!(volume(&m, knob) < 24000.0 - 1.0, "the source is filleted");
+    assert_close(volume(&m, clone), 24000.0, 1e-6, "the clone is the unfilleted box");
+}

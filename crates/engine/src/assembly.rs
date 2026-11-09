@@ -906,18 +906,11 @@ impl Session {
             }
             if let qymcad_core::feature::FeatureKind::PartInstance { src_comp, .. } = n.kind {
                 if n.parent.is_some_and(|id| connected.contains(&id)) || connected.contains(&src_comp) {
-                    // ADR 0053: a clone of a single-body source is a Part of its own for assembly edits.
-                    let count = crate::instances::solid_bodies(p, src_comp).len();
-                    if count == 1 {
-                        continue;
-                    }
-                    if count > 1 {
+                    // ADR 0053: a clone of a source with at most one solid body is a Part of its own for assembly
+                    // edits; a bodiless source is a visible native error or an unbuilt node, not a silent one.
+                    if crate::instances::solid_bodies(p, src_comp).len() > 1 {
                         return Err(refusal("part instances are not supported for multi-body source parts in package A"));
                     }
-                    return Err(refusal(format!(
-                        "component {} is a part instance; instance editing is not supported in package A",
-                        n.parent.unwrap_or(n.id)
-                    )));
                 }
             }
         }
