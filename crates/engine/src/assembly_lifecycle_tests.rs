@@ -53,6 +53,7 @@ fn attach(s: &mut Session, owner: Id, a: Id, af: u32, b: Id, bf: u32) -> Id {
         mode: JointMode::AsBuilt,
         axis: Some(BaseName::XZ),
         offset: Some(0.0.into()),
+        limits: None,
     })
     .unwrap()["joint"]["id"]
         .as_u64()
@@ -279,6 +280,7 @@ fn a_lifecycle_face_ids_resolve_in_the_named_body_only() {
         mode: JointMode::AsBuilt,
         axis: Some(BaseName::XZ),
         offset: None,
+        limits: None,
     };
     let before = exact(&s);
     assert!(s.joint_create(&request).is_err());

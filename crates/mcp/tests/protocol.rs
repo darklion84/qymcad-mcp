@@ -304,6 +304,7 @@ fn lists_tools_with_object_schemas() {
         "part_instance",
         "part_copy",
         "part_delete",
+        "joint_limits",
         "assembly_info",
         "measure",
         "batch",

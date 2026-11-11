@@ -2808,3 +2808,19 @@ The same gap applies to a pattern whose source is a projection: the source moves
   `golden_part_delete::part_delete_while_a_history_rollback_is_active_is_refused`.
 - **Upstream issue candidate:** roll back, delete an earlier Part → a rolled-back feature appears. Minimal
   reproduction as the test above.
+
+## F-157 Joint limits with min above max send every value to max
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** `Joint::clamp_slot` (`feature/mates.rs:535-548`) raises a value below `min` to `min`, then lowers a value
+  above `max` to `max`, with no `min ≤ max` check; the GUI's limit fields (`qymcad-assembly/src/popup.rs:322-341`) and
+  the right panel (`slots.rs:37-60`) do not validate the pair either. With min > max every request ends at max, with
+  no error, conflict or violated joint.
+- **Executed native evidence:** `golden_joint_limits::native_min_above_max_sends_every_value_to_max_f157` (app data
+  path, no Session): Slider, `limit_min[1] = 0`, `limit_max[1] = −100`, `set_joint_drive(−50)`, solve → drive and
+  reading −100, no errors. Research run S6.
+- **Server policy (ADR 0054, protective refusal):** min > max is refused on `joint_limits`/`joint_create` and on any
+  evaluated edit that would make it so. Test: `golden_joint_limits::refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** set a Slider's min above its max → every value jumps to max silently. Minimal
+  reproduction as the test above.

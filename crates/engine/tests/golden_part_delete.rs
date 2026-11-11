@@ -67,6 +67,7 @@ fn cabinet() -> Cabinet {
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: Some("open".into()),
+            limits: None,
         })
         .unwrap()["joint"]["id"]
         .as_u64()

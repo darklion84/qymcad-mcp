@@ -31,6 +31,7 @@ fn rail(s: &mut Session, name: &str, a: Id, b: Id) -> Id {
         mode: JointMode::AsBuilt,
         axis: Some(BaseName::XZ),
         offset: Some(0.0.into()),
+        limits: None,
     })
     .unwrap()["joint"]["id"]
         .as_u64()

@@ -41,6 +41,7 @@ fn create(s: &mut Session, ba: Id, bb: Id, kind: AssemblyJointKind) -> Id {
             mode: JointMode::AsBuilt,
             axis: if kind == AssemblyJointKind::Slider { Some(BaseName::XZ) } else { None },
             offset: None,
+            limits: None,
         })
         .unwrap();
     r["joint"]["id"].as_u64().unwrap()
@@ -203,6 +204,7 @@ fn a_violated_joint_refuses_atomic_ground_change_and_disconnected_control() {
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: None,
+            limits: None,
         })
         .unwrap_err()
         .to_string();
@@ -216,6 +218,7 @@ fn a_violated_joint_refuses_atomic_ground_change_and_disconnected_control() {
         mode: JointMode::AsBuilt,
         axis: None,
         offset: None,
+        limits: None,
     })
     .unwrap();
     let before = state(&s);
@@ -284,21 +287,20 @@ fn a_parts_history_noop_and_native_connector_cleanup() {
     assert_eq!(s.p.connectors.len(), 2);
 }
 #[test]
-fn a_existing_limits_preserved_and_requests_checked() {
+fn a_existing_limits_preserved_and_requests_clamped_as_natively() {
+    // ADR 0054 §2 replaces ADR 0051's refusal: a request outside the limits is clamped as in the app and reported.
     let (mut s, _, _, ba, bb) = fixture();
     let j = create(&mut s, ba, bb, AssemblyJointKind::Slider);
     s.p.joints[0].limit_min[1] = Some(0.);
     s.p.joints[0].limit_max[1] = Some(300.);
-    for v in [-1., 301.] {
-        let before = state(&s);
-        assert_eq!(
-            s.joint_set(&JointRef::Id(j), Some(&v.into()), None).unwrap_err().to_string(),
-            format!("joint {j} offset {v} mm is outside [0, 300] mm; nothing was changed")
-        );
-        assert_eq!(state(&s), before);
+    for (v, applied) in [(-1., 0.), (301., 300.)] {
+        let r = s.joint_set(&JointRef::Id(j), Some(&v.into()), None).unwrap();
+        assert_eq!(r["clamped"], serde_json::json!({"joint":j,"slot":1,"requested":v,"applied":applied}));
+        assert!((s.p.joints[0].offset - applied).abs() < 1e-5);
     }
     for v in [300., 0.] {
-        s.joint_set(&JointRef::Id(j), Some(&v.into()), None).unwrap();
+        let r = s.joint_set(&JointRef::Id(j), Some(&v.into()), None).unwrap();
+        assert!(r["clamped"].is_null());
     }
     assert_eq!(s.p.joints[0].limit_max[1], Some(300.));
 }

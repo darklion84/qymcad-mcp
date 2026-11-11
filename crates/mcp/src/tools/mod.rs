@@ -157,6 +157,7 @@ fn modelling_tool(name: &str) -> bool {
             | "part_instance"
             | "part_copy"
             | "part_delete"
+            | "joint_limits"
     )
 }
 

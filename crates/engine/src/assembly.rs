@@ -45,6 +45,26 @@ pub struct JointAnchor {
     pub body: Id,
     pub face: Sel,
 }
+/// A joint's free slot, as the app names it: Revolute turns `angle` (degrees), Slider travels `offset` (mm).
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum JointSlot {
+    Angle,
+    Offset,
+}
+/// One bound of the app's Limits section: keep it, tick it off (value and formula), or set a number or formula.
+#[derive(Clone, Debug)]
+pub enum LimitEdit {
+    Keep,
+    Clear,
+    Set(Num),
+}
+/// Limits given at joint creation, applied before the first drive.
+#[derive(Clone, Debug, Default)]
+pub struct JointLimits {
+    pub min: Option<Num>,
+    pub max: Option<Num>,
+}
 #[derive(Clone, Debug)]
 pub struct JointCreate {
     pub name: Option<String>,
@@ -54,6 +74,7 @@ pub struct JointCreate {
     pub mode: JointMode,
     pub axis: Option<BaseName>,
     pub offset: Option<Num>,
+    pub limits: Option<JointLimits>,
 }
 use qymcad_core::{
     feature::{rot12_axis, AnchorRef, ComponentKind, FaceKey, JointKind, PLACE_IDENTITY},
@@ -66,6 +87,36 @@ pub(crate) fn refusal(message: impl Into<String>) -> Error {
 }
 fn kind_name(k: JointKind) -> String {
     format!("{k:?}").to_lowercase()
+}
+/// The one free slot of a supported kind: Slider travel (1), Revolute angle (0).
+pub(crate) fn free_slot(k: JointKind) -> Option<usize> {
+    match k {
+        JointKind::Slider => Some(1),
+        JointKind::Revolute => Some(0),
+        _ => None,
+    }
+}
+const SLOT_KEYS: [&str; 3] = ["angle", "offset", "offset2"];
+/// The limit fields' range in the app's joint box (`popup.rs:113-118`).
+const LIMIT_RANGE: f64 = 100_000.0;
+fn limit_key(min: bool, slot: usize) -> String {
+    format!("{}{slot}", if min { "min" } else { "max" })
+}
+/// Drive formulas that a limit clamps, after a solve: what the formula asks and what the drive holds.
+fn formula_clamps(p: &Project) -> Vec<Value> {
+    let vars = p.param_map();
+    let mut out = Vec::new();
+    for j in &p.joints {
+        for (slot, key) in SLOT_KEYS.iter().enumerate() {
+            let (Some(expr), Some(applied)) = (p.feat_dim(j.id, key), j.drive[slot]) else { continue };
+            if let Ok(requested) = Num::Expr(expr.into()).eval(&vars) {
+                if (requested - applied).abs() > 1e-9 {
+                    out.push(json!({"joint":j.id,"slot":slot,"requested":requested,"applied":applied}));
+                }
+            }
+        }
+    }
+    out
 }
 pub(crate) fn object_name(name: &str) -> Result<&str> {
     if name.chars().any(char::is_control) {
@@ -80,7 +131,7 @@ pub(crate) fn object_name(name: &str) -> Result<&str> {
 }
 
 /// One acceptance implementation for mutations and diagnostic reads. Reads solve an independent Project.
-fn inspect(p: &mut Project, requested: Option<(Id, f64)>) -> Value {
+fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
     let invalid_before: Vec<_> = p.components.iter().filter(|c| !rigid(&c.transform)).map(|c| c.id).collect();
     // Never feed nonfinite matrices to the native nonlinear solver.
     let invalid_slots: Vec<_> = p
@@ -94,14 +145,12 @@ fn inspect(p: &mut Project, requested: Option<(Id, f64)>) -> Value {
         .collect();
     let mut formula_errors = Vec::new();
     for j in &p.joints {
-        for key in ["angle", "offset", "offset2"] {
+        for key in SLOT_KEYS.into_iter().map(String::from).chain((0..3).flat_map(|s| [limit_key(true, s), limit_key(false, s)])) {
+            let key = key.as_str();
             if let Some(expr) = p.feat_dim(j.id, key) {
                 let result = Num::Expr(expr.into()).eval(&p.param_map()).and_then(|value| {
                     p.check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key: key.into() }, expr)
                         .map_err(|e| Error::Expr(e.to_string()))?;
-                    if key == "offset" && (j.limit_min[1].is_some_and(|min| value < min) || j.limit_max[1].is_some_and(|max| value > max)) {
-                        return Err(refusal("formula offset is outside existing limits"));
-                    }
                     Ok(value)
                 });
                 if let Err(e) = result {
@@ -144,10 +193,11 @@ fn inspect(p: &mut Project, requested: Option<(Id, f64)>) -> Value {
                 }
             }
         }
-        if let Some((id, want)) = requested {
+        if let Some((id, slot, want)) = requested {
             if let Some(j) = p.joints.iter().find(|j| j.id == id) {
-                if !j.offset.is_finite() || (j.offset - want).abs() > 1e-5 {
-                    requests.push(json!({"joint":id,"slot":1,"requested":want,"read":j.offset}));
+                let read = [j.angle, j.offset, j.offset2][slot];
+                if !read.is_finite() || (read - want).abs() > 1e-5 {
+                    requests.push(json!({"joint":id,"slot":slot,"requested":want,"read":read}));
                 }
             }
         }
@@ -174,7 +224,21 @@ fn inspect(p: &mut Project, requested: Option<(Id, f64)>) -> Value {
         && relation_faults.is_empty()
         && formula_errors.is_empty()
         && invalid_slots.is_empty();
-    json!({"healthy":healthy,"feature_errors":p.regen_errors.keys().collect::<Vec<_>>(),"joint_faults":faults,"faulty_joints":faulty,"anchor_faults":witnesses,"solve_errors":errors,"violated_joints":violated,"conflict":p.mates_conflict,"invalid_transforms":invalid,"request_mismatches":requests,"constraint_faults":constraint_faults,"relation_faults":relation_faults,"formula_errors":formula_errors,"invalid_slots":invalid_slots})
+    json!({"healthy":healthy,"feature_errors":p.regen_errors.keys().collect::<Vec<_>>(),"joint_faults":faults,"faulty_joints":faulty,"anchor_faults":witnesses,"solve_errors":errors,"violated_joints":violated,"conflict":p.mates_conflict,"invalid_transforms":invalid,"request_mismatches":requests,"constraint_faults":constraint_faults,"relation_faults":relation_faults,"formula_errors":formula_errors,"invalid_slots":invalid_slots,"at_limit":p.joints_at_limit(),"clamped":formula_clamps(p)})
+}
+/// `clamped:{joint,slot,requested,applied}` when a limit moved the request, else null.
+fn clamp_report(id: Id, slot: usize, requested: Option<f64>, applied: Option<f64>) -> Value {
+    match (requested, applied) {
+        (Some(r), Some(a)) if (r - a).abs() > 1e-9 => json!({"joint":id,"slot":slot,"requested":r,"applied":a}),
+        _ => Value::Null,
+    }
+}
+fn limit_arg(edit: &LimitEdit) -> Value {
+    match edit {
+        LimitEdit::Keep => json!("keep"),
+        LimitEdit::Clear => Value::Null,
+        LimitEdit::Set(v) => json!(v),
+    }
 }
 fn rigid(t: &[f64; 12]) -> bool {
     if !t.iter().all(|x| x.is_finite()) {
@@ -462,6 +526,9 @@ impl Session {
         if o.kind == AssemblyJointKind::Rigid && o.offset.is_some() {
             return Err(refusal("rigid joint_create does not accept offset"));
         }
+        if o.kind == AssemblyJointKind::Rigid && o.limits.is_some() {
+            return Err(refusal("rigid joint_create does not accept limits"));
+        }
         self.assembly_edit("joint_create", json!({"name":o.name,"kind":o.kind,"mode":o.mode}), |s| {
             let (a, fa) = s.resolve_anchor(&o.a)?;
             let (b, fb) = s.resolve_anchor(&o.b)?;
@@ -500,33 +567,104 @@ impl Session {
             if o.mode == JointMode::AsBuilt && !s.p.set_joint_as_built(j) {
                 return Err(refusal("joint_create cannot capture as_built frames"));
             }
-            let wanted = if let Some(value) = &o.offset { Some(s.write_offset(j, value)?) } else { None };
-            if o.offset.as_ref().is_some_and(|v| v.expr().is_some()) {
+            let mut formulas = false;
+            if let (Some(limits), Some(slot)) = (&o.limits, free_slot(kind)) {
+                for (min, edit) in [(true, &limits.min), (false, &limits.max)] {
+                    if let Some(value) = edit {
+                        formulas |= s.write_limit(j, slot, min, &LimitEdit::Set(value.clone()))?;
+                    }
+                }
+                s.check_limits(j)?;
+            }
+            let wanted = if let Some(value) = &o.offset { Some(s.write_drive(j, 1, value)?) } else { None };
+            if formulas || o.offset.as_ref().is_some_and(|v| v.expr().is_some()) {
                 s.rebuild_joint_formulas()?;
             }
-            s.assembly_accept(wanted.map(|value| (j, value)))?;
-            Ok(s.joint_result(j, true))
+            let applied = s.p.joints.iter().find(|x| x.id == j).and_then(|x| x.drive[1]);
+            s.assembly_accept(applied.map(|value| (j, 1, value)))?;
+            let mut r = s.joint_result(j, true);
+            r["clamped"] = clamp_report(j, 1, wanted, applied);
+            Ok(r)
         })
     }
-    fn write_offset(&mut self, id: Id, value: &Num) -> Result<f64> {
+    /// Write a slot drive as the app does (`set_joint_drive` clamps it into the limits); returns the requested value.
+    fn write_drive(&mut self, id: Id, slot: usize, value: &Num) -> Result<f64> {
         let v = value.eval(&self.p.param_map())?;
-        self.check_offset_limits(id, v)?;
+        let key = SLOT_KEYS[slot];
         if let Some(expr) = value.expr() {
             self.p
-                .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: id, key: "offset".into() }, &expr)
+                .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: id, key: key.into() }, &expr)
                 .map_err(|e| Error::Expr(e.to_string()))?;
         }
         let expression = value.expr().unwrap_or_default();
-        self.p.set_feat_dim(id, "offset", expression);
-        self.p.set_joint_drive(id, 1, Some(v));
+        self.p.set_feat_dim(id, key, expression);
+        self.p.set_joint_drive(id, slot, Some(v));
         Ok(v)
     }
-    fn check_offset_limits(&self, id: Id, value: f64) -> Result<()> {
+    /// One bound of the app's Limits section: the value straight into the joint (`popup.rs`), a formula under
+    /// `feat_dims[joint]["min<slot>"|"max<slot>"]`, imposed on rebuild. Clear ticks the bound off with its formula.
+    /// Returns whether a formula was written.
+    fn write_limit(&mut self, id: Id, slot: usize, min: bool, edit: &LimitEdit) -> Result<bool> {
+        let key = limit_key(min, slot);
+        let value = match edit {
+            LimitEdit::Keep => return Ok(false),
+            LimitEdit::Clear => None,
+            LimitEdit::Set(value) => {
+                let v = value.eval(&self.p.param_map())?;
+                if let Some(expr) = value.expr() {
+                    self.p
+                        .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: id, key: key.clone() }, &expr)
+                        .map_err(|e| Error::Expr(e.to_string()))?;
+                }
+                Some(v)
+            }
+        };
+        let formula = match edit {
+            LimitEdit::Set(value) => value.expr().unwrap_or_default(),
+            _ => String::new(),
+        };
+        let written = !formula.is_empty();
+        self.p.set_feat_dim(id, &key, formula);
+        let j = self.p.joints.iter_mut().find(|j| j.id == id).unwrap();
+        if min {
+            j.limit_min[slot] = value;
+        } else {
+            j.limit_max[slot] = value;
+        }
+        Ok(written)
+    }
+    /// Evaluated bounds of a joint's free slot: a formula's value where one is kept, else the stored value.
+    fn evaluated_limits(&self, id: Id, slot: usize) -> Result<(Option<f64>, Option<f64>)> {
         let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
-        let min = j.limit_min[1].unwrap_or(f64::NEG_INFINITY);
-        let max = j.limit_max[1].unwrap_or(f64::INFINITY);
-        if min.is_nan() || max.is_nan() || min > max || value < min || value > max {
-            return Err(refusal(format!("joint {id} offset {value} mm is outside [{min}, {max}] mm; nothing was changed")));
+        let vars = self.p.param_map();
+        let bound = |min: bool, stored: Option<f64>| -> Result<Option<f64>> {
+            match self.p.feat_dim(id, &limit_key(min, slot)).filter(|e| !e.trim().is_empty()) {
+                Some(expr) if stored.is_some() => Ok(Some(Num::Expr(expr.into()).eval(&vars)?)),
+                _ => Ok(stored),
+            }
+        };
+        Ok((bound(true, j.limit_min[slot])?, bound(false, j.limit_max[slot])?))
+    }
+    /// The limits the server accepts on a joint's free slot: inside the app's field range, and min not above max
+    /// (natively every value would go to max, F-157).
+    pub(crate) fn check_limits(&self, id: Id) -> Result<()> {
+        let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
+        let Some(slot) = free_slot(j.kind) else { return Ok(()) };
+        let name = SLOT_KEYS[slot];
+        let (min, max) = self.evaluated_limits(id, slot)?;
+        for v in [min, max].into_iter().flatten() {
+            if !v.is_finite() || v.abs() > LIMIT_RANGE {
+                return Err(refusal(format!(
+                    "joint {id} {name} limit {v} is outside the app's range [-{LIMIT_RANGE}, {LIMIT_RANGE}]; nothing was changed"
+                )));
+            }
+        }
+        if let (Some(a), Some(b)) = (min, max) {
+            if a > b {
+                return Err(refusal(format!(
+                    "joint {id} {name} limit min {a} is greater than max {b}; QymCAD would send every value to max (F-157); nothing was changed"
+                )));
+            }
         }
         Ok(())
     }
@@ -555,11 +693,9 @@ impl Session {
         let previous = j.offset;
         let old_expression = self.p.feat_dim(id, "offset").map(str::to_string);
         let wanted = offset.map(|value| value.eval(&self.p.param_map())).transpose()?;
-        if let Some(value) = wanted {
-            self.check_offset_limits(id, value)?;
-        }
+        let clamped = wanted.map(|v| j.clamp_slot(1, v));
         let same = match offset {
-            Some(value) => old_expression == value.expr() && j.drive[1] == wanted,
+            Some(value) => old_expression == value.expr() && j.drive[1] == clamped,
             None => old_expression.is_none() && j.drive[1].is_none(),
         };
         if same {
@@ -567,11 +703,12 @@ impl Session {
             r["previous"] = json!(previous);
             r["requested"] = json!(offset);
             r["evaluated"] = json!(wanted);
+            r["clamped"] = clamp_report(id, 1, wanted, clamped);
             return Ok(r);
         }
         self.assembly_edit("joint_set", json!({"joint":joint,"offset":offset,"release":release}), |s| {
             if let Some(value) = offset {
-                s.write_offset(id, value)?;
+                s.write_drive(id, 1, value)?;
             } else {
                 s.p.set_feat_dim(id, "offset", String::new());
                 s.p.set_joint_drive(id, 1, None);
@@ -579,11 +716,13 @@ impl Session {
             if offset.is_some_and(|v| v.expr().is_some()) {
                 s.rebuild_joint_formulas()?;
             }
-            s.assembly_accept(wanted.map(|value| (id, value)))?;
+            let applied = s.p.joints.iter().find(|j| j.id == id).and_then(|j| j.drive[1]);
+            s.assembly_accept(wanted.and(applied).map(|value| (id, 1, value)))?;
             let mut r = s.joint_result(id, true);
             r["previous"] = json!(previous);
             r["requested"] = json!(offset);
             r["evaluated"] = json!(wanted);
+            r["clamped"] = clamp_report(id, 1, wanted, applied);
             Ok(r)
         })
     }
@@ -597,6 +736,83 @@ impl Session {
             let mut removed=Vec::new();
             for cid in [j.a,j.b] {if s.p.connector(cid).is_some_and(|c|!c.standalone) && s.p.connector_users(cid).is_empty() {s.p.connectors.retain(|c|c.id!=cid);s.p.feat_dims.remove(&cid);removed.push(cid);}}
             s.assembly_accept(None)?;Ok(json!({"removed_joint":id,"removed_connectors":removed,"placements":s.placements(),"diagnostics":s.assembly_diagnostics(),"changed":true}))
+        })
+    }
+    /// The app's Limits section of the joint box for the joint's free slot. A bound that excludes the current value
+    /// clamps it, as natively; the clamp is reported, never silent.
+    pub fn joint_limits(&mut self, joint: &JointRef, slot: Option<JointSlot>, min: &LimitEdit, max: &LimitEdit) -> Result<Value> {
+        let id = self.resolve_joint(joint)?;
+        let j = self.p.joints.iter().find(|j| j.id == id).unwrap().clone();
+        let Some(free) = free_slot(j.kind) else {
+            return Err(refusal(format!("joint {id} of kind {} has no free slot to limit", kind_name(j.kind))));
+        };
+        if let Some(named) = slot {
+            let index = if named == JointSlot::Angle { 0 } else { 1 };
+            if index != free {
+                return Err(refusal(format!(
+                    "joint {id} has no free {} slot; {} limits apply to {}",
+                    SLOT_KEYS[index],
+                    kind_name(j.kind),
+                    SLOT_KEYS[free]
+                )));
+            }
+        }
+        if matches!((min, max), (LimitEdit::Keep, LimitEdit::Keep)) {
+            return Err(refusal("joint_limits requires min or max"));
+        }
+        let owners: HashSet<_> = [j.a, j.b].iter().filter_map(|id| self.p.connector(*id).map(|c| c.owner)).collect();
+        self.check_supported_parts(&owners)?;
+        for owner in &owners {
+            self.root_part(*owner)?;
+        }
+        let state = |s: &Self| {
+            let j = s.p.joints.iter().find(|j| j.id == id).unwrap();
+            (
+                j.limit_min,
+                j.limit_max,
+                s.p.feat_dim(id, &limit_key(true, free)).map(str::to_string),
+                s.p.feat_dim(id, &limit_key(false, free)).map(str::to_string),
+            )
+        };
+        let current = state(self);
+        let mut probe = self.p.clone_without_source_data();
+        std::mem::swap(&mut self.p, &mut probe);
+        let planned = (|| {
+            self.write_limit(id, free, true, min)?;
+            self.write_limit(id, free, false, max)?;
+            Ok::<_, Error>(state(self))
+        })();
+        std::mem::swap(&mut self.p, &mut probe);
+        if planned? == current {
+            let mut r = self.joint_result(id, false);
+            r["clamped"] = Value::Null;
+            return Ok(r);
+        }
+        let args = json!({"joint":joint,"slot":slot,"min":limit_arg(min),"max":limit_arg(max)});
+        self.assembly_edit("joint_limits", args, |s| {
+            let mut formulas = s.write_limit(id, free, true, min)?;
+            formulas |= s.write_limit(id, free, false, max)?;
+            s.check_limits(id)?;
+            // A drive formula reasserts on regeneration (F-144): rebuild so the result is the settled state.
+            if formulas || SLOT_KEYS.iter().any(|k| s.p.feat_dim(id, k).is_some_and(|e| !e.trim().is_empty())) {
+                s.rebuild_joint_formulas()?;
+            }
+            // What the slot asks for without the new bounds: its drive formula, else its drive, else its reading.
+            let formula = s.p.feat_dim(id, SLOT_KEYS[free]).filter(|e| !e.trim().is_empty()).map(str::to_string);
+            let requested = match formula {
+                Some(expr) => Num::Expr(expr).eval(&s.p.param_map())?,
+                None => j.drive[free].unwrap_or([j.angle, j.offset, j.offset2][free]),
+            };
+            s.assembly_accept(None)?;
+            let after = s.p.joints.iter().find(|j| j.id == id).unwrap();
+            let applied = after.drive[free].unwrap_or([after.angle, after.offset, after.offset2][free]);
+            let mut r = s.joint_result(id, true);
+            r["clamped"] = if (requested - applied).abs() > 1e-6 {
+                json!({"joint":id,"slot":free,"requested":requested,"applied":applied})
+            } else {
+                Value::Null
+            };
+            Ok(r)
         })
     }
     pub(crate) fn component_info(&self) -> Vec<crate::ComponentInfo> {
@@ -631,11 +847,27 @@ impl Session {
         let anchor = |cid| {
             self.p.connector(cid).map(|c|json!({"connector":cid,"owner_part":c.owner,"anchor":c.anchor,"body":match &c.anchor {AnchorRef::FaceCenter(b,_)=>Some(*b),_=>None},"face":match &c.anchor {AnchorRef::FaceCenter(_,f)=>Some(f.id),_=>None},"axis_ref":c.axis_ref,"frame_local":self.p.connector_matrix(cid),"frame_for_kind_local":self.p.connector_frame_for_kind(c,j.kind).map(|f|f.matrix12())}))
         };
-        json!({"joint":{"id":id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind)},"connector_ids":[j.a,j.b],"a":anchor(j.a),"b":anchor(j.b),"mode":if j.as_built.is_some(){"as_built"}else{"align"},"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"flip_decided":j.flip_decided,"offset":j.offset,"read":j.offset,"unit":"mm","free_slots":j.kind.free_slots(),"drive":j.drive,"expression":self.p.feat_dim(id,"offset"),"expressions":self.p.feat_dims.get(&id),"driven":j.drive[1].is_some(),"state":if self.p.feat_dim(id,"offset").is_some(){"formula"}else if j.drive[1].is_some(){"numeric"}else{"free"},"signed_world_axis":self.p.joint_slot_axis(id,1,self.p.root),"limit_min":j.limit_min,"limit_max":j.limit_max,"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
+        json!({"joint":{"id":id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind)},"connector_ids":[j.a,j.b],"a":anchor(j.a),"b":anchor(j.b),"mode":if j.as_built.is_some(){"as_built"}else{"align"},"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"flip_decided":j.flip_decided,"offset":j.offset,"read":j.offset,"unit":"mm","free_slots":j.kind.free_slots(),"drive":j.drive,"expression":self.p.feat_dim(id,"offset"),"expressions":self.p.feat_dims.get(&id),"driven":j.drive[1].is_some(),"state":if self.p.feat_dim(id,"offset").is_some(){"formula"}else if j.drive[1].is_some(){"numeric"}else{"free"},"signed_world_axis":self.p.joint_slot_axis(id,1,self.p.root),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(id),"at_limit":self.at_limit(id),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
+    }
+    /// Formulas of the free slot's bounds, as `{min?, max?}`.
+    fn limit_formulas(&self, id: Id) -> Value {
+        let mut out = serde_json::Map::new();
+        if let Some(slot) = self.p.joints.iter().find(|j| j.id == id).and_then(|j| free_slot(j.kind)) {
+            for (name, min) in [("min", true), ("max", false)] {
+                if let Some(expr) = self.p.feat_dim(id, &limit_key(min, slot)).filter(|e| !e.trim().is_empty()) {
+                    out.insert(name.into(), json!(expr));
+                }
+            }
+        }
+        Value::Object(out)
+    }
+    /// Slot names whose reading stands on a bound (native `joints_at_limit`, the app's at-limit mark).
+    fn at_limit(&self, id: Id) -> Vec<&'static str> {
+        self.p.joints_at_limit().into_iter().filter(|(j, _)| *j == id).map(|(_, slot)| SLOT_KEYS[slot]).collect()
     }
     pub fn assembly_info(&self) -> Value {
         let diagnostics = self.assembly_diagnostics();
-        let mut value = json!({"root":self.p.root,"active_component":self.p.active_component,"components":self.component_info(),"parts":self.component_info().into_iter().filter(|c|c.kind=="part").collect::<Vec<_>>(),"connectors":self.p.connectors,"joints":self.p.joints.iter().map(|j|json!({"id":j.id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind),"free_slots":j.kind.free_slots(),"a":j.a,"b":j.b,"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"drive":j.drive,"read":[j.angle,j.offset,j.offset2],"slots":[{"name":"angle","unit":"deg","read":j.angle,"drive":j.drive[0],"formula":self.p.feat_dim(j.id,"angle")},{"name":"offset","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset,"drive":j.drive[1],"formula":self.p.feat_dim(j.id,"offset")},{"name":"offset2","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset2,"drive":j.drive[2],"formula":self.p.feat_dim(j.id,"offset2")}],"expressions":self.p.feat_dims.get(&j.id),"limit_min":j.limit_min,"limit_max":j.limit_max,"signed_world_axis":self.p.joint_slot_axis(j.id,1,self.p.root)})).collect::<Vec<_>>(),"constraints":self.p.mate_constraints,"relations":self.p.relations,"diagnostics":diagnostics,"healthy":diagnostics["healthy"]});
+        let mut value = json!({"root":self.p.root,"active_component":self.p.active_component,"components":self.component_info(),"parts":self.component_info().into_iter().filter(|c|c.kind=="part").collect::<Vec<_>>(),"connectors":self.p.connectors,"joints":self.p.joints.iter().map(|j|json!({"id":j.id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind),"free_slots":j.kind.free_slots(),"a":j.a,"b":j.b,"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"drive":j.drive,"read":[j.angle,j.offset,j.offset2],"slots":[{"name":"angle","unit":"deg","read":j.angle,"drive":j.drive[0],"formula":self.p.feat_dim(j.id,"angle")},{"name":"offset","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset,"drive":j.drive[1],"formula":self.p.feat_dim(j.id,"offset")},{"name":"offset2","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset2,"drive":j.drive[2],"formula":self.p.feat_dim(j.id,"offset2")}],"expressions":self.p.feat_dims.get(&j.id),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(j.id),"at_limit":self.at_limit(j.id),"signed_world_axis":self.p.joint_slot_axis(j.id,1,self.p.root)})).collect::<Vec<_>>(),"constraints":self.p.mate_constraints,"relations":self.p.relations,"diagnostics":diagnostics,"healthy":diagnostics["healthy"]});
         for key in ["joint_faults", "faulty_joints", "violated_joints", "conflict", "solve_errors"] {
             value[key] = diagnostics[key].clone();
         }
@@ -653,7 +885,7 @@ impl Session {
         let mut p = self.p.clone_without_source_data();
         inspect(&mut p, None)
     }
-    pub(crate) fn assembly_accept(&mut self, requested: Option<(Id, f64)>) -> Result<()> {
+    pub(crate) fn assembly_accept(&mut self, requested: Option<(Id, usize, f64)>) -> Result<()> {
         self.validate_joint_formulas()?;
         let d = inspect(&mut self.p, requested);
         if d["healthy"] == true {
@@ -671,11 +903,21 @@ impl Session {
                     self.p
                         .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key: key.into() }, expr)
                         .map_err(|e| Error::Expr(e.to_string()))?;
-                    if key == "offset" {
-                        self.check_offset_limits(j.id, value)?;
+                    let _ = value;
+                }
+            }
+            for slot in 0..3 {
+                for min in [true, false] {
+                    let key = limit_key(min, slot);
+                    if let Some(expr) = self.p.feat_dim(j.id, &key).filter(|e| !e.trim().is_empty()) {
+                        Num::Expr(expr.into()).eval(&vars)?;
+                        self.p
+                            .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key }, expr)
+                            .map_err(|e| Error::Expr(e.to_string()))?;
                     }
                 }
             }
+            self.check_limits(j.id)?;
         }
         Ok(())
     }

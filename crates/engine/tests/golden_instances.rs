@@ -238,6 +238,7 @@ fn a_slider_on_a_clone_moves_only_the_clone() {
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: Some(0.0.into()),
+            limits: None,
         })
         .unwrap()["joint"]["id"]
         .as_u64()

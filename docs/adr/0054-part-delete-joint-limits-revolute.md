@@ -51,3 +51,50 @@ Native regeneration never reads such entries (`item_value` answers only live joi
 `golden_part_delete` (cabinet with a formula Slider and a copy; anchor-Part deletion; clone deletion; undo;
 save/reopen; refusals with snapshot/unchanged; native evidence for F-154/F-155/F-156) and `mcp/tests/h1_part_delete`
 (stdio registry, strict arguments, batch, batch rollback, undo).
+
+## 2. Joint limits: the app's «Limits» section
+
+### App behaviour (source, pin f25f27d)
+
+- `Joint.limit_min/limit_max: [Option<f64>; 3]` per slot (`feature/mates.rs:516-521`). The joint box's folded
+  «Limits» section offers one row per **free** slot: a tick switches a bound on at 0.0 or off to `None`
+  (`qymcad-assembly/src/popup.rs:398-405`), a field in −100000..100000 (`popup.rs:113-118`) takes a number or a
+  formula kept at `feat_dims[joint]["min<slot>"|"max<slot>"]` (`popup.rs:128,229-240`) and imposed on every rebuild
+  (`model/item_values.rs:144-176`). No min ≤ max check, no check against the current value.
+- A limit **clamps**: `set_joint_drive` clamps a written drive (`model/assembly/joints.rs:382-389`), `solve_joints` →
+  `clamp_free` clamps every stored drive, including formula drives (`model/assembly/drive.rs:353-356`), and free slots
+  are pinned at a violated bound (`asm/bridge.rs:439-480`). The only signal is `joints_at_limit()`, the app's at-limit
+  mark (`gui/panels_props.rs:322`).
+
+### Tool contract
+
+`joint_limits {joint, slot?, min?, max?}` (H2: Slider `offset`; Revolute `angle` in §3). Omitted keeps a bound;
+`null` ticks it off and drops its formula; a number ticks it on with that value and drops a formula; a string is a
+formula stored where the app stores it, validated as joint formulas are, then rebuilt. `slot` defaults to the
+joint's only free slot; naming another is refused; Rigid has no free slot. `joint_create` takes `limits:{min?,max?}`,
+applied before the first drive. One undo step; batchable. `assembly_info` and joint results report `limit_formulas`
+and `at_limit` (slot names); diagnostics report native `at_limit` pairs and `clamped` formula drives.
+
+### Clamping is the app's meaning of a limit: reported, not refused
+
+Plan-H overrides ADR 0051's "requests outside limits refuse rather than accept native clamping". `joint_set`, a
+drive formula and a new bound past the current value are clamped as natively. The result is never silent:
+`joint_set`/`joint_create`/`joint_limits` return `clamped:{joint,slot,requested,applied}` and rebuild reports
+(`param_set`, `dimension_set`, open) list formula drives a limit holds in `assembly.clamped`. The request-versus-read
+check now compares the reading with the **applied** (clamped) drive; any other mismatch is still refused.
+The two ADR 0051 tests that pinned the old refusal were rewritten to the clamp (`assembly_tests`,
+`assembly_contract_tests`).
+
+### Refusals
+
+- **min > max (F-157, protective)**: natively every value goes to max. Refused on `joint_limits`, `joint_create`, and on
+  every evaluated edit (a `param_set` that pushes a limit formula past the other bound), through
+  `validate_joint_formulas`, which now evaluates limit formulas too.
+- A bound outside the app's field range ±100000.
+- `joint_limits` with neither `min` nor `max`; a named slot that is not the joint's free slot; a Rigid joint.
+
+### Tests
+
+`golden_joint_limits` (numeric clamp of `joint_set`, new bound past a driven and a free slot, formula limits and a
+formula drive held by a limit, clear, creation limits, undo, save/reopen, refusals with snapshot/unchanged, native
+F-157 evidence) and `mcp/tests/h2_joint_limits` (null vs omitted, clamps, batch, batch rollback, undo).

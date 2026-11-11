@@ -57,7 +57,9 @@ mod topology;
 mod value;
 
 pub use appearance::{AppearanceBody, AppearanceResult, AppearanceScope};
-pub use assembly::{AssemblyJointKind, JointAnchor, JointCreate, JointMode, JointRef, PartRef, PartRotation};
+pub use assembly::{
+    AssemblyJointKind, JointAnchor, JointCreate, JointLimits, JointMode, JointRef, JointSlot, LimitEdit, PartRef, PartRotation,
+};
 pub use body_boolean::{BodyBooleanOptions, BodyBooleanResult, BooleanOp};
 pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};

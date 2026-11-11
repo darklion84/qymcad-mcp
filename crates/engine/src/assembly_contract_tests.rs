@@ -31,6 +31,7 @@ fn joint_fixture() -> (Session, Id, Id, Id, Id, Id) {
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: Some(0.0.into()),
+            limits: None,
         })
         .unwrap()["joint"]["id"]
         .as_u64()
@@ -118,17 +119,17 @@ fn a_contract_group_geometry_parameter_edit_is_touched_but_disconnected_edit_wor
 }
 
 #[test]
-fn a_contract_formula_limit_crossing_parameter_edit_refuses_atomically() {
+fn a_contract_formula_limit_crossing_parameter_edit_is_clamped_and_reported() {
     let (mut s, _, _, _, _, j) = joint_fixture();
     s.p.joints[0].limit_min[1] = Some(0.);
     s.p.joints[0].limit_max[1] = Some(300.);
     s.param_set("opening", &0.0.into()).unwrap();
     s.joint_set(&JointRef::Id(j), Some(&"opening".into()), None).unwrap();
     s.param_set("opening", &300.0.into()).unwrap();
-    let before = state(&s);
-    let error = s.param_set("opening", &301.0.into()).unwrap_err();
-    assert_eq!(error.to_string(), format!("joint {j} offset 301 mm is outside [0, 300] mm; nothing was changed"));
-    assert_eq!(state(&s), before);
+    // ADR 0054 §2: the formula past the limit is clamped natively and reported, not refused.
+    let report = s.param_set("opening", &301.0.into()).unwrap();
+    assert_eq!(report.assembly["clamped"], serde_json::json!([{"joint":j,"slot":1,"requested":301.0,"applied":300.0}]));
+    assert!((s.p.joints[0].offset - 300.0).abs() < 1e-5);
     s.param_set("unrelated", &4.0.into()).unwrap();
 }
 
@@ -188,6 +189,7 @@ fn a_contract_failed_creation_inside_active_boundary_restores_rebuilt_live_shape
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: None,
+            limits: None,
         })
         .unwrap_err();
     let after = state(&s);
