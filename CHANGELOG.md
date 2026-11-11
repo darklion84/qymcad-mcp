@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.13 — draft, thicken, part instances and copies (ADR 0052–0053)
 
 ### Added
 - `draft`: native Draft as the app's Draft command — faces tilted about a planar neutral face of the same body, signed `angle` (number or formula, feature dimension `angle`) in the app's range 0 < |angle| ≤ 60 enforced on creation and on every evaluated `param_set`/`dimension_set`/open rebuild, `flip`, re-pick of faces and neutral through `feature`, batch and one-step undo (ADR 0052).

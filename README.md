@@ -86,6 +86,7 @@ startup the server warns when the installed QymCAD.app is a different release.
 |---|---|---|
 | 0.1.1-dev.20261026.11 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.12 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
+| 0.1.1-dev.20261026.13 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.10 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.9 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
 | 0.1.1-dev.20261026.8 | v0.1.1-dev.20261026 | 7.9.3 (Homebrew) |
