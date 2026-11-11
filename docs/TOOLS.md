@@ -80,7 +80,7 @@ Start a new document with one empty part (replaces the open document; save it fi
 
 ## doc_open
 
-Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry. Both doc.bodies and rebuild.bodies report the geometry after opening and rebuilding; stored-file metrics appear only in stored-versus-rebuilt mismatch warnings. doc.assembly and rebuild.assembly report native mechanism health separately from feature errors: joint faults, solve errors, violations and conflict. Existing unsupported records are preserved and reported. Stored forward-timeline projections are refused. Stored cross-part projections are accepted with a rebuild warning per projection identifying sketch, source body and owner parts: projected in the source part's local coordinates; its placement is ignored, as in the QymCAD app. sketch_info marks their entities cross_part:true.
+Open a .qcad file written by QymCAD of the same release (or by this server). Rebuilds what has no stored geometry. Both doc.bodies and rebuild.bodies report the geometry after opening and rebuilding; stored-file metrics appear only in stored-versus-rebuilt mismatch warnings. doc.assembly and rebuild.assembly report native mechanism health separately from feature errors: joint faults, solve errors, violations, conflict, clamped (drives a limit held while opening) and limit_faults (limits the app accepts and the server will not build on; edits that do not touch the joint still go on). Existing unsupported records are preserved and reported. Stored forward-timeline projections are refused. Stored cross-part projections are accepted with a rebuild warning per projection identifying sketch, source body and owner parts: projected in the source part's local coordinates; its placement is ignored, as in the QymCAD app. sketch_info marks their entities cross_part:true.
 
 ```json
 {
@@ -292,7 +292,7 @@ Create or change a named parameter and rebuild everything that depends on it. Us
 
 ## param_delete
 
-Delete a parameter. Refused while an expression still uses it.
+Delete a parameter. Refused while an expression still uses it (a formula kept under a joint limit that is ticked off is read by nothing and does not count).
 
 ```json
 {
@@ -6821,7 +6821,7 @@ Set grounding on a root-child native Part, then solve and verify the mechanism a
 
 ## joint_create
 
-Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts, or a Revolute hinge between exactly one straight edge on each (the app's Joint tool with an edge picked). A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. Revolute requires ungrounded B, mode as_built and collinear edges (place the Part on the hinge first: QymCAD turns about B's edge and ignores A's), refuses face anchors (a planar face turns the Part about its normal), axis and offset, and takes angle in degrees within (-180, 180] (readings wrap, F-158); the signed angle follows the edge frames, so read the reached pose from the result. as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.
+Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts, or a Revolute hinge between exactly one straight edge on each (the app's Joint tool with an edge picked). A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. Revolute requires ungrounded B, refuses face anchors (a planar face turns the Part about its normal, F-161), axis and offset, and takes angle in degrees within (-180, 180] (readings wrap, F-158); the signed angle follows the edge frames, so read the reached pose from the result. Revolute mode as_built needs collinear edges (place the Part on the hinge first: QymCAD turns about B's edge and ignores A's, F-162); mode align puts B's edge frame on A's, so the Part snaps onto the hinge (measured correct, F-163). A later feature (push_face, fillet, chamfer, reorder) that moves or removes an anchored hinge edge on the current body is refused as invalidating the anchors, because QymCAD would go on turning the Part about the consumed body's old edge (F-160). as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.
 
 ```json
 {
@@ -7029,7 +7029,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
     },
     "kind": {
       "$ref": "#/$defs/AssemblyJointKind",
-      "description": "Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis; Revolute turns\nabout a hinge made of two collinear straight edges."
+      "description": "Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis; Revolute turns\nabout a hinge made of two straight edges."
     },
     "limits": {
       "anyOf": [
@@ -7040,11 +7040,11 @@ Create a native Rigid or Slider between exactly one current planar face on each 
           "type": "null"
         }
       ],
-      "description": "Optional limits of the free slot (Slider offset in mm, Revolute angle in degrees within [-180, 180]),\napplied before the first drive, as joint_limits."
+      "description": "Optional limits of the free slot (Slider offset in mm, Revolute angle in degrees within (-180, 180]),\napplied before the first drive, as joint_limits."
     },
     "mode": {
       "$ref": "#/$defs/JointMode",
-      "description": "align aligns connector frames; as_built captures the existing relative pose before the first solve. Revolute\nrequires as_built."
+      "description": "align aligns connector frames (a Revolute's B edge frame lands on A's, so the Part snaps onto the hinge);\nas_built captures the existing relative pose before the first solve (a Revolute then needs collinear edges)."
     },
     "name": {
       "description": "Optional native joint label. Duplicate labels require ids when referenced later.",
@@ -7077,7 +7077,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
 
 ## joint_set
 
-Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180], F-158), or release the slot. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' or 'angle' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}; the reached travel is checked against the applied value. Undoable; allowed in batch.
+Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180], F-158), or release the slot. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' or 'angle' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}, also on the step entry in a compact batch; the reached travel is checked against the applied value. Refused when this joint's limits or angle domain are faulty (limit_faults); faults of other joints do not block it. Undoable; allowed in batch.
 
 ```json
 {
@@ -7163,7 +7163,7 @@ Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180
 
 ## joint_limits
 
-The app's Limits section of the joint box for a Slider's offset (mm) or a Revolute's angle (degrees, bounds within [-180, 180]: QymCAD compares them with a reading wrapped to (-180, 180], F-158): each bound is a tick plus a number or formula (formulas persist natively under min<slot>/max<slot> and follow parameters), range ±100000 as in the app's fields. Omitted keeps a bound, null ticks it off with its formula. A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; assembly_info reports at_limit. Refused: min above max, now or after any later parameter edit (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). Undoable; allowed in batch.
+The app's Limits section of the joint box for a Slider's offset (mm) or a Revolute's angle (degrees, bounds within [-180, 180]: QymCAD compares them with a reading wrapped to (-180, 180], F-158): each bound is a tick plus a number or formula (formulas persist natively under min<slot>/max<slot> and follow parameters); a typed number is held to ±100000 as the app's fields are, a formula's value is not. An angle bound must lie in (-180, 180]: -180 reads as 180. Omitted keeps a bound, null ticks it off as the app does: the value goes and the formula stays dormant, read by nothing (reported as dormant_limit_formulas; a formula given again, or a bound ticked on in the app, makes it live again, F-164). A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; at_limit lists {joint, slot} wherever it is reported. Refused: min above max, now or after a parameter edit that this joint's formulas read (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). A joint that arrives with such limits (a file edited in the app) does not block edits that do not touch it; it is listed in limit_faults. Undoable; allowed in batch.
 
 ```json
 {
@@ -7217,7 +7217,7 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
         }
       ],
       "default": null,
-      "description": "Upper bound: number or native formula ticks the bound on; null ticks it off (value and formula); omitted keeps it."
+      "description": "Upper bound: number or native formula ticks the bound on; null ticks it off (its formula stays dormant); omitted keeps it."
     },
     "min": {
       "anyOf": [
@@ -7229,7 +7229,7 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
         }
       ],
       "default": null,
-      "description": "Lower bound: number or native formula ticks the bound on; null ticks it off (value and formula); omitted keeps it."
+      "description": "Lower bound: number or native formula ticks the bound on; null ticks it off (its formula stays dormant); omitted keeps it."
     },
     "slot": {
       "anyOf": [
@@ -7535,7 +7535,7 @@ The app's tree Delete of a Part (delete_component): removes a root-child Part wi
 
 ## assembly_info
 
-Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, clone links (instance_of on clones, instances on sources), connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits/limit formulas/at_limit, clamped drive formulas and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.
+Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, clone links (instance_of on clones, instances on sources), connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits/limit formulas (live and dormant)/at_limit ({joint, slot} entries), clamped (drive formulas a limit holds and numeric drives a limit clamped in the last call), limit_faults (joints whose limits or drive the app accepts and the server will not build on) and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.
 
 ```json
 {
@@ -7994,7 +7994,7 @@ Read-only native QymCAD measurement of one or two operands. Uses infinite suppor
 
 ## batch
 
-Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches, features, Parts and joints referenced by name/id; joint anchors accept descriptive selections without a topology call. Use single calls when you need topology ids, sketch_info, select or a render between operations. Only modelling tools are allowed, including part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete and joint_limits; reads, document/file tools, undo and nested batch are refused. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed, including active Part, grounding, connectors, joints, formulas and placements. Compact results contain step/tool and created node/part/joint id/name when applicable, feature_reorder action/changed/index metadata, final bodies/warnings/errors; verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.
+Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches, features, Parts and joints referenced by name/id; joint anchors accept descriptive selections without a topology call. Use single calls when you need topology ids, sketch_info, select or a render between operations. Only modelling tools are allowed, including part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete and joint_limits; reads, document/file tools, undo and nested batch are refused. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed, including active Part, grounding, connectors, joints, formulas and placements. Compact results contain step/tool and created node/part/joint id/name when applicable, a step's clamped (a limit moved its request) and part_delete's native_leftovers, feature_reorder action/changed/index metadata, final bodies/warnings/errors (the final assembly report lists every clamp of the batch); verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.
 
 ```json
 {

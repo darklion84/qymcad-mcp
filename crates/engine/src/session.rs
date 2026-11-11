@@ -313,6 +313,9 @@ pub struct Session {
     // Originals removed by native sketch deletion, retained once while undo still references them.
     pub(crate) retired_sources: HashMap<Id, qymcad_core::model::SourceFile>,
     pub(crate) detached_projections: HashMap<(Id, Id), DetachedProjection>,
+    /// Numeric joint drives a native solve clamped since the tool call began: `(joint, slot, requested, applied)`.
+    /// Natively the request is overwritten by the clamped value; this keeps it long enough to report (F-165).
+    pub(crate) drive_clamps: Vec<(Id, usize, f64, f64)>,
 }
 
 fn first_body_feature(project: &Project) -> Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)> {
@@ -336,6 +339,7 @@ impl Session {
             tool_edit_active: false,
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
+            drive_clamps: Vec::new(),
         }
     }
 
@@ -379,6 +383,7 @@ impl Session {
             tool_edit_active: false,
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
+            drive_clamps: Vec::new(),
         };
         // qymcad-io settles sketches while loading, including offset cleanup. Read the original
         // recipe through the non-solving parser so that cleanup cannot erase user Point records.
@@ -629,9 +634,9 @@ impl Session {
     }
 
     fn rebuild_edit_checked(&mut self, only: Option<&HashSet<Id>>, reorder: bool) -> Result<Rebuild> {
-        // Native regeneration silently falls back for invalid mate formulas and clamps drives.
-        // Validate the settled edit scope before handing formulas to that evaluator.
-        self.validate_joint_formulas()?;
+        // Joint formulas, limits and drives are judged once the edit has settled, on the joints it touched
+        // (`assembly_accept_edit`, reached by every caller): the native regeneration that falls back silently for an
+        // invalid mate formula and clamps drives is rolled back with the rest of a refused edit.
         let projections_before = self.projection_provenance();
         let mut notes = Vec::new();
         for _ in 0..=self.p.sketches.len() {
@@ -801,6 +806,7 @@ impl Session {
         let boolean_identities = self.boolean_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
+        let drives_before = crate::assembly::numeric_drives(&self.p);
         let report = self.regenerate_hole_ordered().map_err(|(id, error)| self.issue(id, error.to_string()))?;
 
         let mut built = report.built;
@@ -908,6 +914,8 @@ impl Session {
         warnings.extend(self.cross_part_projection_warnings());
         let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
+        // The native solve inside the regeneration clamped these drives, and said nothing.
+        self.note_drive_clamps(&drives_before);
         Ok((Rebuild { errors, warnings, bodies, assembly: self.rebuild_assembly(), ..Default::default() }, rebuilt))
     }
 

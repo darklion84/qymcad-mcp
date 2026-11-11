@@ -102,7 +102,7 @@ fn joint_limits_over_stdio_registered_strict_batchable_undoable() {
 
     let r = c.ok("joint_set", json!({"joint":"slide", "offset":400}));
     assert_eq!(r["clamped"], json!({"joint":joint, "slot":1, "requested":400.0, "applied":300.0}));
-    assert_eq!(c.ok("assembly_info", json!({}))["joints"][0]["at_limit"], json!(["offset"]));
+    assert_eq!(c.ok("assembly_info", json!({}))["joints"][0]["at_limit"], json!([{"joint":joint, "slot":"offset"}]));
     // Omitted keeps a bound; null ticks it off.
     let r = c.ok("joint_limits", json!({"joint":"slide", "max":null}));
     assert_eq!(r["limit_min"], json!([null, 0.0, null]));
@@ -133,4 +133,24 @@ fn joint_limits_over_stdio_registered_strict_batchable_undoable() {
     assert!(error && text.to_string().contains("step 2"), "{text}");
     let info = c.ok("assembly_info", json!({}));
     assert_eq!(info["joints"][0]["limit_max"], json!([null, null, null]), "{info}");
+}
+
+/// A compact batch step carries the clamp of its own call, as the top-level result does; a step without a clamp has none.
+#[test]
+fn a_compact_batch_step_carries_its_clamp() {
+    let (mut c, joint) = setup();
+    let batch = c.ok(
+        "batch",
+        json!({"steps":[
+            {"tool":"joint_set", "args":{"joint":"slide", "offset":100}},
+            {"tool":"joint_set", "args":{"joint":"slide", "offset":400}},
+            {"tool":"joint_limits", "args":{"joint":"slide", "max":250}}
+        ]}),
+    );
+    assert_eq!(batch["ok"], true, "{batch}");
+    assert!(batch["steps"][0].get("clamped").is_none(), "{batch}");
+    assert_eq!(batch["steps"][1]["clamped"], json!({"joint":joint, "slot":1, "requested":400.0, "applied":300.0}), "{batch}");
+    assert_eq!(batch["steps"][2]["clamped"], json!({"joint":joint, "slot":1, "requested":300.0, "applied":250.0}), "{batch}");
+    // The assembly report of a batch uses the same at_limit format as assembly_info.
+    assert_eq!(batch["assembly"]["at_limit"], json!([{"joint":joint, "slot":"offset"}]), "{batch}");
 }

@@ -165,7 +165,9 @@ impl Session {
             if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_") && mentions(e, name)) {
                 out.push(format!("datum dependency of sketch {} `{}`", node, self.node_name(*node)));
             }
-            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_")) && mentions(e, name)) {
+            // A ticked-off limit's formula is read by nothing; the app's own rename follows it, its delete does not look (F-164).
+            let live = |k: &str| !crate::assembly::dormant_limit_formula(&self.p, *node, k);
+            if dims.iter().any(|(k, e)| (!is_sketch || !k.starts_with("datum_")) && live(k) && mentions(e, name)) {
                 out.push(format!("feature {} `{}`", node, self.node_name(*node)));
             }
         }

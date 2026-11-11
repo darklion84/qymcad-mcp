@@ -34,7 +34,7 @@ fn decode(args: Value) -> Result<BatchArgs, String> {
 pub(super) fn tool() -> Tool {
     Tool {
         name: "batch",
-        description: "Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches, features, Parts and joints referenced by name/id; joint anchors accept descriptive selections without a topology call. Use single calls when you need topology ids, sketch_info, select or a render between operations. Only modelling tools are allowed, including part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete and joint_limits; reads, document/file tools, undo and nested batch are refused. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed, including active Part, grounding, connectors, joints, formulas and placements. Compact results contain step/tool and created node/part/joint id/name when applicable, feature_reorder action/changed/index metadata, final bodies/warnings/errors; verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.",
+        description: "Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches, features, Parts and joints referenced by name/id; joint anchors accept descriptive selections without a topology call. Use single calls when you need topology ids, sketch_info, select or a render between operations. Only modelling tools are allowed, including part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete and joint_limits; reads, document/file tools, undo and nested batch are refused. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed, including active Part, grounding, connectors, joints, formulas and placements. Compact results contain step/tool and created node/part/joint id/name when applicable, a step's clamped (a limit moved its request) and part_delete's native_leftovers, feature_reorder action/changed/index metadata, final bodies/warnings/errors (the final assembly report lists every clamp of the batch); verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.",
         schema: input_schema::<BatchArgs>(),
         validate: Box::new(|args| decode(args).map(|_| ())),
         handler: Box::new(run),
@@ -90,10 +90,15 @@ fn execute(tools: &[Tool], state: &mut State, batch: &BatchArgs, handlers: &[&To
             entry["created"] = json!({"id":id, "name":state.doc()?.node_name(id)});
         }
         // Small operation metadata is useful without repeating full sketch details or body metrics.
-        for key in ["ok", "deleted", "index", "dof", "notes", "reused"] {
+        for key in ["ok", "deleted", "index", "dof", "notes", "reused", "native_leftovers"] {
             if let Some(value) = result.get(key) {
                 entry[key] = value.clone();
             }
+        }
+        // A limit that moved a request is never silent, so a step reports it as its own result does; a step with no
+        // clamp has no key.
+        if let Some(clamped) = result.get("clamped").filter(|v| !v.is_null()) {
+            entry["clamped"] = clamped.clone();
         }
         if step.tool == "feature_reorder" {
             for key in ["feature", "direction", "changed", "from_index", "to_index"] {

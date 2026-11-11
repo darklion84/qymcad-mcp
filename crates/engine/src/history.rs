@@ -117,6 +117,7 @@ impl Session {
         let copies = crate::session::copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh)))
             .map_err(|id| Error::Invalid(format!("cannot snapshot body {id} for undo")))?;
         self.tool_edit_active = true;
+        self.drive_clamps.clear();
         Ok(Snapshot {
             project: self.p.clone_without_source_data(),
             shapes: std::mem::replace(&mut self.shapes, copies),

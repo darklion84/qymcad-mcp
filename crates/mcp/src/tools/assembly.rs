@@ -85,14 +85,14 @@ struct Create {
     /// Optional native joint label. Duplicate labels require ids when referenced later.
     name: Option<String>,
     /// Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis; Revolute turns
-    /// about a hinge made of two collinear straight edges.
+    /// about a hinge made of two straight edges.
     kind: AssemblyJointKind,
     /// Anchor on grounded root-child Part A: a planar face (Rigid/Slider) or a straight edge (Revolute).
     a: Anchor,
     /// Anchor on a different root-child Part B; Slider/Revolute B must be ungrounded.
     b: Anchor,
-    /// align aligns connector frames; as_built captures the existing relative pose before the first solve. Revolute
-    /// requires as_built.
+    /// align aligns connector frames (a Revolute's B edge frame lands on A's, so the Part snaps onto the hinge);
+    /// as_built captures the existing relative pose before the first solve (a Revolute then needs collinear edges).
     mode: JointMode,
     /// Required for Slider, refused for Rigid. The base-plane normal is the signed local travel axis.
     axis: Option<JointAxis>,
@@ -100,7 +100,7 @@ struct Create {
     offset: Option<Num>,
     /// Optional absolute Revolute angle in degrees within (-180, 180]: number or native formula.
     angle: Option<Num>,
-    /// Optional limits of the free slot (Slider offset in mm, Revolute angle in degrees within [-180, 180]),
+    /// Optional limits of the free slot (Slider offset in mm, Revolute angle in degrees within (-180, 180]),
     /// applied before the first drive, as joint_limits.
     limits: Option<CreateLimits>,
 }
@@ -123,10 +123,10 @@ struct Limits {
     joint: JointRef,
     /// The free slot to limit; defaults to the joint's only free slot (Slider: offset, Revolute: angle). Naming another slot is refused.
     slot: Option<JointSlot>,
-    /// Lower bound: number or native formula ticks the bound on; null ticks it off (value and formula); omitted keeps it.
+    /// Lower bound: number or native formula ticks the bound on; null ticks it off (its formula stays dormant); omitted keeps it.
     #[serde(default, deserialize_with = "present")]
     min: Option<Option<Num>>,
-    /// Upper bound: number or native formula ticks the bound on; null ticks it off (value and formula); omitted keeps it.
+    /// Upper bound: number or native formula ticks the bound on; null ticks it off (its formula stays dormant); omitted keeps it.
     #[serde(default, deserialize_with = "present")]
     max: Option<Option<Num>>,
 }
@@ -204,7 +204,7 @@ pub fn tools() -> Vec<Tool> {
             let result = st.doc()?.ground(&a.part, a.grounded).map_err(err)?;
             Ok(changed(st, result))
         }),
-        tool("joint_create", "Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts, or a Revolute hinge between exactly one straight edge on each (the app's Joint tool with an edge picked). A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. Revolute requires ungrounded B, mode as_built and collinear edges (place the Part on the hinge first: QymCAD turns about B's edge and ignores A's), refuses face anchors (a planar face turns the Part about its normal), axis and offset, and takes angle in degrees within (-180, 180] (readings wrap, F-158); the signed angle follows the edge frames, so read the reached pose from the result. as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.", |st, a: Create| {
+        tool("joint_create", "Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts, or a Revolute hinge between exactly one straight edge on each (the app's Joint tool with an edge picked). A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. Revolute requires ungrounded B, refuses face anchors (a planar face turns the Part about its normal, F-161), axis and offset, and takes angle in degrees within (-180, 180] (readings wrap, F-158); the signed angle follows the edge frames, so read the reached pose from the result. Revolute mode as_built needs collinear edges (place the Part on the hinge first: QymCAD turns about B's edge and ignores A's, F-162); mode align puts B's edge frame on A's, so the Part snaps onto the hinge (measured correct, F-163). A later feature (push_face, fillet, chamfer, reorder) that moves or removes an anchored hinge edge on the current body is refused as invalidating the anchors, because QymCAD would go on turning the Part about the consumed body's old edge (F-160). as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.", |st, a: Create| {
             let s = st.doc()?;
             let create = JointCreate {name:a.name, kind:a.kind,
                 a:a.a.resolve(s)?,
@@ -212,7 +212,7 @@ pub fn tools() -> Vec<Tool> {
                 mode:a.mode,axis:a.axis.map(|axis| axis.base_plane),offset:a.offset, angle:a.angle, limits:a.limits.map(|l| JointLimits {min:l.min, max:l.max})};
             s.joint_create(&create).map_err(err)
         }),
-        tool("joint_set", "Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180], F-158), or release the slot. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' or 'angle' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}; the reached travel is checked against the applied value. Undoable; allowed in batch.", |st, a: Set| {
+        tool("joint_set", "Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180], F-158), or release the slot. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' or 'angle' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}, also on the step entry in a compact batch; the reached travel is checked against the applied value. Refused when this joint's limits or angle domain are faulty (limit_faults); faults of other joints do not block it. Undoable; allowed in batch.", |st, a: Set| {
             let s = st.doc()?;
             let result = match (a.offset, a.angle, a.release) {
                 (None, Some(angle), None) => s.joint_set_slot(&a.joint, JointSlot::Angle, Some(&angle), false),
@@ -223,7 +223,7 @@ pub fn tools() -> Vec<Tool> {
             .map_err(err)?;
             Ok(changed(st, result))
         }),
-        tool("joint_limits", "The app's Limits section of the joint box for a Slider's offset (mm) or a Revolute's angle (degrees, bounds within [-180, 180]: QymCAD compares them with a reading wrapped to (-180, 180], F-158): each bound is a tick plus a number or formula (formulas persist natively under min<slot>/max<slot> and follow parameters), range ±100000 as in the app's fields. Omitted keeps a bound, null ticks it off with its formula. A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; assembly_info reports at_limit. Refused: min above max, now or after any later parameter edit (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). Undoable; allowed in batch.", |st, a: Limits| {
+        tool("joint_limits", "The app's Limits section of the joint box for a Slider's offset (mm) or a Revolute's angle (degrees, bounds within [-180, 180]: QymCAD compares them with a reading wrapped to (-180, 180], F-158): each bound is a tick plus a number or formula (formulas persist natively under min<slot>/max<slot> and follow parameters); a typed number is held to ±100000 as the app's fields are, a formula's value is not. An angle bound must lie in (-180, 180]: -180 reads as 180. Omitted keeps a bound, null ticks it off as the app does: the value goes and the formula stays dormant, read by nothing (reported as dormant_limit_formulas; a formula given again, or a bound ticked on in the app, makes it live again, F-164). A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; at_limit lists {joint, slot} wherever it is reported. Refused: min above max, now or after a parameter edit that this joint's formulas read (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). A joint that arrives with such limits (a file edited in the app) does not block edits that do not touch it; it is listed in limit_faults. Undoable; allowed in batch.", |st, a: Limits| {
             let result = st.doc()?.joint_limits(&a.joint, a.slot, &edit(a.min), &edit(a.max)).map_err(err)?;
             Ok(changed(st, result))
         }),
@@ -237,6 +237,6 @@ pub fn tools() -> Vec<Tool> {
             st.doc()?.part_copy(&a.source, &a.name, a.translation_mm, rotation.as_ref()).map_err(err)
         }),
         tool("part_delete", "The app's tree Delete of a Part (delete_component): removes a root-child Part with its bodies, sketches and datums, and every joint that touches it; the other Parts keep their placements (a Part moved by a deleted joint becomes free). If the deleted Part was active, the root becomes active, as in the app. As natively, the surviving Part's connector of a deleted joint and the deleted joint's formulas stay in the file; they are reported as native_leftovers and do not count as parameter users (F-155). Deleting a clone Part keeps its source. Refused: the root; a nested Part; a Part that is the source of clones (QymCAD leaves them with a stale body, F-154: delete the clones first); an active history rollback (the bar would slide, F-156); Parts in component patterns, mirrors, constraints or relations. Returns removed part/bodies/joints/connectors, native_leftovers, active_component, placements and diagnostics. Undoable; allowed in batch.", |st, a: PartDelete| st.doc()?.part_delete(&a.part).map_err(err)),
-        tool("assembly_info", "Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, clone links (instance_of on clones, instances on sources), connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits/limit formulas/at_limit, clamped drive formulas and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.", |st, _: Info| Ok(st.doc()?.assembly_info())),
+        tool("assembly_info", "Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, clone links (instance_of on clones, instances on sources), connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits/limit formulas (live and dormant)/at_limit ({joint, slot} entries), clamped (drive formulas a limit holds and numeric drives a limit clamped in the last call), limit_faults (joints whose limits or drive the app accepts and the server will not build on) and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.", |st, _: Info| Ok(st.doc()?.assembly_info())),
     ]
 }

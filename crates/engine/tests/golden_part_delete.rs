@@ -308,3 +308,106 @@ fn native_deleting_a_part_under_rollback_slides_the_bar_f156() {
     assert_close(m.shapes[&second].volume(), 27000.0, 1e-6, "30*30*30 built");
     let _ = b;
 }
+
+// ---- H5 fix round: the refusals the review found untested ------------------------------------------------------
+// The server cannot make nested assemblies, component patterns or mirrored Parts, so each fixture is built on the
+// native Project alone, saved through the native io and opened.
+
+fn native_document(name: &str, build: impl FnOnce(&mut qymcad_core::model::Project, Id)) -> std::path::PathBuf {
+    let mut p = qymcad_core::model::Project::default();
+    let root = p.ensure_root();
+    p.set_active_component(Some(root));
+    build(&mut p, root);
+    let (report, shapes) = qymcad_testkit::regenerate(&mut p);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let path = scratch(name);
+    native_assembly_save(&NativeAssemblyModel { project: p, shapes }, &path);
+    path
+}
+
+/// A Part in the active context holding one box.
+fn boxed_part(p: &mut qymcad_core::model::Project, root: Id, name: &str) -> Id {
+    let part = p.add_part(name);
+    p.set_active_component(Some(part));
+    p.add_box(10.0, 10.0, 10.0);
+    p.set_active_component(Some(root));
+    part
+}
+
+#[test]
+fn a_nested_part_and_a_nested_assembly_are_refused_and_a_root_part_next_to_them_is_deleted() {
+    let mut ids = (0, 0, 0);
+    let path = native_document("h5-nested-part.qcad", |p, root| {
+        let sub = p.add_assembly("sub");
+        p.set_active_component(Some(sub));
+        let inner = boxed_part(p, sub, "inner");
+        p.set_active_component(Some(root));
+        let top = boxed_part(p, root, "top");
+        ids = (sub, inner, top);
+    });
+    let (sub, inner, top) = ids;
+    let (mut s, report) = Session::open(&path).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    let before = snapshot(&s);
+    let error = s.part_delete(&PartRef::Id(inner)).unwrap_err().to_string();
+    assert_eq!(error, format!("part_delete requires a root-child part; part {inner} is nested"));
+    unchanged(&s, &before);
+    let error = s.part_delete(&PartRef::Id(sub)).unwrap_err().to_string();
+    assert!(error.contains("nested assembly"), "{error}");
+    unchanged(&s, &before);
+    s.part_delete(&PartRef::Id(top)).unwrap();
+    assert!(s.project().components.iter().all(|c| c.id != top));
+}
+
+#[test]
+fn a_part_in_a_component_pattern_is_refused_as_source_and_as_copy() {
+    let mut src = 0;
+    let path = native_document("h5-pattern-part.qcad", |p, root| {
+        src = boxed_part(p, root, "src");
+        p.add_comp_pattern(src, qymcad_core::model::CompPatternKind::linear([1.0, 0.0, 0.0], 50.0, 3));
+    });
+    let (mut s, report) = Session::open(&path).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    let copies: Vec<Id> = s
+        .project()
+        .timeline
+        .iter()
+        .find_map(|n| match &n.kind {
+            FeatureKind::ComponentPattern { copies, .. } => Some(copies.clone()),
+            _ => None,
+        })
+        .expect("a component pattern node");
+    assert!(!copies.is_empty());
+    let before = snapshot(&s);
+    for part in std::iter::once(src).chain(copies) {
+        let error = s.part_delete(&PartRef::Id(part)).unwrap_err().to_string();
+        assert!(error.contains("derived components"), "part {part}: {error}");
+        unchanged(&s, &before);
+    }
+}
+
+#[test]
+fn a_mirrored_part_is_refused_as_source_and_as_mirror() {
+    let mut src = 0;
+    let path = native_document("h5-mirror-part.qcad", |p, root| {
+        src = boxed_part(p, root, "src");
+        p.add_mirror_part(src, [100.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    });
+    let (mut s, report) = Session::open(&path).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    let mirror = s
+        .project()
+        .timeline
+        .iter()
+        .find_map(|n| match n.kind {
+            FeatureKind::MirrorPart { .. } => n.parent,
+            _ => None,
+        })
+        .expect("a mirrored part");
+    let before = snapshot(&s);
+    for part in [src, mirror] {
+        let error = s.part_delete(&PartRef::Id(part)).unwrap_err().to_string();
+        assert!(error.contains("derived components"), "part {part}: {error}");
+        unchanged(&s, &before);
+    }
+}

@@ -106,6 +106,8 @@ fn part_delete_over_stdio_registered_strict_batchable_undoable() {
         ]}),
     );
     assert_eq!(batch["ok"], true, "{batch}");
+    // A compact step carries what the app leaves behind, as the top-level result does.
+    assert_eq!(batch["steps"][1]["native_leftovers"], json!({"connectors":[], "formulas":[]}), "{batch}");
     assert_eq!(components(&mut c).len(), 2, "root + knob");
     assert_eq!(c.ok("undo", json!({}))["undone"]["tool"], "batch");
     assert_eq!(components(&mut c).len(), 3, "root + knob + spare");

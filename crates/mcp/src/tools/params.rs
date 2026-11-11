@@ -84,7 +84,7 @@ pub fn tools() -> Vec<Tool> {
                 Ok(json!({ "rebuild": rebuild_json(&r) }))
             },
         ),
-        tool("param_delete", "Delete a parameter. Refused while an expression still uses it.", |st, a: DeleteArgs| {
+        tool("param_delete", "Delete a parameter. Refused while an expression still uses it (a formula kept under a joint limit that is ticked off is read by nothing and does not count).", |st, a: DeleteArgs| {
             st.doc()?.param_delete(&a.name).map_err(err)?;
             Ok(json!({ "ok": true }))
         }),

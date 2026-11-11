@@ -119,6 +119,137 @@ const LIMIT_RANGE: f64 = 100_000.0;
 fn limit_key(min: bool, slot: usize) -> String {
     format!("{}{slot}", if min { "min" } else { "max" })
 }
+/// A formula kept under `min<slot>`/`max<slot>` of a joint whose bound is ticked off. The app never reads it:
+/// `item_value` answers `None` for a bound that is off and `impose_item_values` skips it. Ticking the bound back on
+/// re-imposes it at the next evaluation, and a driver rename rewrites it meanwhile (F-164). Nothing here evaluates,
+/// validates or counts a dormant formula either.
+pub(crate) fn dormant_limit_formula(p: &Project, joint: Id, key: &str) -> bool {
+    let Some(j) = p.joints.iter().find(|j| j.id == joint) else { return false };
+    let Some(slot) = key.get(3..).and_then(|s| s.parse::<usize>().ok()).filter(|s| *s < 3) else { return false };
+    match key.get(..3) {
+        Some("min") => j.limit_min[slot].is_none(),
+        Some("max") => j.limit_max[slot].is_none(),
+        _ => false,
+    }
+}
+/// A joint's formula under `key` that something reads: a slot's drive formula, or a limit formula of a bound that is on.
+fn live_formula<'a>(p: &'a Project, joint: Id, key: &str) -> Option<&'a str> {
+    p.feat_dim(joint, key).filter(|e| !e.trim().is_empty() && !dormant_limit_formula(p, joint, key))
+}
+/// Every key a joint can keep a formula under: the three slots' drives, then the six limits.
+fn joint_keys() -> impl Iterator<Item = String> {
+    SLOT_KEYS.into_iter().map(String::from).chain((0..3).flat_map(|s| [limit_key(true, s), limit_key(false, s)]))
+}
+/// The numeric drives (those without a drive formula) as they stand: what a native solve may clamp without a word.
+pub(crate) fn numeric_drives(p: &Project) -> Vec<(Id, usize, f64)> {
+    let mut out = Vec::new();
+    for j in &p.joints {
+        for (slot, key) in SLOT_KEYS.iter().enumerate() {
+            if let (Some(v), None) = (j.drive[slot], live_formula(p, j.id, key)) {
+                out.push((j.id, slot, v));
+            }
+        }
+    }
+    out
+}
+/// Evaluated bounds of a joint's free slot: a formula's value where one is read, else the stored value.
+fn evaluated_limits(p: &Project, id: Id, slot: usize) -> Result<(Option<f64>, Option<f64>)> {
+    let Some(j) = p.joints.iter().find(|j| j.id == id) else { return Ok((None, None)) };
+    let vars = p.param_map();
+    let bound = |min: bool, stored: Option<f64>| -> Result<Option<f64>> {
+        match live_formula(p, id, &limit_key(min, slot)) {
+            Some(expr) if stored.is_some() => Ok(Some(Num::Expr(expr.into()).eval(&vars)?)),
+            _ => Ok(stored),
+        }
+    };
+    Ok((bound(true, j.limit_min[slot])?, bound(false, j.limit_max[slot])?))
+}
+/// What is wrong with the bounds of a joint's free slot, without a refusal's closing words; `None` when they are fine.
+/// Only a typed number is held to the app's field range: the GUI bounds the field, and a formula that comes to a big
+/// number breaks nothing natively.
+fn limit_problem(p: &Project, id: Id) -> Result<Option<String>> {
+    let Some(j) = p.joints.iter().find(|j| j.id == id) else { return Ok(None) };
+    let Some(slot) = free_slot(j.kind) else { return Ok(None) };
+    let name = SLOT_KEYS[slot];
+    let (min, max) = evaluated_limits(p, id, slot)?;
+    for (v, is_min) in [(min, true), (max, false)] {
+        let Some(v) = v else { continue };
+        let typed = live_formula(p, id, &limit_key(is_min, slot)).is_none();
+        if !v.is_finite() || (typed && v.abs() > LIMIT_RANGE) {
+            return Ok(Some(format!("joint {id} {name} limit {v} is outside the app's range [-{LIMIT_RANGE}, {LIMIT_RANGE}]")));
+        }
+    }
+    if j.kind == JointKind::Revolute {
+        for v in [min, max].into_iter().flatten() {
+            if !(v > -180.0 && v <= 180.0) {
+                return Ok(Some(format!(
+                    "joint {id} angle limit {v} is outside (-180, 180] degrees: QymCAD reads angles wrapped to (-180, 180], so -180 reads as 180 and a limit outside the range snaps a released part to the other bound (F-158)"
+                )));
+            }
+        }
+    }
+    if let (Some(a), Some(b)) = (min, max) {
+        if a > b {
+            return Ok(Some(format!(
+                "joint {id} {name} limit min {a} is greater than max {b}; QymCAD would send every value to max (F-157)"
+            )));
+        }
+    }
+    Ok(None)
+}
+/// Faults the app accepts in a joint that the server refuses to build on: a limit it would refuse, a Revolute drive
+/// outside the wrapped reading range. They are reported; only an edit that touches the joint is refused.
+fn joint_fault_messages(p: &Project, j: &qymcad_core::feature::Joint) -> Vec<String> {
+    let mut out: Vec<String> = limit_problem(p, j.id).ok().flatten().into_iter().collect();
+    if let (JointKind::Revolute, Some(v)) = (j.kind, j.drive[0]) {
+        if !(v > -180.0 && v <= 180.0) {
+            out.push(format!(
+                "joint {} angle drive {v}° is outside (-180, 180]: QymCAD reads angles wrapped to (-180, 180], so the reading disagrees with the drive (F-158)",
+                j.id
+            ));
+        }
+    }
+    out
+}
+fn limit_faults(p: &Project) -> Vec<Value> {
+    p.joints.iter().flat_map(|j| joint_fault_messages(p, j).into_iter().map(|message| json!({"joint":j.id,"message":message}))).collect()
+}
+/// `{joint, slot}` for every free slot standing on a bound (native `joints_at_limit`, the app's at-limit mark): the one
+/// format of `at_limit` in diagnostics, joint results and `assembly_info`.
+fn at_limit_list(p: &Project) -> Vec<Value> {
+    p.joints_at_limit().into_iter().map(|(joint, slot)| json!({"joint":joint,"slot":SLOT_KEYS[slot]})).collect()
+}
+/// The joints an edit touched: created or changed by it, or with a drive or limit formula that reads a parameter it
+/// changed. Only these are validated; the others are reported as diagnostics (`limit_faults`).
+fn touched_joints(before: &Project, after: &Project) -> HashSet<Id> {
+    let (old_vars, new_vars) = (before.param_map(), after.param_map());
+    let changed: Vec<&String> = new_vars
+        .iter()
+        .filter(|(k, v)| old_vars.get(*k) != Some(*v))
+        .map(|(k, _)| k)
+        .chain(old_vars.keys().filter(|k| !new_vars.contains_key(*k)))
+        .collect();
+    after
+        .joints
+        .iter()
+        .filter(|j| {
+            let moved = before.joints.iter().find(|o| o.id == j.id).is_none_or(|o| {
+                o.kind != j.kind
+                    || o.a != j.a
+                    || o.b != j.b
+                    || o.limit_min != j.limit_min
+                    || o.limit_max != j.limit_max
+                    || o.drive != j.drive
+                    || before.feat_dims.get(&j.id) != after.feat_dims.get(&j.id)
+            });
+            moved
+                || joint_keys()
+                    .filter_map(|key| live_formula(after, j.id, &key))
+                    .any(|expr| changed.iter().any(|name| qymcad_core::expr::mentions(expr, name)))
+        })
+        .map(|j| j.id)
+        .collect()
+}
 /// Drive formulas that a limit clamps, after a solve: what the formula asks and what the drive holds.
 fn formula_clamps(p: &Project) -> Vec<Value> {
     let vars = p.param_map();
@@ -148,7 +279,11 @@ pub(crate) fn object_name(name: &str) -> Result<&str> {
 }
 
 /// One acceptance implementation for mutations and diagnostic reads. Reads solve an independent Project.
-fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
+///
+/// `scope` is the set of joints the edit touched (`None`: every joint, as a diagnostic read judges them). A joint
+/// outside the scope that carries a fault the app accepts (`limit_faults`) is not held to its drive: its mismatch is
+/// reported by the read, and does not refuse an edit that has nothing to do with it.
+fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>, scope: Option<&HashSet<Id>>) -> Value {
     let invalid_before: Vec<_> = p.components.iter().filter(|c| !rigid(&c.transform)).map(|c| c.id).collect();
     // Never feed nonfinite matrices to the native nonlinear solver.
     let invalid_slots: Vec<_> = p
@@ -162,9 +297,10 @@ fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
         .collect();
     let mut formula_errors = Vec::new();
     for j in &p.joints {
-        for key in SLOT_KEYS.into_iter().map(String::from).chain((0..3).flat_map(|s| [limit_key(true, s), limit_key(false, s)])) {
+        for key in joint_keys() {
             let key = key.as_str();
-            if let Some(expr) = p.feat_dim(j.id, key) {
+            // A dormant limit formula is read by nothing, so nothing here judges it.
+            if let Some(expr) = p.feat_dim(j.id, key).filter(|_| !dormant_limit_formula(p, j.id, key)) {
                 let result = Num::Expr(expr.into()).eval(&p.param_map()).and_then(|value| {
                     p.check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key: key.into() }, expr)
                         .map_err(|e| Error::Expr(e.to_string()))?;
@@ -186,9 +322,21 @@ fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
                 AnchorRef::FaceCenter(body, key) => {
                     (body, p.regen_faces.get(body).map_or(0, |faces| faces.iter().filter(|f| f.id == key.id).count()))
                 }
-                // A hinge edge has the same witness rule: exactly one current edge with its persistent id.
+                // A hinge edge: exactly one edge with its persistent id on the CURRENT body, where the connector's
+                // pivot is. Natively the connector stays on the body it names; after a feature consumed that body
+                // the pivot is still read from its last-built, stale edge (F-160), so an edge that moved or went
+                // away on the current body is a lost anchor.
                 AnchorRef::EdgeMid(body, edge) => {
-                    (body, p.regen_edges.get(body).map_or(0, |edges| edges.iter().filter(|e| e.id == *edge).count()))
+                    let heads = current_heads(p, *body);
+                    let found: Vec<_> = heads
+                        .iter()
+                        .filter_map(|h| p.regen_edges.get(h))
+                        .flat_map(|edges| edges.iter().filter(|e| e.id == *edge))
+                        .collect();
+                    let stale = p.regen_edges.get(body).and_then(|edges| edges.iter().find(|e| e.id == *edge));
+                    let in_place = heads == [*body]
+                        || matches!((stale, found.as_slice()), (Some(old), [new]) if same_edge(old.mid, old.dir, new.mid, new.dir));
+                    (body, if in_place { found.len() } else { 0 })
                 }
                 _ => continue,
             };
@@ -209,6 +357,9 @@ fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
     let mut requests = Vec::new();
     if p.drag_pull.is_none() {
         for j in &p.joints {
+            if scope.is_some_and(|s| !s.contains(&j.id)) && !joint_fault_messages(p, j).is_empty() {
+                continue;
+            }
             for (slot, read) in [j.angle, j.offset, j.offset2].into_iter().enumerate() {
                 if let Some(want) = j.drive[slot] {
                     if !read.is_finite() || !want.is_finite() || (read - want).abs() > 1e-5 {
@@ -248,7 +399,36 @@ fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
         && relation_faults.is_empty()
         && formula_errors.is_empty()
         && invalid_slots.is_empty();
-    json!({"healthy":healthy,"feature_errors":p.regen_errors.keys().collect::<Vec<_>>(),"joint_faults":faults,"faulty_joints":faulty,"anchor_faults":witnesses,"solve_errors":errors,"violated_joints":violated,"conflict":p.mates_conflict,"invalid_transforms":invalid,"request_mismatches":requests,"constraint_faults":constraint_faults,"relation_faults":relation_faults,"formula_errors":formula_errors,"invalid_slots":invalid_slots,"at_limit":p.joints_at_limit(),"clamped":formula_clamps(p)})
+    json!({"healthy":healthy,"feature_errors":p.regen_errors.keys().collect::<Vec<_>>(),"joint_faults":faults,"faulty_joints":faulty,"anchor_faults":witnesses,"solve_errors":errors,"violated_joints":violated,"conflict":p.mates_conflict,"invalid_transforms":invalid,"request_mismatches":requests,"constraint_faults":constraint_faults,"relation_faults":relation_faults,"formula_errors":formula_errors,"invalid_slots":invalid_slots,"at_limit":at_limit_list(p),"clamped":formula_clamps(p)})
+}
+/// The bodies that now carry what `body` built: itself when no feature consumes it, else the results of the features
+/// that do, followed to the end (a split or a pattern has several).
+fn current_heads(p: &Project, body: Id) -> Vec<Id> {
+    let consumed = p.consumed_bodies();
+    let (mut heads, mut todo, mut seen) = (Vec::new(), vec![body], HashSet::new());
+    while let Some(b) = todo.pop() {
+        if !seen.insert(b) {
+            continue;
+        }
+        if !consumed.contains(&b) {
+            heads.push(b);
+            continue;
+        }
+        todo.extend(
+            p.timeline
+                .iter()
+                .take(p.rollback_place())
+                .filter(|n| !n.suppressed && n.kind.consumed().contains(&b))
+                .flat_map(|n| n.kind.bodies()),
+        );
+    }
+    heads.sort_unstable();
+    heads
+}
+/// The same straight edge: midpoint and direction (either sense) within the kernel's noise.
+fn same_edge(mid_a: [f64; 3], dir_a: [f64; 3], mid_b: [f64; 3], dir_b: [f64; 3]) -> bool {
+    let near = |a: [f64; 3], b: [f64; 3], sign: f64| (0..3).all(|k| (a[k] - sign * b[k]).abs() < 1e-5);
+    near(mid_a, mid_b, 1.0) && (near(dir_a, dir_b, 1.0) || near(dir_a, dir_b, -1.0))
 }
 /// `clamped:{joint,slot,requested,applied}` when a limit moved the request, else null.
 fn clamp_report(id: Id, slot: usize, requested: Option<f64>, applied: Option<f64>) -> Value {
@@ -482,7 +662,14 @@ impl Session {
             if !new.is_empty() {
                 return Err(refusal(format!("{}; nothing was changed", new.join("; "))));
             }
-            s.assembly_accept(None)?;
+            // Grounding touches the joints of this Part; the faults of other joints are not its business.
+            let joints: HashSet<Id> =
+                s.p.joints
+                    .iter()
+                    .filter(|j| [j.a, j.b].iter().any(|c| s.p.connector(*c).is_some_and(|c| c.owner == id)))
+                    .map(|j| j.id)
+                    .collect();
+            s.assembly_accept_scoped(None, &joints)?;
             Ok(s.part_result(id, true))
         })
     }
@@ -597,11 +784,6 @@ impl Session {
             if o.offset.is_some() {
                 return Err(refusal("revolute joint_create does not accept offset; use angle"));
             }
-            if o.mode != JointMode::AsBuilt {
-                return Err(refusal(
-                    "revolute joint_create requires mode as_built: align turns the part onto the anchors' own frames and can fold it into the anchor part; nothing was changed",
-                ));
-            }
             return self.revolute_create(o);
         }
         if edges != 0 {
@@ -673,18 +855,19 @@ impl Session {
             }
             let wanted = if let Some(value) = &o.offset { Some(s.write_drive(j, 1, value)?) } else { None };
             if formulas || o.offset.as_ref().is_some_and(|v| v.expr().is_some()) {
-                s.rebuild_joint_formulas()?;
+                s.rebuild_joint_formulas(j)?;
             }
             let applied = s.p.joints.iter().find(|x| x.id == j).and_then(|x| x.drive[1]);
-            s.assembly_accept(applied.map(|value| (j, 1, value)))?;
+            s.assembly_accept_scoped(applied.map(|value| (j, 1, value)), &HashSet::from([j]))?;
             let mut r = s.joint_result(j, true);
             r["clamped"] = clamp_report(j, 1, wanted, applied);
             Ok(r)
         })
     }
     /// A Revolute hinge on two straight edges, as the app's Joint tool makes it with an edge picked on each Part
-    /// (`EdgeMid` connectors, `add_joint`, as built captured before the first solve). The axes must already be
-    /// collinear: natively the part turns about B's edge and ignores A's (research R10).
+    /// (`EdgeMid` connectors, `add_joint`, as built captured before the first solve when asked). As built, the axes
+    /// must already be collinear: natively the part turns about B's edge and ignores A's (F-162). Align puts B's edge
+    /// frame on A's, which is correct as measured (F-163), so it is allowed with any placement.
     fn revolute_create(&mut self, o: &JointCreate) -> Result<Value> {
         self.assembly_edit("joint_create", json!({"name":o.name,"kind":o.kind,"mode":o.mode}), |s| {
             let (a, ea, ma, da) = s.resolve_edge_anchor(&o.a)?;
@@ -714,7 +897,7 @@ impl Session {
             let w = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
             let cross = [w[1] * ua[2] - w[2] * ua[1], w[2] * ua[0] - w[0] * ua[2], w[0] * ua[1] - w[1] * ua[0]];
             let distance = cross.iter().map(|v| v * v).sum::<f64>().sqrt();
-            if distance > 1e-3 || angle > 1e-2 {
+            if o.mode == JointMode::AsBuilt && (distance > 1e-3 || angle > 1e-2) {
                 let round = |v: f64| (v * 1e3).round() / 1e3;
                 return Err(refusal(format!(
                     "revolute hinge axes are not collinear (distance {} mm, angle {}°): QymCAD would turn the part about its own edge and ignore the anchor's; place the part on the hinge first; nothing was changed",
@@ -728,7 +911,7 @@ impl Session {
             if let Some(name) = &o.name {
                 s.p.joints.iter_mut().find(|v| v.id == j).unwrap().name = name.trim().into();
             }
-            if !s.p.set_joint_as_built(j) {
+            if o.mode == JointMode::AsBuilt && !s.p.set_joint_as_built(j) {
                 return Err(refusal("joint_create cannot capture as_built frames"));
             }
             let mut formulas = false;
@@ -743,10 +926,10 @@ impl Session {
             let wanted = if let Some(value) = &o.angle { Some(s.write_drive(j, 0, value)?) } else { None };
             s.check_angle_domain(j)?;
             if formulas || o.angle.as_ref().is_some_and(|v| v.expr().is_some()) {
-                s.rebuild_joint_formulas()?;
+                s.rebuild_joint_formulas(j)?;
             }
             let applied = s.p.joints.iter().find(|x| x.id == j).and_then(|x| x.drive[0]);
-            s.assembly_accept(applied.map(|value| (j, 0, value)))?;
+            s.assembly_accept_scoped(applied.map(|value| (j, 0, value)), &HashSet::from([j]))?;
             let mut r = s.joint_result(j, true);
             r["clamped"] = clamp_report(j, 0, wanted, applied);
             Ok(r)
@@ -783,8 +966,9 @@ impl Session {
         Ok(v)
     }
     /// One bound of the app's Limits section: the value straight into the joint (`popup.rs`), a formula under
-    /// `feat_dims[joint]["min<slot>"|"max<slot>"]`, imposed on rebuild. Clear ticks the bound off with its formula.
-    /// Returns whether a formula was written.
+    /// `feat_dims[joint]["min<slot>"|"max<slot>"]`, imposed on rebuild. Clear ticks the bound off as the app does: the
+    /// value goes, the formula stays dormant. A number typed into the field drops the formula. Returns whether a
+    /// formula was written.
     fn write_limit(&mut self, id: Id, slot: usize, min: bool, edit: &LimitEdit) -> Result<bool> {
         let key = limit_key(min, slot);
         let value = match edit {
@@ -800,12 +984,12 @@ impl Session {
                 Some(v)
             }
         };
-        let formula = match edit {
-            LimitEdit::Set(value) => value.expr().unwrap_or_default(),
-            _ => String::new(),
-        };
-        let written = !formula.is_empty();
-        self.p.set_feat_dim(id, &key, formula);
+        let mut written = false;
+        if let LimitEdit::Set(value) = edit {
+            let formula = value.expr().unwrap_or_default();
+            written = !formula.is_empty();
+            self.p.set_feat_dim(id, &key, formula);
+        }
         let j = self.p.joints.iter_mut().find(|j| j.id == id).unwrap();
         if min {
             j.limit_min[slot] = value;
@@ -814,52 +998,17 @@ impl Session {
         }
         Ok(written)
     }
-    /// Evaluated bounds of a joint's free slot: a formula's value where one is kept, else the stored value.
-    fn evaluated_limits(&self, id: Id, slot: usize) -> Result<(Option<f64>, Option<f64>)> {
-        let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
-        let vars = self.p.param_map();
-        let bound = |min: bool, stored: Option<f64>| -> Result<Option<f64>> {
-            match self.p.feat_dim(id, &limit_key(min, slot)).filter(|e| !e.trim().is_empty()) {
-                Some(expr) if stored.is_some() => Ok(Some(Num::Expr(expr.into()).eval(&vars)?)),
-                _ => Ok(stored),
-            }
-        };
-        Ok((bound(true, j.limit_min[slot])?, bound(false, j.limit_max[slot])?))
-    }
-    /// The limits the server accepts on a joint's free slot: inside the app's field range, and min not above max
-    /// (natively every value would go to max, F-157).
+    /// The limits the server accepts on a joint's free slot (`limit_problem`): a typed number inside the app's field
+    /// range, angle bounds inside the wrapped reading range, min not above max (natively every value would go to max,
+    /// F-157).
     pub(crate) fn check_limits(&self, id: Id) -> Result<()> {
-        let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
-        let Some(slot) = free_slot(j.kind) else { return Ok(()) };
-        let name = SLOT_KEYS[slot];
-        let (min, max) = self.evaluated_limits(id, slot)?;
-        for v in [min, max].into_iter().flatten() {
-            if !v.is_finite() || v.abs() > LIMIT_RANGE {
-                return Err(refusal(format!(
-                    "joint {id} {name} limit {v} is outside the app's range [-{LIMIT_RANGE}, {LIMIT_RANGE}]; nothing was changed"
-                )));
-            }
+        match limit_problem(&self.p, id)? {
+            Some(message) => Err(refusal(format!("{message}; nothing was changed"))),
+            None => Ok(()),
         }
-        if j.kind == JointKind::Revolute {
-            for v in [min, max].into_iter().flatten() {
-                if !(-180.0..=180.0).contains(&v) {
-                    return Err(refusal(format!(
-                        "joint {id} angle limit {v} is outside [-180, 180] degrees: QymCAD compares limits with a reading wrapped to (-180, 180], so a released part snaps to the other bound (F-158); nothing was changed"
-                    )));
-                }
-            }
-        }
-        if let (Some(a), Some(b)) = (min, max) {
-            if a > b {
-                return Err(refusal(format!(
-                    "joint {id} {name} limit min {a} is greater than max {b}; QymCAD would send every value to max (F-157); nothing was changed"
-                )));
-            }
-        }
-        Ok(())
     }
-    fn rebuild_joint_formulas(&mut self) -> Result<()> {
-        self.validate_joint_formulas()?;
+    fn rebuild_joint_formulas(&mut self, joint: Id) -> Result<()> {
+        self.validate_joint_formulas(Some(&HashSet::from([joint])))?;
         let r = self.rebuild();
         if !r.errors.is_empty() {
             return Err(Error::Rebuild(r.errors.iter().map(|e| e.message.clone()).collect()));
@@ -925,10 +1074,10 @@ impl Session {
             }
             s.check_angle_domain(id)?;
             if value.is_some_and(|v| v.expr().is_some()) {
-                s.rebuild_joint_formulas()?;
+                s.rebuild_joint_formulas(id)?;
             }
             let applied = s.p.joints.iter().find(|j| j.id == id).and_then(|j| j.drive[index]);
-            s.assembly_accept(wanted.and(applied).map(|value| (id, index, value)))?;
+            s.assembly_accept_scoped(wanted.and(applied).map(|value| (id, index, value)), &HashSet::from([id]))?;
             let mut r = s.joint_result(id, true);
             finish(s, &mut r, applied);
             Ok(r)
@@ -943,7 +1092,7 @@ impl Session {
             s.p.joints.retain(|j|j.id!=id);s.p.feat_dims.remove(&id);
             let mut removed=Vec::new();
             for cid in [j.a,j.b] {if s.p.connector(cid).is_some_and(|c|!c.standalone) && s.p.connector_users(cid).is_empty() {s.p.connectors.retain(|c|c.id!=cid);s.p.feat_dims.remove(&cid);removed.push(cid);}}
-            s.assembly_accept(None)?;Ok(json!({"removed_joint":id,"removed_connectors":removed,"placements":s.placements(),"diagnostics":s.assembly_diagnostics(),"changed":true}))
+            s.assembly_accept_scoped(None, &HashSet::new())?;Ok(json!({"removed_joint":id,"removed_connectors":removed,"placements":s.placements(),"diagnostics":s.assembly_diagnostics(),"changed":true}))
         })
     }
     /// The app's Limits section of the joint box for the joint's free slot. A bound that excludes the current value
@@ -1003,7 +1152,7 @@ impl Session {
             s.check_limits(id)?;
             // A drive formula reasserts on regeneration (F-144): rebuild so the result is the settled state.
             if formulas || SLOT_KEYS.iter().any(|k| s.p.feat_dim(id, k).is_some_and(|e| !e.trim().is_empty())) {
-                s.rebuild_joint_formulas()?;
+                s.rebuild_joint_formulas(id)?;
             }
             // What the slot asks for without the new bounds: its drive formula, else its drive, else its reading.
             let formula = s.p.feat_dim(id, SLOT_KEYS[free]).filter(|e| !e.trim().is_empty()).map(str::to_string);
@@ -1011,7 +1160,7 @@ impl Session {
                 Some(expr) => Num::Expr(expr).eval(&s.p.param_map())?,
                 None => j.drive[free].unwrap_or([j.angle, j.offset, j.offset2][free]),
             };
-            s.assembly_accept(None)?;
+            s.assembly_accept_scoped(None, &HashSet::from([id]))?;
             let after = s.p.joints.iter().find(|j| j.id == id).unwrap();
             let applied = after.drive[free].unwrap_or([after.angle, after.offset, after.offset2][free]);
             let mut r = s.joint_result(id, true);
@@ -1058,28 +1207,31 @@ impl Session {
         let anchor = |cid| {
             self.p.connector(cid).map(|c|json!({"connector":cid,"owner_part":c.owner,"anchor":c.anchor,"body":match &c.anchor {AnchorRef::FaceCenter(b,_)|AnchorRef::EdgeMid(b,_)=>Some(*b),_=>None},"face":match &c.anchor {AnchorRef::FaceCenter(_,f)=>Some(f.id),_=>None},"edge":match &c.anchor {AnchorRef::EdgeMid(_,e)=>Some(*e),_=>None},"axis_ref":c.axis_ref,"frame_local":self.p.connector_matrix(cid),"frame_for_kind_local":self.p.connector_frame_for_kind(c,j.kind).map(|f|f.matrix12())}))
         };
-        json!({"joint":{"id":id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind)},"connector_ids":[j.a,j.b],"a":anchor(j.a),"b":anchor(j.b),"mode":if j.as_built.is_some(){"as_built"}else{"align"},"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"flip_decided":j.flip_decided,"offset":j.offset,"angle":j.angle,"read":([j.angle,j.offset,j.offset2][slot]),"unit":(if slot==0{"deg"}else{"mm"}),"free_slots":j.kind.free_slots(),"drive":j.drive,"expression":self.p.feat_dim(id,key),"expressions":self.p.feat_dims.get(&id),"driven":j.drive[slot].is_some(),"state":if self.p.feat_dim(id,key).is_some(){"formula"}else if j.drive[slot].is_some(){"numeric"}else{"free"},"signed_world_axis":self.p.joint_slot_axis(id,slot,self.p.root),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(id),"at_limit":self.at_limit(id),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
+        json!({"joint":{"id":id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind)},"connector_ids":[j.a,j.b],"a":anchor(j.a),"b":anchor(j.b),"mode":if j.as_built.is_some(){"as_built"}else{"align"},"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"flip_decided":j.flip_decided,"offset":j.offset,"angle":j.angle,"read":([j.angle,j.offset,j.offset2][slot]),"unit":(if slot==0{"deg"}else{"mm"}),"free_slots":j.kind.free_slots(),"drive":j.drive,"expression":self.p.feat_dim(id,key),"expressions":self.p.feat_dims.get(&id),"driven":j.drive[slot].is_some(),"state":if self.p.feat_dim(id,key).is_some(){"formula"}else if j.drive[slot].is_some(){"numeric"}else{"free"},"signed_world_axis":self.p.joint_slot_axis(id,slot,self.p.root),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(id,false),"dormant_limit_formulas":self.limit_formulas(id,true),"at_limit":self.at_limit(id),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
     }
-    /// Formulas of the free slot's bounds, as `{min?, max?}`.
-    fn limit_formulas(&self, id: Id) -> Value {
+    /// Formulas of the free slot's bounds, as `{min?, max?}`: those a bound that is on reads, or (`dormant`) those a
+    /// ticked-off bound keeps unread (F-164).
+    fn limit_formulas(&self, id: Id, dormant: bool) -> Value {
         let mut out = serde_json::Map::new();
         if let Some(slot) = self.p.joints.iter().find(|j| j.id == id).and_then(|j| free_slot(j.kind)) {
             for (name, min) in [("min", true), ("max", false)] {
-                if let Some(expr) = self.p.feat_dim(id, &limit_key(min, slot)).filter(|e| !e.trim().is_empty()) {
+                let key = limit_key(min, slot);
+                let expr = self.p.feat_dim(id, &key).filter(|e| !e.trim().is_empty());
+                if let Some(expr) = expr.filter(|_| dormant_limit_formula(&self.p, id, &key) == dormant) {
                     out.insert(name.into(), json!(expr));
                 }
             }
         }
         Value::Object(out)
     }
-    /// Slot names whose reading stands on a bound (native `joints_at_limit`, the app's at-limit mark).
-    fn at_limit(&self, id: Id) -> Vec<&'static str> {
-        self.p.joints_at_limit().into_iter().filter(|(j, _)| *j == id).map(|(_, slot)| SLOT_KEYS[slot]).collect()
+    /// The joint's free slots standing on a bound, in the one `{joint, slot}` format of `at_limit`.
+    fn at_limit(&self, id: Id) -> Vec<Value> {
+        at_limit_list(&self.p).into_iter().filter(|v| v["joint"] == id).collect()
     }
     pub fn assembly_info(&self) -> Value {
         let diagnostics = self.assembly_diagnostics();
-        let mut value = json!({"root":self.p.root,"active_component":self.p.active_component,"components":self.component_info(),"parts":self.component_info().into_iter().filter(|c|c.kind=="part").collect::<Vec<_>>(),"connectors":self.p.connectors,"joints":self.p.joints.iter().map(|j|json!({"id":j.id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind),"free_slots":j.kind.free_slots(),"a":j.a,"b":j.b,"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"drive":j.drive,"read":[j.angle,j.offset,j.offset2],"slots":[{"name":"angle","unit":"deg","read":j.angle,"drive":j.drive[0],"formula":self.p.feat_dim(j.id,"angle")},{"name":"offset","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset,"drive":j.drive[1],"formula":self.p.feat_dim(j.id,"offset")},{"name":"offset2","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset2,"drive":j.drive[2],"formula":self.p.feat_dim(j.id,"offset2")}],"expressions":self.p.feat_dims.get(&j.id),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(j.id),"at_limit":self.at_limit(j.id),"signed_world_axis":self.p.joint_slot_axis(j.id,free_slot(j.kind).unwrap_or(1),self.p.root)})).collect::<Vec<_>>(),"constraints":self.p.mate_constraints,"relations":self.p.relations,"diagnostics":diagnostics,"healthy":diagnostics["healthy"]});
-        for key in ["joint_faults", "faulty_joints", "violated_joints", "conflict", "solve_errors"] {
+        let mut value = json!({"root":self.p.root,"active_component":self.p.active_component,"components":self.component_info(),"parts":self.component_info().into_iter().filter(|c|c.kind=="part").collect::<Vec<_>>(),"connectors":self.p.connectors,"joints":self.p.joints.iter().map(|j|json!({"id":j.id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind),"free_slots":j.kind.free_slots(),"a":j.a,"b":j.b,"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"drive":j.drive,"read":[j.angle,j.offset,j.offset2],"slots":[{"name":"angle","unit":"deg","read":j.angle,"drive":j.drive[0],"formula":self.p.feat_dim(j.id,"angle")},{"name":"offset","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset,"drive":j.drive[1],"formula":self.p.feat_dim(j.id,"offset")},{"name":"offset2","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset2,"drive":j.drive[2],"formula":self.p.feat_dim(j.id,"offset2")}],"expressions":self.p.feat_dims.get(&j.id),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(j.id,false),"dormant_limit_formulas":self.limit_formulas(j.id,true),"at_limit":self.at_limit(j.id),"signed_world_axis":self.p.joint_slot_axis(j.id,free_slot(j.kind).unwrap_or(1),self.p.root)})).collect::<Vec<_>>(),"constraints":self.p.mate_constraints,"relations":self.p.relations,"diagnostics":diagnostics,"healthy":diagnostics["healthy"]});
+        for key in ["joint_faults", "faulty_joints", "violated_joints", "conflict", "solve_errors", "limit_faults"] {
             value[key] = diagnostics[key].clone();
         }
         value
@@ -1092,47 +1244,84 @@ impl Session {
         }
         self.assembly_diagnostics()
     }
+    /// Mechanism health as a read judges it: every joint, nothing refused. `clamped` lists the drive formulas a limit
+    /// holds and the numeric drives a native solve clamped since the call began (`drive_clamps`); `limit_faults`
+    /// lists the joints whose limits or drive the app accepted and the server refuses to build on (an edit that
+    /// touches them is refused; others are not).
     pub(crate) fn assembly_diagnostics(&self) -> Value {
         let mut p = self.p.clone_without_source_data();
-        inspect(&mut p, None)
+        let mut d = inspect(&mut p, None, None);
+        let logged = self.logged_clamps();
+        if let Some(list) = d["clamped"].as_array_mut() {
+            list.extend(logged);
+        }
+        d["limit_faults"] = json!(limit_faults(&self.p));
+        d
     }
+    /// Remember the numeric drives a native solve moved: the request is lost once the drive is overwritten with its
+    /// clamped value, and nothing else says it was ever asked (F-165). `before` is `numeric_drives` ahead of the solve.
+    pub(crate) fn note_drive_clamps(&mut self, before: &[(Id, usize, f64)]) {
+        for &(id, slot, was) in before {
+            let Some(now) = self.p.joints.iter().find(|j| j.id == id).and_then(|j| j.drive[slot]) else { continue };
+            if (now - was).abs() <= 1e-9 {
+                continue;
+            }
+            match self.drive_clamps.iter_mut().find(|c| c.0 == id && c.1 == slot) {
+                Some(c) if (c.3 - was).abs() <= 1e-9 => c.3 = now,
+                Some(c) => *c = (id, slot, was, now),
+                None => self.drive_clamps.push((id, slot, was, now)),
+            }
+        }
+    }
+    /// The recorded clamps that still describe the document: the drive holds the applied value and no formula drives it.
+    fn logged_clamps(&self) -> Vec<Value> {
+        let numeric = numeric_drives(&self.p);
+        self.drive_clamps
+            .iter()
+            .filter(|c| numeric.iter().any(|n| n.0 == c.0 && n.1 == c.1 && (n.2 - c.3).abs() <= 1e-9))
+            .map(|c| json!({"joint":c.0,"slot":c.1,"requested":c.2,"applied":c.3}))
+            .collect()
+    }
+    /// Acceptance of the whole document (every joint is judged); the unit tests of the mechanism use it.
+    #[cfg(test)]
     pub(crate) fn assembly_accept(&mut self, requested: Option<(Id, usize, f64)>) -> Result<()> {
-        self.validate_joint_formulas()?;
-        let d = inspect(&mut self.p, requested);
+        self.accept_in_scope(requested, None)
+    }
+    /// Acceptance of an edit that touches only `scope`'s joints: other joints are not validated for limits or domain.
+    pub(crate) fn assembly_accept_scoped(&mut self, requested: Option<(Id, usize, f64)>, scope: &HashSet<Id>) -> Result<()> {
+        self.accept_in_scope(requested, Some(scope))
+    }
+    fn accept_in_scope(&mut self, requested: Option<(Id, usize, f64)>, scope: Option<&HashSet<Id>>) -> Result<()> {
+        self.validate_joint_formulas(scope)?;
+        let drives = numeric_drives(&self.p);
+        let d = inspect(&mut self.p, requested, scope);
+        self.note_drive_clamps(&drives);
         if d["healthy"] == true {
             Ok(())
         } else {
             Err(solve_refusal(&d))
         }
     }
-    pub(crate) fn validate_joint_formulas(&self) -> Result<()> {
+    /// Refuse a formula that cannot be worked out, and limits or an angle formula the server will not build on (F-157,
+    /// F-158), for the joints in `scope` (`None`: all). An edit is judged on the joints it touched; the others are
+    /// reported by `limit_faults`, so one fault the app accepted never locks the document. Formulas nothing reads (a
+    /// ticked-off bound's) are not looked at.
+    pub(crate) fn validate_joint_formulas(&self, scope: Option<&HashSet<Id>>) -> Result<()> {
         let vars = self.p.param_map();
-        for j in &self.p.joints {
-            for key in ["angle", "offset", "offset2"] {
-                if let Some(expr) = self.p.feat_dim(j.id, key) {
-                    let value = Num::Expr(expr.into()).eval(&vars)?;
+        for j in self.p.joints.iter().filter(|j| scope.is_none_or(|s| s.contains(&j.id))) {
+            for key in joint_keys() {
+                if let Some(expr) = live_formula(&self.p, j.id, &key) {
+                    Num::Expr(expr.into()).eval(&vars)?;
                     self.p
-                        .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key: key.into() }, expr)
+                        .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key }, expr)
                         .map_err(|e| Error::Expr(e.to_string()))?;
-                    let _ = value;
-                }
-            }
-            for slot in 0..3 {
-                for min in [true, false] {
-                    let key = limit_key(min, slot);
-                    if let Some(expr) = self.p.feat_dim(j.id, &key).filter(|e| !e.trim().is_empty()) {
-                        Num::Expr(expr.into()).eval(&vars)?;
-                        self.p
-                            .check_dim_target_text(&qymcad_core::model::DimTarget::Feature { node: j.id, key }, expr)
-                            .map_err(|e| Error::Expr(e.to_string()))?;
-                    }
                 }
             }
             self.check_limits(j.id)?;
             if j.kind == JointKind::Revolute {
-                if let Some(expr) = self.p.feat_dim(j.id, "angle").filter(|e| !e.trim().is_empty()) {
+                if let Some(expr) = live_formula(&self.p, j.id, "angle") {
                     let v = Num::Expr(expr.into()).eval(&vars)?;
-                    let (min, max) = self.evaluated_limits(j.id, 0)?;
+                    let (min, max) = evaluated_limits(&self.p, j.id, 0)?;
                     let held = max.map_or(v, |hi| v.min(hi));
                     let held = min.map_or(held, |lo| held.max(lo));
                     if !(held > -180.0 && held <= 180.0) {
@@ -1180,8 +1369,11 @@ impl Session {
         {
             return Ok(());
         }
-        self.validate_joint_formulas()?;
-        let d = inspect(&mut self.p, None);
+        let scope = touched_joints(before, &self.p);
+        self.validate_joint_formulas(Some(&scope))?;
+        let drives = numeric_drives(&self.p);
+        let d = inspect(&mut self.p, None, Some(&scope));
+        self.note_drive_clamps(&drives);
         if d["healthy"] == true {
             return Ok(());
         }

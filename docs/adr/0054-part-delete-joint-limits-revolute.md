@@ -69,11 +69,11 @@ save/reopen; refusals with snapshot/unchanged; native evidence for F-154/F-155/F
 ### Tool contract
 
 `joint_limits {joint, slot?, min?, max?}` (H2: Slider `offset`; Revolute `angle` in §3). Omitted keeps a bound;
-`null` ticks it off and drops its formula; a number ticks it on with that value and drops a formula; a string is a
+`null` ticks it off (value only; its formula stays dormant, §4.2); a number ticks it on with that value and drops a formula; a string is a
 formula stored where the app stores it, validated as joint formulas are, then rebuilt. `slot` defaults to the
 joint's only free slot; naming another is refused; Rigid has no free slot. `joint_create` takes `limits:{min?,max?}`,
 applied before the first drive. One undo step; batchable. `assembly_info` and joint results report `limit_formulas`
-and `at_limit` (slot names); diagnostics report native `at_limit` pairs and `clamped` formula drives.
+and `at_limit`; diagnostics report `at_limit` and `clamped` drives (one `at_limit` format, §4.7).
 
 ### Clamping is the app's meaning of a limit: reported, not refused
 
@@ -88,9 +88,9 @@ The two ADR 0051 tests that pinned the old refusal were rewritten to the clamp (
 ### Refusals
 
 - **min > max (F-157, protective)**: natively every value goes to max. Refused on `joint_limits`, `joint_create`, and on
-  every evaluated edit (a `param_set` that pushes a limit formula past the other bound), through
-  `validate_joint_formulas`, which now evaluates limit formulas too.
-- A bound outside the app's field range ±100000.
+  every edit that touches the joint (a `param_set` that pushes a limit formula past the other bound), through
+  `validate_joint_formulas`, which also evaluates the live limit formulas (scope: §4.1).
+- A typed bound outside the app's field range ±100000 (a formula's value is not held to it, §4.4).
 - `joint_limits` with neither `min` nor `max`; a named slot that is not the joint's free slot; a Rigid joint.
 
 ### Tests
@@ -115,9 +115,9 @@ F-157 evidence) and `mcp/tests/h2_joint_limits` (null vs omitted, clamps, batch,
 
 ### Tool contract
 
-`joint_create {kind:"revolute", a:{body, edge}, b:{body, edge}, mode:"as_built", angle?, limits?}`: exactly one
+`joint_create {kind:"revolute", a:{body, edge}, b:{body, edge}, mode:"as_built"|"align", angle?, limits?}`: exactly one
 current straight edge per anchor (id or edge description; `JointAnchor::edge`), `EdgeMid` connectors, `add_joint`,
-`set_joint_as_built`, limits, then the angle drive. `joint_set {joint, angle}` / `{joint, release:"angle"}` (engine
+`set_joint_as_built` (as built only), limits, then the angle drive. `joint_set {joint, angle}` / `{joint, release:"angle"}` (engine
 `joint_set_slot`); `joint_limits` on the angle slot. Results report `angle`, `read`, `unit:"deg"`, the angle
 `expression`, the slot-0 `signed_world_axis` and anchors with `edge`. The opening sign follows the edge frames (−90
 opens the golden door outward); it is reported, not normalised.
@@ -126,18 +126,17 @@ opens the golden door outward); it is reported, not normalised.
 
 - **Edge anchors only for Revolute**, face anchors only for Rigid/Slider: a planar face would turn the door about the
   face normal, like a wheel (research R9).
-- **as_built only and collinear axes** (distance ≤ 1e-3 mm, angle ≤ 0.01°): natively an as-built hinge pivots about
-  B's edge and ignores A's (R10), and align folds the door into the carcass at 0° (R10). Place the Part on the hinge
-  first.
+- **As built needs collinear axes** (distance ≤ 1e-3 mm, angle ≤ 0.01°): natively an as-built hinge pivots about B's
+  edge and ignores A's (F-162). Place the Part on the hinge first. Align is allowed: a fresh align joint lands
+  correctly (F-163; the research's "align folds the door" came from a cleared as-built capture, §4.6).
 - **B ungrounded (F-159, protective)**, at creation and in `ground`: a grounded B does not turn and nothing is
   reported.
-- **Angles within (−180, 180], angle bounds within [−180, 180] (F-158, protective)**: QymCAD reads the angle through
+- **Angles and angle bounds within (−180, 180] (F-158, protective; bounds were [−180, 180] until §4.5)**: QymCAD reads the angle through
   `atan2` with no unwrapping, so a drive outside the range never matches its reading and a released door snaps to
   the other bound. Checked on creation, `joint_set`, `joint_limits` and every evaluated edit (an angle formula is
   judged after the limits clamp it).
-- Edge witness: `inspect` now checks `EdgeMid` anchors like faces (exactly one current edge with the persistent id on
-  a live body). As for faces (ADR 0051), a fillet that consumes the anchored body keeps the native witness; deleting
-  or suppressing the body is refused.
+- Edge witness: `inspect` checks `EdgeMid` anchors against the CURRENT body, not the consumed one (§4.3, F-160).
+  Deleting or suppressing the body is refused.
 - Chained mechanisms stay refused (an anchor A moved by a Slider or a Revolute). ADR 0051's unsupported-kind refusal
   now lists Rigid, Slider and Revolute.
 - `ground` checks for unsupported mechanism records before it solves. The ADR 0051 contract test used a Revolute as
@@ -151,3 +150,77 @@ clamp −150 to −110 and report it; formula `-swing` and a parameter edit held
 creation refusals: non-collinear axes, align, planar faces, grounded door, bounds outside ±180, min > max, angle 200,
 edge anchors on a Slider; edit refusals: grounding the door, limits, angle domain, offset on a Revolute, a formula
 pushed out of the domain; the hinge-edge witness; native evidence for F-158 and F-159) and `mcp/tests/h3_revolute`.
+
+## 4. H5 fix round (2026-11-11)
+
+Two independent reviews of H1–H3 (`tasks/H-review-opus.md`, `tasks/H-review-sonnet.md`) found one blocker and a set of
+majors and minors. The owner's decisions, implemented in this round (red tests first, `tasks/H5-red.log`):
+
+### 4.1 Joints are validated where an edit touches them, not document-wide
+
+`validate_joint_formulas` ran on every joint on every edit, so a joint the app had accepted (min > max, an angle bound
+beyond ±180, a drive outside the wrapped range) locked every edit of the document, including unrelated Parts and new
+parameters. Now an edit is judged on the joints it touched (`touched_joints`): created or changed by the call (kind,
+anchors, limits, drives, formulas), or with a live drive or limit formula that reads a parameter whose value the call
+changed. The early check in `rebuild_edit_checked` is gone: every edit path ends in `assembly_accept_edit`, which
+validates that scope after the rebuild and rolls the edit back with everything else. The other faulty joints are
+reported, never refused for: `assembly.limit_faults` (`[{joint, message}]` in `doc_open`, rebuild reports, joint results
+and `assembly_info`; `healthy` keeps meaning a solved mechanism, so a document with limit faults can still be healthy).
+A joint outside the scope that carries such a fault is exempt from the request-versus-read check (a drive of 200 reads
+−160), so that mismatch no longer refuses an unrelated edit; the read still reports it (`request_mismatches`,
+`healthy:false`). The refusal stays for edits that touch the joint, and the edit that repairs it is allowed.
+
+### 4.2 A ticked-off limit keeps its formula dormant (F-164)
+
+`joint_limits null` clears the value and leaves `feat_dims[joint]["min<slot>"|"max<slot>"]`, as the app's tick-off does.
+A dormant formula (bound off) is never evaluated, validated or listed as a live formula (`validate_joint_formulas`,
+`inspect`, `limit_formulas`, `evaluated_limits`), and `param_users`/`param_delete` do not count it: native delete checks
+nothing, so a formula nothing reads is not a use; native rename rewrites it (the server has no rename tool). Revival:
+ticking the bound back on in the app re-imposes the formula at the next evaluation (native evidence); through the server
+a formula given to `joint_limits` again makes the bound live. Results and `assembly_info` expose
+`dormant_limit_formulas` (`{min?, max?}`). A literal tick-on with the formula kept is not exposed: it would need a
+third argument form for one app gesture; passing the formula again does the same.
+
+### 4.3 A hinge follows its body through later features (F-160)
+
+Natively the anchor stays on the consumed body (§3). The witness now looks up the body that carries it now
+(`current_heads`: the consumers' results, followed to the end) and requires exactly one edge with the persistent id
+there, at the consumed body's edge position. Result, pinned for push_face, chamfer, fillet and reorder on both hinge
+bodies: an edit that moves or removes the hinge edge is refused atomically ("edit would invalidate anchors of joints
+[..]"); edits that leave it in place pass and the pivot is unchanged. Face anchors keep the ADR 0051 policy.
+
+### 4.4 The ±100000 range is for typed numbers
+
+The app bounds the typed field only. `limit_problem` applies the range to a bound without a live formula; a formula's
+evaluated value is not held to it (no finding shows wrong behaviour).
+
+### 4.5 Angle bounds use the drives' domain
+
+Angle bounds must lie in (−180, 180] like drives. −180 is refused with a message that names the wrap ("−180 reads as
+180", F-158); 180 is accepted.
+
+### 4.6 Align is allowed; the refusals have findings
+
+New native evidence, `golden_revolute`: planar-face Revolute spins like a wheel (F-161); as built with axes 50 mm apart
+pivots about B's edge (F-162). The research's "align folds the door into the carcass" did not reproduce on a fresh align
+joint (F-163: closed at 0°, −90° opens outward, both with the axes collinear and 50 mm apart); it appeared only after
+an as-built capture was cleared, which the server cannot do. `joint_create` therefore allows `mode:"align"` for a
+Revolute with any placement (the owner's decision allowed it for collinear axes; the measurement covers both, and a
+refusal needs a finding). The collinearity refusal stays for as built.
+
+### 4.7 One `at_limit` format; reports
+
+`at_limit` is `[{joint, slot}]` with the slot's name ("angle", "offset") in diagnostics, rebuild reports, joint results,
+`assembly_info` (top-level and per joint) and batch reports. Numeric drives a limit clamps are reported in
+`assembly.clamped` of `param_set`, `dimension_set`, `doc_open` and batch reports (F-165): the drive before each native
+solve that can clamp it is kept for the tool call (`Session::drive_clamps`, cleared by `begin_tool_edit`, shown while the
+drive still holds the applied value), next to the formula drives `formula_clamps` already listed. A compact batch step
+carries `clamped` (when not null) and `part_delete`'s `native_leftovers`. Tool descriptions were updated to match.
+
+### 4.8 Tests
+
+`golden_joint_limits` (min above max and formula faults from a file, dormant formulas, numeric clamp reports on
+`param_set`/`dimension_set`/open, formula values outside the field range, F-164 and F-165 native evidence),
+`golden_revolute` (angle faults from a file, −180, hinge consumed-body cases, align, F-160..F-163 native evidence),
+`golden_part_delete` (nested Part and assembly, component pattern, mirrored Part: native fixtures), `mcp/tests/h1_part_delete`
+and `h2_joint_limits` (compact batch steps).

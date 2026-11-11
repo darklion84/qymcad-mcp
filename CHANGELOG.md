@@ -11,12 +11,19 @@ All notable changes to this project are documented here. The format follows
 - Revolute hinges: `joint_create kind:"revolute"` with a straight-edge anchor on each Part (`a:{body, edge}`; the app's Joint tool with edges picked), `mode:"as_built"`, optional `angle` and `limits`; `joint_set {angle}` / `{release:"angle"}`; `joint_limits` on the angle slot; edge anchors are health-checked like face anchors; batch and one-step undo (ADR 0054 §3). Golden: a cabinet door that opens outward at −90° about a fixed pivot edge.
 
 ### Changed
+- H5 fix round (ADR 0054 §4): a joint whose limits or drive the app accepts but the server refuses to build on (min above max, an angle bound beyond ±180, a drive outside (−180°, 180°]) no longer blocks unrelated edits. Edits are validated on the joints they touch (created or changed by the call, or whose formulas read a parameter it changed); the others are listed in `assembly.limit_faults`.
+- `joint_limits null` clears the bound's value only and leaves its formula dormant, as the app's tick-off does; dormant formulas are not evaluated, validated or counted as parameter users, and are reported as `dormant_limit_formulas` (F-164).
+- Numeric drives a limit clamps are reported in `clamped` on `param_set`, `dimension_set` and `doc_open` (F-165); compact batch steps carry `clamped` and `part_delete`'s `native_leftovers`.
+- The ±100000 range applies to typed limit numbers only, not to evaluated formulas. Angle bounds use the drives' domain (−180°, 180°]; −180 is refused with a message naming the wrap.
+- `at_limit` is one format everywhere: `[{joint, slot}]` with the slot name.
+- Revolute `mode:"align"` is allowed (a fresh align joint lands correctly, F-163); the collinear-axes refusal stays for as built (F-162).
 - A request outside a joint's limits is now clamped as in the app instead of refused (ADR 0054 §2 replaces ADR 0051's refusal): `joint_set`, `joint_create` and `joint_limits` report `clamped {joint, slot, requested, applied}`, and rebuild reports list formula drives a limit holds in `assembly.clamped`.
 
-### Fixed (protective refusals of silent native results, FINDINGS F-154–F-159)
+### Fixed (protective refusals of silent native results, FINDINGS F-154–F-162)
+- A hinge anchored on a body that a later push_face, fillet or chamfer consumes is checked against the current body: an edit that moves or removes the hinge edge is refused instead of leaving a stale pivot with `healthy: true` (F-160). Planar-face Revolutes (F-161) and as-built Revolutes with axes apart (F-162) have findings.
 - `part_delete` refuses a Part that is the source of clones (QymCAD leaves the clones with their old body and no error, F-154) and refuses while a history rollback is active (the bar's index would slide, F-156).
 - Joint limits with min above max are refused on `joint_limits`/`joint_create` and on any parameter edit that would cause them (QymCAD sends every value to max, F-157).
-- Revolute: angles outside (−180°, 180°] and angle limits outside [−180°, 180°] are refused (QymCAD reads angles wrapped, so a released door snaps back, F-158); a grounded moving Part is refused on `joint_create` and `ground` (it would not turn and nothing is reported, F-159); non-collinear hinge edges, align mode and planar-face Revolutes are refused.
+- Revolute: angles outside (−180°, 180°] and angle limits outside [−180°, 180°] are refused (QymCAD reads angles wrapped, so a released door snaps back, F-158); a grounded moving Part is refused on `joint_create` and `ground` (it would not turn and nothing is reported, F-159); non-collinear as-built hinge edges and planar-face Revolutes are refused.
 - `param_users`/`param_delete` no longer count formulas of joints that no longer exist (left by native Part deletion, F-155) as parameter users.
 
 ## 0.1.1-dev.20261026.13 — draft, thicken, part instances and copies (ADR 0052–0053)

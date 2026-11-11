@@ -2821,7 +2821,11 @@ The same gap applies to a pattern whose source is a projection: the source moves
   path, no Session): Slider, `limit_min[1] = 0`, `limit_max[1] = −100`, `set_joint_drive(−50)`, solve → drive and
   reading −100, no errors. Research run S6.
 - **Server policy (ADR 0054, protective refusal):** min > max is refused on `joint_limits`/`joint_create` and on any
-  evaluated edit that would make it so. Test: `golden_joint_limits::refusals_leave_the_document_unchanged`.
+  edit that touches the joint: one the call created or changed, or whose limit formulas read a parameter the call
+  changed. A joint that arrives with min > max (the app accepts it) does not block other edits; it is listed in
+  `assembly.limit_faults` (H5 fix round). Tests: `golden_joint_limits::refusals_leave_the_document_unchanged`,
+  `a_joint_with_min_above_max_from_a_file_blocks_only_the_edits_that_touch_it`,
+  `a_parameter_edit_validates_the_joints_whose_formulas_read_it`.
 - **Upstream issue candidate:** set a Slider's min above its max → every value jumps to max silently. Minimal
   reproduction as the test above.
 
@@ -2836,9 +2840,14 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Executed native evidence:** `golden_revolute::native_angle_limits_beyond_180_snap_a_released_door_shut_f158` (app
   data path, no Session): the golden door, limits [−270, 0], drive −200 → reading 160; drive cleared → reading 0, no
   errors, no conflict. Research run R6.
-- **Server policy (ADR 0054, protective refusal):** Revolute drives must lie in (−180, 180] and angle limits in
-  [−180, 180], on creation, `joint_set`, `joint_limits` and every evaluated edit. Tests:
-  `golden_revolute::creation_refusals_leave_the_document_unchanged`, `edit_refusals_leave_the_document_unchanged`.
+- **Server policy (ADR 0054, protective refusal):** Revolute drives and angle limits must lie in (−180, 180], the
+  same domain (−180 reads as 180, so it cannot be a bound either), on creation, `joint_set`, `joint_limits` and every
+  edit that touches the joint. Joints that arrive with such values (a file edited in the app) are listed in
+  `assembly.limit_faults` and do not block other edits. Tests:
+  `golden_revolute::creation_refusals_leave_the_document_unchanged`, `edit_refusals_leave_the_document_unchanged`,
+  `an_angle_bound_of_minus_180_is_refused_and_the_message_names_the_wrap`,
+  `an_angle_bound_outside_the_domain_from_a_file_blocks_only_the_edits_that_touch_the_joint`,
+  `a_drive_outside_the_angle_domain_from_a_file_blocks_only_the_edits_that_touch_the_joint`.
 - **Upstream issue candidate:** Revolute limits [−270, 0], drive −200, release → the part snaps to 0. Minimal
   reproduction as the test above.
 
@@ -2857,3 +2866,114 @@ The same gap applies to a pattern whose source is a projection: the source moves
   Tests: `golden_revolute::creation_refusals_leave_the_document_unchanged`, `edit_refusals_leave_the_document_unchanged`.
 - **Upstream issue candidate:** ground the moving Part of a Revolute, set an angle → nothing moves, nothing is said.
   Minimal reproduction as the test above.
+
+## F-160 A feature that consumes the anchored body leaves a hinge on the consumed body's old edge
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** a connector keeps the body id it was made on (`AnchorRef::EdgeMid(body, edge)`,
+  `model/assembly/anchors.rs:265-380`) and resolves its frame from `regen_edges[body]`, the edges of that body as last
+  built. A later fillet, chamfer or push_face consumes the body and produces a new one; the anchor is not re-pointed
+  and the consumed body's edge list is not refreshed. `dead_bodies` is filled only by deletion. Persistent edge ids
+  survive on the new body, so a moved edge keeps its id and the stale one goes on defining the pivot.
+- **Executed native evidence:** `golden_revolute::native_a_pushed_body_keeps_the_hinge_on_the_consumed_bodys_old_edge_f160`
+  (app data path, no Session): the golden door at −90°, `add_push_face` of the carcass's +X face by 20 mm → the edge of
+  the current body is at x = 30, the connector still names the consumed body whose stale edge is at x = 10, the door
+  still turns about x = 10 (now inside the pushed panel), and `joint_faults`, `mates_violated` and the solve report
+  nothing. (Face anchors of Rigid/Slider joints behave the same way; ADR 0051 accepted that policy for faces.)
+- **Server policy (ADR 0054, protective refusal, H5 fix round):** the edge-anchor health check follows the anchored
+  body to the body that now carries it (`current_heads`) and requires exactly one edge with the persistent id there, in
+  the same place as the consumed body's edge. An edit that moves or removes the hinge edge (push_face of a face it
+  bounds, fillet or chamfer of the edge itself, a reorder that changes it, suppression) is refused atomically as
+  "edit would invalidate anchors of joints [..]"; edits that leave the edge where it is (a fillet elsewhere, a push_face
+  on the far side, a reorder of unrelated modifiers) go through and the hinge stays healthy. Tests:
+  `golden_revolute::a_feature_that_moves_or_removes_the_hinge_edge_of_the_carcass_is_refused`,
+  `a_feature_that_moves_or_removes_the_hinge_edge_of_the_door_is_refused`,
+  `a_push_face_or_chamfer_away_from_the_hinge_edge_of_the_carcass_is_allowed`,
+  `reordering_modifiers_of_a_hinge_body_keeps_the_hinge_on_the_current_body`, `suppressing_the_anchored_body_is_refused`.
+- **Upstream issue candidate:** hinge on a body's edge, push the adjacent face → the part turns about the old edge,
+  nothing is said. Minimal reproduction as the native test above.
+
+## F-161 A Revolute on planar faces spins the part about the face normal, like a wheel
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** the axis of a planar `FaceCenter` anchor is the face normal (`anchors.rs:265-380`); a cylindrical face
+  gives its axis, a straight `EdgeMid` its tangent. The app's Joint tool infers the anchor from what is under the
+  cursor, so a Revolute made on two flat faces is accepted and turns the part in its own plane.
+- **Executed native evidence:** `golden_revolute::native_a_revolute_on_planar_faces_spins_the_door_like_a_wheel_f161`
+  (app data path, no Session): carcass front face with door back face, as built, drive 30° → the slot-0 axis is world Y
+  and the door's world z extent leaves 0..700. Research run R9.
+- **Server policy (ADR 0054, protective refusal):** `joint_create` for a Revolute needs a straight edge on each side
+  and refuses planar faces; faces stay Rigid/Slider anchors. Test:
+  `golden_revolute::creation_refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** none; this is the app's documented axis rule. The refusal is the server's guard against
+  the surprise.
+
+## F-162 An as-built Revolute turns about B's edge and ignores A's when the axes are apart
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** observed, not traced: the composition in `asm/bridge.rs` was not read (research §3.8). With A's and B's
+  edges on one line the two pivots coincide; apart, the pivot is B's edge.
+- **Executed native evidence:** `golden_revolute::native_as_built_pivots_about_bs_edge_and_ignores_as_when_the_axes_are_apart_f162`
+  (app data path, no Session): the golden door placed 50 mm in front of the carcass's hinge edge, as built, drive 90° →
+  door box x 10..28, y −250..150; the door's own edge (10, −250) stays and the carcass edge (10, −200) is not the
+  pivot. No error, conflict or violation. Research run R10.
+- **Server policy (ADR 0054, protective refusal):** an as-built Revolute is refused unless the two edges are collinear
+  (distance ≤ 1e-3 mm, angle ≤ 0.01°): "place the Part on the hinge first". Align mode is not subject to this (F-163).
+  Test: `golden_revolute::creation_refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** none; surprising, not wrong.
+
+## F-163 A fresh align Revolute on two straight edges puts the part on the hinge, correctly
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** none.
+- **What:** the H research (R10) reported that align mode "flips the door into the carcass at 0°". That joint had been
+  made as built and its capture cleared afterwards (`clear_joint_as_built`) [inferred: the same cabinet folds in that
+  state and not on a fresh joint, so the flip/roll decisions of the capture are the likely difference]. A joint made
+  without «as built», as the app's Joint tool does and as `joint_create` does, lands correctly.
+- **Executed native evidence:** `golden_revolute::native_a_fresh_align_revolute_snaps_the_door_onto_the_hinge_and_is_correct_f163`
+  (app data path, no Session): door on the hinge edge or 50 mm in front of it, never as built → at 0° the door is
+  closed on the hinge (x 10..410, y −218..−200), at −90° it is x −8..10, y −600..−200 and at 90° x 10..28, y −200..200.
+  Session: `golden_revolute::align_mode_places_the_door_on_the_hinge_and_turns_about_it`.
+- **Server policy:** `joint_create` allows `mode:"align"` for a Revolute (the earlier refusal had no native basis).
+  The state that folds the door (as built, then cleared) cannot be reached through the server.
+
+## F-164 A ticked-off joint limit keeps its formula dormant
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** none; the behaviour the server relies on and mirrors.
+- **Source:** the Limits box's tick (`popup.rs:398-405`) sets the bound to `None` or `Some(0.0)` and leaves
+  `feat_dims[joint]["min<slot>"|"max<slot>"]` as it is. `item_value` answers `None` for a bound that is off, so
+  `impose_item_values` skips its formula (`model/item_values.rs:29-41,144`): a dormant formula is never evaluated, and
+  one that no longer works raises nothing. Ticking the bound back on re-imposes the formula's value at the next
+  evaluation. `rename_driver` rewrites every `feat_dims` formula, dormant ones included; the Parameters window's delete
+  checks nothing.
+- **Executed native evidence:** `golden_joint_limits::native_a_ticked_off_limit_keeps_its_formula_and_ticking_it_on_reimposes_it`
+  (app data path, no Session): formula `lim` = 100 on max; tick off, `lim` := 50, `eval_parameters` → no error, bound
+  still off, formula kept; tick on (0.0), `eval_parameters` → bound 50; tick off, `rename_driver lim lim2` → formula
+  `lim2`.
+- **Server policy (ADR 0054 fix round):** `joint_limits null` clears the value only and leaves the formula; dormant
+  formulas are not evaluated, validated, counted by `param_users`/`param_delete` (the native delete checks nothing, so
+  a formula nothing reads is not a use), nor listed as `limit_formulas`; they are reported as
+  `dormant_limit_formulas`. The server has no rename tool. A formula given to `joint_limits` again revives the bound;
+  the app's tick-on revives it at the next evaluation. Tests:
+  `golden_joint_limits::clearing_a_bound_keeps_its_formula_dormant_and_nothing_reads_a_dormant_formula`.
+
+## F-165 A limit that clamps a numeric drive overwrites the request and reports nothing
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe; closely related to the at-limit mark the app does show).
+- **Source:** `Joint::clamp_free` replaces `drive[slot]` with its clamped value on every `solve_joints`
+  (`feature/mates.rs:554-566`, `model/assembly/drive.rs:353-356`); the specified value is not kept anywhere.
+  `joints_at_limit` shows a mark but not what was asked.
+- **Executed native evidence:** `golden_joint_limits::native_a_limit_overwrites_a_numeric_drive_and_the_request_is_gone_f165`
+  (app data path, no Session): drive 200, `limit_max` 100, solve → drive 100; `limit_max` raised to 300 → the drive
+  stays 100.
+- **Server policy (ADR 0054 fix round, reporting, not a refusal):** the request is taken before every native solve that
+  can clamp it (rebuilds and the acceptance solve) and reported as `clamped {joint, slot, requested, applied}` in
+  `assembly.clamped` of `param_set`, `dimension_set`, `doc_open` and batch reports; a compact batch step carries its
+  own call's `clamped`. Tests:
+  `golden_joint_limits::a_numeric_drive_a_limit_formula_clamps_is_reported_on_param_set_dimension_set_and_open`,
+  `mcp/tests/h2_joint_limits::a_compact_batch_step_carries_its_clamp`.
