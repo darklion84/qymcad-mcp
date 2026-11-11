@@ -54,11 +54,12 @@ fn drawer(limits: Option<JointLimits>, offset: Option<Num>) -> Drawer {
         .joint_create(&JointCreate {
             name: Some("slide".into()),
             kind: AssemblyJointKind::Slider,
-            a: JointAnchor { body: carcass_body, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: drawer_body, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(carcass_body, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(drawer_body, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset,
+            angle: None,
             limits,
         })
         .unwrap()["joint"]["id"]
@@ -220,11 +221,12 @@ fn a_rigid_joint_has_no_limits() {
         .joint_create(&JointCreate {
             name: None,
             kind: AssemblyJointKind::Rigid,
-            a: JointAnchor { body: carcass_body, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: drawer_body, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(carcass_body, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(drawer_body, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: None,
             offset: None,
+            angle: None,
             limits: None,
         })
         .unwrap()["joint"]["id"]

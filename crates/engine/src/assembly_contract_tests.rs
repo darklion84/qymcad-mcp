@@ -26,11 +26,12 @@ fn joint_fixture() -> (Session, Id, Id, Id, Id, Id) {
         .joint_create(&JointCreate {
             name: Some("slide".into()),
             kind: AssemblyJointKind::Slider,
-            a: JointAnchor { body: ba, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: bb, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(ba, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(bb, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: Some(0.0.into()),
+            angle: None,
             limits: None,
         })
         .unwrap()["joint"]["id"]
@@ -109,7 +110,7 @@ fn a_contract_group_geometry_parameter_edit_is_touched_but_disconnected_edit_wor
     assert_eq!(
         error.to_string(),
         format!(
-            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid and Slider joints"
+            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid, Slider and Revolute joints"
         )
     );
     assert_eq!(state(&s), before);
@@ -136,14 +137,14 @@ fn a_contract_formula_limit_crossing_parameter_edit_is_clamped_and_reported() {
 #[test]
 fn a_contract_unsupported_joint_edit_refuses_but_disconnected_part_edit_works() {
     let (mut s, _, b, _, _, j) = joint_fixture();
-    s.p.joints.iter_mut().find(|joint| joint.id == j).unwrap().kind = JointKind::Revolute;
+    s.p.joints.iter_mut().find(|joint| joint.id == j).unwrap().kind = JointKind::Cylindrical;
     // Preserve and expose the unsupported imported record, including existing native slots/limits.
-    assert_eq!(s.assembly_info()["joints"][0]["kind"], "revolute");
+    assert_eq!(s.assembly_info()["joints"][0]["kind"], "cylindrical");
     let before = state(&s);
     let error = s.ground(&PartRef::Id(b), true).unwrap_err();
     assert_eq!(
         error.to_string(),
-        format!("assembly edit touches unsupported constraints or relations [{j}]; package A supports root-level Rigid and Slider joints")
+        format!("assembly edit touches unsupported constraints or relations [{j}]; package A supports root-level Rigid, Slider and Revolute joints")
     );
     assert_eq!(state(&s), before);
     let other = s.part_new("independent").unwrap()["part"]["id"].as_u64().unwrap();
@@ -184,11 +185,12 @@ fn a_contract_failed_creation_inside_active_boundary_restores_rebuilt_live_shape
         .joint_create(&JointCreate {
             name: None,
             kind: AssemblyJointKind::Slider,
-            a: JointAnchor { body: ba, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: ba, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(ba, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(ba, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: None,
+            angle: None,
             limits: None,
         })
         .unwrap_err();

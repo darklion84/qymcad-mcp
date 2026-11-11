@@ -8,13 +8,15 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `part_delete`: the app's tree Delete of a Part (`delete_component`) — removes a root-child Part with its bodies, sketches, datums and every joint touching it; the root becomes active if the deleted Part was active; a clone Part can now be deleted (ADR 0053 gap closed); batch and one-step undo (ADR 0054 §1). What the app leaves behind (the other side's connector and the deleted joint's formulas, F-155) is kept and reported as `native_leftovers`.
 - `joint_limits`: the app's Limits section of a joint's free slot (Slider offset) — each bound a number or a native formula (`min1`/`max1`, follows parameters), `null` ticks a bound off, omitted keeps it; `joint_create` takes `limits` applied before the first drive; batch and one-step undo (ADR 0054 §2). `assembly_info` reports `limit_formulas` and `at_limit`.
+- Revolute hinges: `joint_create kind:"revolute"` with a straight-edge anchor on each Part (`a:{body, edge}`; the app's Joint tool with edges picked), `mode:"as_built"`, optional `angle` and `limits`; `joint_set {angle}` / `{release:"angle"}`; `joint_limits` on the angle slot; edge anchors are health-checked like face anchors; batch and one-step undo (ADR 0054 §3). Golden: a cabinet door that opens outward at −90° about a fixed pivot edge.
 
 ### Changed
 - A request outside a joint's limits is now clamped as in the app instead of refused (ADR 0054 §2 replaces ADR 0051's refusal): `joint_set`, `joint_create` and `joint_limits` report `clamped {joint, slot, requested, applied}`, and rebuild reports list formula drives a limit holds in `assembly.clamped`.
 
-### Fixed (protective refusals of silent native results, FINDINGS F-154–F-157)
+### Fixed (protective refusals of silent native results, FINDINGS F-154–F-159)
 - `part_delete` refuses a Part that is the source of clones (QymCAD leaves the clones with their old body and no error, F-154) and refuses while a history rollback is active (the bar's index would slide, F-156).
 - Joint limits with min above max are refused on `joint_limits`/`joint_create` and on any parameter edit that would cause them (QymCAD sends every value to max, F-157).
+- Revolute: angles outside (−180°, 180°] and angle limits outside [−180°, 180°] are refused (QymCAD reads angles wrapped, so a released door snaps back, F-158); a grounded moving Part is refused on `joint_create` and `ground` (it would not turn and nothing is reported, F-159); non-collinear hinge edges, align mode and planar-face Revolutes are refused.
 - `param_users`/`param_delete` no longer count formulas of joints that no longer exist (left by native Part deletion, F-155) as parameter users.
 
 ## 0.1.1-dev.20261026.13 — draft, thicken, part instances and copies (ADR 0052–0053)

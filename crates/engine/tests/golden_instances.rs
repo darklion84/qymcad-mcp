@@ -233,11 +233,12 @@ fn a_slider_on_a_clone_moves_only_the_clone() {
         .joint_create(&JointCreate {
             name: Some("drawer2-slide".into()),
             kind: AssemblyJointKind::Slider,
-            a: JointAnchor { body: carcass_body, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: clone_body, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(carcass_body, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(clone_body, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: Some(0.0.into()),
+            angle: None,
             limits: None,
         })
         .unwrap()["joint"]["id"]

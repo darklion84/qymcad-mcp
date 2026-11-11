@@ -62,11 +62,12 @@ fn cabinet() -> Cabinet {
         .joint_create(&JointCreate {
             name: Some("slide".into()),
             kind: AssemblyJointKind::Slider,
-            a: JointAnchor { body: carcass_body, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: drawer_body, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(carcass_body, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(drawer_body, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: Some("open".into()),
+            angle: None,
             limits: None,
         })
         .unwrap()["joint"]["id"]

@@ -26,11 +26,12 @@ fn rail(s: &mut Session, name: &str, a: Id, b: Id) -> Id {
     s.joint_create(&JointCreate {
         name: Some(name.into()),
         kind: AssemblyJointKind::Slider,
-        a: JointAnchor { body: a, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-        b: JointAnchor { body: b, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+        a: JointAnchor::face(a, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+        b: JointAnchor::face(b, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
         mode: JointMode::AsBuilt,
         axis: Some(BaseName::XZ),
         offset: Some(0.0.into()),
+        angle: None,
         limits: None,
     })
     .unwrap()["joint"]["id"]

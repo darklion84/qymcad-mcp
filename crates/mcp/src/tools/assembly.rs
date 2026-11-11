@@ -56,8 +56,22 @@ struct Ground {
 struct Anchor {
     /// Current body id or unique name. Its owner Part determines the connector's local coordinate frame.
     body: ObjRef,
-    /// Exactly one current planar face: persistent id or existing face selection description, in part-local coordinates.
-    face: SelArg,
+    /// Rigid/Slider: exactly one current planar face, persistent id or existing face selection description, in
+    /// part-local coordinates. Give exactly one of face or edge.
+    face: Option<SelArg>,
+    /// Revolute: exactly one current straight edge (the hinge axis), persistent id or edge selection description, in
+    /// part-local coordinates. Give exactly one of face or edge.
+    edge: Option<SelArg>,
+}
+impl Anchor {
+    fn resolve(self, s: &qymcad_engine::Session) -> Result<JointAnchor, String> {
+        let body = self.body.resolve(s)?;
+        match (self.face, self.edge) {
+            (Some(face), None) => Ok(JointAnchor::face(body, face.resolve(s)?)),
+            (None, Some(edge)) => Ok(JointAnchor::edge(body, edge.resolve(s)?)),
+            _ => Err("joint anchor requires exactly one of face or edge".into()),
+        }
+    }
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -70,19 +84,24 @@ struct JointAxis {
 struct Create {
     /// Optional native joint label. Duplicate labels require ids when referenced later.
     name: Option<String>,
-    /// Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis.
+    /// Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis; Revolute turns
+    /// about a hinge made of two collinear straight edges.
     kind: AssemblyJointKind,
-    /// Planar face anchor on grounded root-child Part A.
+    /// Anchor on grounded root-child Part A: a planar face (Rigid/Slider) or a straight edge (Revolute).
     a: Anchor,
-    /// Planar face anchor on a different root-child Part B; Slider B must be ungrounded.
+    /// Anchor on a different root-child Part B; Slider/Revolute B must be ungrounded.
     b: Anchor,
-    /// align aligns connector frames; as_built captures the existing relative pose before the first solve.
+    /// align aligns connector frames; as_built captures the existing relative pose before the first solve. Revolute
+    /// requires as_built.
     mode: JointMode,
     /// Required for Slider, refused for Rigid. The base-plane normal is the signed local travel axis.
     axis: Option<JointAxis>,
     /// Optional absolute Slider travel in mm: number or native formula. Zero explicitly requests zero travel.
     offset: Option<Num>,
-    /// Optional limits of the free slot (Slider offset in mm), applied before the first drive, as joint_limits.
+    /// Optional absolute Revolute angle in degrees within (-180, 180]: number or native formula.
+    angle: Option<Num>,
+    /// Optional limits of the free slot (Slider offset in mm, Revolute angle in degrees within [-180, 180]),
+    /// applied before the first drive, as joint_limits.
     limits: Option<CreateLimits>,
 }
 #[derive(Deserialize, JsonSchema)]
@@ -100,9 +119,9 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<Num>>
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Limits {
-    /// Native joint id or unique name (Slider).
+    /// Native joint id or unique name (Slider or Revolute).
     joint: JointRef,
-    /// The free slot to limit; defaults to the joint's only free slot (Slider: offset). Naming another slot is refused.
+    /// The free slot to limit; defaults to the joint's only free slot (Slider: offset, Revolute: angle). Naming another slot is refused.
     slot: Option<JointSlot>,
     /// Lower bound: number or native formula ticks the bound on; null ticks it off (value and formula); omitted keeps it.
     #[serde(default, deserialize_with = "present")]
@@ -122,15 +141,18 @@ fn edit(v: Option<Option<Num>>) -> LimitEdit {
 #[serde(rename_all = "snake_case")]
 enum Release {
     Offset,
+    Angle,
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Set {
-    /// Native joint id or unique name; only Slider offset is editable in package A.
+    /// Native joint id or unique name: a Slider (offset) or a Revolute (angle).
     joint: JointRef,
-    /// Absolute travel in mm, number or native formula. Numeric requests clear a previous formula.
+    /// Slider: absolute travel in mm, number or native formula. Numeric requests clear a previous formula.
     offset: Option<Num>,
-    /// Give "offset" instead of offset to clear both formula and drive, retaining the reached pose for dragging.
+    /// Revolute: absolute angle in degrees within (-180, 180], number or native formula.
+    angle: Option<Num>,
+    /// Give "offset" or "angle" instead of a value to clear both formula and drive, retaining the reached pose.
     release: Option<Release>,
 }
 #[derive(Deserialize, JsonSchema)]
@@ -178,24 +200,30 @@ pub fn tools() -> Vec<Tool> {
             let result = st.doc()?.part_place(&a.part, a.translation_mm, rotation.as_ref()).map_err(err)?;
             Ok(changed(st, result))
         }),
-        tool("ground", "Set grounding on a root-child native Part, then solve and verify the mechanism atomically. Refuses ungrounding a joint's anchor A Part or grounding a Slider's moving B Part. No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.", |st, a: Ground| {
+        tool("ground", "Set grounding on a root-child native Part, then solve and verify the mechanism atomically. Refuses ungrounding a joint's anchor A Part or grounding a Slider's or Revolute's moving B Part (a grounded B does not move and QymCAD reports nothing, F-159). No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.", |st, a: Ground| {
             let result = st.doc()?.ground(&a.part, a.grounded).map_err(err)?;
             Ok(changed(st, result))
         }),
-        tool("joint_create", "Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts. A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.", |st, a: Create| {
+        tool("joint_create", "Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts, or a Revolute hinge between exactly one straight edge on each (the app's Joint tool with an edge picked). A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. Revolute requires ungrounded B, mode as_built and collinear edges (place the Part on the hinge first: QymCAD turns about B's edge and ignores A's), refuses face anchors (a planar face turns the Part about its normal), axis and offset, and takes angle in degrees within (-180, 180] (readings wrap, F-158); the signed angle follows the edge frames, so read the reached pose from the result. as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.", |st, a: Create| {
             let s = st.doc()?;
             let create = JointCreate {name:a.name, kind:a.kind,
-                a:JointAnchor {body:a.a.body.resolve(s)?,face:a.a.face.resolve(s)?},
-                b:JointAnchor {body:a.b.body.resolve(s)?,face:a.b.face.resolve(s)?},
-                mode:a.mode,axis:a.axis.map(|axis| axis.base_plane),offset:a.offset, limits:a.limits.map(|l| JointLimits {min:l.min, max:l.max})};
+                a:a.a.resolve(s)?,
+                b:a.b.resolve(s)?,
+                mode:a.mode,axis:a.axis.map(|axis| axis.base_plane),offset:a.offset, angle:a.angle, limits:a.limits.map(|l| JointLimits {min:l.min, max:l.max})};
             s.joint_create(&create).map_err(err)
         }),
-        tool("joint_set", "Set absolute Slider offset in mm or release it. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}; the reached travel is checked against the applied value. Undoable; allowed in batch.", |st, a: Set| {
-            let release = a.release.map(|Release::Offset| "offset");
-            let result = st.doc()?.joint_set(&a.joint,a.offset.as_ref(),release).map_err(err)?;
+        tool("joint_set", "Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180], F-158), or release the slot. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' or 'angle' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}; the reached travel is checked against the applied value. Undoable; allowed in batch.", |st, a: Set| {
+            let s = st.doc()?;
+            let result = match (a.offset, a.angle, a.release) {
+                (None, Some(angle), None) => s.joint_set_slot(&a.joint, JointSlot::Angle, Some(&angle), false),
+                (None, None, Some(Release::Angle)) => s.joint_set_slot(&a.joint, JointSlot::Angle, None, true),
+                (offset, None, release) => s.joint_set(&a.joint, offset.as_ref(), release.map(|_| "offset")),
+                _ => return Err("joint_set requires exactly one of offset, angle or release".into()),
+            }
+            .map_err(err)?;
             Ok(changed(st, result))
         }),
-        tool("joint_limits", "The app's Limits section of the joint box for a Slider's offset (mm): each bound is a tick plus a number or formula (formulas persist natively under min1/max1 and follow parameters), range ±100000 as in the app's fields. Omitted keeps a bound, null ticks it off with its formula. A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; assembly_info reports at_limit. Refused: min above max, now or after any later parameter edit (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). Undoable; allowed in batch.", |st, a: Limits| {
+        tool("joint_limits", "The app's Limits section of the joint box for a Slider's offset (mm) or a Revolute's angle (degrees, bounds within [-180, 180]: QymCAD compares them with a reading wrapped to (-180, 180], F-158): each bound is a tick plus a number or formula (formulas persist natively under min<slot>/max<slot> and follow parameters), range ±100000 as in the app's fields. Omitted keeps a bound, null ticks it off with its formula. A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; assembly_info reports at_limit. Refused: min above max, now or after any later parameter edit (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). Undoable; allowed in batch.", |st, a: Limits| {
             let result = st.doc()?.joint_limits(&a.joint, a.slot, &edit(a.min), &edit(a.max)).map_err(err)?;
             Ok(changed(st, result))
         }),

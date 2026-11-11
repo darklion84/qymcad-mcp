@@ -36,11 +36,12 @@ fn create(s: &mut Session, ba: Id, bb: Id, kind: AssemblyJointKind) -> Id {
         .joint_create(&JointCreate {
             name: Some("rail".into()),
             kind,
-            a: JointAnchor { body: ba, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-            b: JointAnchor { body: bb, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+            a: JointAnchor::face(ba, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+            b: JointAnchor::face(bb, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: if kind == AssemblyJointKind::Slider { Some(BaseName::XZ) } else { None },
             offset: None,
+            angle: None,
             limits: None,
         })
         .unwrap();
@@ -199,11 +200,12 @@ fn a_violated_joint_refuses_atomic_ground_change_and_disconnected_control() {
         .joint_create(&JointCreate {
             name: Some("tray_rail".into()),
             kind: AssemblyJointKind::Slider,
-            a: JointAnchor { body: bb, face: Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. } },
-            b: JointAnchor { body: tray, face: Sel::Facing { dir: [0., 0., -1.], tol_deg: 1. } },
+            a: JointAnchor::face(bb, Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. }),
+            b: JointAnchor::face(tray, Sel::Facing { dir: [0., 0., -1.], tol_deg: 1. }),
             mode: JointMode::AsBuilt,
             axis: Some(BaseName::XZ),
             offset: None,
+            angle: None,
             limits: None,
         })
         .unwrap_err()
@@ -213,11 +215,12 @@ fn a_violated_joint_refuses_atomic_ground_change_and_disconnected_control() {
     s.joint_create(&JointCreate {
         name: Some("lock".into()),
         kind: AssemblyJointKind::Rigid,
-        a: JointAnchor { body: ba, face: Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. } },
-        b: JointAnchor { body: bb, face: Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. } },
+        a: JointAnchor::face(ba, Sel::Facing { dir: [1., 0., 0.], tol_deg: 1. }),
+        b: JointAnchor::face(bb, Sel::Facing { dir: [-1., 0., 0.], tol_deg: 1. }),
         mode: JointMode::AsBuilt,
         axis: None,
         offset: None,
+        angle: None,
         limits: None,
     })
     .unwrap();

@@ -98,3 +98,56 @@ The two ADR 0051 tests that pinned the old refusal were rewritten to the clamp (
 `golden_joint_limits` (numeric clamp of `joint_set`, new bound past a driven and a free slot, formula limits and a
 formula drive held by a limit, clear, creation limits, undo, save/reopen, refusals with snapshot/unchanged, native
 F-157 evidence) and `mcp/tests/h2_joint_limits` (null vs omitted, clamps, batch, batch rollback, undo).
+
+## 3. Revolute hinges on straight edges
+
+### App behaviour (source, pin f25f27d)
+
+- `JointKind::Revolute` frees slot 0 only, the rotation about the connector frame's Z (`feature/mates.rs:380-384`,
+  `asm/joint.rs:75-77`). The axis is the anchor's frame Z (`model/assembly/anchors.rs:265-380`): an `EdgeMid` on a
+  straight edge gives the edge tangent through its midpoint; a planar `FaceCenter` gives the face **normal**.
+- The app's Joint tool infers the anchor type under the cursor (a face → FaceCenter, an edge → EdgeMid;
+  `qymcad-assembly/src/picks.rs:200-245`); the app's own by-hand test makes Revolute on edges
+  (`gui/every_kind_is_made_by_hand.rs:70-72`). Two clicks → two connectors + `add_joint`, optional «as built»
+  captured before the first solve, one undo step.
+- Drive `drive[0]` in degrees through `set_joint_drive(j, 0, …)`; a formula at `feat_dims[j]["angle"]` reasserts on
+  rebuild (F-144). Limits on slot 0 as in §2. The solver moves B's Part.
+
+### Tool contract
+
+`joint_create {kind:"revolute", a:{body, edge}, b:{body, edge}, mode:"as_built", angle?, limits?}`: exactly one
+current straight edge per anchor (id or edge description; `JointAnchor::edge`), `EdgeMid` connectors, `add_joint`,
+`set_joint_as_built`, limits, then the angle drive. `joint_set {joint, angle}` / `{joint, release:"angle"}` (engine
+`joint_set_slot`); `joint_limits` on the angle slot. Results report `angle`, `read`, `unit:"deg"`, the angle
+`expression`, the slot-0 `signed_world_axis` and anchors with `edge`. The opening sign follows the edge frames (−90
+opens the golden door outward); it is reported, not normalised.
+
+### Server rules (each is native semantics made explicit, or a protective refusal)
+
+- **Edge anchors only for Revolute**, face anchors only for Rigid/Slider: a planar face would turn the door about the
+  face normal, like a wheel (research R9).
+- **as_built only and collinear axes** (distance ≤ 1e-3 mm, angle ≤ 0.01°): natively an as-built hinge pivots about
+  B's edge and ignores A's (R10), and align folds the door into the carcass at 0° (R10). Place the Part on the hinge
+  first.
+- **B ungrounded (F-159, protective)**, at creation and in `ground`: a grounded B does not turn and nothing is
+  reported.
+- **Angles within (−180, 180], angle bounds within [−180, 180] (F-158, protective)**: QymCAD reads the angle through
+  `atan2` with no unwrapping, so a drive outside the range never matches its reading and a released door snaps to
+  the other bound. Checked on creation, `joint_set`, `joint_limits` and every evaluated edit (an angle formula is
+  judged after the limits clamp it).
+- Edge witness: `inspect` now checks `EdgeMid` anchors like faces (exactly one current edge with the persistent id on
+  a live body). As for faces (ADR 0051), a fillet that consumes the anchored body keeps the native witness; deleting
+  or suppressing the body is refused.
+- Chained mechanisms stay refused (an anchor A moved by a Slider or a Revolute). ADR 0051's unsupported-kind refusal
+  now lists Rigid, Slider and Revolute.
+- `ground` checks for unsupported mechanism records before it solves. The ADR 0051 contract test used a Revolute as
+  its unsupported stand-in; with Revolute supported it uses a Cylindrical joint, whose solve failed first and hid the
+  unsupported-record refusal, so the check now runs before the solve.
+
+### Tests
+
+`golden_revolute` (cabinet door: −90 opens outward with the pivot edge fixed, world bbox by hand; limits [−110, 0]
+clamp −150 to −110 and report it; formula `-swing` and a parameter edit held at the stop; release; undo; save/reopen;
+creation refusals: non-collinear axes, align, planar faces, grounded door, bounds outside ±180, min > max, angle 200,
+edge anchors on a Slider; edit refusals: grounding the door, limits, angle domain, offset on a Revolute, a formula
+pushed out of the domain; the hinge-edge witness; native evidence for F-158 and F-159) and `mcp/tests/h3_revolute`.

@@ -639,7 +639,7 @@ mod snapshot_tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             format!(
-            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid and Slider joints"
+            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid, Slider and Revolute joints"
         )
         );
         assert_eq!(state(&s), before, "the refused engine call must restore state before its enclosing boundary is closed");

@@ -25,6 +25,7 @@ pub enum JointRef {
 pub enum AssemblyJointKind {
     Rigid,
     Slider,
+    Revolute,
 }
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -40,10 +41,24 @@ pub struct PartRotation {
     /// Finite right-handed rotation in degrees.
     pub angle_deg: f64,
 }
+/// What is picked on the anchor body: a planar face (Rigid, Slider) or a straight edge (Revolute hinge axis).
+#[derive(Clone, Debug)]
+pub enum AnchorPick {
+    Face(Sel),
+    Edge(Sel),
+}
 #[derive(Clone, Debug)]
 pub struct JointAnchor {
     pub body: Id,
-    pub face: Sel,
+    pub pick: AnchorPick,
+}
+impl JointAnchor {
+    pub fn face(body: Id, sel: Sel) -> Self {
+        Self { body, pick: AnchorPick::Face(sel) }
+    }
+    pub fn edge(body: Id, sel: Sel) -> Self {
+        Self { body, pick: AnchorPick::Edge(sel) }
+    }
 }
 /// A joint's free slot, as the app names it: Revolute turns `angle` (degrees), Slider travels `offset` (mm).
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -74,6 +89,8 @@ pub struct JointCreate {
     pub mode: JointMode,
     pub axis: Option<BaseName>,
     pub offset: Option<Num>,
+    /// Revolute angle in degrees: number or native formula.
+    pub angle: Option<Num>,
     pub limits: Option<JointLimits>,
 }
 use qymcad_core::{
@@ -165,12 +182,19 @@ fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>) -> Value {
     for j in &p.joints {
         for cid in [j.a, j.b] {
             let Some(c) = p.connector(cid) else { continue };
-            if let AnchorRef::FaceCenter(body, key) = &c.anchor {
-                let alive = p.timeline.iter().take(p.rollback_place()).any(|n| !n.suppressed && n.kind.bodies().contains(body));
-                let count = p.regen_faces.get(body).map_or(0, |faces| faces.iter().filter(|f| f.id == key.id).count());
-                if !alive || p.mesh_index(*body).is_none() || count != 1 {
-                    witnesses.push(j.id);
+            let (body, count) = match &c.anchor {
+                AnchorRef::FaceCenter(body, key) => {
+                    (body, p.regen_faces.get(body).map_or(0, |faces| faces.iter().filter(|f| f.id == key.id).count()))
                 }
+                // A hinge edge has the same witness rule: exactly one current edge with its persistent id.
+                AnchorRef::EdgeMid(body, edge) => {
+                    (body, p.regen_edges.get(body).map_or(0, |edges| edges.iter().filter(|e| e.id == *edge).count()))
+                }
+                _ => continue,
+            };
+            let alive = p.timeline.iter().take(p.rollback_place()).any(|n| !n.suppressed && n.kind.bodies().contains(body));
+            if !alive || p.mesh_index(*body).is_none() || count != 1 {
+                witnesses.push(j.id);
             }
         }
     }
@@ -449,6 +473,8 @@ impl Session {
         if self.p.components.iter().find(|c| c.id == id).unwrap().grounded == grounded {
             return Ok(self.part_result(id, false));
         }
+        // Name an unsupported mechanism before solving it: its solve can fail for reasons this server does not model.
+        self.check_supported_parts(&HashSet::from([id]))?;
         let before = self.grounding_violations();
         self.assembly_edit("ground", json!({"part":part,"grounded":grounded}), |s| {
             s.p.set_grounded(id, grounded);
@@ -472,6 +498,12 @@ impl Session {
             if j.kind == JointKind::Slider && self.p.is_effectively_grounded(b) {
                 out.push(format!("slider joint {} moves part {b}, which must stay ungrounded", j.id));
             }
+            if j.kind == JointKind::Revolute && self.p.is_effectively_grounded(b) {
+                out.push(format!(
+                    "revolute joint {} moves part {b}, which must stay ungrounded (a grounded part does not turn and QymCAD reports nothing, F-159)",
+                    j.id
+                ));
+            }
         }
         out
     }
@@ -492,7 +524,8 @@ impl Session {
             return Err(refusal(format!("joint_create requires a current body; body {} is consumed, suppressed or rolled back", a.body)));
         }
         self.ensure_topology()?;
-        let key = self.one_face(a.body, &a.face)?;
+        let AnchorPick::Face(sel) = &a.pick else { unreachable!("edge anchors resolve through resolve_edge_anchor") };
+        let key = self.one_face(a.body, sel)?;
         let topology = self.topology(Some(a.body), false)?;
         let faces: Vec<_> = topology.faces.iter().filter(|f| f.id == key.id).collect();
         if faces.len() != 1 || faces[0].ambiguous_id {
@@ -514,9 +547,71 @@ impl Session {
         self.root_part(owner)?;
         Ok((owner, key))
     }
+    /// A straight-edge anchor: the persistent edge id with its Part-local midpoint and direction.
+    fn resolve_edge_anchor(&mut self, a: &JointAnchor) -> Result<(Id, u32, [f64; 3], [f64; 3])> {
+        if !self.current_body_ids().contains(&a.body) {
+            return Err(refusal(format!("joint_create requires a current body; body {} is consumed, suppressed or rolled back", a.body)));
+        }
+        self.ensure_topology()?;
+        let AnchorPick::Edge(sel) = &a.pick else { unreachable!("face anchors resolve through resolve_anchor") };
+        let ids = self.resolve_sel(a.body, crate::Element::Edges, sel)?;
+        let [id] = ids.as_slice() else {
+            return Err(Error::Invalid(format!("the edge selection must match exactly one edge of body {}, it matched {ids:?}", a.body)));
+        };
+        let topology = self.topology(Some(a.body), false)?;
+        let edges: Vec<_> = topology.edges.iter().filter(|e| e.id == *id).collect();
+        if edges.len() != 1 {
+            return Err(Error::Invalid(format!("ambiguous edge id {id} on body {}", a.body)));
+        }
+        if edges[0].kind != crate::EdgeKind::Line {
+            return Err(refusal(
+                format!("revolute joint_create needs a straight edge anchor; body {} edge {id} is {:?}", a.body, edges[0].kind)
+                    .to_lowercase(),
+            ));
+        }
+        let e = self
+            .p
+            .regen_edges
+            .get(&a.body)
+            .and_then(|es| es.iter().find(|e| e.id == *id))
+            .ok_or_else(|| Error::NotFound(format!("edge {id}")))?;
+        let (mid, dir) = (e.mid, e.dir);
+        let owner = self.p.body_owner(a.body).ok_or_else(|| refusal(format!("body {} has no owning part", a.body)))?;
+        self.root_part(owner)?;
+        Ok((owner, *id, mid, dir))
+    }
     pub fn joint_create(&mut self, o: &JointCreate) -> Result<Value> {
         if let Some(name) = &o.name {
             object_name(name)?;
+        }
+        let edges = [&o.a, &o.b].iter().filter(|a| matches!(a.pick, AnchorPick::Edge(_))).count();
+        if o.kind == AssemblyJointKind::Revolute {
+            if edges != 2 {
+                return Err(refusal(
+                    "revolute joint_create needs a straight edge anchor on each part: a planar face would turn the part about the face normal; nothing was changed",
+                ));
+            }
+            if o.axis.is_some() {
+                return Err(refusal("revolute joint_create does not accept axis: the hinge axis is the anchor edges"));
+            }
+            if o.offset.is_some() {
+                return Err(refusal("revolute joint_create does not accept offset; use angle"));
+            }
+            if o.mode != JointMode::AsBuilt {
+                return Err(refusal(
+                    "revolute joint_create requires mode as_built: align turns the part onto the anchors' own frames and can fold it into the anchor part; nothing was changed",
+                ));
+            }
+            return self.revolute_create(o);
+        }
+        if edges != 0 {
+            return Err(refusal(format!(
+                "{} joint_create needs planar face anchors; edge anchors are for revolute",
+                if o.kind == AssemblyJointKind::Rigid { "rigid" } else { "slider" }
+            )));
+        }
+        if o.angle.is_some() {
+            return Err(refusal("angle is for revolute joints; use offset for a slider"));
         }
         match (o.kind, o.axis) {
             (AssemblyJointKind::Slider, None) => return Err(refusal("slider joint_create requires axis.base_plane (XY, XZ or YZ)")),
@@ -536,7 +631,7 @@ impl Session {
                 return Err(refusal(format!("joint_create requires anchors in two different parts; both bodies belong to part {a}")));
             }
             if !s.p.is_effectively_grounded(a) {
-                let moving = s.p.joints.iter().find(|j| j.kind == JointKind::Slider && s.p.connector(j.b).is_some_and(|c| c.owner == a));
+                let moving = s.p.joints.iter().find(|j| matches!(j.kind, JointKind::Slider | JointKind::Revolute) && s.p.connector(j.b).is_some_and(|c| c.owner == a));
                 if let Some(j) = moving {
                     return Err(refusal(format!(
                         "joint_create requires grounded anchor A; part {a} is moved by slider joint {}, so chained mechanisms are not supported in package A",
@@ -558,7 +653,7 @@ impl Session {
             }
             let kind = match o.kind {
                 AssemblyJointKind::Rigid => JointKind::Rigid,
-                AssemblyJointKind::Slider => JointKind::Slider,
+                _ => JointKind::Slider,
             };
             let j = s.p.add_joint(ca, cb, kind);
             if let Some(name) = &o.name {
@@ -586,6 +681,92 @@ impl Session {
             r["clamped"] = clamp_report(j, 1, wanted, applied);
             Ok(r)
         })
+    }
+    /// A Revolute hinge on two straight edges, as the app's Joint tool makes it with an edge picked on each Part
+    /// (`EdgeMid` connectors, `add_joint`, as built captured before the first solve). The axes must already be
+    /// collinear: natively the part turns about B's edge and ignores A's (research R10).
+    fn revolute_create(&mut self, o: &JointCreate) -> Result<Value> {
+        self.assembly_edit("joint_create", json!({"name":o.name,"kind":o.kind,"mode":o.mode}), |s| {
+            let (a, ea, ma, da) = s.resolve_edge_anchor(&o.a)?;
+            let (b, eb, mb, db) = s.resolve_edge_anchor(&o.b)?;
+            if a == b {
+                return Err(refusal(format!("joint_create requires anchors in two different parts; both bodies belong to part {a}")));
+            }
+            if !s.p.is_effectively_grounded(a) {
+                return Err(refusal(format!("joint_create requires grounded anchor A; ground part {a} first")));
+            }
+            if s.p.is_effectively_grounded(b) {
+                return Err(refusal(format!(
+                    "revolute target part {b} is grounded; unground it first (a grounded part does not turn and QymCAD reports nothing, F-159)"
+                )));
+            }
+            s.check_supported_parts(&HashSet::from([a, b]))?;
+            let world = |part: Id, m: [f64; 3], d: [f64; 3]| {
+                let t = s.p.world_transform(part);
+                let point = std::array::from_fn::<f64, 3, _>(|r| t[r * 4] * m[0] + t[r * 4 + 1] * m[1] + t[r * 4 + 2] * m[2] + t[r * 4 + 3]);
+                let dir = std::array::from_fn::<f64, 3, _>(|r| t[r * 4] * d[0] + t[r * 4 + 1] * d[1] + t[r * 4 + 2] * d[2]);
+                let n = dir.iter().map(|v| v * v).sum::<f64>().sqrt();
+                (point, dir.map(|v| v / n))
+            };
+            let ((pa, ua), (pb, ub)) = (world(a, ma, da), world(b, mb, db));
+            let dot = (ua[0] * ub[0] + ua[1] * ub[1] + ua[2] * ub[2]).abs().min(1.0);
+            let angle = dot.acos().to_degrees();
+            let w = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+            let cross = [w[1] * ua[2] - w[2] * ua[1], w[2] * ua[0] - w[0] * ua[2], w[0] * ua[1] - w[1] * ua[0]];
+            let distance = cross.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if distance > 1e-3 || angle > 1e-2 {
+                let round = |v: f64| (v * 1e3).round() / 1e3;
+                return Err(refusal(format!(
+                    "revolute hinge axes are not collinear (distance {} mm, angle {}°): QymCAD would turn the part about its own edge and ignore the anchor's; place the part on the hinge first; nothing was changed",
+                    round(distance),
+                    round(angle)
+                )));
+            }
+            let ca = s.p.add_connector(a, AnchorRef::EdgeMid(o.a.body, ea));
+            let cb = s.p.add_connector(b, AnchorRef::EdgeMid(o.b.body, eb));
+            let j = s.p.add_joint(ca, cb, JointKind::Revolute);
+            if let Some(name) = &o.name {
+                s.p.joints.iter_mut().find(|v| v.id == j).unwrap().name = name.trim().into();
+            }
+            if !s.p.set_joint_as_built(j) {
+                return Err(refusal("joint_create cannot capture as_built frames"));
+            }
+            let mut formulas = false;
+            if let Some(limits) = &o.limits {
+                for (min, edit) in [(true, &limits.min), (false, &limits.max)] {
+                    if let Some(value) = edit {
+                        formulas |= s.write_limit(j, 0, min, &LimitEdit::Set(value.clone()))?;
+                    }
+                }
+                s.check_limits(j)?;
+            }
+            let wanted = if let Some(value) = &o.angle { Some(s.write_drive(j, 0, value)?) } else { None };
+            s.check_angle_domain(j)?;
+            if formulas || o.angle.as_ref().is_some_and(|v| v.expr().is_some()) {
+                s.rebuild_joint_formulas()?;
+            }
+            let applied = s.p.joints.iter().find(|x| x.id == j).and_then(|x| x.drive[0]);
+            s.assembly_accept(applied.map(|value| (j, 0, value)))?;
+            let mut r = s.joint_result(j, true);
+            r["clamped"] = clamp_report(j, 0, wanted, applied);
+            Ok(r)
+        })
+    }
+    /// A Revolute drive must stay in (−180, 180]: QymCAD reads the angle through atan2, wrapped to that range, with
+    /// no unwrapping (F-158), so a drive outside it never matches its reading.
+    fn check_angle_domain(&self, id: Id) -> Result<()> {
+        let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
+        if j.kind != JointKind::Revolute {
+            return Ok(());
+        }
+        if let Some(v) = j.drive[0] {
+            if !(v > -180.0 && v <= 180.0) {
+                return Err(refusal(format!(
+                    "joint {id} angle {v}° is outside (-180, 180]: QymCAD reads angles wrapped to (-180, 180], so the reading would disagree with the drive (F-158); nothing was changed"
+                )));
+            }
+        }
+        Ok(())
     }
     /// Write a slot drive as the app does (`set_joint_drive` clamps it into the limits); returns the requested value.
     fn write_drive(&mut self, id: Id, slot: usize, value: &Num) -> Result<f64> {
@@ -659,6 +840,15 @@ impl Session {
                 )));
             }
         }
+        if j.kind == JointKind::Revolute {
+            for v in [min, max].into_iter().flatten() {
+                if !(-180.0..=180.0).contains(&v) {
+                    return Err(refusal(format!(
+                        "joint {id} angle limit {v} is outside [-180, 180] degrees: QymCAD compares limits with a reading wrapped to (-180, 180], so a released part snaps to the other bound (F-158); nothing was changed"
+                    )));
+                }
+            }
+        }
         if let (Some(a), Some(b)) = (min, max) {
             if a > b {
                 return Err(refusal(format!(
@@ -677,52 +867,70 @@ impl Session {
         Ok(())
     }
     pub fn joint_set(&mut self, joint: &JointRef, offset: Option<&Num>, release: Option<&str>) -> Result<Value> {
-        if offset.is_some() == release.is_some() || release.is_some_and(|v| v != "offset") {
-            return Err(refusal("joint_set requires exactly one of offset or release"));
+        match release {
+            Some("angle") if offset.is_none() => self.joint_set_slot(joint, JointSlot::Angle, None, true),
+            Some(v) if v != "offset" => Err(refusal("joint_set requires exactly one of offset or release")),
+            _ => self.joint_set_slot(joint, JointSlot::Offset, offset, release.is_some()),
+        }
+    }
+    /// The app's value field of a joint's free slot (Slider offset in mm, Revolute angle in degrees), or its
+    /// release. A value outside the limits is clamped natively and reported.
+    pub fn joint_set_slot(&mut self, joint: &JointRef, slot: JointSlot, value: Option<&Num>, release: bool) -> Result<Value> {
+        let name = if slot == JointSlot::Angle { "angle" } else { "offset" };
+        if value.is_some() == release {
+            return Err(refusal(format!("joint_set requires exactly one of {name} or release")));
         }
         let id = self.resolve_joint(joint)?;
-        let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
-        if j.kind != JointKind::Slider {
-            return Err(refusal(format!("joint {id} has no editable offset slot for kind {}", kind_name(j.kind))));
+        let j = self.p.joints.iter().find(|j| j.id == id).unwrap().clone();
+        let index = if slot == JointSlot::Angle { 0 } else { 1 };
+        if free_slot(j.kind) != Some(index) {
+            return Err(refusal(format!("joint {id} has no editable {name} slot for kind {}", kind_name(j.kind))));
         }
         let owners: HashSet<_> = [j.a, j.b].iter().filter_map(|id| self.p.connector(*id).map(|c| c.owner)).collect();
         self.check_supported_parts(&owners)?;
         for owner in owners {
             self.root_part(owner)?;
         }
-        let previous = j.offset;
-        let old_expression = self.p.feat_dim(id, "offset").map(str::to_string);
-        let wanted = offset.map(|value| value.eval(&self.p.param_map())).transpose()?;
-        let clamped = wanted.map(|v| j.clamp_slot(1, v));
-        let same = match offset {
-            Some(value) => old_expression == value.expr() && j.drive[1] == clamped,
-            None => old_expression.is_none() && j.drive[1].is_none(),
+        let previous = [j.angle, j.offset, j.offset2][index];
+        let old_expression = self.p.feat_dim(id, name).map(str::to_string);
+        let wanted = value.map(|value| value.eval(&self.p.param_map())).transpose()?;
+        let clamped = wanted.map(|v| j.clamp_slot(index, v));
+        let same = match value {
+            Some(value) => old_expression == value.expr() && j.drive[index] == clamped,
+            None => old_expression.is_none() && j.drive[index].is_none(),
+        };
+        let finish = |s: &Self, r: &mut Value, applied: Option<f64>| {
+            r["previous"] = json!(previous);
+            r["requested"] = json!(value);
+            r["evaluated"] = json!(wanted);
+            r["clamped"] = clamp_report(id, index, wanted, applied);
+            let _ = s;
         };
         if same {
             let mut r = self.joint_result(id, false);
-            r["previous"] = json!(previous);
-            r["requested"] = json!(offset);
-            r["evaluated"] = json!(wanted);
-            r["clamped"] = clamp_report(id, 1, wanted, clamped);
+            finish(self, &mut r, clamped);
             return Ok(r);
         }
-        self.assembly_edit("joint_set", json!({"joint":joint,"offset":offset,"release":release}), |s| {
-            if let Some(value) = offset {
-                s.write_drive(id, 1, value)?;
+        let args = if slot == JointSlot::Angle {
+            json!({"joint":joint,"angle":value,"release":release.then_some("angle")})
+        } else {
+            json!({"joint":joint,"offset":value,"release":release.then_some("offset")})
+        };
+        self.assembly_edit("joint_set", args, |s| {
+            if let Some(value) = value {
+                s.write_drive(id, index, value)?;
             } else {
-                s.p.set_feat_dim(id, "offset", String::new());
-                s.p.set_joint_drive(id, 1, None);
+                s.p.set_feat_dim(id, name, String::new());
+                s.p.set_joint_drive(id, index, None);
             }
-            if offset.is_some_and(|v| v.expr().is_some()) {
+            s.check_angle_domain(id)?;
+            if value.is_some_and(|v| v.expr().is_some()) {
                 s.rebuild_joint_formulas()?;
             }
-            let applied = s.p.joints.iter().find(|j| j.id == id).and_then(|j| j.drive[1]);
-            s.assembly_accept(wanted.and(applied).map(|value| (id, 1, value)))?;
+            let applied = s.p.joints.iter().find(|j| j.id == id).and_then(|j| j.drive[index]);
+            s.assembly_accept(wanted.and(applied).map(|value| (id, index, value)))?;
             let mut r = s.joint_result(id, true);
-            r["previous"] = json!(previous);
-            r["requested"] = json!(offset);
-            r["evaluated"] = json!(wanted);
-            r["clamped"] = clamp_report(id, 1, wanted, applied);
+            finish(s, &mut r, applied);
             Ok(r)
         })
     }
@@ -844,10 +1052,13 @@ impl Session {
     }
     fn joint_result(&self, id: Id, changed: bool) -> Value {
         let j = self.p.joints.iter().find(|j| j.id == id).unwrap();
+        // The reported slot: the kind's free slot (Revolute angle), else the travel slot as ADR 0051 reports it.
+        let slot = free_slot(j.kind).unwrap_or(1);
+        let key = SLOT_KEYS[slot];
         let anchor = |cid| {
-            self.p.connector(cid).map(|c|json!({"connector":cid,"owner_part":c.owner,"anchor":c.anchor,"body":match &c.anchor {AnchorRef::FaceCenter(b,_)=>Some(*b),_=>None},"face":match &c.anchor {AnchorRef::FaceCenter(_,f)=>Some(f.id),_=>None},"axis_ref":c.axis_ref,"frame_local":self.p.connector_matrix(cid),"frame_for_kind_local":self.p.connector_frame_for_kind(c,j.kind).map(|f|f.matrix12())}))
+            self.p.connector(cid).map(|c|json!({"connector":cid,"owner_part":c.owner,"anchor":c.anchor,"body":match &c.anchor {AnchorRef::FaceCenter(b,_)|AnchorRef::EdgeMid(b,_)=>Some(*b),_=>None},"face":match &c.anchor {AnchorRef::FaceCenter(_,f)=>Some(f.id),_=>None},"edge":match &c.anchor {AnchorRef::EdgeMid(_,e)=>Some(*e),_=>None},"axis_ref":c.axis_ref,"frame_local":self.p.connector_matrix(cid),"frame_for_kind_local":self.p.connector_frame_for_kind(c,j.kind).map(|f|f.matrix12())}))
         };
-        json!({"joint":{"id":id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind)},"connector_ids":[j.a,j.b],"a":anchor(j.a),"b":anchor(j.b),"mode":if j.as_built.is_some(){"as_built"}else{"align"},"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"flip_decided":j.flip_decided,"offset":j.offset,"read":j.offset,"unit":"mm","free_slots":j.kind.free_slots(),"drive":j.drive,"expression":self.p.feat_dim(id,"offset"),"expressions":self.p.feat_dims.get(&id),"driven":j.drive[1].is_some(),"state":if self.p.feat_dim(id,"offset").is_some(){"formula"}else if j.drive[1].is_some(){"numeric"}else{"free"},"signed_world_axis":self.p.joint_slot_axis(id,1,self.p.root),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(id),"at_limit":self.at_limit(id),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
+        json!({"joint":{"id":id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind)},"connector_ids":[j.a,j.b],"a":anchor(j.a),"b":anchor(j.b),"mode":if j.as_built.is_some(){"as_built"}else{"align"},"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"flip_decided":j.flip_decided,"offset":j.offset,"angle":j.angle,"read":([j.angle,j.offset,j.offset2][slot]),"unit":(if slot==0{"deg"}else{"mm"}),"free_slots":j.kind.free_slots(),"drive":j.drive,"expression":self.p.feat_dim(id,key),"expressions":self.p.feat_dims.get(&id),"driven":j.drive[slot].is_some(),"state":if self.p.feat_dim(id,key).is_some(){"formula"}else if j.drive[slot].is_some(){"numeric"}else{"free"},"signed_world_axis":self.p.joint_slot_axis(id,slot,self.p.root),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(id),"at_limit":self.at_limit(id),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
     }
     /// Formulas of the free slot's bounds, as `{min?, max?}`.
     fn limit_formulas(&self, id: Id) -> Value {
@@ -867,7 +1078,7 @@ impl Session {
     }
     pub fn assembly_info(&self) -> Value {
         let diagnostics = self.assembly_diagnostics();
-        let mut value = json!({"root":self.p.root,"active_component":self.p.active_component,"components":self.component_info(),"parts":self.component_info().into_iter().filter(|c|c.kind=="part").collect::<Vec<_>>(),"connectors":self.p.connectors,"joints":self.p.joints.iter().map(|j|json!({"id":j.id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind),"free_slots":j.kind.free_slots(),"a":j.a,"b":j.b,"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"drive":j.drive,"read":[j.angle,j.offset,j.offset2],"slots":[{"name":"angle","unit":"deg","read":j.angle,"drive":j.drive[0],"formula":self.p.feat_dim(j.id,"angle")},{"name":"offset","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset,"drive":j.drive[1],"formula":self.p.feat_dim(j.id,"offset")},{"name":"offset2","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset2,"drive":j.drive[2],"formula":self.p.feat_dim(j.id,"offset2")}],"expressions":self.p.feat_dims.get(&j.id),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(j.id),"at_limit":self.at_limit(j.id),"signed_world_axis":self.p.joint_slot_axis(j.id,1,self.p.root)})).collect::<Vec<_>>(),"constraints":self.p.mate_constraints,"relations":self.p.relations,"diagnostics":diagnostics,"healthy":diagnostics["healthy"]});
+        let mut value = json!({"root":self.p.root,"active_component":self.p.active_component,"components":self.component_info(),"parts":self.component_info().into_iter().filter(|c|c.kind=="part").collect::<Vec<_>>(),"connectors":self.p.connectors,"joints":self.p.joints.iter().map(|j|json!({"id":j.id,"name":crate::localization::name(&j.name),"kind":kind_name(j.kind),"free_slots":j.kind.free_slots(),"a":j.a,"b":j.b,"as_built":j.as_built,"flip":j.flip,"roll_flip":j.roll_flip,"drive":j.drive,"read":[j.angle,j.offset,j.offset2],"slots":[{"name":"angle","unit":"deg","read":j.angle,"drive":j.drive[0],"formula":self.p.feat_dim(j.id,"angle")},{"name":"offset","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset,"drive":j.drive[1],"formula":self.p.feat_dim(j.id,"offset")},{"name":"offset2","unit":if j.kind==JointKind::Ball {"deg"}else{"mm"},"read":j.offset2,"drive":j.drive[2],"formula":self.p.feat_dim(j.id,"offset2")}],"expressions":self.p.feat_dims.get(&j.id),"limit_min":j.limit_min,"limit_max":j.limit_max,"limit_formulas":self.limit_formulas(j.id),"at_limit":self.at_limit(j.id),"signed_world_axis":self.p.joint_slot_axis(j.id,free_slot(j.kind).unwrap_or(1),self.p.root)})).collect::<Vec<_>>(),"constraints":self.p.mate_constraints,"relations":self.p.relations,"diagnostics":diagnostics,"healthy":diagnostics["healthy"]});
         for key in ["joint_faults", "faulty_joints", "violated_joints", "conflict", "solve_errors"] {
             value[key] = diagnostics[key].clone();
         }
@@ -918,6 +1129,20 @@ impl Session {
                 }
             }
             self.check_limits(j.id)?;
+            if j.kind == JointKind::Revolute {
+                if let Some(expr) = self.p.feat_dim(j.id, "angle").filter(|e| !e.trim().is_empty()) {
+                    let v = Num::Expr(expr.into()).eval(&vars)?;
+                    let (min, max) = self.evaluated_limits(j.id, 0)?;
+                    let held = max.map_or(v, |hi| v.min(hi));
+                    let held = min.map_or(held, |lo| held.max(lo));
+                    if !(held > -180.0 && held <= 180.0) {
+                        return Err(refusal(format!(
+                            "joint {} angle {v}° is outside (-180, 180]: QymCAD reads angles wrapped to (-180, 180], so the reading would disagree with the drive (F-158); nothing was changed",
+                            j.id
+                        )));
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1103,7 +1328,7 @@ impl Session {
         let mut ids = Vec::new();
         for j in &p.joints {
             if [j.a, j.b].iter().filter_map(|c| p.connector(*c)).any(|c| connected.contains(&c.owner))
-                && !matches!(j.kind, JointKind::Rigid | JointKind::Slider)
+                && !matches!(j.kind, JointKind::Rigid | JointKind::Slider | JointKind::Revolute)
             {
                 ids.push(j.id);
             }
@@ -1160,7 +1385,7 @@ impl Session {
         ids.dedup();
         if !ids.is_empty() {
             return Err(refusal(format!(
-                "assembly edit touches unsupported constraints or relations {ids:?}; package A supports root-level Rigid and Slider joints"
+                "assembly edit touches unsupported constraints or relations {ids:?}; package A supports root-level Rigid, Slider and Revolute joints"
             )));
         }
         Ok(())

@@ -6769,7 +6769,7 @@ Replace a free ungrounded root-child Part's parent-local rigid placement. Leaves
 
 ## ground
 
-Set grounding on a root-child native Part, then solve and verify the mechanism atomically. Refuses ungrounding a joint's anchor A Part or grounding a Slider's moving B Part. No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.
+Set grounding on a root-child native Part, then solve and verify the mechanism atomically. Refuses ungrounding a joint's anchor A Part or grounding a Slider's or Revolute's moving B Part (a grounded B does not move and QymCAD reports nothing, F-159). No implicit grounding is introduced by joint_create. Undoable; allowed in batch; same-state no-op skips history.
 
 ```json
 {
@@ -6821,7 +6821,7 @@ Set grounding on a root-child native Part, then solve and verify the mechanism a
 
 ## joint_create
 
-Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts. A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.
+Create a native Rigid or Slider between exactly one current planar face on each of two root-child Parts, or a Revolute hinge between exactly one straight edge on each (the app's Joint tool with an edge picked). A must be grounded. Slider requires ungrounded B and axis.base_plane; XZ travels -Y. Revolute requires ungrounded B, mode as_built and collinear edges (place the Part on the hinge first: QymCAD turns about B's edge and ignores A's), refuses face anchors (a planar face turns the Part about its normal), axis and offset, and takes angle in degrees within (-180, 180] (readings wrap, F-158); the signed angle follows the edge frames, so read the reached pose from the result. as_built preserves the existing pose before solving. Anchors accept descriptions so batch needs no topology call. Optional offset is absolute Slider drive, including zero; optional limits {min,max} are set before it, so an offset past them is clamped and reported. Returns connectors, placements, native slot/drive/formula/limits and health; failures restore everything. Undoable; allowed in batch.
 
 ```json
 {
@@ -6833,42 +6833,83 @@ Create a native Rigid or Slider between exactly one current planar face on each 
           "$ref": "#/$defs/ObjRef",
           "description": "Current body id or unique name. Its owner Part determines the connector's local coordinate frame."
         },
+        "edge": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "items": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "enum": [
+                    "largest"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
+              ],
+              "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), and fallback facet normals can require about 20–30 degrees. Bare corner and positive `and` previews count omitted uncertain candidates; an `and` requiring both signs matches no edge and reports no omission. Other compositions report the uncertain body total: corner filters treat those edges as neither concave nor convex; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's classification. In hole/shell/push_face/draft, any selection containing a kind freezes its whole resolved face set as persistent picks at creation; it does not rediscover faces after edits. Selections without kinds stay dynamic. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Revolute: exactly one current straight edge (the hinge axis), persistent id or edge selection description, in\npart-local coordinates. Give exactly one of face or edge."
+        },
         "face": {
           "anyOf": [
             {
-              "items": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "type": "array"
-            },
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "enum": [
-                "largest"
+              "anyOf": [
+                {
+                  "items": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "enum": [
+                    "largest"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "object"
+                }
               ],
-              "type": "string"
+              "description": "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); {\"concave\": true} / {\"convex\": true} inward/outward corners between two distinct faces, including curved junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), and fallback facet normals can require about 20–30 degrees. Bare corner and positive `and` previews count omitted uncertain candidates; an `and` requiring both signs matches no edge and reports no omission. Other compositions report the uncertain body total: corner filters treat those edges as neither concave nor convex; {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} the edges bounding faces; {\"tangent_chain\": <edge selection>} edges continuing them smoothly; {\"between\": [<faces>, <faces>]} edges where the two face sets meet; {\"union\": [...]}, {\"minus\": [a, b]}, {\"and\": [a, b, ...]} intersection of at least two selections. {\"kind\": \"line\"|\"circle\"|\"arc\"|\"curve\"|\"other\"} edges; curve combines arc/other and excludes full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's classification. In hole/shell/push_face/draft, any selection containing a kind freezes its whole resolved face set as persistent picks at creation; it does not rediscover faces after edits. Selections without kinds stay dynamic. Example, the top outline of a block: {\"edges_of\": {\"facing\": \"+z\"}}."
             },
             {
-              "type": "object"
+              "type": "null"
             }
           ],
-          "description": "Exactly one current planar face: persistent id or existing face selection description, in part-local coordinates."
+          "description": "Rigid/Slider: exactly one current planar face, persistent id or existing face selection description, in\npart-local coordinates. Give exactly one of face or edge."
         }
       },
       "required": [
-        "body",
-        "face"
+        "body"
       ],
       "type": "object"
     },
     "AssemblyJointKind": {
       "enum": [
         "rigid",
-        "slider"
+        "slider",
+        "revolute"
       ],
       "type": "string"
     },
@@ -6958,7 +6999,18 @@ Create a native Rigid or Slider between exactly one current planar face on each 
   "properties": {
     "a": {
       "$ref": "#/$defs/Anchor",
-      "description": "Planar face anchor on grounded root-child Part A."
+      "description": "Anchor on grounded root-child Part A: a planar face (Rigid/Slider) or a straight edge (Revolute)."
+    },
+    "angle": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional absolute Revolute angle in degrees within (-180, 180]: number or native formula."
     },
     "axis": {
       "anyOf": [
@@ -6973,11 +7025,11 @@ Create a native Rigid or Slider between exactly one current planar face on each 
     },
     "b": {
       "$ref": "#/$defs/Anchor",
-      "description": "Planar face anchor on a different root-child Part B; Slider B must be ungrounded."
+      "description": "Anchor on a different root-child Part B; Slider/Revolute B must be ungrounded."
     },
     "kind": {
       "$ref": "#/$defs/AssemblyJointKind",
-      "description": "Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis."
+      "description": "Rigid holds a pose with no freedom; Slider permits motion along an explicit local travel axis; Revolute turns\nabout a hinge made of two collinear straight edges."
     },
     "limits": {
       "anyOf": [
@@ -6988,11 +7040,11 @@ Create a native Rigid or Slider between exactly one current planar face on each 
           "type": "null"
         }
       ],
-      "description": "Optional limits of the free slot (Slider offset in mm), applied before the first drive, as joint_limits."
+      "description": "Optional limits of the free slot (Slider offset in mm, Revolute angle in degrees within [-180, 180]),\napplied before the first drive, as joint_limits."
     },
     "mode": {
       "$ref": "#/$defs/JointMode",
-      "description": "align aligns connector frames; as_built captures the existing relative pose before the first solve."
+      "description": "align aligns connector frames; as_built captures the existing relative pose before the first solve. Revolute\nrequires as_built."
     },
     "name": {
       "description": "Optional native joint label. Duplicate labels require ids when referenced later.",
@@ -7025,7 +7077,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
 
 ## joint_set
 
-Set absolute Slider offset in mm or release it. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}; the reached travel is checked against the applied value. Undoable; allowed in batch.
+Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180], F-158), or release the slot. Numeric offset clears a prior formula and writes a native drive. A formula persists natively and reasserts after app dragging on regeneration; release:'offset' or 'angle' clears both formula and drive and retains the pose. Exactly one action. A request outside the joint's limits is clamped as in the app and reported as clamped {joint, slot, requested, applied}; the reached travel is checked against the applied value. Undoable; allowed in batch.
 
 ```json
 {
@@ -7056,16 +7108,28 @@ Set absolute Slider offset in mm or release it. Numeric offset clears a prior fo
     },
     "Release": {
       "enum": [
-        "offset"
+        "offset",
+        "angle"
       ],
       "type": "string"
     }
   },
   "additionalProperties": false,
   "properties": {
+    "angle": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Num"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Revolute: absolute angle in degrees within (-180, 180], number or native formula."
+    },
     "joint": {
       "$ref": "#/$defs/JointRef",
-      "description": "Native joint id or unique name; only Slider offset is editable in package A."
+      "description": "Native joint id or unique name: a Slider (offset) or a Revolute (angle)."
     },
     "offset": {
       "anyOf": [
@@ -7076,7 +7140,7 @@ Set absolute Slider offset in mm or release it. Numeric offset clears a prior fo
           "type": "null"
         }
       ],
-      "description": "Absolute travel in mm, number or native formula. Numeric requests clear a previous formula."
+      "description": "Slider: absolute travel in mm, number or native formula. Numeric requests clear a previous formula."
     },
     "release": {
       "anyOf": [
@@ -7087,7 +7151,7 @@ Set absolute Slider offset in mm or release it. Numeric offset clears a prior fo
           "type": "null"
         }
       ],
-      "description": "Give \"offset\" instead of offset to clear both formula and drive, retaining the reached pose for dragging."
+      "description": "Give \"offset\" or \"angle\" instead of a value to clear both formula and drive, retaining the reached pose."
     }
   },
   "required": [
@@ -7099,7 +7163,7 @@ Set absolute Slider offset in mm or release it. Numeric offset clears a prior fo
 
 ## joint_limits
 
-The app's Limits section of the joint box for a Slider's offset (mm): each bound is a tick plus a number or formula (formulas persist natively under min1/max1 and follow parameters), range ±100000 as in the app's fields. Omitted keeps a bound, null ticks it off with its formula. A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; assembly_info reports at_limit. Refused: min above max, now or after any later parameter edit (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). Undoable; allowed in batch.
+The app's Limits section of the joint box for a Slider's offset (mm) or a Revolute's angle (degrees, bounds within [-180, 180]: QymCAD compares them with a reading wrapped to (-180, 180], F-158): each bound is a tick plus a number or formula (formulas persist natively under min<slot>/max<slot> and follow parameters), range ±100000 as in the app's fields. Omitted keeps a bound, null ticks it off with its formula. A limit clamps a value as QymCAD does: a bound past the current travel moves the Part to it, and the result reports clamped {joint, slot, requested, applied}; assembly_info reports at_limit. Refused: min above max, now or after any later parameter edit (QymCAD would send every value to max, F-157); a Rigid joint (no free slot). Undoable; allowed in batch.
 
 ```json
 {
@@ -7141,7 +7205,7 @@ The app's Limits section of the joint box for a Slider's offset (mm): each bound
   "properties": {
     "joint": {
       "$ref": "#/$defs/JointRef",
-      "description": "Native joint id or unique name (Slider)."
+      "description": "Native joint id or unique name (Slider or Revolute)."
     },
     "max": {
       "anyOf": [
@@ -7176,7 +7240,7 @@ The app's Limits section of the joint box for a Slider's offset (mm): each bound
           "type": "null"
         }
       ],
-      "description": "The free slot to limit; defaults to the joint's only free slot (Slider: offset). Naming another slot is refused."
+      "description": "The free slot to limit; defaults to the joint's only free slot (Slider: offset, Revolute: angle). Naming another slot is refused."
     }
   },
   "required": [

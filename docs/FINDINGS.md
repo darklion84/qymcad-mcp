@@ -2824,3 +2824,36 @@ The same gap applies to a pattern whose source is a projection: the source moves
   evaluated edit that would make it so. Test: `golden_joint_limits::refusals_leave_the_document_unchanged`.
 - **Upstream issue candidate:** set a Slider's min above its max → every value jumps to max silently. Minimal
   reproduction as the test above.
+
+## F-158 Revolute angles are read wrapped to (−180°, 180°], so limits past ±180 snap a released part back
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** `measured_slot` reads a rotation with `atan2` (`asm/bridge.rs:555-563`) and nothing unwraps it. Limits
+  are compared with that reading in the free-slot active set (`asm/bridge.rs:439-480`), so a door driven to −200°
+  reads +160°; released, 160 > max 0 and the door is pinned at 0 (shut) with no error. A drive of ±270 reads ∓90
+  forever.
+- **Executed native evidence:** `golden_revolute::native_angle_limits_beyond_180_snap_a_released_door_shut_f158` (app
+  data path, no Session): the golden door, limits [−270, 0], drive −200 → reading 160; drive cleared → reading 0, no
+  errors, no conflict. Research run R6.
+- **Server policy (ADR 0054, protective refusal):** Revolute drives must lie in (−180, 180] and angle limits in
+  [−180, 180], on creation, `joint_set`, `joint_limits` and every evaluated edit. Tests:
+  `golden_revolute::creation_refusals_leave_the_document_unchanged`, `edit_refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** Revolute limits [−270, 0], drive −200, release → the part snaps to 0. Minimal
+  reproduction as the test above.
+
+## F-159 A driven joint whose moving Part is grounded does not move and reports nothing
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** the solver moves B's Part; a grounded B is fixed, so the drive is not reached, but `solve_joints`
+  returns no error, `mates_violated` stays empty and `joint_faults` is empty. The app grounds A implicitly when nothing
+  is grounded (`picks.rs:572-575`) and does not stop B from being grounded.
+- **Executed native evidence:** `golden_revolute::native_a_grounded_door_ignores_its_drive_silently_f159` (app data
+  path, no Session): the golden door grounded, drive −45 → reading 0, no errors, no conflict, no faults. Research run
+  R5.
+- **Server policy (ADR 0054, protective refusal):** `joint_create` refuses a grounded Revolute B and `ground` refuses
+  grounding it (as ADR 0051 already did for a Slider's B). The server's request-versus-read check would also catch it.
+  Tests: `golden_revolute::creation_refusals_leave_the_document_unchanged`, `edit_refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** ground the moving Part of a Revolute, set an angle → nothing moves, nothing is said.
+  Minimal reproduction as the test above.

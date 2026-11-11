@@ -48,11 +48,12 @@ fn attach(s: &mut Session, owner: Id, a: Id, af: u32, b: Id, bf: u32) -> Id {
     s.joint_create(&JointCreate {
         name: Some("lifecycle rail".into()),
         kind: AssemblyJointKind::Slider,
-        a: JointAnchor { body: a, face: Sel::Ids(vec![af]) },
-        b: JointAnchor { body: b, face: Sel::Ids(vec![bf]) },
+        a: JointAnchor::face(a, Sel::Ids(vec![af])),
+        b: JointAnchor::face(b, Sel::Ids(vec![bf])),
         mode: JointMode::AsBuilt,
         axis: Some(BaseName::XZ),
         offset: Some(0.0.into()),
+        angle: None,
         limits: None,
     })
     .unwrap()["joint"]["id"]
@@ -229,7 +230,7 @@ fn a_lifecycle_disconnected_group_is_preserved_and_affected_edit_refuses() {
     assert_eq!(
         err.to_string(),
         format!(
-            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid and Slider joints"
+            "assembly edit touches unsupported constraints or relations [{group}]; package A supports root-level Rigid, Slider and Revolute joints"
         )
     );
     assert_eq!(exact(&s), before);
@@ -255,7 +256,7 @@ fn a_lifecycle_disconnected_relation_is_preserved_and_affected_edit_refuses() {
     assert_eq!(s.assembly_info()["relations"], records);
     let before = exact(&s);
     assert_eq!(s.joint_set(&JointRef::Id(first),Some(&10.0.into()),None).unwrap_err().to_string(),
-        format!("assembly edit touches unsupported constraints or relations [{relation}]; package A supports root-level Rigid and Slider joints"));
+        format!("assembly edit touches unsupported constraints or relations [{relation}]; package A supports root-level Rigid, Slider and Revolute joints"));
     assert_eq!(exact(&s), before);
     s.param_set("unrelated", &4.0.into()).unwrap();
     assert!(s.assembly_info()["healthy"].as_bool().unwrap());
@@ -275,17 +276,18 @@ fn a_lifecycle_face_ids_resolve_in_the_named_body_only() {
     let mut request = JointCreate {
         name: None,
         kind: AssemblyJointKind::Slider,
-        a: JointAnchor { body: stock, face: Sel::Ids(vec![af]) },
-        b: JointAnchor { body: drawer, face: Sel::Ids(vec![af]) },
+        a: JointAnchor::face(stock, Sel::Ids(vec![af])),
+        b: JointAnchor::face(drawer, Sel::Ids(vec![af])),
         mode: JointMode::AsBuilt,
         axis: Some(BaseName::XZ),
         offset: None,
+        angle: None,
         limits: None,
     };
     let before = exact(&s);
     assert!(s.joint_create(&request).is_err());
     assert_eq!(exact(&s), before);
-    request.b.face = Sel::Ids(vec![bf]);
+    request.b.pick = AnchorPick::Face(Sel::Ids(vec![bf]));
     s.joint_create(&request).unwrap();
     assert!(s.assembly_info()["healthy"].as_bool().unwrap());
 }
