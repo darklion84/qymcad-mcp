@@ -78,7 +78,8 @@ evidence. Missing or ambiguous actual face witnesses cannot be replaced by FaceK
 Every mutation that can affect placements or anchors must use the same acceptance policy. Geometry changes,
 parameter/dimension edits, deletion, suppression, rollback and reorder that invalidate an existing joint refuse
 atomically. A consumed source is not automatically a lost anchor: a retained actual native face witness can
-remain meaningful. Positive unrelated edits remain supported. Snapshots retain the whole Project, original live
+remain meaningful only while the face has the same centroid and normal on the current body; otherwise the connector
+reads the consumed body's stale face and the edit is refused (amended by ADR 0054 §4, F-160). Positive unrelated edits remain supported. Snapshots retain the whole Project, original live
 B-rep handles/absence and diagnostics; failure restores them without a repair regeneration or solve. All new
 mutations use the existing history boundary, including persisted `part_select`; no-op standalone calls skip it.
 

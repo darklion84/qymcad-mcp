@@ -2867,7 +2867,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Upstream issue candidate:** ground the moving Part of a Revolute, set an angle → nothing moves, nothing is said.
   Minimal reproduction as the test above.
 
-## F-160 A feature that consumes the anchored body leaves a hinge on the consumed body's old edge
+## F-160 A feature that consumes the anchored body leaves a joint on the consumed body's old edge or face
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
 - **Upstream:** not filed (owner files after dedupe).
@@ -2880,8 +2880,12 @@ The same gap applies to a pattern whose source is a projection: the source moves
   (app data path, no Session): the golden door at −90°, `add_push_face` of the carcass's +X face by 20 mm → the edge of
   the current body is at x = 30, the connector still names the consumed body whose stale edge is at x = 10, the door
   still turns about x = 10 (now inside the pushed panel), and `joint_faults`, `mates_violated` and the solve report
-  nothing. (Face anchors of Rigid/Slider joints behave the same way; ADR 0051 accepted that policy for faces.)
-- **Server policy (ADR 0054, protective refusal, H5 fix round):** the edge-anchor health check follows the anchored
+  nothing. Face anchors of Rigid/Slider joints behave the same way (`FaceCenter` reads `regen_faces[body]` of the
+  consumed body): `golden_face_anchor_witness::native_a_pushed_body_keeps_the_face_anchor_on_the_consumed_bodys_old_face_f160`
+  pushes the carcass's +X face to x = 320 while the stale face the anchor reads stays at x = 300, and the solve reports
+  nothing. This affected the released .12/.13 (ADR 0051 accepted a retained face witness as meaningful; it is not when
+  the face moved).
+- **Server policy (ADR 0051/0054, protective refusal, H5 fix round and H5b):** the edge-anchor health check follows the anchored
   body to the body that now carries it (`current_heads`) and requires exactly one edge with the persistent id there, in
   the same place as the consumed body's edge. An edit that moves or removes the hinge edge (push_face of a face it
   bounds, fillet or chamfer of the edge itself, a reorder that changes it, suppression) is refused atomically as
@@ -2891,6 +2895,10 @@ The same gap applies to a pattern whose source is a projection: the source moves
   `a_feature_that_moves_or_removes_the_hinge_edge_of_the_door_is_refused`,
   `a_push_face_or_chamfer_away_from_the_hinge_edge_of_the_carcass_is_allowed`,
   `reordering_modifiers_of_a_hinge_body_keeps_the_hinge_on_the_current_body`, `suppressing_the_anchored_body_is_refused`.
+  The face-anchor check has the same rule (H5b): exactly one face with the persistent id on the current body, with the
+  consumed body's centroid and normal (1e-5 / 1e-6). A push_face of the anchored or an adjoining face (its centroid
+  moves) and a fillet or chamfer of an edge of the face are refused; a fillet elsewhere, a push_face of the opposite
+  face and a hole in another face go through. Tests: `golden_face_anchor_witness` (carcass and drawer, Slider and Rigid).
 - **Upstream issue candidate:** hinge on a body's edge, push the adjacent face → the part turns about the old edge,
   nothing is said. Minimal reproduction as the native test above.
 

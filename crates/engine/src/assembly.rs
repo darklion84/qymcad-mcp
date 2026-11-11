@@ -319,8 +319,19 @@ fn inspect(p: &mut Project, requested: Option<(Id, usize, f64)>, scope: Option<&
         for cid in [j.a, j.b] {
             let Some(c) = p.connector(cid) else { continue };
             let (body, count) = match &c.anchor {
+                // A face has the same rule as an edge below: exactly one face with the persistent id on the CURRENT
+                // body, with the centroid and normal the consumed body's face has, which is where the connector
+                // reads it from (F-160).
                 AnchorRef::FaceCenter(body, key) => {
-                    (body, p.regen_faces.get(body).map_or(0, |faces| faces.iter().filter(|f| f.id == key.id).count()))
+                    let heads = current_heads(p, *body);
+                    let found: Vec<_> = heads
+                        .iter()
+                        .filter_map(|h| p.regen_faces.get(h))
+                        .flat_map(|faces| faces.iter().filter(|f| f.id == key.id))
+                        .collect();
+                    let stale = p.regen_faces.get(body).and_then(|faces| faces.iter().find(|f| f.id == key.id));
+                    let in_place = heads == [*body] || matches!((stale, found.as_slice()), (Some(old), [new]) if same_face(old, new));
+                    (body, if in_place { found.len() } else { 0 })
                 }
                 // A hinge edge: exactly one edge with its persistent id on the CURRENT body, where the connector's
                 // pivot is. Natively the connector stays on the body it names; after a feature consumed that body
@@ -424,6 +435,11 @@ fn current_heads(p: &Project, body: Id) -> Vec<Id> {
     }
     heads.sort_unstable();
     heads
+}
+/// The same face place: centroid and outward normal within the kernel's noise.
+fn same_face(a: &qymcad_core::geom::MeshFace, b: &qymcad_core::geom::MeshFace) -> bool {
+    let (ca, cb) = ([a.centroid.x, a.centroid.y, a.centroid.z], [b.centroid.x, b.centroid.y, b.centroid.z]);
+    (0..3).all(|k| (ca[k] - cb[k]).abs() < 1e-5 && (a.normal[k] - b.normal[k]).abs() < 1e-6)
 }
 /// The same straight edge: midpoint and direction (either sense) within the kernel's noise.
 fn same_edge(mid_a: [f64; 3], dir_a: [f64; 3], mid_b: [f64; 3], dir_b: [f64; 3]) -> bool {

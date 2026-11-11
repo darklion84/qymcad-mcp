@@ -187,7 +187,10 @@ Natively the anchor stays on the consumed body (§3). The witness now looks up t
 (`current_heads`: the consumers' results, followed to the end) and requires exactly one edge with the persistent id
 there, at the consumed body's edge position. Result, pinned for push_face, chamfer, fillet and reorder on both hinge
 bodies: an edit that moves or removes the hinge edge is refused atomically ("edit would invalidate anchors of joints
-[..]"); edits that leave it in place pass and the pivot is unchanged. Face anchors keep the ADR 0051 policy.
+[..]"); edits that leave it in place pass and the pivot is unchanged. H5b (same day): the face anchors of Rigid and
+Slider joints get the same rule, which supersedes ADR 0051's acceptance of a retained face witness on a consumed body
+(the released .12/.13 had the weakness): the face on the current body must have the consumed body's centroid and
+normal, else the edit is refused as invalidating the anchors.
 
 ### 4.4 The ±100000 range is for typed numbers
 
