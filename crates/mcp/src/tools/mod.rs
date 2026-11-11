@@ -156,6 +156,7 @@ fn modelling_tool(name: &str) -> bool {
             | "joint_delete"
             | "part_instance"
             | "part_copy"
+            | "part_delete"
     )
 }
 

@@ -105,8 +105,12 @@ impl Session {
             }
         }
         for (clone, source) in &clones {
-            // Deleting or suppressing the clone's own node would leave an empty Part; the app's tree Delete removes
-            // the whole clone Part (`delete_component`), for which the server has no tool.
+            // part_delete removes a whole clone Part, as the app's tree Delete does (ADR 0054).
+            if !after.components.iter().any(|c| c.id == *clone) {
+                continue;
+            }
+            // Deleting or suppressing the clone's own node alone would leave an empty Part; the app's tree Delete
+            // removes the whole clone Part (`delete_component`), which is part_delete.
             let alone = |p: &Project| {
                 p.timeline
                     .iter()
@@ -116,7 +120,7 @@ impl Session {
             let (was, now) = (alone(before), alone(after));
             if was.is_some() && (now.is_none() || now.map(|n| n.1) != was.map(|n| n.1)) {
                 return Err(refusal(format!(
-                    "part {clone} is an instance of {source}; its instance node cannot be deleted or suppressed alone: the app removes a clone as a whole Part, which this server has no tool for; undo the call that made it to remove the clone"
+                    "part {clone} is an instance of {source}; its instance node cannot be deleted or suppressed alone: the app removes a clone as a whole Part; use part_delete (or undo the call that made it)"
                 )));
             }
             if part_modelled(before, after, *clone) {

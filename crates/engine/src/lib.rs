@@ -36,6 +36,7 @@ mod move_body;
 #[cfg(test)]
 mod ownership_tests;
 mod params;
+mod part_delete;
 mod patterns;
 mod pngfile;
 mod rename;

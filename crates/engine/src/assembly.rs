@@ -619,7 +619,7 @@ impl Session {
             })
             .collect()
     }
-    fn placements(&self) -> Vec<Value> {
+    pub(crate) fn placements(&self) -> Vec<Value> {
         self.p
             .components
             .iter()
@@ -649,7 +649,7 @@ impl Session {
         }
         self.assembly_diagnostics()
     }
-    fn assembly_diagnostics(&self) -> Value {
+    pub(crate) fn assembly_diagnostics(&self) -> Value {
         let mut p = self.p.clone_without_source_data();
         inspect(&mut p, None)
     }
@@ -825,7 +825,7 @@ impl Session {
         }
         touched
     }
-    fn check_supported_parts(&self, parts: &HashSet<Id>) -> Result<()> {
+    pub(crate) fn check_supported_parts(&self, parts: &HashSet<Id>) -> Result<()> {
         Self::check_supported_parts_in(&self.p, parts)
     }
     fn check_supported_parts_in(p: &Project, parts: &HashSet<Id>) -> Result<()> {

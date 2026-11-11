@@ -2756,3 +2756,55 @@ The same gap applies to a pattern whose source is a projection: the source moves
   then past the bar and not built. Test: `golden_instances::suppressing_a_cloned_source_feature_reaches_the_clone_but_its_base_is_refused`.
 - **Upstream issue candidate:** suppress the base of a cloned part → the clone still shows the old solid. Minimal
   reproduction as the test above.
+
+## F-154 Deleting a cloned source Part leaves its clones with the old body and no error
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** `Project::delete_component` (`model/components.rs:171-252`) removes the source's nodes but does not call
+  `mark_copiers_dirty` (feature/body deletion does, `model/timeline/delete.rs:118,400`). The GUI's resync rebuilds
+  dirty nodes only (`qymcad-part/src/topology.rs:91-118`), so the clone's PartInstance node is not rebuilt. A forced
+  rebuild raises `SourcePartHasNoBody` but keeps the last good body (`regen/apply.rs:301-316`); `instance_origin`
+  then names a deleted Part and `clone_part` of the clone returns `None`.
+- **Executed native evidence:** `golden_part_delete::native_deleting_a_cloned_source_leaves_a_stale_clone_f154` (app
+  data path, no Session): knob 40×30×20 and its clone; `delete_component(knob)`; the clone node is not dirty; a
+  dirty-only regenerate reports no error and the clone keeps a 24000 mm³ body; a forced rebuild reports an error and
+  still keeps the body. Research run D3–D5 (`tasks/research-H/run.log`).
+- **Server policy (ADR 0054, protective refusal):** `part_delete` of a Part with clones is refused; delete the clones
+  first. Test: `golden_part_delete::refusals_leave_the_document_unchanged`.
+- **Upstream issue candidate:** delete a cloned Part → its clone silently keeps a stale solid. Minimal reproduction as
+  the test above.
+
+## F-155 Deleting a Part leaves the deleted joints' formulas and the other side's connector
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** `delete_component` drops joints whose connector is dead (`components.rs:223-226`) without
+  `delete_joint`, so the surviving Part's non-standalone connector is not swept, and `feat_dims` of the removed
+  joints (e.g. `offset = open`) stay in the document and in the saved file. Native `delete_joint`
+  (`mate_rules.rs:402-418`) has the same `feat_dims` gap. Regeneration ignores them (`item_value` answers only live
+  joints, `model/item_values.rs:29-41`).
+- **Executed native evidence:** `golden_part_delete::native_deleting_a_part_leaves_joint_formulas_and_connectors_f155`:
+  carcass + drawer on a Slider with formula `open`; `delete_component(drawer)` → no joints, the carcass connector stays
+  with no users, `feat_dims[joint]["offset"] == "open"`. Research run D3/D6.
+- **Server policy (ADR 0054, mirrored, not cleaned):** `part_delete` keeps the leftovers, as the app does, and reports
+  them as `native_leftovers`; the server's own `param_users`/`param_delete` no longer count such orphaned joint
+  formulas as users (before, `param_delete open` was refused as used by a joint that no longer exists). Test:
+  `golden_part_delete::deleting_the_moving_part_removes_it_with_its_joint_and_keeps_the_rest`.
+- **Upstream issue candidate:** delete a Part with a formula-driven joint → the joint's formula and the other
+  connector stay in the file. Minimal reproduction as the test above.
+
+## F-156 Deleting a Part under an active history rollback slides the bar
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** `rollback: Option<usize>` is a timeline index (`model.rs:366`, `timeline/order.rs:10-22`);
+  `delete_component` removes timeline entries but leaves the index unchanged, so nodes formerly past the bar fall
+  inside it and are built at the next rebuild. The app does not ask.
+- **Executed native evidence:** `golden_part_delete::native_deleting_a_part_under_rollback_slides_the_bar_f156`: Parts
+  `a` (one box) and `b` (two bodies), bar after `b`'s first body, `delete_component(a)` → the index stays, and the
+  30×30×30 body that was past the bar is built (27000 mm³). Research run D7.
+- **Server policy (ADR 0054, protective refusal):** `part_delete` is refused while a rollback is active. Test:
+  `golden_part_delete::part_delete_while_a_history_rollback_is_active_is_refused`.
+- **Upstream issue candidate:** roll back, delete an earlier Part → a rolled-back feature appears. Minimal
+  reproduction as the test above.

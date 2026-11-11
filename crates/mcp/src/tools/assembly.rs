@@ -115,6 +115,12 @@ struct Derived {
 }
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct PartDelete {
+    /// Root-child Part id or unique name to delete with all its bodies, sketches and datums.
+    part: PartRef,
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct Info {}
 
 fn changed(state: &mut super::State, result: Value) -> Value {
@@ -152,7 +158,7 @@ pub fn tools() -> Vec<Tool> {
             Ok(changed(st, result))
         }),
         tool("joint_delete", "Delete one native joint and its unshared non-standalone auto-connectors while retaining current Part placements; solve and verify the remaining mechanism. Undoable; allowed in batch.", |st, a: Delete| st.doc()?.joint_delete(&a.joint).map_err(err)),
-        tool("part_instance", "The app's tree action Make a clone (act-clone-part): a new root-child Part whose one native PartInstance body repeats the source Part's single solid body, so every edit of the source reaches it, while it is placed, grounded and jointed as a Part of its own. A clone of a clone repeats the original; the result reports part.instance_of. Without translation_mm the clone stands beside the source along X, as in the app. Refused unless the source has exactly one solid body: a native clone copies only the last body (FINDINGS F-146); use part_copy for multi-body Parts. Refused while a history rollback is active (the native clone would miss later source features, F-152). Later edits that would make a cloned source multi-body, or leave it bodiless while the clone keeps its old body (F-153), and any modelling inside a clone are refused; edit the source part. A clone is removed by undo: the app deletes a clone as a whole Part, and there is no part delete tool. Undoable; allowed in batch.", |st, a: Derived| {
+        tool("part_instance", "The app's tree action Make a clone (act-clone-part): a new root-child Part whose one native PartInstance body repeats the source Part's single solid body, so every edit of the source reaches it, while it is placed, grounded and jointed as a Part of its own. A clone of a clone repeats the original; the result reports part.instance_of. Without translation_mm the clone stands beside the source along X, as in the app. Refused unless the source has exactly one solid body: a native clone copies only the last body (FINDINGS F-146); use part_copy for multi-body Parts. Refused while a history rollback is active (the native clone would miss later source features, F-152). Later edits that would make a cloned source multi-body, or leave it bodiless while the clone keeps its old body (F-153), and any modelling inside a clone are refused; edit the source part. A clone is removed as a whole Part with part_delete, as in the app. Undoable; allowed in batch.", |st, a: Derived| {
             let rotation = a.rotation.map(|rotation| PartRotation {axis:rotation.axis, angle_deg:rotation.angle_deg});
             st.doc()?.part_instance(&a.source, &a.name, a.translation_mm, rotation.as_ref()).map_err(err)
         }),
@@ -160,6 +166,7 @@ pub fn tools() -> Vec<Tool> {
             let rotation = a.rotation.map(|rotation| PartRotation {axis:rotation.axis, angle_deg:rotation.angle_deg});
             st.doc()?.part_copy(&a.source, &a.name, a.translation_mm, rotation.as_ref()).map_err(err)
         }),
+        tool("part_delete", "The app's tree Delete of a Part (delete_component): removes a root-child Part with its bodies, sketches and datums, and every joint that touches it; the other Parts keep their placements (a Part moved by a deleted joint becomes free). If the deleted Part was active, the root becomes active, as in the app. As natively, the surviving Part's connector of a deleted joint and the deleted joint's formulas stay in the file; they are reported as native_leftovers and do not count as parameter users (F-155). Deleting a clone Part keeps its source. Refused: the root; a nested Part; a Part that is the source of clones (QymCAD leaves them with a stale body, F-154: delete the clones first); an active history rollback (the bar would slide, F-156); Parts in component patterns, mirrors, constraints or relations. Returns removed part/bodies/joints/connectors, native_leftovers, active_component, placements and diagnostics. Undoable; allowed in batch.", |st, a: PartDelete| st.doc()?.part_delete(&a.part).map_err(err)),
         tool("assembly_info", "Inspect the root tree, active component, native Parts/placements/grounding/owned bodies, clone links (instance_of on clones, instances on sources), connectors and ordered joints. Reports local/world transforms, actual travel axes, native slots/readings/drives/formulas/limits and separate faults/violations/conflict. Existing unsupported records are preserved and reported. Read-only.", |st, _: Info| Ok(st.doc()?.assembly_info())),
     ]
 }

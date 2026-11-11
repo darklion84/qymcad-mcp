@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- `part_delete`: the app's tree Delete of a Part (`delete_component`) — removes a root-child Part with its bodies, sketches, datums and every joint touching it; the root becomes active if the deleted Part was active; a clone Part can now be deleted (ADR 0053 gap closed); batch and one-step undo (ADR 0054 §1). What the app leaves behind (the other side's connector and the deleted joint's formulas, F-155) is kept and reported as `native_leftovers`.
+
+### Fixed (protective refusals of silent native results, FINDINGS F-154–F-156)
+- `part_delete` refuses a Part that is the source of clones (QymCAD leaves the clones with their old body and no error, F-154) and refuses while a history rollback is active (the bar's index would slide, F-156).
+- `param_users`/`param_delete` no longer count formulas of joints that no longer exist (left by native Part deletion, F-155) as parameter users.
+
 ## 0.1.1-dev.20261026.13 — draft, thicken, part instances and copies (ADR 0052–0053)
 
 ### Added

@@ -303,6 +303,7 @@ fn lists_tools_with_object_schemas() {
         "joint_delete",
         "part_instance",
         "part_copy",
+        "part_delete",
         "assembly_info",
         "measure",
         "batch",

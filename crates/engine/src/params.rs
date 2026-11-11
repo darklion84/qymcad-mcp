@@ -158,7 +158,9 @@ impl Session {
                 out.push(format!("parameter `{}`", q.name));
             }
         }
-        for (node, dims) in &self.p.feat_dims {
+        // Formulas native part deletion leaves behind for joints that no longer exist are read by nothing (F-155).
+        let orphans = crate::part_delete::orphan_joint_formulas(&self.p);
+        for (node, dims) in self.p.feat_dims.iter().filter(|(id, _)| !orphans.contains(id)) {
             let is_sketch = self.p.sketch_index(*node).is_some();
             if is_sketch && dims.iter().any(|(k, e)| k.starts_with("datum_") && mentions(e, name)) {
                 out.push(format!("datum dependency of sketch {} `{}`", node, self.node_name(*node)));
