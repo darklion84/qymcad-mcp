@@ -227,3 +227,13 @@ carries `clamped` (when not null) and `part_delete`'s `native_leftovers`. Tool d
 `golden_revolute` (angle faults from a file, −180, hinge consumed-body cases, align, F-160..F-163 native evidence),
 `golden_part_delete` (nested Part and assembly, component pattern, mirrored Part: native fixtures), `mcp/tests/h1_part_delete`
 and `h2_joint_limits` (compact batch steps).
+
+### 4.9 Files open in the app (H5c, F-166, F-167)
+
+A hinge written by the server opened in QymCAD.app with "support not found": edge and vertex anchors resolve through
+`regen_edges`, which a bundle does not store, and the app's opening rebuilds only dirty nodes (it raises the live B-rep and
+its edges lazily). `Session::save` therefore writes the nodes that build an edge- or vertex-anchored body (imports excluded)
+with `dirty = true` and restores the session's flags after the write. The native tests open files through the app's
+path (`common::native_app_open`: load, rebuild dirty only, solve), not a forced full rebuild. Face anchors resolve from the
+stored faces and need nothing. An edge anchor on an imported body stays unresolved until the app raises the B-rep. The app's
+Limits panel shows only numbers; the same `min<slot>`/`max<slot>` keys are what its glyph popup shows as formulas.

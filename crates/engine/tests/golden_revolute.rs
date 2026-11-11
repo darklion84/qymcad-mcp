@@ -743,3 +743,31 @@ fn align_mode_places_the_door_on_the_hinge_and_turns_about_it() {
         assert_close(y, -200.0, 1e-5, "pivot y");
     }
 }
+
+/// H5c (F-166): what QymCAD.app shows on opening. The GUI check of the hinge files reported "hinge: опора не найдена" and a door
+/// that never moved, while the server called the file healthy: the server's tests rebuilt EVERYTHING after loading, which
+/// fills `regen_edges`, and the app does not (it rebuilds only dirty nodes on opening and raises the edges lazily). The
+/// file must therefore resolve its edge anchors through the app's own open path.
+#[test]
+fn native_app_open_resolves_the_edge_anchors_of_a_saved_hinge_f166() {
+    let mut c = cabinet([210.0, -209.0, 0.0]);
+    let j = hinge(&mut c, JointMode::AsBuilt, Some(Num::Value(-90.0)), None).unwrap()["joint"]["id"].as_u64().unwrap();
+    let path = scratch("h5c-app-open.qcad");
+    c.s.save(Some(&path)).unwrap();
+    let mut m = native_app_open(&path);
+    assert!(m.project.joint_faults().is_empty(), "the app finds the anchors lost: {:?}", m.project.joint_faults());
+    assert!(m.project.mates_violated.is_empty(), "violated: {:?}", m.project.mates_violated);
+    // the door follows the angle in the app's model
+    for deg in [-90.0, -45.0] {
+        m.project.set_joint_drive(j, 0, Some(deg));
+        let solved = m.project.solve_joints();
+        assert!(solved.errors.is_empty());
+        let joint = m.project.joints.iter().find(|x| x.id == j).unwrap();
+        assert_close(joint.angle, deg, 1e-6, "the reading follows the drive");
+        let corners = native_door_xy(&m.project, c.door);
+        let got = native_extent(&corners);
+        let want = turned_box(deg);
+        assert_close(got[0], want[0], 1e-3, "door x min");
+        assert_close(got[1], want[1], 1e-3, "door y min");
+    }
+}

@@ -182,3 +182,21 @@ fn native_a_pushed_body_keeps_the_face_anchor_on_the_consumed_bodys_old_face_f16
     let t = m.project.world_transform(d.drawer);
     assert_close(t[3], world(&s, d.drawer)[3], 1e-6, "the drawer did not follow the pushed face");
 }
+
+/// H5c (F-166): face anchors resolve on QymCAD.app's open path too (`regen_faces` comes back from the bodies of the file), for
+/// both kinds, with nothing marked for a rebuild.
+#[test]
+fn native_app_open_resolves_the_face_anchors_of_rigid_and_slider_f166() {
+    for kind in [AssemblyJointKind::Slider, AssemblyJointKind::Rigid] {
+        let mut d = drawer(kind);
+        let path = scratch(&format!("h5c-face-{kind:?}.qcad"));
+        d.s.save(Some(&path)).unwrap();
+        let m = native_app_open(&path);
+        assert!(m.project.joint_faults().is_empty(), "{kind:?}: {:?}", m.project.joint_faults());
+        assert!(m.project.mates_violated.is_empty() && !m.project.mates_conflict, "{kind:?}");
+        let placed = d.s.project().world_transform(d.drawer);
+        for (a, b) in placed.iter().zip(m.project.world_transform(d.drawer)) {
+            assert_close(b, *a, 1e-6, "the app places the drawer where the server did");
+        }
+    }
+}

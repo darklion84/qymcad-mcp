@@ -359,3 +359,23 @@ pub fn native_assembly_save(model: &NativeAssemblyModel, path: &std::path::Path)
     let breps: Vec<_> = native_assembly_breps(model).into_iter().collect();
     qymcad_io::save_project_guarded_with_brep(&model.project, path.to_str().unwrap(), &breps).unwrap();
 }
+
+/// OPEN A FILE LIKE QymCAD.app'S OPEN PATH, and nothing more (H5c, F-166). `finish_project_load` restores the faces from
+/// the bodies and calls `regenerate_all`, which rebuilds only the DIRTY nodes (its post pass fills `regen_edges` for
+/// those). `ensure_brep`, the other place that fills the edges, is NOT called on opening: it waits for the first operation
+/// that needs a live B-rep. So an edge or vertex anchor resolves in a freshly opened document only when the file marks
+/// the node that builds the anchored body dirty. `native_assembly_load` + `native_assembly_rebuild(force_all)` hides it
+/// because the forced rebuild fills every edge.
+pub fn native_app_open(path: &std::path::Path) -> NativeAssemblyModel {
+    let mut m = native_assembly_load(path);
+    m.project.eval_parameters();
+    let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut m.project, std::mem::take(&mut m.shapes));
+    assert!(report.errors.is_empty(), "app-open regenerate errors: {:?}", report.errors);
+    for (id, faces) in report.built {
+        m.project.set_body_faces(id, faces);
+    }
+    m.shapes = shapes;
+    let solved = m.project.solve_joints();
+    assert!(solved.errors.is_empty(), "app-open joint solve errors: {:?}", solved.errors);
+    m
+}
