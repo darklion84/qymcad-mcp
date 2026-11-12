@@ -216,3 +216,20 @@ impl Session {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::Session;
+
+    /// A datum that was faulty at open and has become healthy loses its exemption with the next successful edit.
+    #[test]
+    fn a_healed_datum_leaves_the_open_fault_set() {
+        let mut s = Session::new_part();
+        let (axis, _) = s.datum_axis(&AxisSpec::Manual { origin: [0.0; 3], dir: [0.0, 0.0, 1.0] }, None).unwrap();
+        s.open_datum_faults.insert(axis.id);
+        s.open_datum_faults.insert(9999);
+        s.param_set("unrelated", &1.0.into()).unwrap();
+        assert!(s.open_datum_faults.is_empty(), "{:?}", s.open_datum_faults);
+    }
+}

@@ -129,7 +129,7 @@ fn removing_an_island_under_a_several_profile_feature_is_refused_and_a_hole_pass
     let volume = s.result_bodies()[0].volume;
     let before = ron::to_string(s.project()).unwrap();
     let e = s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap_err().to_string();
-    assert!(e.contains("F-168") && e.contains("silently drops out") && e.contains("this edit would remove contour"), "{e}");
+    assert!(e.contains("F-168") && e.contains("silently drops out") && e.contains("this edit would remove or open contour"), "{e}");
     assert_eq!(ron::to_string(s.project()).unwrap(), before);
     assert_close(s.result_bodies()[0].volume, volume, 1e-9, "the consumer is untouched");
     // A hole circle removed from a plate extrude: the consumer follows.
@@ -178,4 +178,129 @@ fn construction_survives_save_and_open() {
     assert!(r.errors.is_empty());
     assert!(loaded.project().sketches[0].entity(hole).unwrap().construction);
     assert_eq!(loaded.sketch_info(sk).unwrap().contours.len(), 1);
+}
+
+fn line(s: &mut Session, sk: u64, a: [f64; 2], b: [f64; 2]) -> Added {
+    s.sketch_line(
+        sk,
+        &LineSpec { x1: a[0].into(), y1: a[1].into(), x2: b[0].into(), y2: b[1].into(), construction: false, dimensioned: false },
+    )
+    .unwrap()
+}
+
+/// A 20 x 10 plate split in two regions by a divider; the extrude holds both regions.
+fn divided_plate() -> (Session, u64, u64) {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &10.0.into(), false).unwrap();
+    let divider = line(&mut s, sk, [0.0, -5.0], [0.0, 5.0]).entities[0];
+    assert_eq!(s.sketch_info(sk).unwrap().contours.iter().filter(|c| c.closed).count(), 2, "two regions");
+    extrude_all(&mut s, sk, 5);
+    assert_close(s.result_bodies()[0].volume, 1000.0, 1e-6, "both regions extruded");
+    (s, sk, divider)
+}
+
+/// Round 2, M1: removing the divider merges two held regions; the app builds the whole plate and nothing is lost.
+#[test]
+fn removing_or_turning_a_divider_into_construction_merges_regions_and_passes() {
+    let (mut s, sk, divider) = divided_plate();
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, divider)).unwrap();
+    assert_close(s.result_bodies()[0].volume, 1000.0, 1e-6, "removed divider: the same plate");
+    assert!(s.current_rebuild().errors.is_empty());
+    let (mut t, sk, divider) = divided_plate();
+    toggle(&mut t, sk, &[divider], true).unwrap();
+    assert_close(t.result_bodies()[0].volume, 1000.0, 1e-6, "construction divider: the same plate");
+    assert!(t.current_rebuild().errors.is_empty());
+}
+
+/// M2: an open chain held by the extrude is not a profile; a stray line comes and goes freely, an open polyline may be closed.
+#[test]
+fn open_chains_are_not_profiles_to_the_guard() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    let stray = line(&mut s, sk, [30.0, 0.0], [40.0, 0.0]).entities[0];
+    extrude_all(&mut s, sk, 5);
+    assert_close(s.result_bodies()[0].volume, 500.0, 1e-6, "the square");
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, stray)).unwrap();
+    assert_close(s.result_bodies()[0].volume, 500.0, 1e-6, "the stray line was no profile");
+    // An open U next to the square, closed afterwards.
+    let u = PolylineSpec {
+        points: vec![Xy(30.0.into(), 0.0.into()), Xy(30.0.into(), 10.0.into()), Xy(40.0.into(), 10.0.into()), Xy(40.0.into(), 0.0.into())],
+        closed: false,
+        construction: false,
+        dimensioned: false,
+    };
+    s.sketch_edit(sk, |s| s.sketch_polyline(sk, &u).map(|_| ())).unwrap();
+    s.sketch_edit(sk, |s| {
+        s.sketch_line(
+            sk,
+            &LineSpec { x1: 40.0.into(), y1: 0.0.into(), x2: 30.0.into(), y2: 0.0.into(), construction: false, dimensioned: false },
+        )
+        .map(|_| ())
+    })
+    .unwrap();
+    assert!(s.current_rebuild().errors.is_empty());
+}
+
+/// Accepted app behaviour: a held circle cut in two by a new line stays the same profile for its consumer (the app matches it to a
+/// half), and a new hole inside a held contour is a changed shape; neither is refused (F-177).
+#[test]
+fn dividing_a_held_contour_or_adding_a_hole_is_accepted_app_behaviour() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+    extrude_all(&mut s, sk, 5);
+    assert_close(s.result_bodies()[0].volume, 500.0 + std::f64::consts::PI * 125.0, 1e-3, "square and disc");
+    s.sketch_edit(sk, |s| {
+        s.sketch_line(
+            sk,
+            &LineSpec { x1: 10.0.into(), y1: 0.0.into(), x2: 30.0.into(), y2: 0.0.into(), construction: false, dimensioned: false },
+        )
+        .map(|_| ())
+    })
+    .unwrap();
+    // The app keeps the held id on one half; the other half is a new region the feature does not hold (accepted, F-177).
+    assert_close(s.result_bodies()[0].volume, 500.0 + std::f64::consts::PI * 125.0 / 2.0, 1e-3, "square and the held half disc");
+    s.sketch_edit(sk, |s| s.sketch_circle(sk, &(-20.0).into(), &0.0.into(), &4.0.into(), false).map(|_| ())).unwrap();
+    assert!(s.current_rebuild().errors.is_empty());
+}
+
+/// Features that are suppressed or past the rollback bar do not build, so an island they hold is nobody's loss.
+#[test]
+fn suppressed_and_rolled_back_features_are_not_judged() {
+    let island_doc = || {
+        let mut s = Session::new_part();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+        let island = s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+        let (body, _) = s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+        (s, sk, island, body)
+    };
+    let (mut s, sk, island, body) = island_doc();
+    s.feature_suppress(body, true).unwrap();
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap();
+    let (mut s, sk, island, _) = island_doc();
+    s.history_rollback(Some(sk), None).unwrap();
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap();
+}
+
+/// Trimming an island open is refused like removing it.
+#[test]
+fn trimming_a_held_island_open_is_refused() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+    // A vertical cutter through the disc cuts it into two regions held by the extrude; trimming the right half's arc opens it.
+    line(&mut s, sk, [20.0, -8.0], [20.0, 8.0]);
+    extrude_all(&mut s, sk, 5);
+    let circle = s.sketch_detail(sk).unwrap().entities.iter().find(|e| e.kind == "circle" || e.kind == "arc").map(|e| e.id).unwrap();
+    let before = ron::to_string(s.project()).unwrap();
+    let e = s
+        .sketch_edit(sk, |s| s.sketch_trim(sk, &CurvePickSpec { curve: EntityRef::Id(circle), at: [25.0.into(), 0.0.into()] }).map(|_| ()));
+    let e = e.unwrap_err().to_string();
+    assert!(e.contains("remove or open contour") && e.contains("F-177"), "{e}");
+    assert_eq!(ron::to_string(s.project()).unwrap(), before);
 }

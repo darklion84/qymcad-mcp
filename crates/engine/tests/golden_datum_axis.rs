@@ -413,6 +413,7 @@ fn a_dimension_on_the_explicit_marker_is_not_about_f170() {
 #[test]
 fn an_axis_needs_the_active_part_s_points_and_a_part_not_the_root() {
     let mut s = Session::new_part();
+    let first = s.project().active_component.unwrap();
     let (p, _) = s.datum_point(&PointSpec::At(["0".into(), "0".into(), "0".into()]), None).unwrap();
     s.part_new("other").unwrap();
     let (q, _) = s.datum_point(&PointSpec::At(["0".into(), "0".into(), "5".into()]), None).unwrap();
@@ -421,9 +422,15 @@ fn an_axis_needs_the_active_part_s_points_and_a_part_not_the_root() {
     let e = s.datum_axis(&AxisSpec::Points([p.id, q.id]), None).unwrap_err().to_string();
     assert!(e.contains(&format!("datum point {}", p.id)) && e.contains("another Part"), "{e}");
     assert!(snap(&s) == before);
-    // Both in the other Part is fine, and both in the first Part after part_select.
+    // Both in the other Part is fine, and both in the first Part after part_select; the mixed pair is refused from either side.
     let (r, _) = s.datum_point(&PointSpec::At(["5".into(), "0".into(), "0".into()]), None).unwrap();
     s.datum_axis(&AxisSpec::Points([q.id, r.id]), None).unwrap();
+    s.part_select(&PartRef::Id(first)).unwrap();
+    let (p2, _) = s.datum_point(&PointSpec::At(["0".into(), "5".into(), "0".into()]), None).unwrap();
+    s.datum_axis(&AxisSpec::Points([p.id, p2.id]), None).unwrap();
+    let e = s.datum_axis(&AxisSpec::Points([p.id, q.id]), None).unwrap_err().to_string();
+    assert!(e.contains(&format!("datum point {}", q.id)) && e.contains("another Part"), "{e}");
+    s.part_select(&PartRef::Root { root: true }).unwrap();
     // The assembly root is not a Part.
     s.part_select(&PartRef::Root { root: true }).unwrap();
     let before = snap(&s);

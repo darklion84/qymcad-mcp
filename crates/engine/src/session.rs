@@ -1190,6 +1190,10 @@ impl Session {
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
             self.shapes.retain(|id, _| live.contains(id) && before_shape_ids.contains(id));
             self.shapes.extend(saved);
+        } else if !self.open_datum_faults.is_empty() {
+            // A datum that has become healthy no longer needs its exemption: a later fault on it is a new one.
+            let faulty: HashSet<Id> = self.datum_faults().into_iter().map(|(id, _)| id).collect();
+            self.open_datum_faults.retain(|id| faulty.contains(id));
         }
         result
     }

@@ -302,8 +302,9 @@ impl Session {
             let reached = crate::dependencies::closure(&self.p, sources);
             repeat.extend(reached);
             if repeat.is_empty() {
-                // Not the datum checks: this settle pass also runs when a file is opened, and a datum fault of the app's
-                // file is a warning there; edits are judged on datums by `with_rebuild_copies` after the rebuild.
+                // Not the datum checks. This settle pass runs when a file is opened (a datum fault of the app's file is a
+                // warning there) and from `atomic` too; in both, datum values change only through an edit that
+                // `with_rebuild_copies` judges after its rebuild, so nothing is lost by leaving them out here.
                 self.check_file_features()?;
                 return Ok(report);
             }

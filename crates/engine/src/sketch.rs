@@ -834,16 +834,15 @@ impl Session {
         let nodes = crate::dependencies::closure(&planned, planned.regen_plan().nodes.into_iter().chain([sketch]).collect());
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         let copies = if crate::dependencies::closure(&before, HashSet::from([sketch])).len() <= 1 { HashSet::new() } else { nodes.clone() };
-        let contours_before = self.p.sketch_index(sketch).map(|si| self.p.sketches[si].contour_ids.clone()).unwrap_or_default();
+        let contours_before = if copies.is_empty() { HashMap::new() } else { self.contour_shapes(sketch) };
         self.with_rebuild_copies(before, &copies, "sketch edit", |s| {
             let value = edit(s)?;
             if crate::dependencies::closure(&s.p, HashSet::from([sketch])).len() <= 1 {
                 return Ok((value, None));
             }
-            // Every edit that can remove a contour goes through here: a profile of a several-profile feature must not vanish (F-168).
-            if let Some(si) = s.p.sketch_index(sketch) {
-                s.refuse_dropped_profiles(sketch, &contours_before, &s.p.sketches[si].contour_ids)?;
-            }
+            // Every sketch edit that can remove a contour goes through here (F-168, F-177). Dimension and parameter edits,
+            // projection refreshes and the hole sketches do not.
+            s.refuse_dropped_profiles(sketch, &contours_before)?;
             let r = s.rebuild_for_edit(Some(&nodes))?;
             let broken: Vec<String> =
                 r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
@@ -1050,37 +1049,88 @@ fn polygon_edge_distance(poly: &[[f64; 2]], p: [f64; 2]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// The contour ids a feature holds as its profiles (the contours it was built from).
+/// The contour ids a feature holds as its profiles. Loft sections are one per sketch and are not an island of a sketch.
 fn held_contours(kind: &qymcad_core::feature::FeatureKind) -> Vec<Id> {
     use qymcad_core::feature::FeatureKind as K;
     match kind {
         K::Extrude { profiles, .. } | K::Combine { profiles, .. } | K::Revolve { profiles, .. } | K::Sweep { profiles, .. } => {
             profiles.clone()
         }
-        K::Loft { contours, .. } => contours.clone(),
         _ => Vec::new(),
     }
 }
 
+/// Whether the point lies inside the polygon (even-odd rule).
+fn inside_polygon(at: [f64; 2], polygon: &[qymcad_core::geom::Point2]) -> bool {
+    let mut inside = false;
+    let mut j = polygon.len().wrapping_sub(1);
+    for i in 0..polygon.len() {
+        let (a, b) = (polygon[i], polygon[j]);
+        if (a.y > at[1]) != (b.y > at[1]) && at[0] < (b.x - a.x) * (at[1] - a.y) / (b.y - a.y) + a.x {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
 impl Session {
+    /// Every contour of the sketch with whether it is closed and its centroid (mean of its outline points, as the app's own
+    /// matching takes it).
+    pub(crate) fn contour_shapes(&self, sketch: Id) -> HashMap<Id, (bool, [f64; 2])> {
+        let Some(si) = self.p.sketch_index(sketch) else { return HashMap::new() };
+        self.p.sketches[si]
+            .contour_ids
+            .iter()
+            .filter_map(|&id| {
+                let c = &self.p.contours[self.p.contours.index_of(id)?];
+                let n = c.points.len().max(1) as f64;
+                let (x, y) = c.points.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+                Some((id, (c.closed, [x / n, y / n])))
+            })
+            .collect()
+    }
+
     /// Features hold contours by id, and the app finds a contour again after an edit by its boundary entities, then by
-    /// place and size (`replace_contours`), so changing the shape of a held contour (a hole turned construction) is a
-    /// legal edit that the consumer follows. A held contour that is GONE is different: a feature with one profile
-    /// fails to rebuild ("profile was not found") and the edit rolls back, but a feature with several profiles builds
-    /// from the rest and the missing island silently drops out (F-168). That case is refused.
-    pub(crate) fn refuse_dropped_profiles(&self, sketch: Id, before: &[Id], after: &[Id]) -> Result<()> {
-        let gone = |id: &Id| before.contains(id) && !after.contains(id);
-        for node in &self.p.timeline {
+    /// place and size (`replace_contours`). A held contour that only changes shape stays the same profile (a hole turned
+    /// construction, a circle cut in two, a new hole) and the consumer follows: accepted app behaviour, not refused. A held
+    /// closed contour that is GONE (removed, or opened by a trim) is different: a feature with one profile fails to rebuild
+    /// ("profile was not found") and the edit rolls back, but a feature with several profiles builds from the rest and the
+    /// island silently drops out (F-168, F-177). That case is refused, except when the region went into a surviving held
+    /// contour of the same feature (a merge: removing the divider between two held regions). Only features that are built
+    /// (not suppressed, inside the rollback bar) and closed contours count; open chains are not profiles.
+    pub(crate) fn refuse_dropped_profiles(&self, sketch: Id, before: &HashMap<Id, (bool, [f64; 2])>) -> Result<()> {
+        if before.is_empty() {
+            return Ok(());
+        }
+        let after = self.contour_shapes(sketch);
+        let outline = |id: Id| self.p.contours.index_of(id).map(|i| &self.p.contours[i].points);
+        for node in self.p.timeline.iter().take(self.p.rollback_place()).filter(|n| !n.suppressed) {
             let held = held_contours(&node.kind);
-            let dropped: Vec<Id> = held.iter().copied().filter(gone).collect();
-            if !dropped.is_empty() && dropped.len() < held.len() {
+            if held.len() < 2 {
+                continue;
+            }
+            let gone: Vec<Id> =
+                held.iter().copied().filter(|id| before.get(id).is_some_and(|b| b.0) && !after.get(id).is_some_and(|a| a.0)).collect();
+            let survivors: Vec<Id> = held.iter().copied().filter(|id| after.get(id).is_some_and(|a| a.0)).collect();
+            // Every profile gone: the feature fails in the app's own words and the edit rolls back.
+            if gone.is_empty() || survivors.is_empty() {
+                continue;
+            }
+            let dropped: Vec<Id> = gone
+                .into_iter()
+                .filter(|id| {
+                    let centre = before[id].1;
+                    !survivors.iter().any(|s| outline(*s).is_some_and(|polygon| inside_polygon(centre, polygon)))
+                })
+                .collect();
+            if !dropped.is_empty() {
                 return Err(Error::Invalid(format!(
-                    "this edit would remove contour {dropped:?} of sketch {sketch}, which {} ({}) was built from along with {:?}; \
-                     the app would rebuild it from the remaining contours without any error, so the profile silently drops out (F-168). \
+                    "this edit would remove or open contour {dropped:?} of sketch {sketch}, which {} ({}) was built from along with {survivors:?}; \
+                     the app would rebuild it from the remaining contours without any error, so the profile silently drops out (F-168, F-177). \
                      Delete or rebuild the feature first, or make the change on a copy of the sketch",
                     self.node_name(node.id),
                     node.id,
-                    held.iter().filter(|c| !dropped.contains(c)).collect::<Vec<_>>()
                 )));
             }
         }
