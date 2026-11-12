@@ -31,7 +31,7 @@ Subject: `sketch_edit op:"construction"`, `datum_point` and `datum_axis` (ADR 00
 ## Evidence
 
 - Targeted: the datum, construction and probe test files and the MCP `i1`, `i2`, `i3` and `docs_fresh` tests pass (observed); the whole engine suite passed once on an intermediate state (1164 passed, 0 failed, 3 ignored).
-- `scripts/check.sh` on `b93c703` (after the F-177 shared guard): OK, 1462 passed, 0 failed, 3 ignored (fmt, clippy `-D warnings`, `cargo test --workspace`). The earlier run on `5d5c804` had 1461 passed, 0 failed, 3 ignored. Round 2 result: see "Round 2" below.
+- `scripts/check.sh` on `b93c703` (after the F-177 shared guard): OK, 1462 passed, 0 failed, 3 ignored (fmt, clippy `-D warnings`, `cargo test --workspace`). The earlier run on `5d5c804` had 1461 passed, 0 failed, 3 ignored. Round 2: `scripts/check.sh` on `f4162be`: OK, 1468 0 3 passed,  failed,  ignored.
 - New findings: F-174 (typed coordinate on a vertex point ignored), F-175 (Part copy leaves a vertex point on the source), F-176 (vanished edge or face under a datum), F-177 (`sketch_remove` and other sketch edits drop one profile of several; refused by the shared guard); F-168 rewritten.
 - Not run: QymCAD.app itself (the GUI); every app-side claim is a native core-API probe or read in source, as marked in FINDINGS.
 
