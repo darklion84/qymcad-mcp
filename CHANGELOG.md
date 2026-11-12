@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased — datum points and axes, construction toggle (ADR 0055)
+
+### Added
+- `datum_point`: the app's Datum point command — by coordinates `at` (numbers or formulas on x, y, z, within ±1e7 on every edit) or at a vertex of a current body of the active Part (`vertex {edge, end, body?}`, follows the vertex); batch and one-step undo.
+- `datum_axis`: the app's Datum axis command — along a straight non-seam non-smooth `edge`, along a cylinder or cone `face`, through two datum `points` (follows them), or by hand `origin` + `dir` (numbers only, F-170). `revolve` and `circular_array` take it as `{"datum": id}` (the axis must belong to the active Part); an axis made here is never reused by a feature that gives `origin` + `dir`.
+- `sketch_edit` op `construction`: the app's construction toggle on existing curves (`entities`, `to` required; one state for the whole set as in the app); returns `construction: [{id, construction}]`.
+- `doc_info` lists `datums` (points, axes with resolved origin and direction, datum node errors) when the document has any.
+
+### Changed
+- A name given to a datum node (`plane_offset`, `datum_point`, `datum_axis`) or set with `rename` is written to the datum's pool record as well, which is the name the app's tree shows (F-171).
+
+### Fixed (protective refusals of silent native results, FINDINGS F-168–F-173)
+- Turning curves into construction is refused when it would change a contour that features hold by id (a hole becomes construction under a plate extrude): the app rebuilds the consumers as a different profile with no error (F-168).
+- Suppressing a body that a vertex point or an edge/face axis stands on is refused (F-169); deleting it needs `cascade`. A formula on a datum axis coordinate is refused by `dimension_set` (F-170). A two-point axis whose points would coincide is refused (F-172).
+
 ## 0.1.1-dev.20261026.14 — part delete, joint limits, Revolute hinges (ADR 0054)
 
 ### Added

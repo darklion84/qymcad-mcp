@@ -3023,3 +3023,49 @@ The same gap applies to a pattern whose source is a projection: the source moves
   `field_of`, which shows the formula text of the same keys, for bounds that are on. The server uses the same keys
   (`min0`..`max2`), so nothing to align. The tester's 3.2 ("travel" not visible, 400 shown) is the panel's design.
 - **Executed:** the formula is honoured (3.3 in the GUI check: `travel` = 200 clamps the drawer).
+
+## F-168 Turning a curve into construction rebuilds the consumers as a different profile, with no error
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (owner files after dedupe).
+- **Source:** `Project::toggle_construction` (`model/sketch/entities.rs:904-919`) checks nothing about consumers; `regen_sketch` builds contours from non-construction curves only and reuses contour ids by position (`model/sketch/solve.rs:411-413`). The app's own help calls a contour that no longer closes the expected outcome (`help/en/sketch/23-construction.md`). [read in source]
+- **Executed on the server path (`i0_probes::p11_*`):** a plate 20 x 10 with a Ø4 hole, extruded 5 (937.17 mm³); the hole circle turned construction → contours `[16, 22]` become `[16]`, the consumer rebuilt with `errors: []` and the volume went to 1000 — the same contour id now means another region. A consumer whose only contour vanishes does fail ("The sketch profile was not found") and the edit rolls back.
+- **Server policy (refusal):** `sketch_edit op:"construction"` on a sketch with consumers is refused when a contour present before and after has another area or other holes (the id is reused for a different region). Consumers' own failures still roll the edit back. Tests: `golden_sketch_construction::a_hole_turned_construction_under_a_consumer_is_refused_f168_and_the_vanishing_contour_rolls_back`. The app's text toggle does nothing either (`i0_probes::p12_*`: `toggle_construction` on a text id returns false and changes nothing), so texts are refused.
+
+## F-169 A body under a datum point or axis can be suppressed or removed: the datum keeps its last place and nothing turns red
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `node_required_refs` has no `DatumPoint` branch (`model/keys.rs:455-498`); the missing-source error is raised for `Plane` and `DatumAxis` only when the body is absent from `made` (`run.rs:541-545`); `resolve_point_into` keeps the previous `at` when the edge is gone (`model/regen/refs.rs:224-244`). [read in source]
+- **Executed native evidence (`i0_probes::p2_p3_vertex_points_axis_after_open_and_delete`, app data path, no Session):** two `AtVertex` points and a `TwoPoints` axis on block C; `delete_feature_op(C)` and a dirty rebuild give `errors: []` and the points stay at (35, 5, 0) and (35, 5, 10).
+- **Server policy:** the deletion closure already includes points and axes standing on a body, so `feature_delete` refuses without `cascade` (tests: `golden_datum_point`, `golden_datum_axis`); `feature_suppress` of such a body is refused outright (it has no cascade). The consumers (an array about the axis) are refused through the same closure.
+
+## F-170 A formula typed into a manual datum axis does not move the axis
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `resolve_axis_into` evaluates `ox..dz` for a `Manual` axis and writes the resolution cache (`refs.rs:283-288`), but `DatumAxis::origin()/dir()` read the definition for `Manual` (`model.rs:466-479`) and every consumer calls those (`prep_profiles.rs:32`, `prep_bodies.rs:537`).
+- **Executed native evidence (`i0_probes::p1_a_formula_on_a_manual_axis`, app data path):** a circular array about a manual axis through (30, 0, 0) with `feat_dims[axis].ox = "px"`; `px` 30 → 20 and a rebuild: the axis origin stays (30, 0, 0) and the array's box stays centred on x = 30 (−3..63).
+- **Server policy:** `datum_axis` takes numbers only for `origin`/`dir`; `dimension_set` on an axis coordinate is refused with this finding (`golden_datum_axis::a_formula_on_an_axis_coordinate_is_refused_because_the_app_ignores_it_f170`). An axis that must move uses `points` through two datum points whose coordinates are formulas (that path moves, tested).
+
+## F-171 The app's tree shows a datum's pool name, not the timeline node's name
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** the row reads `project.planes/datum_points/datum_axes[..].name` (`gui/panels_tree/rows.rs:257-267`) and the app's rename writes the pool (`gui/panels_tree/rename.rs:27-35`). The server's `set_node_name` wrote only `FeatureNode.name`.
+- **Executed (`i0_probes::p7_the_name_of_a_datum_plane_node_and_pool`):** a plane created with `name:"top_z5"` had node name `top_z5` and pool name `name-plane`; after `rename` the node changed, the pool did not. [the app's display is read from source, the GUI was not run]
+- **Server policy (fixed, not refused):** a name given to a datum node (creation or `rename`) is written to the pool record too (`Session::set_datum_pool_name`). Existing documents keep what they have.
+
+## F-172 A two-point datum axis whose points coincide or vanish keeps its last line silently
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `resolve_axis_into` for `TwoPoints` sets the cache only when `|b − a| > 1e-9` and both points exist; otherwise it does nothing and registers no error (`refs.rs:260-268`); `delete_datum_point` marks the axis dirty but adds no error (`features.rs:147-161`). [read in source; the native path was not executed]
+- **Server policy (refusal):** every edit is judged on the datum axes (`check_datum_axis_values`): a parameter edit that puts the two points on one spot, or an axis whose point is gone, is refused with nothing changed (`golden_datum_axis::a_two_point_axis_follows_its_points_and_a_collapse_is_refused`). Deleting a point under an axis is refused by the closure.
+
+## F-173 Deleting a datum axis silently turns its consumers about another axis
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (the app records this as a contract: `delete_datum_axis`, `model/features.rs:163-200`).
+- **Source:** a revolve about the deleted axis falls back to the sketch X/Y axis and a circular array to world Z, marked dirty, no error; the source comment measures the part moving silently. [read in source]
+- **Observed on the server path (`i0_probes::p6_deleting_the_axis_under_a_circular_array`):** the server's closure already refuses the delete without `cascade` ("has dependents: Circular pattern"); with `cascade` the consumers go first (`golden_datum_axis::deleting_the_axis_or_the_points_under_a_consumer_is_refused_and_a_cascade_goes_in_order`). Nothing to refuse beyond what existed; recorded because the plan expected `CircularArray.axis` to be missing from the closure and it is not.
