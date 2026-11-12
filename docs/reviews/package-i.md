@@ -31,7 +31,7 @@ Subject: `sketch_edit op:"construction"`, `datum_point` and `datum_axis` (ADR 00
 ## Evidence
 
 - Targeted: the datum, construction and probe test files and the MCP `i1`, `i2`, `i3` and `docs_fresh` tests pass (observed); the whole engine suite passed once on an intermediate state (1164 passed, 0 failed, 3 ignored).
-- `scripts/check.sh` on `b93c703` (after the F-177 shared guard): OK, 1462 0 3 passed,  failed,  ignored (fmt, clippy `-D warnings`, `cargo test --workspace`). The earlier run on `5d5c804` had 1461 passed, 0 failed, 3 ignored.
+- `scripts/check.sh` on `b93c703` (after the F-177 shared guard): OK, 1462 passed, 0 failed, 3 ignored (fmt, clippy `-D warnings`, `cargo test --workspace`). The earlier run on `5d5c804` had 1461 passed, 0 failed, 3 ignored. Round 2 result: see "Round 2" below.
 - New findings: F-174 (typed coordinate on a vertex point ignored), F-175 (Part copy leaves a vertex point on the source), F-176 (vanished edge or face under a datum), F-177 (`sketch_remove` and other sketch edits drop one profile of several; refused by the shared guard); F-168 rewritten.
 - Not run: QymCAD.app itself (the GUI); every app-side claim is a native core-API probe or read in source, as marked in FINDINGS.
 
@@ -39,3 +39,18 @@ Subject: `sketch_edit op:"construction"`, `datum_point` and `datum_axis` (ADR 00
 
 - A numeric edit of a manual axis is not covered (F-170): delete and create again.
 - The server judges edges by `EdgeKind::Line`, not as the app's picker does, and does not consider visibility.
+
+## Round 2 (re-review of `2ede273..66b1d62` by Opus; Sonnet's points listed in the coordinator's decisions)
+
+| Finding | Reviewer | Done |
+|---|---|---|
+| The guard false-refuses a region merge (rect + divider, extrude all, remove or construction the divider: refused, natively 1000 -> 1000) (major, R4) | Opus M1 | A vanished held contour whose centroid lies inside a surviving held contour of the same feature is a merge and passes. Test with remove and with construction, volume unchanged. |
+| The guard counts open chains as profiles (a stray line removed, an open U-polyline closed: refused) (major, R7, R9) | Opus M2 | Only closed held contours count (also: a contour that is opened counts as gone). Tests for the stray line and the closed polyline. |
+| Coverage claim too strong: `param_set`, `dimension_set`, projection refresh and the hole sketches bypass the guard | Opus m1, Sonnet g8 | Worded honestly in F-177, ADR and CHANGELOG; a parameter that merged an island into another region is a merge; contour loss through a parameter was not reproduced. |
+| The guard walks suppressed and after-rollback features and loft sections; misleading text | Opus m2, Sonnet minor1 | Only built features (not suppressed, inside the rollback bar) with at least two profiles; loft dropped; the text says "remove or open". Test for suppressed and rolled-back features. |
+| A held circle cut in two: one half drops out | Sonnet minor2 | Not refused: the app matches the held id to one half, a legal shape edit. Documented as accepted app behaviour in ADR and F-177, with a test (892.70 -> 696.35). |
+| The settle pass in `hole_sketch.rs` also runs from `atomic`: datum checks absent there | Opus m3 | No defect path found (datum values change only through `with_rebuild_copies`, which judges them); the comment now says so. |
+| `open_datum_faults` exemption lasts forever | Opus m4 | After every successful edit only ids that are still faulty stay. Unit test. |
+| F-176: no false refusals found (fillet, chamfer, add-absorb, rollback) | Opus (clean) | F-176 now states that consuming the body by a later feature is not an edit of its edges. |
+| `package-i.md` line 34 broken; the test comment in `an_axis_needs_the_active_part_s_points...` promises an unchecked case | Opus nit | Line fixed; the test now checks the first Part's pair after `part_select` and the mixed pair from the other side. |
+

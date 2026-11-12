@@ -87,14 +87,20 @@ feature that built before now fails).
 ### Refusals
 
 - Empty set, ids that are not curves of the sketch, texts, isolated points, instances of a sketch pattern.
-- **A profile of a several-profile feature that would vanish (F-168):** features hold contours by id and the app finds a contour again
-  by its boundary entities, then by place and size (`replace_contours`, `model/sketch/contours.rs:12-17`). A held contour that only
-  changes shape (a hole circle turned construction under a plate extrude) stays the same profile and the consumer follows: a legal
-  action, not refused. A held contour that is gone is an error in the app for a feature with one profile ("profile was not found";
-  the edit rolls back), but a feature with several profiles is built from the rest and the island silently drops out. That case is
-  refused (some, not all, of a feature's held contours vanish). Contours no feature holds are not judged. The guard sits in the shared
-  `Session::sketch_edit` path, so it covers every sketch edit that can remove a contour (`sketch_remove`, the `sketch_edit` ops, `sketch_add`,
-  `sketch_constrain`), not only the toggle (F-177).
+- **A closed profile of a several-profile feature that would vanish (F-168, F-177):** features hold contours by id and the app finds a
+  contour again after an edit by its boundary entities, then by place and size (`replace_contours`, `model/sketch/contours.rs:12-17`). A
+  held contour that only changes shape stays the same profile and its consumer follows: a hole turned construction under a plate
+  extrude, a circle cut in two by a new line (the app keeps the id on one half; the other half is not held and drops out), a new hole.
+  That is accepted app behaviour and is NOT refused. A held CLOSED contour that is gone (removed, or opened by a trim) is different:
+  a feature with one profile fails to rebuild ("profile was not found"; the edit rolls back), but a feature with several profiles is
+  built from the rest and the island silently drops out. That case is refused, with these exceptions: open chains are not profiles
+  (a stray line, an open polyline being closed); a region that went into a surviving held contour of the same feature is a merge
+  (removing the divider between two held regions leaves the volume unchanged) and passes; features that are suppressed or past the
+  rollback bar do not build and are not judged; contours no feature holds are not judged; loft sections are not judged. The guard sits
+  in the shared `Session::sketch_edit` path, so it covers `sketch_remove`, the `sketch_edit` ops, `sketch_add` and `sketch_constrain`.
+  It does NOT cover edits that do not pass through that path: `param_set` and `dimension_set` of sketch dimensions, the refresh of
+  projections and the hole sketches. Contour loss through a parameter was not reproduced (a parameter that merges an island into another
+  region is a merge).
 
 ## 4. Names
 
@@ -148,9 +154,9 @@ the server's `Session` where it is about the server). Observed = executed, infer
 | 7 | Name in the pool or in the node | Observed: node name set, pool keeps `name-plane`; the tree reads the pool (source). Native (P7 native): the app's own `rename_plane` writes the pool and leaves the node. | Names are written to both for plane, point and axis (creation and `rename`); F-171. |
 | 8 | Right-panel drag / `at` edit of an `AtVertex` point | Not probed. | Listed under "Not done". |
 | 10 | Undo of the context-menu toggle without `begin_edit` | Not probed (GUI path). | The server follows the button path: one undo step through the tool boundary (tested). |
-| 11 | A hole/island turned construction under a consumer (native, `p11_native_*`) | Observed natively: a hole circle under a plate extrude: volume 937.17 -> 1000, `errors: []` (the consumer follows its held outer contour). Two profiles (square + disc, 892.70): the disc turned construction gives volume 500, `errors: []` (the island drops out). One profile: "profile was not found". | Refuse only the several-profile island that vanishes; hole-to-construction is a legal action; F-168 (rewritten). |
+| 11 | A hole/island turned construction under a consumer (native, `p11_native_*`) | Observed natively: a hole circle under a plate extrude: volume 937.17 -> 1000, `errors: []` (the consumer follows its held outer contour). Two profiles (square + disc, 892.70): the disc turned construction gives volume 500, `errors: []` (the island drops out). One profile: "profile was not found". | Refuse only a closed several-profile island that vanishes and is not merged into a surviving held contour; hole-to-construction, division and a new hole are accepted app behaviour; F-168 (rewritten). |
 | 12 | Text and the toggle | Observed natively: `toggle_construction` on a text id returns false and the text stays. | Text refused with an explanation. |
 | 13 | An edge under a vertex point and an edge axis disappears, the body stays (native `p13`) | Observed: `errors: []`, the point and the axis keep their last place. | Refuse after the rebuild, rollback; F-176. |
 | 14 | A coordinate typed on a vertex point (native `p14`) | Observed: stored, ignored by the rebuild, `errors: []`. | `dimension_set` refused; F-174. |
 | 15 | Part copy of a Part with a vertex point (native `p15`) | Observed: the copy's point stands on the source body (body and edge not remapped). | `part_copy` refused; F-175. Edge/face/two-point axes are remapped (server test). |
-| 16 | `sketch_remove` of a curve under an extrude (`p16`, server path) | Observed: a hole follows (937.17 -> 1000); one profile of two dropped out with `errors: []` (892.70 -> 500) before the guard moved into the shared sketch-edit path, now refused; the only profile fails and rolls back. The reviewer's "volume unchanged" was not reproduced. | The F-168 guard covers every sketch edit; F-177. |
+| 16 | `sketch_remove` of a curve under an extrude (`p16`, server path) | Observed: a hole follows (937.17 -> 1000); one profile of two dropped out with `errors: []` (892.70 -> 500) before the guard moved into the shared sketch-edit path, now refused; the only profile fails and rolls back. The reviewer's "volume unchanged" was not reproduced. | The F-168 guard covers every sketch edit that goes through `Session::sketch_edit`; F-177. |
