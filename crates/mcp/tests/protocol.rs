@@ -262,6 +262,8 @@ fn lists_tools_with_object_schemas() {
         "sketch_import",
         "extrude",
         "plane_offset",
+        "datum_point",
+        "datum_axis",
         "export",
         "render",
         "topology",
