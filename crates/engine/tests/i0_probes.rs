@@ -5,43 +5,81 @@ use common::*;
 use qymcad_engine::*;
 use serde_json::json;
 
-fn rect_with_hole() -> (Session, u64, u64, u64) {
+/// The app's side of F-168, through the core API only (no Session, no server guard): the document is saved by the server,
+/// loaded as the app does, the app's `toggle_construction` runs, the dirty consumers regenerate. Answers the consumer's
+/// body volume and the regeneration errors.
+fn native_toggle(path: &std::path::Path, si: usize, entities: &[u64]) -> (f64, Vec<String>) {
+    let mut m = native_assembly_load(path);
+    native_assembly_rebuild(&mut m, true);
+    let sketch = m.project.sketches[si].id;
+    m.project.toggle_construction(si, entities);
+    m.project.mark_sketch_dirty(sketch);
+    m.project.eval_parameters();
+    let (report, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut m.project, std::mem::take(&mut m.shapes));
+    m.shapes = shapes;
+    let consumed = m.project.consumed_bodies();
+    let last = m.project.timeline.iter().flat_map(|n| n.kind.bodies()).rfind(|b| !consumed.contains(b)).unwrap();
+    let volume = {
+        let _g = qymcad_kernel::kernel_gate();
+        m.shapes[&last].volume()
+    };
+    (volume, report.errors.iter().map(|e| format!("{e:?}")).collect())
+}
+
+fn plate_doc(name: &str, island: bool) -> (std::path::PathBuf, u64) {
     let mut s = Session::new_part();
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
-    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &10.0.into(), false).unwrap();
-    let circle = s.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
-    (s, sk, circle, 0)
+    let cx = if island { 20.0 } else { 0.0 };
+    s.sketch_rect(
+        sk,
+        &(if island { -20.0 } else { 0.0 }).into(),
+        &0.0.into(),
+        &(if island { 10.0 } else { 20.0 }).into(),
+        &10.0.into(),
+        false,
+    )
+    .unwrap();
+    let circle = s.sketch_circle(sk, &cx.into(), &0.0.into(), &(if island { 10.0 } else { 4.0 }).into(), false).unwrap();
+    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+    let path = scratch(name);
+    s.save(Some(&path)).unwrap();
+    (path, circle)
 }
 
-/// P11: a circle inside a rectangle turned construction. The consumer extrudes the rectangle; the hole silently disappears?
+/// P11 (native): a hole circle turned construction under a plate extrude. The app follows the held outer contour: the hole
+/// goes, the volume grows, no error. A legal edit, so the server lets it through (F-168 as rewritten).
 #[test]
-fn p11_a_hole_turned_construction_changes_the_consumer_without_an_error() {
-    let (mut s, sk, circle, _) = rect_with_hole();
-    let info = s.sketch_info(sk).unwrap();
-    eprintln!("P11 contours before: {:?}", info.contours);
-    let (_body, r) = s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
-    eprintln!("P11 volume with hole: {} errors {:?}", r.bodies[0].volume, r.errors);
-    let done = s.sketch_edit(sk, |s| s.sketch_construction(sk, &[circle], true));
-    eprintln!("P11 toggle result: {:?}", done.as_ref().map(|d| &d.0.entities).map_err(|e| e.to_string()));
-    // Natively (see git history of this probe before the guard) the volume went 937.17 -> 1000 with errors []: refused now.
-    assert!(done.unwrap_err().to_string().contains("F-168"));
-    eprintln!("P11 after: contours {:?}", s.sketch_info(sk).unwrap().contours);
-    eprintln!("P11 volume after: {:?}", s.result_bodies().iter().map(|b| b.volume).collect::<Vec<_>>());
-    eprintln!("P11 errors {:?}", s.current_rebuild().errors);
+fn p11_native_a_hole_turned_construction_is_followed_by_the_consumer() {
+    let (path, circle) = plate_doc("p11-hole.qcad", false);
+    let (volume, errors) = native_toggle(&path, 0, &[circle]);
+    eprintln!("P11 native hole: volume {volume} errors {errors:?}");
+    assert!(errors.is_empty());
+    assert_close(volume, 1000.0, 1e-6, "plate without the hole");
 }
 
-/// P11b: the only profile a consumer uses turned construction: the contour is gone.
+/// P11 (native): one island of a two-profile extrude turned construction drops out of the feature, with no error.
 #[test]
-fn p11b_the_consumers_only_contour_turned_construction() {
+fn p11_native_a_vanished_island_drops_out_silently() {
+    let (path, circle) = plate_doc("p11-island.qcad", true);
+    let (volume, errors) = native_toggle(&path, 0, &[circle]);
+    eprintln!("P11 native island: volume {volume} errors {errors:?}");
+    // F-168: 500 + 392.7 before, 500 after, `errors: []`. If the app starts reporting this, the server guard can go.
+    assert!(errors.is_empty(), "the app reports the dropped island now: {errors:?}");
+    assert_close(volume, 500.0, 1e-6, "the island is gone from the body");
+}
+
+/// P11b (native): the only profile of the feature turned construction: the app itself fails.
+#[test]
+fn p11b_native_the_only_profile_turned_construction_is_an_error() {
     let mut s = Session::new_part();
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     let circle = s.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
     s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
-    let done = s.sketch_edit(sk, |s| s.sketch_construction(sk, &[circle], true));
-    eprintln!("P11b toggle: {:?}", done.as_ref().map(|d| &d.0.entities).map_err(|e| e.to_string()));
-    assert!(done.unwrap_err().to_string().contains("profile was not found"));
-    eprintln!("P11b bodies after: {:?}", s.result_bodies().iter().map(|b| b.volume).collect::<Vec<_>>());
-    eprintln!("P11b errors {:?}", s.current_rebuild().errors);
+    let path = scratch("p11b.qcad");
+    s.save(Some(&path)).unwrap();
+    let (_, errors) = native_toggle(&path, 0, &[circle]);
+    eprintln!("P11b native: {errors:?}");
+    assert!(errors.iter().any(|e| e.contains("rofile")), "the app's own error: {errors:?}");
 }
 
 /// P12: the app's toggle on a text id, and the entity of a text.
@@ -245,4 +283,155 @@ fn p7_the_name_of_a_datum_plane_node_and_pool() {
     eprintln!("P7 after rename: node {:?} pool {:?}", node(&s), pool(&s));
     // F-171, fixed on the server side: both stores carry the name.
     assert_eq!((node(&s), pool(&s)), ("renamed".to_string(), "renamed".to_string()));
+}
+
+/// P7 (native): the app's own rename writes the pool record and leaves the timeline node's name (`rename_plane`, the tree's
+/// rename of a datum point or axis). The tree row reads the pool. This pins why the server writes both (F-171): if the app
+/// ever writes the node too, the server's second write is redundant.
+#[test]
+fn p7_native_the_apps_rename_writes_the_pool_only() {
+    let mut s = Session::new_part();
+    let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &5.0.into(), None).unwrap();
+    let path = scratch("p7-native.qcad");
+    s.save(Some(&path)).unwrap();
+    let mut m = native_assembly_load(&path);
+    let node = |m: &NativeAssemblyModel| m.project.timeline.iter().find(|n| n.id == plane).unwrap().name.clone();
+    let before = node(&m);
+    assert!(m.project.rename_plane(plane, "app_name".to_string()));
+    let pool = m.project.planes.iter().find(|p| p.id == plane).unwrap().name.clone();
+    eprintln!("P7 native: node {before:?} -> {:?}, pool {pool:?}", node(&m));
+    assert_eq!((node(&m), pool), (before, "app_name".to_string()));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Review round (package I, round 1): probes of the three defects the server now refuses, through the core API only.
+
+/// A hexagonal prism `n` sides (parameter), with a vertex point on each of the given vertical edges (by position in the list).
+fn prism_doc(name: &str) -> (std::path::PathBuf, Vec<u32>) {
+    let mut s = Session::new_part();
+    s.param_set("n", &6.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let spec = PolygonSpec {
+        cx: 0.0.into(),
+        cy: 0.0.into(),
+        sides: 6,
+        r: Some(10.0.into()),
+        angle: None,
+        vertex: None,
+        construction: false,
+        dimensioned: true,
+    };
+    s.sketch_polygon_sides(sk, &spec, &"n".into()).unwrap();
+    let body = s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap().0;
+    let edges: Vec<u32> = s
+        .topology(Some(body), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .filter(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 1.0)
+        .map(|e| e.id)
+        .collect();
+    let doomed = *edges.last().unwrap();
+    s.datum_point(&PointSpec::Vertex { edge: doomed, end: VertexEnd::End, body: None }, None).unwrap();
+    s.datum_axis(&AxisSpec::Edge { edge: doomed, body: None }, None).unwrap();
+    let path = scratch(name);
+    s.save(Some(&path)).unwrap();
+    (path, edges)
+}
+
+/// P13 (native, F-176): the edge under a vertex point and an edge axis disappears from a body that stays: no error, and the
+/// point and the axis stay where they were.
+#[test]
+fn p13_native_an_edge_that_vanishes_under_datums_leaves_them_in_place_without_an_error() {
+    let (path, _) = prism_doc("p13.qcad");
+    let mut m = native_assembly_load(&path);
+    native_assembly_rebuild(&mut m, true);
+    let (point, axis) = (m.project.datum_points[0].clone(), m.project.datum_axes[0].clone());
+    native_assembly_parameter(&mut m, "n", "4"); // native_assembly_rebuild panics on any regeneration error
+    assert!(m.project.regen_errors.is_empty());
+    eprintln!("P13 point {:?} -> {:?}; axis {:?}", point.at, m.project.datum_points[0].at, m.project.datum_axes[0].origin());
+    assert_eq!(m.project.datum_points[0].at, point.at, "the point keeps its last place");
+    assert_eq!(m.project.datum_axes[0].origin(), axis.origin(), "the axis keeps its last line");
+}
+
+/// P14 (native, F-174): a coordinate typed on a vertex point is stored and ignored by the app's rebuild.
+#[test]
+fn p14_native_a_coordinate_typed_on_a_vertex_point_is_ignored() {
+    let (path, _) = prism_doc("p14.qcad");
+    let mut m = native_assembly_load(&path);
+    native_assembly_rebuild(&mut m, true);
+    let id = m.project.datum_points[0].id;
+    let at = m.project.datum_points[0].at;
+    m.project.write_feat_formula(&FeatNumber { node: id, key: "x" }, "123", PlainNumber::Stands).unwrap();
+    native_assembly_rebuild(&mut m, true);
+    eprintln!("P14 x typed 123: at {at:?} -> {:?}", m.project.datum_points[0].at);
+    assert_eq!(m.project.datum_points[0].at, at, "the point stays on its vertex");
+}
+
+/// P15 (native, F-175): the app's Part copy remaps a point's id but not its vertex: the copy's point stands on the SOURCE body.
+#[test]
+fn p15_native_a_part_copy_leaves_a_vertex_point_on_the_source_body() {
+    let (path, _) = prism_doc("p15.qcad");
+    let mut m = native_assembly_load(&path);
+    native_assembly_rebuild(&mut m, true);
+    let source = m.project.active_component.unwrap();
+    let source_body = m.project.datum_points.iter().find_map(|p| match p.def {
+        qymcad_core::model::PointDef::AtVertex { body, .. } => Some(body),
+        _ => None,
+    });
+    let target = m.project.root;
+    let copy = m.project.clone_component(source, target).expect("copy");
+    let points: Vec<_> = m.project.datum_points.iter().map(|p| (p.id, p.def.clone())).collect();
+    eprintln!("P15 copy {copy}: points {points:?}, source body {source_body:?}");
+    let stands_on: Vec<u64> = points
+        .iter()
+        .filter_map(|(_, d)| match d {
+            qymcad_core::model::PointDef::AtVertex { body, .. } => Some(*body),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(stands_on.len(), 2);
+    assert_eq!(stands_on[0], stands_on[1], "both points name the same body: the copy's point was not remapped");
+    assert_eq!(Some(stands_on[1]), source_body);
+}
+
+/// P16 (server path, side note of the review): `sketch_remove` of a curve under an extrude. The reviewer saw "passes, volume
+/// unchanged, errors []"; what is observed here: a hole follows (volume grows), the only profile fails and rolls back, and an
+/// island of a several-profile feature drops out with `errors: []` (the same silent drop as F-168, through another door: F-177).
+#[test]
+fn p16_sketch_remove_of_a_curve_under_an_extrude() {
+    let vol = |s: &Session| s.result_bodies().iter().map(|b| b.volume).collect::<Vec<_>>();
+    // A: a hole circle in a plate: the consumer follows its held outer contour.
+    let (mut s, sk, hole, _) = rect_with_hole_doc();
+    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+    assert_close(vol(&s)[0], 937.1681469, 1e-5, "plate with the hole");
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, hole)).unwrap();
+    assert_close(vol(&s)[0], 1000.0, 1e-6, "A: the hole is gone from the plate");
+    assert!(s.current_rebuild().errors.is_empty());
+    // B: square + disc island, two profiles: the island drops out silently.
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    let island = s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+    assert_close(vol(&s)[0], 892.6990817, 1e-5, "square and disc");
+    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap();
+    assert_close(vol(&s)[0], 500.0, 1e-6, "B: the island dropped out of the feature");
+    assert!(s.current_rebuild().errors.is_empty(), "B: and nothing says so (F-177)");
+    // C: the only profile: the app errors and the edit rolls back.
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let c = s.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
+    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+    let e = s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, c)).unwrap_err().to_string();
+    assert!(e.contains("profile was not found"), "C: {e}");
+    assert_close(vol(&s)[0], 62.8318531, 1e-5, "C: rolled back");
+}
+
+fn rect_with_hole_doc() -> (Session, u64, u64, u64) {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &10.0.into(), false).unwrap();
+    let circle = s.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
+    (s, sk, circle, 0)
 }
