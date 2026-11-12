@@ -211,6 +211,8 @@ fn limits_allowlist_and_outer_schema() {
         "sketch_pattern",
         "sketch_import",
         "plane_offset",
+        "datum_point",
+        "datum_axis",
         "extrude",
         "revolve",
         "sweep",
