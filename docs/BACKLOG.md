@@ -71,3 +71,11 @@ corrected median edits are ~249–256 ms versus ~253 ms with pre-J6 propagation 
 than J6 HEAD's ~222 ms. Reproduce with the ignored test `parameter_and_project_clone_shelf_timings`. Named feature dimensions
 referring to other named dimensions retain the native scope limitation documented in F-071. Non-kind
 composed face queries remain dynamic, with the documented shell missing-opening residual (ADR 0013).
+- Package I review (2026-11-12):
+  - F-177: `sketch_remove` of an island that a several-profile feature holds drops it silently (like F-168 through the delete door);
+    consider the same guard as `sketch_edit construction` (some, not all, of a feature's held contours vanish) for removals and
+    for sketch geometry edits that make a contour disappear.
+  - ADR 0055 known limit: the `__explicit` marker in `feat_dims` of a datum axis may be lost when the axis is edited in the app's GUI,
+    after which `fixed_axis` could reuse it; keep the marker somewhere the GUI does not rewrite, or make `fixed_axis` ignore axes
+    that have a name.
+

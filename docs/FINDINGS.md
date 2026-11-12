@@ -3024,13 +3024,13 @@ The same gap applies to a pattern whose source is a projection: the source moves
   (`min0`..`max2`), so nothing to align. The tester's 3.2 ("travel" not visible, 400 shown) is the panel's design.
 - **Executed:** the formula is honoured (3.3 in the GUI check: `travel` = 200 clamps the drawer).
 
-## F-168 Turning a curve into construction rebuilds the consumers as a different profile, with no error
+## F-168 A construction toggle that makes a profile of a several-profile feature vanish drops it from the feature with no error
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
 - **Upstream:** not filed (owner files after dedupe).
-- **Source:** `Project::toggle_construction` (`model/sketch/entities.rs:904-919`) checks nothing about consumers; `regen_sketch` builds contours from non-construction curves only and reuses contour ids by position (`model/sketch/solve.rs:411-413`). The app's own help calls a contour that no longer closes the expected outcome (`help/en/sketch/23-construction.md`). [read in source]
-- **Executed on the server path (`i0_probes::p11_*`):** a plate 20 x 10 with a Ø4 hole, extruded 5 (937.17 mm³); the hole circle turned construction → contours `[16, 22]` become `[16]`, the consumer rebuilt with `errors: []` and the volume went to 1000 — the same contour id now means another region. A consumer whose only contour vanishes does fail ("The sketch profile was not found") and the edit rolls back.
-- **Server policy (refusal):** `sketch_edit op:"construction"` on a sketch with consumers is refused when a contour present before and after has another area or other holes (the id is reused for a different region). Consumers' own failures still roll the edit back. Tests: `golden_sketch_construction::a_hole_turned_construction_under_a_consumer_is_refused_f168_and_the_vanishing_contour_rolls_back`. The app's text toggle does nothing either (`i0_probes::p12_*`: `toggle_construction` on a text id returns false and changes nothing), so texts are refused.
+- **Source:** `Project::toggle_construction` (`model/sketch/entities.rs:904-919`) checks nothing about consumers. `regen_sketch` builds contours from non-construction curves only, and `replace_contours` finds each loop again by its boundary entities first, by centroid and area after (`model/sketch/contours.rs:12-17`), so a held contour that only changes shape (a hole circle turned construction) stays the same profile for its consumers: that is the legal action the app's help describes (`docs/help/en/sketch/23-construction.md` in the app source). A held contour that no longer exists is another matter: a feature whose only profile it was fails ("The sketch profile was not found"), a feature with several profiles is built from the rest. [read in source]
+- **Executed (`i0_probes::p11_native_*`, app data path, no server involved):** (a) a 20 x 10 plate with a Ø4 hole, extruded 5 (937.17 mm³): the hole circle turned construction, the consumer follows, `errors: []`, volume 1000. (b) a 10 x 10 square and a Ø10 disc in one extrude (two profiles, 892.70 mm³): the disc turned construction gives `errors: []` and volume 500, the island has silently gone from the feature. (c) one profile only (a Ø4 disc): the app errors "profile was not found". The app's text toggle does nothing either (`p12_*`: `toggle_construction` on a text id returns false), so texts are refused.
+- **Server policy (refusal):** `sketch_edit op:"construction"` is refused when a feature holds several profile contours of the sketch and the toggle makes some, but not all, of them vanish (case b); `golden_sketch_construction::a_vanished_island_of_a_several_profile_feature_is_refused_f168`. A changed shape of a held contour (a) and contours no feature holds pass (`a_hole_turned_construction_under_a_consumer_is_followed_by_it`, `an_unused_ring_turned_construction_passes`); case (c) is rolled back by the app's own error (`the_only_profile_turned_construction_rolls_back_through_the_apps_error`).
 
 ## F-169 A body under a datum point or axis can be suppressed or removed: the datum keeps its last place and nothing turns red
 
@@ -3069,3 +3069,35 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Upstream:** not filed (the app records this as a contract: `delete_datum_axis`, `model/features.rs:163-200`).
 - **Source:** a revolve about the deleted axis falls back to the sketch X/Y axis and a circular array to world Z, marked dirty, no error; the source comment measures the part moving silently. [read in source]
 - **Observed on the server path (`i0_probes::p6_deleting_the_axis_under_a_circular_array`):** the server's closure already refuses the delete without `cascade` ("has dependents: Circular pattern"); with `cascade` the consumers go first (`golden_datum_axis::deleting_the_axis_or_the_points_under_a_consumer_is_refused_and_a_cascade_goes_in_order`). Nothing to refuse beyond what existed; recorded because the plan expected `CircularArray.axis` to be missing from the closure and it is not.
+
+## F-174 A coordinate typed on a vertex datum point is written and ignored
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `resolve_point_into` evaluates the `x`, `y`, `z` formulas for a `Manual` point only; an `AtVertex` point takes its place from the edge's end on every rebuild (`model/regen/refs.rs:224-244`). The feature-dimension path stores the typed value anyway. [read in source]
+- **Executed (`i0_probes::p14_native_a_coordinate_typed_on_a_vertex_point_is_ignored`, app data path):** `x` = 123 written on a vertex point, forced rebuild: `errors: []`, the point stays on its vertex.
+- **Server policy (refusal):** `dimension_set` on `x`/`y`/`z` of a vertex point is refused (`golden_datum_point::dimension_set_on_a_vertex_point_is_refused_f174`).
+
+## F-175 The app's Part copy leaves a vertex datum point on the source body
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (candidate for an upstream issue).
+- **Source:** `clone_subtree_into` copies a datum point as `DatumPoint { id: map[&point], ..dp }`: the new id is mapped but the body and edge of an `AtVertex` definition are not (`model/timeline/clone.rs:166-171`), while axes get their `body`, `edge`, `face` and point ids remapped. The copy's point therefore resolves on the SOURCE body, and a cascade deleting the source body deletes the copy's point or leaves it dangling. [read in source]
+- **Executed (`i0_probes::p15_native_a_part_copy_leaves_a_vertex_point_on_the_source_body`, app data path):** after `clone_component` both the source's and the copy's vertex point name the same body.
+- **Server policy (refusal):** `part_copy` of a Part whose subtree holds a vertex point is refused before anything changes (`golden_datum_lifecycle::part_copy_with_a_vertex_point_is_refused_f175_and_part_instance_does_not_copy_datums`). Edge, face and two-point axes are remapped by the app and the copy works (`part_copy_remaps_edge_face_and_two_point_axes_onto_its_own_bodies`). `part_instance` (the app's clone) repeats the body only and copies no datum node, so it is unaffected.
+
+## F-176 An edit that removes the edge or face under a datum, while the body stays, leaves the datum at its old place with no error
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `resolve_point_into` (`AtVertex`) and `resolve_axis_into` (`FromEdge`, `FromFace`) update the datum only when the edge or the face axis is found on the body and otherwise keep the previous value, registering nothing (`model/regen/refs.rs:224-279`). [read in source]
+- **Executed (`i0_probes::p13_native_an_edge_that_vanishes_under_datums_leaves_them_in_place_without_an_error`, app data path):** a hexagonal prism with a vertex point and an edge axis on one vertical edge; the side count parameter 6 -> 4 removes that edge while the body stays: `errors: []`, the point and the axis keep their last place.
+- **Server policy (refusal):** after the rebuild of any edit, a vertex point or an edge axis whose edge is gone from a body that is still built, or a face axis whose face is no longer a cylinder or cone, refuses the edit (rolled back): `golden_datum_point::an_edge_that_vanishes_under_a_vertex_point_refuses_the_edit_f176`, `golden_datum_axis::an_edge_that_vanishes_under_an_axis_refuses_the_edit_f176`, `a_bore_that_vanishes_under_a_face_axis_refuses_the_edit_f176`. A file that already holds such a datum opens with a warning and its other edits stay possible.
+
+## F-177 Removing a curve (`sketch_remove`) that is one of several profiles of a feature drops it from the feature with no error
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed. Found as a side note of the package I review ("a circle under an extrude passes, volume unchanged, errors []").
+- **Executed on the server path (`i0_probes::p16_sketch_remove_of_a_curve_under_an_extrude`):** (A) a hole circle removed from a plate extrude: volume 937.17 -> 1000, `errors: []` (the consumer follows its held outer contour: legal). (B) the disc of a square + disc two-profile extrude removed: volume 892.70 -> 500, `errors: []` (the island silently drops out of the feature, the same effect as F-168 through the delete door). (C) the only profile removed: "profile was not found", rolled back. The reviewer's "volume unchanged" is not reproduced: the volume always changes with the geometry.
+- **Server policy:** not refused in package I (decision: record, do not fix here); BACKLOG.
+

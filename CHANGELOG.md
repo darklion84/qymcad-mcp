@@ -9,14 +9,16 @@ All notable changes to this project are documented here. The format follows
 - `datum_point`: the app's Datum point command — by coordinates `at` (numbers or formulas on x, y, z, within ±1e7 on every edit) or at a vertex of a current body of the active Part (`vertex {edge, end, body?}`, follows the vertex); batch and one-step undo.
 - `datum_axis`: the app's Datum axis command — along a straight non-seam non-smooth `edge`, along a cylinder or cone `face`, through two datum `points` (follows them), or by hand `origin` + `dir` (numbers only, F-170). `revolve` and `circular_array` take it as `{"datum": id}` (the axis must belong to the active Part); an axis made here is never reused by a feature that gives `origin` + `dir`.
 - `sketch_edit` op `construction`: the app's construction toggle on existing curves (`entities`, `to` required; one state for the whole set as in the app); returns `construction: [{id, construction}]`.
-- `doc_info` lists `datums` (points, axes with resolved origin and direction, datum node errors) when the document has any.
+- `doc_info` lists `datums` (points, axes with resolved origin, unit direction and `owner_part` in a multi-Part document, datum node errors) when the document has any.
 
 ### Changed
 - A name given to a datum node (`plane_offset`, `datum_point`, `datum_axis`) or set with `rename` is written to the datum's pool record as well, which is the name the app's tree shows (F-171).
 
-### Fixed (protective refusals of silent native results, FINDINGS F-168–F-173)
-- Turning curves into construction is refused when it would change a contour that features hold by id (a hole becomes construction under a plate extrude): the app rebuilds the consumers as a different profile with no error (F-168).
+### Fixed (protective refusals of silent native results, FINDINGS F-168–F-177)
+- Turning curves into construction is refused when a feature with several profiles would lose one of them (an island turned construction drops out of the feature with no error, F-168). A hole turned construction under a plate extrude is allowed: the app follows the held outer contour.
 - Suppressing a body that a vertex point or an edge/face axis stands on is refused (F-169); deleting it needs `cascade`. A formula on a datum axis coordinate is refused by `dimension_set` (F-170). A two-point axis whose points would coincide is refused (F-172).
+- `dimension_set` on a coordinate of a vertex datum point is refused (the app ignores it, F-174); `part_copy` of a Part with a vertex point is refused (the app's copy leaves the point on the source body, F-175); an edit that removes the edge or round face under a vertex point or edge/face axis while the body stays is refused (F-176).
+- `datum_axis points` need datum points of the active Part; datums are not made while the assembly root is active; a manual axis reports a unit direction; opening a file with a faulty datum warns instead of refusing.
 
 ## 0.1.1-dev.20261026.14 — part delete, joint limits, Revolute hinges (ADR 0054)
 
