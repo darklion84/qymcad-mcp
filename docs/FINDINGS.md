@@ -2760,6 +2760,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-154 Deleting a cloned source Part leaves its clones with the old body and no error
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#383.
 - **Upstream:** not filed (owner files after dedupe).
 - **Source:** `Project::delete_component` (`model/components.rs:171-252`) removes the source's nodes but does not call
   `mark_copiers_dirty` (feature/body deletion does, `model/timeline/delete.rs:118,400`). The GUI's resync rebuilds
@@ -2797,6 +2798,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-156 Deleting a Part under an active history rollback slides the bar
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#384.
 - **Upstream:** not filed (owner files after dedupe).
 - **Source:** `rollback: Option<usize>` is a timeline index (`model.rs:366`, `timeline/order.rs:10-22`);
   `delete_component` removes timeline entries but leaves the index unchanged, so nodes formerly past the bar fall
@@ -2812,6 +2814,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-157 Joint limits with min above max send every value to max
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#385.
 - **Upstream:** not filed (owner files after dedupe).
 - **Source:** `Joint::clamp_slot` (`feature/mates.rs:535-548`) raises a value below `min` to `min`, then lowers a value
   above `max` to `max`, with no `min ≤ max` check; the GUI's limit fields (`qymcad-assembly/src/popup.rs:322-341`) and
@@ -2832,6 +2835,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-158 Revolute angles are read wrapped to (−180°, 180°], so limits past ±180 snap a released part back
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#386.
 - **Upstream:** not filed (owner files after dedupe).
 - **Source:** `measured_slot` reads a rotation with `atan2` (`asm/bridge.rs:555-563`) and nothing unwraps it. Limits
   are compared with that reading in the free-slot active set (`asm/bridge.rs:439-480`), so a door driven to −200°
@@ -2854,6 +2858,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-159 A driven joint whose moving Part is grounded does not move and reports nothing
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#263 (existing, same cause).
 - **Upstream:** not filed (owner files after dedupe).
 - **Source:** the solver moves B's Part; a grounded B is fixed, so the drive is not reached, but `solve_joints`
   returns no error, `mates_violated` stays empty and `joint_faults` is empty. The app grounds A implicitly when nothing
@@ -2870,6 +2875,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-160 A feature that consumes the anchored body leaves a joint on the consumed body's old edge or face
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** QymIs-Tech/QymCAD#387.
 - **Upstream:** not filed (owner files after dedupe).
 - **Source:** a connector keeps the body id it was made on (`AnchorRef::EdgeMid(body, edge)`,
   `model/assembly/anchors.rs:265-380`) and resolves its frame from `regen_edges[body]`, the edges of that body as last
@@ -2989,7 +2995,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-166 QymCAD.app loses an edge or vertex anchor of a joint after save and reopen
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** (issue pending)
+- **Upstream:** QymIs-Tech/QymCAD#388.
 - **Observed in the GUI (run 1 and run 2, `tmp/gui-check-H/REPORT-run1.md` and `REPORT.md` section A):** hinge files written
   by this server open with "Не выполняется связей: 1. Первая, hinge: опора не найдена" (`j-fault-anchor-lost`) and the door
   never moves. A hinge CREATED IN QymCAD.app itself does the same after save and reopen. «Правка → Пересобрать всё» clears

@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.14 — part delete, joint limits, Revolute hinges (ADR 0054)
 
 ### Added
 - `part_delete`: the app's tree Delete of a Part (`delete_component`) — removes a root-child Part with its bodies, sketches, datums and every joint touching it; the root becomes active if the deleted Part was active; a clone Part can now be deleted (ADR 0053 gap closed); batch and one-step undo (ADR 0054 §1). What the app leaves behind (the other side's connector and the deleted joint's formulas, F-155) is kept and reported as `native_leftovers`.
