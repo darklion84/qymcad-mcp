@@ -12,6 +12,7 @@ mod assembly_lifecycle_tests;
 #[cfg(test)]
 mod assembly_tests;
 mod body_boolean;
+mod datum_axis;
 mod datum_point;
 mod dependencies;
 mod dimensions;
@@ -63,6 +64,7 @@ pub use assembly::{
     EDGE_ANCHOR_NOTE,
 };
 pub use body_boolean::{BodyBooleanOptions, BodyBooleanResult, BooleanOp};
+pub use datum_axis::{AxisSpec, DatumAxisInfo};
 pub use datum_point::{DatumPointInfo, PointSpec, VertexEnd, VertexInfo};
 pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};
@@ -73,7 +75,7 @@ pub use history::{
 };
 pub use hole_sketch::HoleSketch;
 pub use import_tool::{ImportResult, ImportedBody};
-pub use info::{ComponentInfo, DocInfo, NodeInfo};
+pub use info::{ComponentInfo, DatumsInfo, DocInfo, NodeInfo};
 pub use measure::{MeasureAt, MeasureOperand, MeasureResult, ResolvedMeasure};
 pub use mesh_import::{MeshFormat, MeshImportResult, MeshPieceResult, MeshUnit};
 pub use mesh_recognise::{MeshRecogniseMode, MeshRecogniseResult};

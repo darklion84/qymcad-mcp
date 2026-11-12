@@ -38,6 +38,21 @@ pub struct ComponentInfo {
     pub instances: Vec<Id>,
 }
 
+/// Datum points and axes with their resolved geometry, in the part frames they belong to.
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct DatumsInfo {
+    pub points: Vec<crate::DatumPointInfo>,
+    pub axes: Vec<crate::DatumAxisInfo>,
+    /// Rebuild errors of datum nodes.
+    pub errors: Vec<NodeIssue>,
+}
+
+impl DatumsInfo {
+    fn is_empty(&self) -> bool {
+        self.points.is_empty() && self.axes.is_empty() && self.errors.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct DocInfo {
     pub qymcad_version: &'static str,
@@ -52,6 +67,9 @@ pub struct DocInfo {
     pub sketches: Vec<SketchInfo>,
     /// The timeline (the recipe), in build order.
     pub timeline: Vec<NodeInfo>,
+    /// Datum points and axes (omitted when there are none).
+    #[serde(skip_serializing_if = "DatumsInfo::is_empty")]
+    pub datums: DatumsInfo,
     /// Persisted native active-prefix boundary; the inactive timeline remains in the recipe.
     pub rollback: crate::RollbackInfo,
     pub bodies: Vec<BodyInfo>,
@@ -123,6 +141,16 @@ impl Session {
                     suppressed: n.suppressed,
                 })
                 .collect(),
+            datums: DatumsInfo {
+                points: p.datum_points.iter().filter_map(|d| self.datum_point_info(d.id).ok()).collect(),
+                axes: p.datum_axes.iter().filter_map(|d| self.datum_axis_info(d.id).ok()).collect(),
+                errors: p
+                    .regen_errors
+                    .iter()
+                    .filter(|(id, _)| p.datum_points.iter().any(|d| d.id == **id) || p.datum_axes.iter().any(|d| d.id == **id))
+                    .map(|(id, e)| NodeIssue { node: *id, name: self.node_name(*id), message: crate::localization::error(e) })
+                    .collect(),
+            },
             rollback: self.rollback_info(),
             bodies,
             errors: p

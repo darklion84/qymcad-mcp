@@ -605,6 +605,7 @@ impl Session {
         self.check_thread_dimensions()?;
         self.check_datum_values()?;
         self.check_datum_point_values()?;
+        self.check_datum_axis_values()?;
         self.check_chamfer_values()?;
         self.check_draft_thicken_values()?;
         self.check_hole_values()

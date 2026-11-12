@@ -73,14 +73,10 @@ impl Session {
                     id
                 }
                 PointSpec::Vertex { edge, end, body } => {
-                    let body = s.source_body(*body)?;
-                    if s.has_assembly_structure() && s.p.body_owner(body) != s.p.active_component {
-                        return Err(Error::Invalid(format!(
-                            "body {body} belongs to another Part; the app offers only the vertices of the current Part's bodies (part_select first)"
-                        )));
-                    }
+                    let body = s.current_part_body(*body, "vertices")?;
                     let found = s.p.regen_edges.get(&body).and_then(|edges| edges.iter().find(|e| e.id == *edge)).cloned();
-                    let found = found.ok_or_else(|| Error::NotFound(format!("edge {edge} of body {body} (re-read topology after each feature)")))?;
+                    let found = found
+                        .ok_or_else(|| Error::NotFound(format!("edge {edge} of body {body} (re-read topology after each feature)")))?;
                     let at = if *end == VertexEnd::End { found.b } else { found.a };
                     s.p.add_point_at_vertex(at, body, *edge, *end == VertexEnd::End)
                 }
@@ -89,6 +85,18 @@ impl Session {
             Ok(id)
         })?;
         Ok((self.datum_point_info(id)?, report))
+    }
+
+    /// A current body of the active Part: the app offers a datum's vertex, edge or face source only on those bodies
+    /// (`viewport_3d.rs` filters `body_owner == ctx`). `what` names the pick in the refusal.
+    pub(crate) fn current_part_body(&self, body: Option<Id>, what: &str) -> Result<Id> {
+        let body = self.source_body(body)?;
+        if self.has_assembly_structure() && self.p.body_owner(body) != self.p.active_component {
+            return Err(Error::Invalid(format!(
+                "body {body} belongs to another Part; the app offers only the {what} of the current Part's bodies (part_select first)"
+            )));
+        }
+        Ok(body)
     }
 
     /// One datum point's current state.

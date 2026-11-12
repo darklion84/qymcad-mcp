@@ -313,7 +313,8 @@ const AXIS_HELP: &str = "An axis. For revolve: \"sketch_x\" or \"sketch_y\" (the
     (a line of that sketch, e.g. from a construction rectangle). Anywhere: \"X\", \"Y\", \"Z\" (world axes through \
     the origin), {\"origin\": [x,y,z], \"dir\": [x,y,z]} (a fixed axis), {\"face\": <face id>, \"body\": <body>} (the \
     axis of a cylindrical or conical face; follows the face; body defaults to the current body), {\"datum\": <datum \
-    axis id>}. A revolve axis must lie in the sketch plane and must not cross the profile.";
+    axis id>} (an axis from datum_axis, of the active Part; the app turns the feature about another axis if the axis is \
+    deleted, so such a delete is refused while the feature stands). A revolve axis must lie in the sketch plane and must not cross the profile.";
 
 /// An axis as the agent writes it.
 #[derive(Clone, Debug)]

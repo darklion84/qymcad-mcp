@@ -81,7 +81,15 @@ impl Session {
             }
             AxisRef::Datum(id) => {
                 if !self.p.datum_axes.iter().any(|a| a.id == *id) {
-                    return Err(Error::NotFound(format!("datum axis {id}")));
+                    return Err(Error::NotFound(format!("datum axis {id} (make one with datum_axis)")));
+                }
+                // The app lets a feature pick any visible axis; an axis of another Part is in that Part's frame, so the
+                // server accepts only the active Part's own (as it does for datum planes).
+                let owner = self.p.timeline.iter().find(|n| n.id == *id).and_then(|n| n.parent);
+                if self.has_assembly_structure() && owner != self.p.active_component {
+                    return Err(Error::Invalid(format!(
+                        "datum axis {id} belongs to another Part; axes are in their Part's frame (part_select first)"
+                    )));
                 }
                 *id
             }
@@ -94,7 +102,8 @@ impl Session {
     }
 
     /// A fixed (manual) datum axis through `origin` along `dir`: an existing one on the same line with the same
-    /// sense is reused, so repeated features about one axis share one datum.
+    /// sense is reused, so repeated features about one axis share one datum. An axis made on purpose by `datum_axis`
+    /// is never reused: deleting it must not reach a feature that only asked for a line.
     fn fixed_axis(&mut self, name: &str, origin: [f64; 3], dir: [f64; 3]) -> Result<Id> {
         let unit = |d: [f64; 3]| {
             let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
@@ -103,12 +112,14 @@ impl Session {
         let u = unit(dir).ok_or_else(|| Error::Invalid("axis direction has no length".into()))?;
         let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
         let small = |v: [f64; 3]| v.iter().map(|x| x * x).sum::<f64>().sqrt() < 1e-9;
-        let same = self.p.datum_axes.iter().find(|a| match a.def {
-            AxisDef::Manual { origin: o, dir: d } => unit(d).is_some_and(|w| {
-                let off = [o[0] - origin[0], o[1] - origin[1], o[2] - origin[2]];
-                w[0] * u[0] + w[1] * u[1] + w[2] * u[2] > 0.0 && small(cross(w, u)) && small(cross(off, u))
-            }),
-            _ => false,
+        let same = self.p.datum_axes.iter().filter(|a| self.p.feat_dim(a.id, crate::datum_axis::EXPLICIT_AXIS_KEY).is_none()).find(|a| {
+            match a.def {
+                AxisDef::Manual { origin: o, dir: d } => unit(d).is_some_and(|w| {
+                    let off = [o[0] - origin[0], o[1] - origin[1], o[2] - origin[2]];
+                    w[0] * u[0] + w[1] * u[1] + w[2] * u[2] > 0.0 && small(cross(w, u)) && small(cross(off, u))
+                }),
+                _ => false,
+            }
         });
         Ok(match same {
             Some(a) => a.id,

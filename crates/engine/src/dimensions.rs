@@ -428,6 +428,12 @@ impl Session {
                 {
                     return Err(Error::Invalid("a symmetric chamfer has no effective d2; recreate it with d2 or angle".into()));
                 }
+                if self.p.timeline.iter().any(|n| n.id == *feature && matches!(n.kind, FeatureKind::DatumAxis { .. })) {
+                    return Err(Error::Invalid(format!(
+                        "a datum axis's `{key}` cannot be edited: the app reads the axis from its definition and ignores a formula on its origin or direction, \
+                         so the axis would not move (F-170). Make a new axis, or an axis through two datum points whose x, y, z are formulas"
+                    )));
+                }
                 if self.p.kept_number(*feature, key).is_none() {
                     return Err(Error::NotFound(format!("no numeric dimension `{key}` on feature or sketch item {feature}")));
                 }
