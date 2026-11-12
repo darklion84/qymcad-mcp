@@ -310,6 +310,9 @@ impl Session {
         if !changed {
             return Ok(self.suppression_result(feature, suppressed, false));
         }
+        if suppressed {
+            self.refuse_suppressing_datum_sources(feature)?;
+        }
         self.check_suppression_outputs(feature, suppressed)?;
         let metadata = self.body_metadata_at_risk();
         // Direct engine calls own one history boundary; MCP and batch already supply theirs.
@@ -404,6 +407,29 @@ impl Session {
         metadata.retain(|body| self.p.mesh_index(body.body).is_none());
         metadata.sort_by_key(|body| body.body);
         metadata
+    }
+
+    /// A body a datum point or axis stands on cannot be suppressed: natively the point keeps its last position and the
+    /// axis its last line, nothing turns red and the consumers go on as if the body were there (F-169). Deleting is
+    /// refused through the closure; suppression has no cascade, so it is refused outright.
+    fn refuse_suppressing_datum_sources(&self, feature: Id) -> Result<()> {
+        let bodies = self.p.timeline.iter().find(|n| n.id == feature).map(|n| n.kind.bodies()).unwrap_or_default();
+        let points = self.p.datum_points.iter().filter(|p| matches!(p.def, PointDef::AtVertex { body, .. } if bodies.contains(&body)));
+        let axes = self
+            .p
+            .datum_axes
+            .iter()
+            .filter(|a| matches!(a.def, AxisDef::FromEdge { body, .. } | AxisDef::FromFace { body, .. } if bodies.contains(&body)));
+        let standing: Vec<String> =
+            points.map(|p| p.id).chain(axes.map(|a| a.id)).map(|id| format!("{} ({id})", self.node_name(id))).collect();
+        if standing.is_empty() {
+            return Ok(());
+        }
+        Err(Error::Invalid(format!(
+            "feature {feature} carries the body that datum {} stand on; suppressing it would leave them at their last position \
+             without any error (F-169). Delete them first, or delete this feature with cascade=true",
+            standing.join(", ")
+        )))
     }
 
     // Native inputs omit datum placement dependencies (F-017). Extend native graph traversal with

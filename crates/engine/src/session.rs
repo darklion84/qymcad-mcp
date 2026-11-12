@@ -604,6 +604,7 @@ impl Session {
         self.check_extrude_down()?;
         self.check_thread_dimensions()?;
         self.check_datum_values()?;
+        self.check_datum_point_values()?;
         self.check_chamfer_values()?;
         self.check_draft_thicken_values()?;
         self.check_hole_values()
@@ -1406,8 +1407,34 @@ impl Session {
             if let Some(n) = self.p.timeline.iter_mut().find(|n| n.id == id) {
                 n.name = name.to_string();
             }
+            self.set_datum_pool_name(id, name);
         }
         Ok(())
+    }
+
+    /// The app's tree shows a datum's name from its pool record, not from the timeline node (`datum_row_name`), and its
+    /// own rename writes the pool (F-171). A name given to a datum node is written to both.
+    pub(crate) fn set_datum_pool_name(&mut self, id: Id, name: &str) {
+        use qymcad_core::feature::FeatureKind;
+        let Some(kind) = self.p.timeline.iter().find(|n| n.id == id).map(|n| n.kind.clone()) else { return };
+        match kind {
+            FeatureKind::Plane { plane } => {
+                if let Some(p) = self.p.planes.iter_mut().find(|p| p.id == plane) {
+                    p.name = name.to_string();
+                }
+            }
+            FeatureKind::DatumPoint { point } => {
+                if let Some(p) = self.p.datum_points.iter_mut().find(|p| p.id == point) {
+                    p.name = name.to_string();
+                }
+            }
+            FeatureKind::DatumAxis { axis } => {
+                if let Some(a) = self.p.datum_axes.iter_mut().find(|a| a.id == axis) {
+                    a.name = name.to_string();
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Reserve explicit piece aliases first so blank entries can choose unused default suffixes.

@@ -12,6 +12,7 @@ mod assembly_lifecycle_tests;
 #[cfg(test)]
 mod assembly_tests;
 mod body_boolean;
+mod datum_point;
 mod dependencies;
 mod dimensions;
 mod error;
@@ -62,6 +63,7 @@ pub use assembly::{
     EDGE_ANCHOR_NOTE,
 };
 pub use body_boolean::{BodyBooleanOptions, BodyBooleanResult, BooleanOp};
+pub use datum_point::{DatumPointInfo, PointSpec, VertexEnd, VertexInfo};
 pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};
 pub use error::{Error, Result};
 pub use export::{ExportFormat, ExportReport, ExportedBody, Quality};

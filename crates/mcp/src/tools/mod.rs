@@ -5,6 +5,7 @@ mod appearance;
 mod assembly;
 mod batch;
 mod common;
+mod datums;
 mod doc;
 mod features;
 mod history;
@@ -72,6 +73,8 @@ where
                 ["body", "plane", "sketch", "pattern"].iter().find_map(|key| v[*key].as_u64()).or_else(|| match name {
                     "part_new" | "part_instance" | "part_copy" => v["part"]["id"].as_u64(),
                     "joint_create" => v["joint"]["id"].as_u64(),
+                    "datum_point" => v["point"].as_u64(),
+                    "datum_axis" => v["axis"].as_u64(),
                     _ => None,
                 })
             };
@@ -119,6 +122,8 @@ fn modelling_tool(name: &str) -> bool {
             | "sketch_pattern"
             | "sketch_import"
             | "plane_offset"
+            | "datum_point"
+            | "datum_axis"
             | "extrude"
             | "revolve"
             | "sweep"
@@ -262,6 +267,7 @@ impl Registry {
         tools.extend(sketch_pattern::tools());
         tools.extend(sketch_import::tools());
         tools.extend(features::tools());
+        tools.extend(datums::tools());
         tools.extend(print::tools());
         tools.extend(import::tools());
         tools.extend(import_mesh::tools());

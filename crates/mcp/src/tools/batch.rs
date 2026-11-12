@@ -18,7 +18,7 @@ struct BatchArgs {
 #[serde(deny_unknown_fields)]
 struct Step {
     /// A modelling tool: param_set, dimension_set, param_delete, sketch_create, sketch_add, sketch_project, sketch_constrain, sketch_remove, sketch_edit, sketch_pattern,
-    /// plane_offset, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, draft, thicken, remove_face, linear_array, circular_array,
+    /// plane_offset, datum_point, datum_axis, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, draft, thicken, remove_face, linear_array, circular_array,
     /// move, mirror, thread, body_boolean, split, import, import_mesh, recognise, rename, appearance, part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete, joint_limits, feature_reorder, feature_suppress, history_rollback or feature_delete. Reads, document/file tools, undo and nested batch are refused.
     tool: String,
     /// Exactly the named tool's standalone arguments, including its JSON-string object/array leniency.

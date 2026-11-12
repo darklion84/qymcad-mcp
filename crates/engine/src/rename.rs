@@ -80,6 +80,7 @@ impl Session {
             match target {
                 RenameTarget::Feature(id) => {
                     self.p.rename_node(id, name);
+                    self.set_datum_pool_name(id, name);
                 }
                 RenameTarget::Sketch(_) => self.p.sketches[index].name = name.into(),
                 RenameTarget::Body(_) => self.p.set_mesh_name(index, name.into()),
