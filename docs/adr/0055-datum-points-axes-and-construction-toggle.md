@@ -92,7 +92,9 @@ feature that built before now fails).
   changes shape (a hole circle turned construction under a plate extrude) stays the same profile and the consumer follows: a legal
   action, not refused. A held contour that is gone is an error in the app for a feature with one profile ("profile was not found";
   the edit rolls back), but a feature with several profiles is built from the rest and the island silently drops out. That case is
-  refused (some, not all, of a feature's held contours vanish). Contours no feature holds are not judged.
+  refused (some, not all, of a feature's held contours vanish). Contours no feature holds are not judged. The guard sits in the shared
+  `Session::sketch_edit` path, so it covers every sketch edit that can remove a contour (`sketch_remove`, the `sketch_edit` ops, `sketch_add`,
+  `sketch_constrain`), not only the toggle (F-177).
 
 ## 4. Names
 
@@ -151,4 +153,4 @@ the server's `Session` where it is about the server). Observed = executed, infer
 | 13 | An edge under a vertex point and an edge axis disappears, the body stays (native `p13`) | Observed: `errors: []`, the point and the axis keep their last place. | Refuse after the rebuild, rollback; F-176. |
 | 14 | A coordinate typed on a vertex point (native `p14`) | Observed: stored, ignored by the rebuild, `errors: []`. | `dimension_set` refused; F-174. |
 | 15 | Part copy of a Part with a vertex point (native `p15`) | Observed: the copy's point stands on the source body (body and edge not remapped). | `part_copy` refused; F-175. Edge/face/two-point axes are remapped (server test). |
-| 16 | `sketch_remove` of a curve under an extrude (`p16`, server path) | Observed: a hole follows (937.17 -> 1000); one profile of two drops out with `errors: []` (892.70 -> 500); the only profile fails and rolls back. The reviewer's "volume unchanged" was not reproduced. | Not fixed in this package; F-177, BACKLOG. |
+| 16 | `sketch_remove` of a curve under an extrude (`p16`, server path) | Observed: a hole follows (937.17 -> 1000); one profile of two dropped out with `errors: []` (892.70 -> 500) before the guard moved into the shared sketch-edit path, now refused; the only profile fails and rolls back. The reviewer's "volume unchanged" was not reproduced. | The F-168 guard covers every sketch edit; F-177. |

@@ -26,17 +26,16 @@ Subject: `sketch_edit op:"construction"`, `datum_point` and `datum_axis` (ADR 00
 | Tests: only `is_err`, `contains(a) \|\| contains(b)`, a tautology in the MCP test, no MCP vertex/edge/face tests, nothing for a suppressed body under an edge/face axis, a revolve with another Part's axis, `param_set` collapsing axis points, `part_instance` with datums | Opus, Sonnet n3 | All added or tightened (texts asserted, alternatives removed, the `changed_entities` assertion made specific, the unused `other` removed). |
 | ADR refers to untracked `tasks/*.md`; the PROBES table belongs in the ADR | Opus nit, Sonnet | The table is the ADR section "Probes"; no `tasks/` reference is left in the ADR. |
 | The server is stricter than the GUI on edges (`EdgeKind::Line` against `is_straight_poly`, visibility ignored); the `__explicit` marker may be lost on a GUI edit | Opus nit, Sonnet n2 | ADR "Known limits"; the marker is in BACKLOG. |
-| Side note: `sketch_remove` of a circle under an extrude passes, volume unchanged, errors `[]` | Opus | Probe P16: "volume unchanged" is NOT reproduced (the volume follows the geometry); an island of a several-profile feature does drop out silently with `errors: []`, like F-168 through the delete door. Not fixed here: F-177 and BACKLOG. |
+| Side note: `sketch_remove` of a circle under an extrude passes, volume unchanged, errors `[]` | Opus | Probe P16: "volume unchanged" is NOT reproduced (the volume follows the geometry). An island of a several-profile feature did drop out silently with `errors: []`, like F-168 through the delete door; fixed in the follow-up commit (coordinator decision): the guard moved into the shared `Session::sketch_edit`, covering `sketch_remove` and every sketch edit that can remove a contour; a removed hole still passes. F-177. |
 
 ## Evidence
 
 - Targeted: the datum, construction and probe test files and the MCP `i1`, `i2`, `i3` and `docs_fresh` tests pass (observed); the whole engine suite passed once on an intermediate state (1164 passed, 0 failed, 3 ignored).
 - `scripts/check.sh` on `5d5c804`: OK, 1461 passed, 0 failed, 3 ignored (fmt, clippy `-D warnings`, `cargo test --workspace`).
-- New findings: F-174 (typed coordinate on a vertex point ignored), F-175 (Part copy leaves a vertex point on the source), F-176 (vanished edge or face under a datum), F-177 (`sketch_remove` drops one profile of several); F-168 rewritten.
+- New findings: F-174 (typed coordinate on a vertex point ignored), F-175 (Part copy leaves a vertex point on the source), F-176 (vanished edge or face under a datum), F-177 (`sketch_remove` and other sketch edits drop one profile of several; refused by the shared guard); F-168 rewritten.
 - Not run: QymCAD.app itself (the GUI); every app-side claim is a native core-API probe or read in source, as marked in FINDINGS.
 
 ## Known limits
 
 - A numeric edit of a manual axis is not covered (F-170): delete and create again.
 - The server judges edges by `EdgeKind::Line`, not as the app's picker does, and does not consider visibility.
-- F-177 is open.

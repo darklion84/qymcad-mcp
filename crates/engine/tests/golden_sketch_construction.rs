@@ -118,6 +118,27 @@ fn a_vanished_island_of_a_several_profile_feature_is_refused_f168() {
     assert_close(s.result_bodies()[0].volume, volume, 1e-9, "the consumer is untouched");
 }
 
+/// The guard sits in the shared sketch-edit path: removing the island is refused as well, removing a hole passes (F-177).
+#[test]
+fn removing_an_island_under_a_several_profile_feature_is_refused_and_a_hole_passes() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    let island = s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+    extrude_all(&mut s, sk, 5);
+    let volume = s.result_bodies()[0].volume;
+    let before = ron::to_string(s.project()).unwrap();
+    let e = s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap_err().to_string();
+    assert!(e.contains("F-168") && e.contains("silently drops out") && e.contains("this edit would remove contour"), "{e}");
+    assert_eq!(ron::to_string(s.project()).unwrap(), before);
+    assert_close(s.result_bodies()[0].volume, volume, 1e-9, "the consumer is untouched");
+    // A hole circle removed from a plate extrude: the consumer follows.
+    let (mut p, psk, hole, _) = plate_with_hole();
+    extrude_all(&mut p, psk, 5);
+    p.sketch_edit(psk, |s| s.sketch_remove_entity(psk, hole)).unwrap();
+    assert_close(p.result_bodies()[0].volume, 1000.0, 1e-6, "the plate lost its hole: the volume grew");
+}
+
 /// A ring no feature holds may be turned construction: the consumer's own island is untouched.
 #[test]
 fn an_unused_ring_turned_construction_passes() {

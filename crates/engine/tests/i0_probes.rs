@@ -395,9 +395,9 @@ fn p15_native_a_part_copy_leaves_a_vertex_point_on_the_source_body() {
     assert_eq!(Some(stands_on[1]), source_body);
 }
 
-/// P16 (server path, side note of the review): `sketch_remove` of a curve under an extrude. The reviewer saw "passes, volume
-/// unchanged, errors []"; what is observed here: a hole follows (volume grows), the only profile fails and rolls back, and an
-/// island of a several-profile feature drops out with `errors: []` (the same silent drop as F-168, through another door: F-177).
+/// P16 (server path, side note of the review, F-177): `sketch_remove` of a curve under an extrude. The reviewer saw "passes, volume
+/// unchanged, errors []"; not reproduced: a hole follows (the volume grows), the only profile fails and rolls back, and the island of a
+/// several-profile feature used to drop out with `errors: []` (892.70 -> 500, observed before the shared guard) and is now refused.
 #[test]
 fn p16_sketch_remove_of_a_curve_under_an_extrude() {
     let vol = |s: &Session| s.result_bodies().iter().map(|b| b.volume).collect::<Vec<_>>();
@@ -408,16 +408,16 @@ fn p16_sketch_remove_of_a_curve_under_an_extrude() {
     s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, hole)).unwrap();
     assert_close(vol(&s)[0], 1000.0, 1e-6, "A: the hole is gone from the plate");
     assert!(s.current_rebuild().errors.is_empty());
-    // B: square + disc island, two profiles: the island drops out silently.
+    // B: square + disc island, two profiles: refused (the native drop-out is pinned by p11_native_a_vanished_island_...).
     let mut s = Session::new_part();
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
     let island = s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
     s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
     assert_close(vol(&s)[0], 892.6990817, 1e-5, "square and disc");
-    s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap();
-    assert_close(vol(&s)[0], 500.0, 1e-6, "B: the island dropped out of the feature");
-    assert!(s.current_rebuild().errors.is_empty(), "B: and nothing says so (F-177)");
+    let e = s.sketch_edit(sk, |s| s.sketch_remove_entity(sk, island)).unwrap_err().to_string();
+    assert!(e.contains("F-168") && e.contains("silently drops out"), "B: {e}");
+    assert_close(vol(&s)[0], 892.6990817, 1e-5, "B: rolled back");
     // C: the only profile: the app errors and the edit rolls back.
     let mut s = Session::new_part();
     let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();

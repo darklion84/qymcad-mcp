@@ -51,11 +51,9 @@ impl Session {
                 if to { "construction" } else { "ordinary" }
             )));
         }
-        let before = self.sketch_info(sketch)?.contours;
         let edit = self.sketch_edit_report(sketch, |s| {
             s.p.toggle_construction(si, entities);
             s.complete_sketch_edit(si)?;
-            s.refuse_dropped_profiles(sketch, &before, &s.sketch_info(sketch)?.contours)?;
             Ok(Vec::new())
         })?;
         let entities = entities
@@ -63,43 +61,5 @@ impl Session {
             .filter_map(|id| self.p.sketches[si].entity(*id).map(|e| ConstructionState { id: *id, construction: e.construction }))
             .collect();
         Ok(ConstructionEdit { edit, entities })
-    }
-}
-
-/// The contour ids a feature holds as its profiles (the contours it was built from).
-fn held_contours(kind: &qymcad_core::feature::FeatureKind) -> Vec<Id> {
-    use qymcad_core::feature::FeatureKind as K;
-    match kind {
-        K::Extrude { profiles, .. } | K::Combine { profiles, .. } | K::Revolve { profiles, .. } | K::Sweep { profiles, .. } => {
-            profiles.clone()
-        }
-        K::Loft { contours, .. } => contours.clone(),
-        _ => Vec::new(),
-    }
-}
-
-impl Session {
-    /// Features hold contours by id, and the app finds a contour again after an edit by its boundary entities, then by
-    /// place and size (`replace_contours`), so changing the shape of a held contour (a hole turned construction) is a
-    /// legal edit that the consumer follows. A held contour that is GONE is different: a feature with one profile
-    /// fails to rebuild ("profile was not found") and the edit rolls back, but a feature with several profiles builds
-    /// from the rest and the missing island silently drops out (F-168). That case is refused.
-    fn refuse_dropped_profiles(&self, sketch: Id, before: &[super::ContourInfo], after: &[super::ContourInfo]) -> Result<()> {
-        let gone = |id: &Id| before.iter().any(|c| c.id == *id) && !after.iter().any(|c| c.id == *id);
-        for node in &self.p.timeline {
-            let held = held_contours(&node.kind);
-            let dropped: Vec<Id> = held.iter().copied().filter(gone).collect();
-            if !dropped.is_empty() && dropped.len() < held.len() {
-                return Err(Error::Invalid(format!(
-                    "turning these curves into construction would remove contour {dropped:?} of sketch {sketch}, which {} ({}) was built from along with {:?}; \
-                     the app would rebuild it from the remaining contours without any error, so the profile silently drops out (F-168). \
-                     Delete or rebuild the feature first, or make the change on a copy of the sketch",
-                    self.node_name(node.id),
-                    node.id,
-                    held.iter().filter(|c| !dropped.contains(c)).collect::<Vec<_>>()
-                )));
-            }
-        }
-        Ok(())
     }
 }
