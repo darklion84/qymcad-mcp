@@ -34,8 +34,9 @@ fn a_construction_curve_leaves_the_profile_and_comes_back() {
     toggle(&mut s, sk, &[hole], true).unwrap();
     let (_, r) = s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
     assert_close(r.bodies[0].volume, 1000.0, 1e-6, "plate without the construction hole");
-    // ... and now that a consumer holds the contour the hole cannot come back silently (F-168).
-    assert!(toggle(&mut s, sk, &[hole], false).unwrap_err().to_string().contains("F-168"));
+    // ... and with a consumer the hole comes back as the app's own rebuild: the held outer contour is the same one.
+    toggle(&mut s, sk, &[hole], false).unwrap();
+    assert_close(s.result_bodies()[0].volume, 1000.0 - std::f64::consts::PI * 4.0 * 5.0, 1e-3, "the plate has its hole again");
 }
 
 #[test]
@@ -83,21 +84,63 @@ fn text_points_foreign_ids_and_empty_sets_are_refused() {
     assert_eq!(ron::to_string(s.project()).unwrap(), before);
 }
 
+fn extrude_all(s: &mut Session, sk: u64, height: u32) {
+    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":height,"op":"new_body"})).unwrap()).unwrap();
+}
+
+/// F-168 (rewritten): the app follows a held contour through a change of its shape, so a hole turned construction is a
+/// legal edit (probe `i0_probes::p11_*` and `native_*` pin the app's side).
 #[test]
-fn a_hole_turned_construction_under_a_consumer_is_refused_f168_and_the_vanishing_contour_rolls_back() {
+fn a_hole_turned_construction_under_a_consumer_is_followed_by_it() {
     let (mut s, sk, hole, _) = plate_with_hole();
-    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+    extrude_all(&mut s, sk, 5);
+    assert_close(s.result_bodies()[0].volume, 1000.0 - std::f64::consts::PI * 4.0 * 5.0, 1e-3, "plate with the hole");
+    let done = toggle(&mut s, sk, &[hole], true).unwrap();
+    assert!(done.entities[0].construction);
+    assert_close(s.result_bodies()[0].volume, 1000.0, 1e-6, "the plate lost its hole: the volume grew");
+    assert!(s.current_rebuild().errors.is_empty());
+}
+
+/// Two islands in one extrude: the one turned construction would silently drop out of the feature.
+#[test]
+fn a_vanished_island_of_a_several_profile_feature_is_refused_f168() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    let island = s.sketch_circle(sk, &20.0.into(), &0.0.into(), &10.0.into(), false).unwrap();
+    extrude_all(&mut s, sk, 5);
     let volume = s.result_bodies()[0].volume;
+    assert_close(volume, 500.0 + std::f64::consts::PI * 25.0 * 5.0, 1e-3, "square and disc");
     let before = ron::to_string(s.project()).unwrap();
-    let e = toggle(&mut s, sk, &[hole], true).unwrap_err().to_string();
-    assert!(e.contains("F-168") && e.contains("holes"), "{e}");
+    let e = toggle(&mut s, sk, &[island], true).unwrap_err().to_string();
+    assert!(e.contains("silently drops out") && e.contains("F-168"), "{e}");
     assert_eq!(ron::to_string(s.project()).unwrap(), before);
     assert_close(s.result_bodies()[0].volume, volume, 1e-9, "the consumer is untouched");
-    // The outer contour of a sketch whose only consumer holds it: the app errors, the edit rolls back.
+}
+
+/// A ring no feature holds may be turned construction: the consumer's own island is untouched.
+#[test]
+fn an_unused_ring_turned_construction_passes() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &(-20.0).into(), &0.0.into(), &10.0.into(), &10.0.into(), false).unwrap();
+    let outer = s.sketch_circle(sk, &20.0.into(), &0.0.into(), &12.0.into(), false).unwrap();
+    s.sketch_circle(sk, &20.0.into(), &0.0.into(), &6.0.into(), false).unwrap();
+    // The extrude picks the square by a point; the ring is not in its profiles.
+    s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body","profiles_at":[[-20.0, 0.0]]})).unwrap()).unwrap();
+    assert_close(s.result_bodies()[0].volume, 500.0, 1e-6, "the square only");
+    toggle(&mut s, sk, &[outer], true).unwrap();
+    assert_close(s.result_bodies()[0].volume, 500.0, 1e-6, "the consumer is as it was");
+    assert!(s.current_rebuild().errors.is_empty());
+}
+
+/// A feature with one profile: the app itself reports "profile was not found" and the edit rolls back.
+#[test]
+fn the_only_profile_turned_construction_rolls_back_through_the_apps_error() {
     let mut t = Session::new_part();
     let sk = t.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
     let circle = t.sketch_circle(sk, &0.0.into(), &0.0.into(), &4.0.into(), false).unwrap();
-    t.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap();
+    extrude_all(&mut t, sk, 5);
     let before = ron::to_string(t.project()).unwrap();
     let e = toggle(&mut t, sk, &[circle], true).unwrap_err().to_string();
     assert!(e.contains("profile was not found"), "{e}");
