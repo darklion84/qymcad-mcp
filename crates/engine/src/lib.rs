@@ -87,12 +87,12 @@ pub use reorder::{RehostedSketch, ReorderResult, RewiredFeature};
 pub use revolve::Revolve;
 pub use session::{BodyInfo, NodeIssue, Rebuild, Session};
 pub use sketch::{
-    Added, AddedPoint, ArcSpec, BaseName, BreakSpec, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ContourInfo, CornerSize,
-    CornerSpec, CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec, EntityInfo, EntityRef, ExtendSpec,
-    FrameRef, IsolatedPointInfo, LineSpec, MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole, PointRoleSel, PointSel, PolygonSpec,
-    PolylineSpec, ProjectionResult, RectAnchor, RectSpec, RotateSpec, SketchCurveKind, SketchCurveSel, SketchDetail, SketchInfo,
-    SketchOffsetSpec, SketchPatternKind, SketchPatternResult, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec, TangentCircleSpec,
-    TextFont, TextInfo, TextSpec, TransformSpec, Xy,
+    Added, AddedPoint, ArcSpec, BaseName, BreakSpec, ConstrainSpec, Constrained, ConstraintInfo, ConstraintKind, ConstructionEdit,
+    ConstructionState, ContourInfo, CornerSize, CornerSpec, CurvePickSpec, CurveQuery, DistAxis, EditedSketch, EllipseArcSpec, EllipseSpec,
+    EntityInfo, EntityRef, ExtendSpec, FrameRef, IsolatedPointInfo, LineSpec, MirrorPointSpec, OriginRef, PlaneRef, PointInfo, PointRole,
+    PointRoleSel, PointSel, PolygonSpec, PolylineSpec, ProjectionResult, RectAnchor, RectSpec, RotateSpec, SketchCurveKind, SketchCurveSel,
+    SketchDetail, SketchInfo, SketchOffsetSpec, SketchPatternKind, SketchPatternResult, SketchRef, SketchWorldFrame, SlotSpec, SplineSpec,
+    TangentCircleSpec, TextFont, TextInfo, TextSpec, TransformSpec, Xy,
 };
 pub use sketch_import::{SketchImportFormat, SketchImportResult};
 pub use split::{SplitOptions, SplitResult};

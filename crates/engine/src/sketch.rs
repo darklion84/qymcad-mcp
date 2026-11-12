@@ -3,6 +3,7 @@
 //! in the QymCAD GUI.
 
 mod constrain;
+mod construction;
 mod corner_edit;
 mod detail;
 mod edits;
@@ -15,6 +16,7 @@ mod selectors;
 mod splines;
 mod text;
 
+pub use construction::{ConstructionEdit, ConstructionState};
 pub use corner_edit::{CornerSize, CornerSpec};
 pub use edits::{BreakSpec, CurvePickSpec, EditedSketch, ExtendSpec, RotateSpec, TransformSpec};
 pub use mirror_point::MirrorPointSpec;

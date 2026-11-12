@@ -113,6 +113,18 @@ enum EditArgs {
         /// dist_angle (`second` in degrees).
         size: CornerSize,
     },
+    /// Switch curves between ordinary and construction geometry, as the app's construction button or X key does.
+    /// The app gives the whole set ONE state (construction while any curve is ordinary, ordinary once all are
+    /// construction), so `to` is required: when the rule would give the other state the call is refused and
+    /// nothing changes. Text and isolated points are not switched by the app and are refused.
+    Construction {
+        /// Sketch id or name.
+        sketch: ObjRef,
+        /// Non-empty curve entity ids in this sketch (from sketch_info).
+        entities: Vec<u64>,
+        /// The state wanted: true = construction, false = ordinary.
+        to: bool,
+    },
     /// Copy curves through a half turn about a point. The copy is tied to its source through the centre, so it
     /// follows the source's position, the centre and shared formulas; a size dimension it carried stays its own.
     MirrorPoint {
@@ -134,6 +146,7 @@ impl EditArgs {
             | Self::Move { sketch, .. }
             | Self::Copy { sketch, .. }
             | Self::Rotate { sketch, .. }
+            | Self::Construction { sketch, .. }
             | Self::Offset { sketch, .. }
             | Self::Corner { sketch, .. }
             | Self::MirrorPoint { sketch, .. } => sketch,
@@ -144,11 +157,12 @@ impl EditArgs {
 pub(super) fn tools() -> Vec<Tool> {
     vec![tool(
         "sketch_edit",
-        "Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, move, copy, rotate, offset, corner (fillet or chamfer) or mirror_point. New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {\"op\":\"corner\",\"sketch\":\"s\",\"curves\":[12,13],\"point\":9,\"size\":{\"mode\":\"radius\",\"value\":\"r\"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_constraints (every native constraint or dimension removed/released), released_offsets, dof and free_points; move/rotate refuse when the solver leaves requested geometry in place, and all refusals roll back atomically; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.",
+        "Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, break, move, copy, rotate, offset, corner (fillet or chamfer), mirror_point or construction (switch curves between ordinary and construction, `to` required; returns construction: [{id, construction}]). New ends of trimmed, extended or split curves are tied to the curves they lie on, and the split points of a line stay on that line. Corner example: {\"op\":\"corner\",\"sketch\":\"s\",\"curves\":[12,13],\"point\":9,\"size\":{\"mode\":\"radius\",\"value\":\"r\"}}; point is the shared end point id; size modes radius, chord, arc_length (fillet; value) and symmetric (value = bevel length, not setback), two_dist, dist_angle (chamfer; first, second = setback along the first curve and the second setback or the angle in degrees from the first curve). Returns edit: created/removed/changed entity and point ids, dimensions (indices of the size dimensions it made), dropped_formulas (formula dimensions the edit removed), released_constraints (every native constraint or dimension removed/released), released_offsets, dof and free_points; move/rotate refuse when the solver leaves requested geometry in place, and all refusals roll back atomically; then the sketch and the rebuild of features built on it. A sketch left with freedom is accepted: dimension the rest with sketch_constrain.",
         |st, a: EditArgs| {
             let s = st.doc()?;
             let sketch = a.sketch().resolve(s)?;
             let result_kind = a.clone();
+            let mut states = None;
             let (edit, r) = s
                 .sketch_edit(sketch, |s| match a {
                     EditArgs::Trim { curve, at, .. } => s.sketch_trim(sketch, &CurvePickSpec { curve, at }),
@@ -157,7 +171,12 @@ pub(super) fn tools() -> Vec<Tool> {
                      EditArgs::Move { entities, dx, dy, .. } => s.sketch_transform_move(sketch, &qymcad_engine::TransformSpec { entities, dx, dy }),
                      EditArgs::Copy { entities, dx, dy, .. } => s.sketch_transform_copy(sketch, &qymcad_engine::TransformSpec { entities, dx, dy }),
                      EditArgs::Rotate { entities, centre, angle, .. } => s.sketch_transform_rotate(sketch, &qymcad_engine::RotateSpec { entities, centre, angle }),
-                     EditArgs::Offset { curves, distance, toward, dimension_name, .. } => {
+                     EditArgs::Construction { entities, to, .. } => {
+                        let done = s.sketch_construction(sketch, &entities, to)?;
+                        states = Some(done.entities);
+                        Ok(done.edit)
+                    }
+                    EditArgs::Offset { curves, distance, toward, dimension_name, .. } => {
                         s.sketch_offset(sketch, &SketchOffsetSpec { curves, distance, toward, dimension_name })
                     }
                     EditArgs::Corner { curves, point, size, .. } => s.sketch_corner(sketch, &CornerSpec { curves, point, size }),
@@ -166,6 +185,9 @@ pub(super) fn tools() -> Vec<Tool> {
                 .map_err(err)?;
             let mut out = sketch_result(s, sketch, r.as_ref())?;
             out["edit"] = json!(edit);
+            if let Some(states) = states {
+                out["construction"] = json!(states);
+            }
             match result_kind {
                 EditArgs::Move { .. } | EditArgs::Rotate { .. } => out["parametric"] = json!(false),
                 EditArgs::Copy { .. } => {
