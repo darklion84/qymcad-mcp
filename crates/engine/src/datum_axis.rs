@@ -1,6 +1,6 @@
 //! Datum axes: the app's `part.datum-axis` command, from an edge, a round face, two datum points or by hand.
 
-use crate::datum_point::check_coordinate;
+use crate::datum_point::{check_coordinate, zero_clean};
 use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::topology::EdgeKind;
@@ -27,9 +27,12 @@ pub struct DatumAxisInfo {
     pub name: String,
     /// `manual`, `two_points`, `edge` or `face`.
     pub def: &'static str,
+    /// The Part that owns the axis (and whose frame it is in). Omitted in a document with a single, unplaced Part.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_part: Option<Id>,
     /// A point on the axis, mm, in the Part's frame.
     pub origin: [f64; 3],
-    /// Unit direction.
+    /// Unit direction (a manual axis is normalised here; the app keeps what was typed).
     pub dir: [f64; 3],
     /// What the axis follows: `{body, edge}`, `{body, face}` or `{points: [a, b]}`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,6 +45,7 @@ pub(crate) const EXPLICIT_AXIS_KEY: &str = "__explicit";
 impl Session {
     /// Create a datum axis (one timeline node). Atomic like every feature.
     pub fn datum_axis(&mut self, spec: &AxisSpec, name: Option<&str>) -> Result<(DatumAxisInfo, Rebuild)> {
+        self.refuse_datum_at_assembly_root()?;
         if matches!(spec, AxisSpec::Edge { .. } | AxisSpec::Face { .. }) {
             self.ensure_topology()?;
         }
@@ -61,9 +65,17 @@ impl Session {
                         return Err(Error::Invalid(format!("an axis needs two different points, got point {a} twice")));
                     }
                     let at = |id: &Id| {
-                        s.p.datum_points.iter().find(|p| p.id == *id).map(|p| p.at).ok_or_else(|| {
+                        let at = s.p.datum_points.iter().find(|p| p.id == *id).map(|p| p.at).ok_or_else(|| {
                             Error::NotFound(format!("datum point {id} (make one with datum_point; vertices are not points)"))
-                        })
+                        })?;
+                        // A point of another Part is in that Part's frame, as an axis of another Part is for a feature.
+                        let owner = s.p.timeline.iter().find(|n| n.id == *id).and_then(|n| n.parent);
+                        if s.has_assembly_structure() && owner != s.p.active_component {
+                            return Err(Error::Invalid(format!(
+                                "datum point {id} belongs to another Part; the axis would mix two Part frames (part_select first)"
+                            )));
+                        }
+                        Ok(at)
                     };
                     let (pa, pb) = (at(a)?, at(b)?);
                     if (0..3).map(|i| (pb[i] - pa[i]).abs()).sum::<f64>() < 1e-9 {
@@ -72,12 +84,12 @@ impl Session {
                     s.p.add_axis_two_points(*a, *b)
                 }
                 AxisSpec::Edge { edge, body } => {
-                    let body = s.current_part_body(*body, "edges")?;
+                    let body = s.current_part_body(*body, "edges", false)?;
                     s.check_straight_edge(body, *edge)?;
                     s.p.add_axis_from_edge(body, *edge)
                 }
                 AxisSpec::Face { face, body } => {
-                    let body = s.current_part_body(*body, "faces")?;
+                    let body = s.current_part_body(*body, "faces", false)?;
                     if !s.p.regen_faces.get(&body).is_some_and(|fs| fs.iter().any(|f| f.id == *face)) {
                         return Err(Error::NotFound(format!("face {face} of body {body} (re-read topology after each feature)")));
                     }
@@ -137,25 +149,70 @@ impl Session {
             AxisDef::FromEdge { body, edge } => ("edge", Some(serde_json::json!({"body": body, "edge": edge}))),
             AxisDef::FromFace { body, face } => ("face", Some(serde_json::json!({"body": body, "face": face}))),
         };
-        Ok(DatumAxisInfo { id, name: self.node_name(id), def, origin: a.origin(), dir: a.dir(), source })
+        let length = a.dir().iter().map(|v| v * v).sum::<f64>().sqrt();
+        let unit = if length > 0.0 { a.dir().map(|v| zero_clean(v / length)) } else { a.dir() };
+        Ok(DatumAxisInfo {
+            id,
+            name: self.node_name(id),
+            def,
+            owner_part: self.datum_owner(id),
+            origin: a.origin().map(zero_clean),
+            dir: unit,
+            source,
+        })
     }
 
     /// An axis through two points that have come to coincide, or whose point is gone, keeps its last line silently when
-    /// the app resolves it (F-172): refused on every edit, so a parameter cannot collapse it.
-    pub(crate) fn check_datum_axis_values(&self) -> std::result::Result<(), (Id, Error)> {
+    /// the app resolves it (F-172): reported here, and refused on every edit, so a parameter cannot collapse it.
+    pub(crate) fn datum_axis_faults(&self) -> Vec<(Id, Error)> {
+        let mut faults = Vec::new();
         for axis in &self.p.datum_axes {
             let AxisDef::TwoPoints { a, b } = axis.def else { continue };
             let at = |id: Id| self.p.datum_points.iter().find(|p| p.id == id).map(|p| p.at);
             let (Some(pa), Some(pb)) = (at(a), at(b)) else {
-                return Err((axis.id, Error::Invalid(format!("axis {} stands on a datum point that no longer exists", axis.id))));
+                faults.push((axis.id, Error::Invalid(format!("axis {} stands on a datum point that no longer exists", axis.id))));
+                continue;
             };
             if (0..3).map(|i| (pb[i] - pa[i]).abs()).sum::<f64>() < 1e-9 {
-                return Err((
+                faults.push((
                     axis.id,
                     Error::Invalid(format!("axis {} would run through two coincident points {a} and {b} (F-172)", axis.id)),
                 ));
             }
         }
-        Ok(())
+        faults
+    }
+
+    /// Edge and face axes whose edge or face has vanished from a body that is still built (F-176): the app keeps the
+    /// axis at its last line.
+    pub(crate) fn axis_reference_faults(&self) -> Vec<(Id, Error)> {
+        self.p
+            .datum_axes
+            .iter()
+            .filter_map(|axis| {
+                let (body, what) = match axis.def {
+                    AxisDef::FromEdge { body, edge } if self.built_body(body) && !self.has_edge(body, edge) => (body, format!("edge {edge}")),
+                    AxisDef::FromFace { body, face } if self.built_body(body) && !self.has_round_face(body, face) => {
+                        (body, format!("face {face} (or its cylinder/cone axis)"))
+                    }
+                    _ => return None,
+                };
+                Some((
+                    axis.id,
+                    Error::Invalid(format!(
+                        "datum axis {} follows {what} of body {body}, which this edit removes while the body stays; the app would keep the axis at its old line without any error (F-176)",
+                        axis.id
+                    )),
+                ))
+            })
+            .collect()
+    }
+
+    /// Whether the face is still a cylinder or cone of the body's shape.
+    fn has_round_face(&self, body: Id, face: u32) -> bool {
+        self.shapes.get(&body).is_some_and(|sh| {
+            let _g = qymcad_kernel::kernel_gate();
+            sh.face_axis(face).is_some()
+        })
     }
 }

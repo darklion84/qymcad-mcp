@@ -302,7 +302,9 @@ impl Session {
             let reached = crate::dependencies::closure(&self.p, sources);
             repeat.extend(reached);
             if repeat.is_empty() {
-                self.check_evaluated_features()?;
+                // Not the datum checks: this settle pass also runs when a file is opened, and a datum fault of the app's
+                // file is a warning there; edits are judged on datums by `with_rebuild_copies` after the rebuild.
+                self.check_file_features()?;
                 return Ok(report);
             }
             if pass == 3 {

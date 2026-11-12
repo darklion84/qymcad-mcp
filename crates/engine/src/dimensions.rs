@@ -2,7 +2,7 @@
 use crate::{Error, Id, Num, Rebuild, Result, Session};
 use qymcad_core::{
     feature::{ChamferMode, FeatureKind},
-    model::{Constraint, DimTarget, Project},
+    model::{Constraint, DimTarget, PointDef, Project},
 };
 use serde::Serialize;
 use std::collections::HashSet;
@@ -427,6 +427,18 @@ impl Session {
                         .any(|n| n.id == *feature && matches!(n.kind, FeatureKind::Chamfer { mode: ChamferMode::Symmetric, .. }))
                 {
                     return Err(Error::Invalid("a symmetric chamfer has no effective d2; recreate it with d2 or angle".into()));
+                }
+                if key == crate::datum_axis::EXPLICIT_AXIS_KEY {
+                    return Err(Error::Invalid(format!(
+                        "`{key}` is the server's marker of an axis made on purpose by datum_axis, not a dimension"
+                    )));
+                }
+                if let Some(point) = self.p.datum_points.iter().find(|p| p.id == *feature).filter(|p| p.def != PointDef::Manual) {
+                    return Err(Error::Invalid(format!(
+                        "datum point {} stands on a body vertex; the app resolves its place from the vertex and ignores a typed `{key}`, \
+                         so the edit would be written and have no effect (F-174). Make a new point with `at`, or move the body's geometry",
+                        point.id
+                    )));
                 }
                 if self.p.timeline.iter().any(|n| n.id == *feature && matches!(n.kind, FeatureKind::DatumAxis { .. })) {
                     return Err(Error::Invalid(format!(

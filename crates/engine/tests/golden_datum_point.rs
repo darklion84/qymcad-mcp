@@ -48,9 +48,14 @@ fn coordinates_beyond_the_apps_field_are_refused_at_creation_and_on_edits() {
     let mut s = Session::new_part();
     s.param_set("w", &1.0.into()).unwrap();
     let before = snap(&s);
-    for bad in [["10000001", "0", "0"], ["0", "-10000001", "0"], ["0", "0", "w*100000000"], ["0", "0", "1e400"]] {
+    for (bad, word) in [
+        (["10000001", "0", "0"], "datum x must be finite within ±10000000"),
+        (["0", "-10000001", "0"], "datum y must be finite within ±10000000"),
+        (["0", "0", "w*100000000"], "datum z must be finite within ±10000000"),
+        (["0", "0", "1e400"], "number inf is not finite"),
+    ] {
         let e = s.datum_point(&PointSpec::At(num3(bad)), None).unwrap_err().to_string();
-        assert!(e.contains("datum") || e.contains("not finite"), "{bad:?}: {e}");
+        assert!(e.contains(word), "{bad:?}: {e}");
     }
     assert!(snap(&s) == before, "a refusal changes nothing");
     s.datum_point(&PointSpec::At(num3(["10000000", "0", "w"])), None).unwrap();
@@ -99,7 +104,7 @@ fn vertex_refusals_leave_the_document_untouched() {
     assert!(e.contains("12345"), "{e}");
     // A consumed body (the array replaced it) is not a current body.
     let e = s.datum_point(&PointSpec::Vertex { edge, end: VertexEnd::Start, body: Some(body) }, None).unwrap_err().to_string();
-    assert!(e.contains("consumed") || e.contains("not built"), "{e}");
+    assert!(e.contains(&format!("body {body}")), "{e}");
     assert!(snap(&s) == before, "a refusal changes nothing");
 }
 
@@ -118,4 +123,99 @@ fn deleting_or_suppressing_the_body_under_a_vertex_point_is_refused_and_a_cascad
     assert!(snap(&s) == before, "a refused suppression changes nothing");
     s.feature_delete(body, true).unwrap();
     assert!(s.project().datum_points.iter().all(|p| p.id != info.id), "the cascade removed the point with its body");
+}
+
+/// A hexagonal prism whose side count is the parameter `n`; the ids of its vertical edges.
+fn prism(s: &mut Session) -> (u64, Vec<u32>) {
+    s.param_set("n", &6.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    let spec = PolygonSpec {
+        cx: 0.0.into(),
+        cy: 0.0.into(),
+        sides: 6,
+        r: Some(10.0.into()),
+        angle: None,
+        vertex: None,
+        construction: false,
+        dimensioned: true,
+    };
+    s.sketch_polygon_sides(sk, &spec, &"n".into()).unwrap();
+    let body = s.extrude(&serde_json::from_value(json!({"sketch":sk,"height":5,"op":"new_body"})).unwrap()).unwrap().0;
+    let edges = s
+        .topology(Some(body), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .filter(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 1.0)
+        .map(|e| e.id)
+        .collect();
+    (body, edges)
+}
+
+/// F-176: the edge a point stands on disappears from a body that stays; the app keeps the point where it was.
+#[test]
+fn an_edge_that_vanishes_under_a_vertex_point_refuses_the_edit_f176() {
+    let mut s = Session::new_part();
+    let (_, edges) = prism(&mut s);
+    let (survivor, doomed) = (edges[0], *edges.last().unwrap());
+    let (keep, _) = s.datum_point(&PointSpec::Vertex { edge: survivor, end: VertexEnd::Start, body: None }, None).unwrap();
+    let (lost, _) = s.datum_point(&PointSpec::Vertex { edge: doomed, end: VertexEnd::End, body: None }, None).unwrap();
+    let before = snap(&s);
+    let e = s.param_set("n", &4.0.into()).unwrap_err().to_string();
+    assert!(e.contains("F-176") && e.contains(&format!("edge {doomed}")) && e.contains(&format!("datum point {}", lost.id)), "{e}");
+    assert!(snap(&s) == before, "the refused edit left nothing behind");
+    // Without the point on the vanishing edge the same edit passes, and the other point follows its vertex.
+    s.feature_delete(lost.id, false).unwrap();
+    s.param_set("n", &4.0.into()).unwrap();
+    assert!(s.project().datum_points.iter().any(|p| p.id == keep.id));
+}
+
+/// A fillet that consumes the body under a point is not an edit that removes the point's edge.
+#[test]
+fn a_feature_that_consumes_the_body_under_a_vertex_point_is_not_refused() {
+    let mut s = Session::new_part();
+    let body = block(&mut s, "10");
+    let e = s
+        .topology(Some(body), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .find(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 1.0)
+        .unwrap();
+    let (info, _) = s.datum_point(&PointSpec::Vertex { edge: e.id, end: VertexEnd::Start, body: None }, None).unwrap();
+    let step = ArrayDir { dx: 20.0.into(), dy: 0.0.into(), dz: 0.0.into(), count: 2.0.into() };
+    s.linear_array(Some(body), &step, None, None).unwrap();
+    s.param_set("unused", &1.0.into()).unwrap();
+    assert_eq!(at(&s, info.id), e.a, "the point stays on the consumed body's vertex");
+}
+
+/// F-174: a typed x, y or z on a vertex point is written by the app's dimension path and ignored by its rebuild.
+#[test]
+fn dimension_set_on_a_vertex_point_is_refused_f174() {
+    let mut s = Session::new_part();
+    let body = block(&mut s, "10");
+    let e = s.topology(Some(body), false).unwrap().edges[0].clone();
+    let (info, _) = s.datum_point(&PointSpec::Vertex { edge: e.id, end: VertexEnd::Start, body: None }, None).unwrap();
+    let before = snap(&s);
+    for key in ["x", "y", "z"] {
+        let target = DimensionTarget::Feature { feature: info.id, key: key.into() };
+        let err = s.dimension_set(&target, Some(&5.0.into()), None).unwrap_err().to_string();
+        assert!(err.contains("F-174") && err.contains(&format!("datum point {}", info.id)), "{key}: {err}");
+        assert!(snap(&s) == before, "{key}: nothing written");
+    }
+    assert_eq!(at(&s, info.id), info.at);
+}
+
+/// The assembly root is not a Part: a datum made there would be owned by the root assembly, which is not covered.
+#[test]
+fn a_datum_point_with_the_assembly_root_active_is_refused() {
+    let mut s = Session::new_part();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &4.0.into(), &4.0.into(), false).unwrap();
+    s.part_new("second").unwrap();
+    s.part_select(&PartRef::Root { root: true }).unwrap();
+    let before = snap(&s);
+    let e = s.datum_point(&PointSpec::At(num3(["0", "0", "0"])), None).unwrap_err().to_string();
+    assert!(e.contains("assembly root") && e.contains("not covered"), "{e}");
+    assert!(snap(&s) == before);
 }

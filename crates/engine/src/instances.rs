@@ -234,6 +234,27 @@ impl Session {
                 "part_copy cannot place a copy of grounded part {src}: the copy keeps its grounding, as in the app, and part_place does not move grounded parts; copy without translation_mm, then unground the copy (ground grounded:false) and part_place it"
             )));
         }
+        // `clone_subtree_into` remaps a point's id but not its body and edge: a vertex point of the copy would stand on the
+        // SOURCE body, and deleting the source would leave it dangling (F-175). Edge, face and two-point axes are remapped.
+        let mut subtree = self.p.descendants(src);
+        subtree.push(src);
+        let standing: Vec<Id> = self
+            .p
+            .timeline
+            .iter()
+            .filter(|n| n.parent.is_some_and(|p| subtree.contains(&p)))
+            .filter_map(|n| match n.kind {
+                FeatureKind::DatumPoint { point } => self.p.datum_points.iter().find(|p| p.id == point),
+                _ => None,
+            })
+            .filter(|p| matches!(p.def, qymcad_core::model::PointDef::AtVertex { .. }))
+            .map(|p| p.id)
+            .collect();
+        if !standing.is_empty() {
+            return Err(refusal(format!(
+                "part_copy would give the copy datum points {standing:?} that stand on a vertex of the SOURCE's body: the app's copy does not remap a vertex point's body and edge (F-175). Delete them first (or make coordinate points with `at`) and copy; nothing was changed"
+            )));
+        }
         let args = json!({"source":source,"name":name,"translation_mm":translation_mm,"rotation":rotation});
         self.assembly_edit("part_copy", args, |s| {
             let ((copy, pairs), _) = s.atomic(|s| {
