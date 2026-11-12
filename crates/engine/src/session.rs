@@ -539,50 +539,10 @@ impl Session {
             let _gate = qymcad_kernel::kernel_gate();
             self.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
         };
-        // The edges an anchor needs are not in the file; mark their producers dirty for the app's open path (F-166).
-        let marked = self.mark_edge_anchor_producers_dirty();
-        let saved = qymcad_io::save_project_guarded_with_brep(&self.p, s, &breps);
-        for node in &mut self.p.timeline {
-            if marked.contains(&node.id) {
-                node.dirty = false;
-            }
-        }
-        saved.map_err(|e| Error::Io(format!("cannot save {s}: {e}")))?;
+        qymcad_io::save_project_guarded_with_brep(&self.p, s, &breps).map_err(|e| Error::Io(format!("cannot save {s}: {e}")))?;
         self.path = Some(target.clone());
         self.saved_lineage = first_body_feature(&self.p);
         Ok(target)
-    }
-
-    /// Mark dirty, for the FILE only, the clean nodes that build a body an edge or vertex anchor refers to; the ids marked are
-    /// returned so the caller clears them again after writing (F-166).
-    ///
-    /// QymCAD.app resolves such an anchor through `regen_edges`, which a bundle does not hold. On opening the app rebuilds only
-    /// the dirty nodes (their post pass fills the edges) and raises the live B-rep, with the edges, lazily on the first operation
-    /// that needs it. Without the mark an opened hinge shows "support not found", its angle edits move nothing, and the server
-    /// calls the same file healthy because its own reload rebuilds everything. An import cannot be rebuilt from a recipe and is
-    /// left alone.
-    fn mark_edge_anchor_producers_dirty(&mut self) -> HashSet<Id> {
-        use qymcad_core::feature::AnchorRef;
-        let anchored: HashSet<Id> = self
-            .p
-            .connectors
-            .iter()
-            .filter_map(|c| match c.anchor {
-                AnchorRef::EdgeMid(b, _) | AnchorRef::Vertex(b, _, _) => Some(b),
-                _ => None,
-            })
-            .collect();
-        let mut marked = HashSet::new();
-        if anchored.is_empty() {
-            return marked;
-        }
-        for node in &mut self.p.timeline {
-            if !node.dirty && !node.kind.is_import() && node.kind.bodies().iter().any(|b| anchored.contains(b)) {
-                node.dirty = true;
-                marked.insert(node.id);
-            }
-        }
-        marked
     }
 
     pub fn path(&self) -> Option<&Path> {

@@ -19,8 +19,8 @@ All notable changes to this project are documented here. The format follows
 - Revolute `mode:"align"` is allowed (a fresh align joint lands correctly, F-163); the collinear-axes refusal stays for as built (F-162).
 - A request outside a joint's limits is now clamped as in the app instead of refused (ADR 0054 §2 replaces ADR 0051's refusal): `joint_set`, `joint_create` and `joint_limits` report `clamped {joint, slot, requested, applied}`, and rebuild reports list formula drives a limit holds in `assembly.clamped`.
 
-### Fixed (H5c)
-- Hinges (edge or vertex anchors) written by the server opened in QymCAD.app as "hinge: опора не найдена" with a door that never moved: the app resolves such anchors through edges a bundle does not store and rebuilds only dirty nodes on opening (F-166). The saved file now marks the nodes that build an anchored body for rebuilding; the session itself is untouched. Native tests now open files through the app's path (rebuild of dirty nodes only) instead of a full forced rebuild. The app's Limits panel never shows limit formulas, only the number (F-167).
+### Known limits (H5d)
+- QymCAD.app loses the anchor of a joint on an edge or vertex (a Revolute hinge) after save and reopen, for hinges made in the app as well; "Edit > Rebuild all" clears it (F-166, upstream issue pending). `doc_save` and `joint_create` add a `note` to say so; the file is not changed to hide it. The app's Limits panel shows only the numbers of limits, never their formulas (F-167).
 
 ### Fixed (protective refusals of silent native results, FINDINGS F-154–F-162)
 - Rigid and Slider joints anchored on a face of a body that a later push_face, fillet or chamfer consumes: QymCAD keeps placing the joint on the consumed body's old face, and the server reported the mechanism healthy (present in .12 and .13, F-160). The face-anchor check now follows the body to the current one and requires the face to have the same centroid and normal there; an edit that moves it is refused as invalidating the anchors. Edits that keep the face in place (a fillet elsewhere, a hole in another face, a push_face of the opposite face) stay allowed.

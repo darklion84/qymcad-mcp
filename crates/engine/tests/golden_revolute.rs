@@ -744,30 +744,44 @@ fn align_mode_places_the_door_on_the_hinge_and_turns_about_it() {
     }
 }
 
-/// H5c (F-166): what QymCAD.app shows on opening. The GUI check of the hinge files reported "hinge: опора не найдена" and a door
-/// that never moved, while the server called the file healthy: the server's tests rebuilt EVERYTHING after loading, which
-/// fills `regen_edges`, and the app does not (it rebuilds only dirty nodes on opening and raises the edges lazily). The
-/// file must therefore resolve its edge anchors through the app's own open path.
+/// H5c (F-166), a CHARACTERIZATION of QymCAD.app, not a requirement on the server. On the app's open path (rebuild of dirty
+/// nodes only, no `ensure_brep`) a hinge anchored on edges is reported as lost, whoever saved the file: the GUI check saw it
+/// on files of this server and on a hinge made in the app itself. "Edit > Rebuild all" (every node rebuilt, which fills
+/// `regen_edges`) clears it and the door follows the angle. The server's note says so (`edge_anchor_note`).
 #[test]
-fn native_app_open_resolves_the_edge_anchors_of_a_saved_hinge_f166() {
+fn native_app_open_loses_an_edge_anchor_until_a_full_rebuild_f166() {
     let mut c = cabinet([210.0, -209.0, 0.0]);
-    let j = hinge(&mut c, JointMode::AsBuilt, Some(Num::Value(-90.0)), None).unwrap()["joint"]["id"].as_u64().unwrap();
+    let created = hinge(&mut c, JointMode::AsBuilt, Some(Num::Value(-90.0)), None).unwrap();
+    assert_eq!(created["note"], EDGE_ANCHOR_NOTE, "joint_create says so");
+    assert_eq!(
+        EDGE_ANCHOR_NOTE,
+        "QymCAD.app reports this joint's anchor as lost after opening the file until Edit \u{2192} Rebuild all (F-166)"
+    );
+    let j = created["joint"]["id"].as_u64().unwrap();
     let path = scratch("h5c-app-open.qcad");
     c.s.save(Some(&path)).unwrap();
     let mut m = native_app_open(&path);
-    assert!(m.project.joint_faults().is_empty(), "the app finds the anchors lost: {:?}", m.project.joint_faults());
-    assert!(m.project.mates_violated.is_empty(), "violated: {:?}", m.project.mates_violated);
-    // the door follows the angle in the app's model
+    assert_eq!(m.project.joint_faults(), vec![(j, "j-fault-anchor-lost")], "the app opens the hinge with its anchor lost");
+    // Edit > Rebuild all
+    native_assembly_rebuild(&mut m, true);
+    assert!(m.project.joint_faults().is_empty() && m.project.mates_violated.is_empty());
     for deg in [-90.0, -45.0] {
         m.project.set_joint_drive(j, 0, Some(deg));
-        let solved = m.project.solve_joints();
-        assert!(solved.errors.is_empty());
+        assert!(m.project.solve_joints().errors.is_empty());
         let joint = m.project.joints.iter().find(|x| x.id == j).unwrap();
         assert_close(joint.angle, deg, 1e-6, "the reading follows the drive");
-        let corners = native_door_xy(&m.project, c.door);
-        let got = native_extent(&corners);
+        let got = native_extent(&native_door_xy(&m.project, c.door));
         let want = turned_box(deg);
         assert_close(got[0], want[0], 1e-3, "door x min");
         assert_close(got[1], want[1], 1e-3, "door y min");
     }
+}
+
+/// The note is only for a document with a joint on an edge or a vertex; a face joint carries none.
+#[test]
+fn the_edge_anchor_note_appears_only_with_an_edge_joint_f166() {
+    let mut c = cabinet([210.0, -209.0, 0.0]);
+    assert!(c.s.edge_anchor_note().is_none());
+    hinge(&mut c, JointMode::AsBuilt, None, None).unwrap();
+    assert_eq!(c.s.edge_anchor_note(), Some(EDGE_ANCHOR_NOTE));
 }

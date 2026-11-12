@@ -375,7 +375,6 @@ pub fn native_app_open(path: &std::path::Path) -> NativeAssemblyModel {
         m.project.set_body_faces(id, faces);
     }
     m.shapes = shapes;
-    let solved = m.project.solve_joints();
-    assert!(solved.errors.is_empty(), "app-open joint solve errors: {:?}", solved.errors);
+    let _ = m.project.solve_joints(); // its errors (a lost anchor) are the thing a caller may want to see: they stay in joint_faults
     m
 }

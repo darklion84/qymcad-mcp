@@ -59,6 +59,7 @@ mod value;
 pub use appearance::{AppearanceBody, AppearanceResult, AppearanceScope};
 pub use assembly::{
     AnchorPick, AssemblyJointKind, JointAnchor, JointCreate, JointLimits, JointMode, JointRef, JointSlot, LimitEdit, PartRef, PartRotation,
+    EDGE_ANCHOR_NOTE,
 };
 pub use body_boolean::{BodyBooleanOptions, BodyBooleanResult, BooleanOp};
 pub use dimensions::{DimensionEdit, DimensionInfo, DimensionTarget};

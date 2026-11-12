@@ -115,6 +115,8 @@ pub(crate) fn free_slot(k: JointKind) -> Option<usize> {
 }
 const SLOT_KEYS: [&str; 3] = ["angle", "offset", "offset2"];
 /// The limit fields' range in the app's joint box (`popup.rs:113-118`).
+/// The text of the F-166 note.
+pub const EDGE_ANCHOR_NOTE: &str = "QymCAD.app reports this joint's anchor as lost after opening the file until Edit → Rebuild all (F-166)";
 const LIMIT_RANGE: f64 = 100_000.0;
 fn limit_key(min: bool, slot: usize) -> String {
     format!("{}{slot}", if min { "min" } else { "max" })
@@ -877,8 +879,19 @@ impl Session {
             s.assembly_accept_scoped(applied.map(|value| (j, 1, value)), &HashSet::from([j]))?;
             let mut r = s.joint_result(j, true);
             r["clamped"] = clamp_report(j, 1, wanted, applied);
+            if let Some(note) = s.edge_anchor_note() {
+                r["note"] = json!(note);
+            }
             Ok(r)
         })
+    }
+    /// The note a result carries while the document holds a joint on an edge or a vertex (F-166): QymCAD.app itself loses such
+    /// an anchor on opening a saved file, and a workaround in the file is not ours to make.
+    pub fn edge_anchor_note(&self) -> Option<&'static str> {
+        use qymcad_core::feature::AnchorRef;
+        let on_edge =
+            |c: Id| self.p.connectors.iter().any(|k| k.id == c && matches!(k.anchor, AnchorRef::EdgeMid(..) | AnchorRef::Vertex(..)));
+        self.p.joints.iter().any(|j| on_edge(j.a) || on_edge(j.b)).then_some(EDGE_ANCHOR_NOTE)
     }
     /// A Revolute hinge on two straight edges, as the app's Joint tool makes it with an edge picked on each Part
     /// (`EdgeMid` connectors, `add_joint`, as built captured before the first solve when asked). As built, the axes
@@ -948,6 +961,9 @@ impl Session {
             s.assembly_accept_scoped(applied.map(|value| (j, 0, value)), &HashSet::from([j]))?;
             let mut r = s.joint_result(j, true);
             r["clamped"] = clamp_report(j, 0, wanted, applied);
+            if let Some(note) = s.edge_anchor_note() {
+                r["note"] = json!(note);
+            }
             Ok(r)
         })
     }

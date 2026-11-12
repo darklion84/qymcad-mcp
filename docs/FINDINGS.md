@@ -2986,29 +2986,29 @@ The same gap applies to a pattern whose source is a projection: the source moves
   `golden_joint_limits::a_numeric_drive_a_limit_formula_clamps_is_reported_on_param_set_dimension_set_and_open`,
   `mcp/tests/h2_joint_limits::a_compact_batch_step_carries_its_clamp`.
 
-## F-166 An edge-anchored joint is "lost" in QymCAD.app right after opening a file the server wrote
+## F-166 QymCAD.app loses an edge or vertex anchor of a joint after save and reopen
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed (owner files after dedupe). The app's own save/open of an edge joint takes the same path.
-- **Observed in the GUI (tester, REPORT-run1):** both hinge files open with "Не выполняется связей: 1. Первая, hinge:
-  опора не найдена" (`j-fault-anchor-lost`), the angle field clamps but the door never moves. Face-anchored Rigid/Slider
-  files (drawer) open healthy.
-- **Source:** `connector_frame` resolves `EdgeMid`/`Vertex` through `Project::regen_edges`. The bundle does not hold it
+- **Upstream:** (issue pending)
+- **Observed in the GUI (run 1 and run 2, `tmp/gui-check-H/REPORT-run1.md` and `REPORT.md` section A):** hinge files written
+  by this server open with "Не выполняется связей: 1. Первая, hinge: опора не найдена" (`j-fault-anchor-lost`) and the door
+  never moves. A hinge CREATED IN QymCAD.app itself does the same after save and reopen. «Правка → Пересобрать всё» clears
+  it. Face-anchored Rigid/Slider files (drawer) open healthy.
+- **Source:** `connector_frame` resolves `EdgeMid`/`Vertex` through `Project::regen_edges`, which the bundle does not hold
   (`spawn_save` clears it). `finish_project_load` restores `regen_faces` from the bodies and calls `regenerate_all`, which
-  rebuilds only DIRTY nodes (its post pass fills `regen_edges`); `ensure_brep`, which fills the edges of the anchored bodies
-  from the live B-rep, runs only when an operation needs a live B-rep. No call on the opening path. The app's own test
-  (`an_edge_anchor_survives_reopening`) calls `ensure_brep` explicitly, which hides this. [read in source; the app was not
-  run by the server's author, the GUI kit is the check]
-- **Why the server called the file healthy:** its tests reloaded and rebuilt EVERYTHING (`native_assembly_rebuild(force_all)`),
-  which fills every edge. Reproduced natively: `common::native_app_open` (load, rebuild dirty only, solve) gives
-  `j-fault-anchor-lost` on the saved hinge (`tasks/H5c-red.log`).
-- **Server policy:** `doc_save`/`Session::save` writes the nodes that build an edge- or vertex-anchored body (imports excluded)
-  with `dirty = true` (the session's own flags are restored right after the write), so the app rebuilds them on opening and
-  its post pass fills the edges. Same recipe, same geometry. Tests:
-  `golden_revolute::native_app_open_resolves_the_edge_anchors_of_a_saved_hinge_f166`,
-  `golden_face_anchor_witness::native_app_open_resolves_the_face_anchors_of_rigid_and_slider_f166`.
-- **Residual:** an edge anchor on an IMPORTED body cannot be rebuilt from a recipe; it resolves in the app once an operation
-  raises the live B-rep. Not covered by the mark.
+  rebuilds only DIRTY nodes (its post pass fills `regen_edges`); `ensure_brep`, which fills the edges of anchored bodies from
+  the live B-rep, runs only when an operation needs a live B-rep, not on opening. The app's own test
+  (`an_edge_anchor_survives_reopening`) calls `ensure_brep` explicitly, which hides this. [read in source]
+- **Why the server called the file healthy:** its tests reloaded and rebuilt EVERYTHING
+  (`native_assembly_rebuild(force_all)`), which fills every edge.
+- **Executed native evidence:** `golden_revolute::native_app_open_loses_an_edge_anchor_until_a_full_rebuild_f166`
+  (`common::native_app_open`: load, rebuild dirty only, solve): `joint_faults` = `j-fault-anchor-lost`; a full rebuild clears
+  it and the door follows the angle. `golden_face_anchor_witness::native_app_open_resolves_the_face_anchors_of_rigid_and_slider_f166`:
+  face anchors resolve.
+- **Server policy (information, no workaround):** the file is written exactly as before. `doc_save` and `joint_create` add
+  `note` while the document holds a joint on an edge or a vertex: "QymCAD.app reports this joint's anchor as lost after
+  opening the file until Edit → Rebuild all (F-166)". Marking nodes dirty in the file was tried (c7cafd4) and withdrawn by the
+  owner: the defect is the app's, reported upstream.
 
 ## F-167 The app's Limits section never shows a limit formula
 
