@@ -81,3 +81,84 @@ fn an_axis_of_another_part_is_refused() {
     let e = r.call("circular_array", json!({"body":body, "count":2, "axis":{"datum":axis}})).unwrap().unwrap_err();
     assert!(e.contains("another Part"), "{e}");
 }
+
+fn block_with_boss(r: &mut Registry) -> (Value, u64, Value, u64) {
+    call(r, "sketch_create", json!({"plane":"XY", "name":"base"}));
+    call(r, "sketch_add", json!({"sketch":"base", "entities":[{"type":"rect", "w":10, "h":6}]}));
+    let block = call(r, "extrude", json!({"sketch":"base", "height":4, "op":"new_body"}))["body"].clone();
+    let edges = call(r, "topology", json!({"body":block}))["edges"].clone();
+    let edge = edges
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "line" && (e["a"][2].as_f64().unwrap() - e["b"][2].as_f64().unwrap()).abs() > 1.0)
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    call(r, "sketch_create", json!({"plane":"XY", "name":"boss"}));
+    call(r, "sketch_add", json!({"sketch":"boss", "entities":[{"type":"circle", "cx":30, "d":10}]}));
+    let boss = call(r, "extrude", json!({"sketch":"boss", "height":10, "op":"new_body"}))["body"].clone();
+    let faces = call(r, "topology", json!({"body":boss}))["faces"].clone();
+    let face = faces.as_array().unwrap().iter().find(|f| f["kind"] == "cylinder").unwrap()["id"].as_u64().unwrap();
+    (block, edge, boss, face)
+}
+
+#[test]
+fn edge_and_face_axes_over_the_registry_report_unit_directions_and_guard_their_bodies() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    let (block, edge, boss, face) = block_with_boss(&mut r);
+    let on_edge = call(&mut r, "datum_axis", json!({"edge":{"edge":edge, "body":block}, "name":"rim"}));
+    assert_eq!(on_edge["def"], "edge");
+    assert_eq!(on_edge["source"], json!({"body":block, "edge":edge}));
+    assert_eq!(on_edge["dir"][2].as_f64().unwrap().abs(), 1.0, "the block's vertical edge: {on_edge}");
+    let on_face = call(&mut r, "datum_axis", json!({"face":{"face":face, "body":boss}}));
+    assert_eq!(on_face["def"], "face");
+    assert!((on_face["origin"][0].as_f64().unwrap() - 30.0).abs() < 1e-6, "{on_face}");
+    // Over a seam or a plane face the tool says why.
+    let refused = r.call("datum_axis", json!({"edge":{"edge":999999, "body":block}})).unwrap().unwrap_err();
+    assert!(refused.contains("edge 999999"), "{refused}");
+    let refused = r.call("datum_axis", json!({"face":{"face":999999, "body":boss}})).unwrap().unwrap_err();
+    assert!(refused.contains("face 999999"), "{refused}");
+    // A manual axis reports a unit direction.
+    let manual = call(&mut r, "datum_axis", json!({"origin":[0,0,0], "dir":[0,0,4]}));
+    assert_eq!(manual["dir"], json!([0.0, 0.0, 1.0]));
+    // The bodies under the edge and face axes cannot be suppressed.
+    for body in [&block, &boss] {
+        let refused = r.call("feature_suppress", json!({"feature":body, "suppressed":true})).unwrap().unwrap_err();
+        assert!(refused.contains("F-169"), "{refused}");
+    }
+}
+
+#[test]
+fn a_revolve_with_the_axis_of_another_part_is_refused_and_a_marker_dimension_is_not_f170() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    let axis = call(&mut r, "datum_axis", json!({"origin":[0,0,0], "dir":[0,1,0]}))["axis"].clone();
+    let refused = r.call("dimension_set", json!({"target":{"feature":axis, "key":"__explicit"}, "value":0})).unwrap().unwrap_err();
+    assert!(refused.contains("marker") && !refused.contains("F-170"), "{refused}");
+    call(&mut r, "part_new", json!({"name":"other"}));
+    call(&mut r, "sketch_create", json!({"plane":"XY", "name":"ring"}));
+    call(&mut r, "sketch_add", json!({"sketch":"ring", "entities":[{"type":"rect", "cx":5, "w":2, "h":10}]}));
+    let refused = r.call("revolve", json!({"sketch":"ring", "axis":{"datum":axis}, "op":"new_body"})).unwrap().unwrap_err();
+    assert!(refused.contains("datum axis") && refused.contains("another Part"), "{refused}");
+}
+
+#[test]
+fn part_instance_leaves_the_datums_with_the_source() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    call(&mut r, "sketch_create", json!({"plane":"XY", "name":"base"}));
+    call(&mut r, "sketch_add", json!({"sketch":"base", "entities":[{"type":"rect", "w":10, "h":6}]}));
+    call(&mut r, "extrude", json!({"sketch":"base", "height":4, "op":"new_body"}));
+    call(&mut r, "datum_point", json!({"at":[0,0,0], "name":"origin_pt"}));
+    call(&mut r, "datum_axis", json!({"origin":[0,0,0], "dir":[0,0,1], "name":"spin"}));
+    let part = call(&mut r, "doc_info", json!({}))["active_component"].clone();
+    let twin = call(&mut r, "part_instance", json!({"source":part, "name":"twin", "translation_mm":[100, 0, 0]}));
+    assert_eq!(twin["part"]["instance_of"], part);
+    let info = call(&mut r, "doc_info", json!({}));
+    assert_eq!(info["datums"]["points"].as_array().unwrap().len(), 1, "the clone repeats the body, not the datums: {info}");
+    assert_eq!(info["datums"]["axes"].as_array().unwrap().len(), 1);
+    assert_eq!(info["datums"]["points"][0]["owner_part"], part);
+    assert!(info["datums"]["errors"].as_array().unwrap().is_empty());
+}
