@@ -3123,3 +3123,40 @@ The same gap applies to a pattern whose source is a projection: the source moves
   - Again −45 gave the same stale box, and «Пересобрать всё» then gave 32.0 × 22.0 × 35.8.
 - **Source:** the panel writes `at` directly (`panel_bits.rs:324-330`) without `begin_edit`. `Revolve.inputs()` has no `axis_datum` (`kind.rs:917-918`), so the revolve is re-run only when it is marked dirty explicitly. [read in source]
 - **Server policy:** not reachable through the server. Point coordinates change only through `dimension_set` and `param_set`, which go through a full rebuild with checks, and a revolve about a two-point axis follows them (tested in `golden_datum_axis`).
+
+## F-180 A primitive thinner than about 1e-5 mm builds silently wrong: a third of the volume, two faces, no error
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** the core checks only `size > 1e-9` (`above_zero`, `model/regen.rs:289`) and builds a box and a prism as an extrusion (`named_prism_job`) and a cylinder through the kernel; the fields of the app stop at 0.1 (0.05 for a radius), the properties panel and `dimension_set` have no minimum (`panels_props.rs:759-770`). [read in source]
+- **Executed (`j0_probes::p1_sizes_below_the_field_minimum`, app data path):** exact volumes from 0.01 down to 1e-5 mm (box `dx` 1e-5, cylinder `h` 1e-5, prism `h` 1e-5, cylinder `r` 1e-4, torus `minor` 1e-5, sphere `r` 1e-3). At 1e-6 a box `dx`, a cylinder `h` and a prism `h` build with exactly 1/3 of the volume and 2 faces, `errors: []`; a prism `r` of 1e-5 has 0.72 of the volume and 6 faces, `errors: []`. Smaller still the app reports `OpFailed(ExtrudeContour)` or `EmptyResult`.
+- **Server policy (refusal):** `primitive` and every later edit (`dimension_set`, `param_set`, formulas) hold the app's field minimums (box 0.1, cylinder `r` 0.05 and `h` 0.1, sphere `r` 0.05, cone `h` 0.1 and `r1` 0.01 at creation / 0 on edit, torus 0.1, prism 0.1). A file made in the app that is already below them opens with a warning and its other edits stay possible (`primitive::tests::a_file_with_a_primitive_outside_the_fields_opens_with_a_warning_and_edits_elsewhere_pass`). The core is also wider than the fields above 1e5 (a box of 1e12 mm has its exact volume); the upper limit is the field's policy, not a protection from a wrong result.
+
+## F-181 A prism's side count is rounded and clamped without a word, and has no upper limit
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `prep_prism` takes `n = round(dim("n")).max(3)` (`model/regen/prep_ops.rs`); the app's field is whole-number 3..64, the properties panel is a free expression. [read in source]
+- **Executed (`j0_probes::p3_prism_side_count_is_rounded_clamped_and_unbounded`):** `n` = 2, 2.5, 3.4, 0 and -4 build a triangle; 3.5 a square; 5.5 a hexagon; 65 and 1000 build an n-gon with n + 2 faces; `errors: []` throughout.
+- **Server policy (refusal):** `n` must evaluate to a whole number in 3..=64 at creation and after every edit (`golden_primitives::the_prism_side_count_follows_dimension_set_and_a_formula`), like the polygon's `sides`.
+
+## F-182 A cone with equal radii fails with a bare `OpFailed(Cone)`
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Executed (`j0_probes::p5_cone_radii`):** `r1 == r2` (10/10, 4/4, and 1e-7 apart) gives no body and `OpFailed(Cone)`; 1e-5 apart builds with the exact volume. `r1` = 0 and 1e-6 build an apex cone (2 faces, exact volume); both radii 0 give `PrimitiveSizeNotAboveZero`. The app's fields allow every one of these, the failure shows only after the rebuild. Not silent.
+- **Server policy:** a clear refusal before the rebuild when the radii differ by 1e-7 or less ("use a cylinder"), at creation and on every edit; the rest is left to the core (`golden_primitives::the_apps_field_limits_refuse_at_creation_with_the_document_unchanged`).
+
+## F-183 Suppressing a primitive that was united into the Part's body hides the Part's body
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Executed (`golden_primitives::delete_suppress_reorder_and_rollback_with_a_united_primitive`):** a box, then a sphere united into it (with or without the placement Move). Suppressing the sphere also unbuilds the union (`unbuilt: [sphere, union]` in the reply) and the box was consumed by that union, so the Part has no current body until the sphere is unsuppressed. Not silent (the reply names the nodes), and it is what the app's tree does with a `BodyBoolean` whose input is suppressed. Accepted, described in the tool.
+- **Related, also accepted:** `feature_delete` of the second primitive needs `cascade` (the union depends on it) and leaves the first; deleting the first primitive with `cascade` takes the union and leaves the second primitive as the Part's body.
+
+## F-184 With several bodies in a Part the app unites a new primitive with the last one only
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `finish_base_body` takes the LAST unconsumed non-sheet body of the same Part as `prior` (`model/timeline/state.rs:246-250`); the app's Part holds one body, but the server's `extrude op:"new_body"` can make several. [read in source]
+- **Executed (`golden_primitives::in_a_part_with_several_bodies_the_primitive_unites_with_the_last_current_one_only`):** two blocks as two bodies, then a box primitive: united with the second block; the first stays untouched. Not refused: it is the app's own rule; the tool says so. A mesh piece or an imported body as the last body was not tried.

@@ -22,7 +22,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P16 | Mirror body | covered | — | `mirror` | `FeatureKind::Mirror,PartTool::Mirror` |
 | P17 | Linear pattern | partial | Third direction | `linear_array` | `FeatureKind::LinearArray,PartTool::LinearPattern` |
 | P18 | Circular pattern | covered | — | `circular_array` | `FeatureKind::CircularArray,PartTool::CircularPattern` |
-| P19 | Primitives | not covered | Box, cylinder, sphere, cone, torus, prism primitives not exposed directly | none | `FeatureKind::Box3,FeatureKind::Cylinder,FeatureKind::Sphere,FeatureKind::Cone,FeatureKind::Torus,FeatureKind::Prism,PartTool::Box,PartTool::Cylinder,PartTool::Sphere,PartTool::Cone,PartTool::Torus,PartTool::Prism` |
+| P19 | Primitives | covered | One tool, six kinds; the app's field limits on every edit (F-180, F-181, F-182); placement at a datum point or vertex only (no plane or face frame); united with the Part's body as in the app (ADR 0056) | `primitive` | `FeatureKind::Box3,FeatureKind::Cylinder,FeatureKind::Sphere,FeatureKind::Cone,FeatureKind::Torus,FeatureKind::Prism,PartTool::Box,PartTool::Cylinder,PartTool::Sphere,PartTool::Cone,PartTool::Torus,PartTool::Prism` |
 | P20 | Face copy | not covered | Surface operation | none | `FeatureKind::FaceCopy,PartTool::FaceCopy` |
 | P21 | Surface replace | not covered | Surface operation | none | `FeatureKind::SurfaceReplace,PartTool::SurfaceReplace` |
 | P22 | Patch | not covered | Surface operation | none | `FeatureKind::Patch,PartTool::Patch` |

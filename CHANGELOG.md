@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased — primitives (ADR 0056)
+
+### Added
+- `primitive`: the app's Box, Cylinder, Sphere, Cone, Torus and Prism commands as one tool with `kind` — sizes as numbers or formulas (the keys `dx dy dz`, `r h`, `r1 r2 h`, `major minor`, `r h n` are what `dimension_set` takes), `place` at a datum point or a vertex (pure translation, no association), the result united with the Part's body as the app does; atomic, batch-allowed, one undo step. Returns the primitive's node (`feature`), the Part's `body`, evaluated `sizes` and the union.
+
+### Changed
+- The app's field limits hold for primitives at creation and on every later edit (`dimension_set`, `param_set`, formulas), because the core builds a thin primitive silently wrong (F-180) and rounds a prism's `n` silently (F-181); a cone with equal radii is refused with a clear text (F-182). A file made in the app that is outside the fields opens with a warning and its other edits stay possible.
+- Findings recorded as accepted behaviour: suppressing a united primitive hides the Part's body (F-183); with several bodies in a Part a primitive is united with the last one (F-184).
+- Internal: `Session::open_datum_faults` became `open_node_faults` (datum and primitive nodes faulty at opening).
+
 ## 0.1.1-dev.20261026.15 — datum points and axes, construction toggle (ADR 0055)
 
 ### Added
