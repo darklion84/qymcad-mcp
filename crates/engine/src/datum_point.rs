@@ -171,7 +171,7 @@ impl Session {
     /// The first datum fault that is new: a datum that was already faulty when the file was opened (reported as a
     /// warning then) does not block unrelated edits.
     pub(crate) fn check_datum_nodes(&self) -> std::result::Result<(), (Id, Error)> {
-        match self.datum_faults().into_iter().find(|(id, _)| !self.open_datum_faults.contains(id)) {
+        match self.datum_faults().into_iter().find(|(id, _)| !self.open_node_faults.contains(id)) {
             Some(fault) => Err(fault),
             None => Ok(()),
         }

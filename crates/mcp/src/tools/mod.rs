@@ -14,6 +14,7 @@ mod import_mesh;
 mod measure;
 mod output;
 mod params;
+mod primitives;
 mod print;
 mod recognise;
 mod rename;
@@ -69,6 +70,8 @@ where
             // serialization so undo labels follow the returned feature rather than auxiliary nodes.
             st.created_node = if name == "sketch_project" {
                 None // Projection returns its source body and target sketch; neither node was created.
+            } else if name == "primitive" {
+                v["feature"].as_u64() // `body` is the union node there, not the node the call created.
             } else {
                 ["body", "plane", "sketch", "pattern"].iter().find_map(|key| v[*key].as_u64()).or_else(|| match name {
                     "part_new" | "part_instance" | "part_copy" => v["part"]["id"].as_u64(),
@@ -124,6 +127,7 @@ fn modelling_tool(name: &str) -> bool {
             | "plane_offset"
             | "datum_point"
             | "datum_axis"
+            | "primitive"
             | "extrude"
             | "revolve"
             | "sweep"
@@ -268,6 +272,7 @@ impl Registry {
         tools.extend(sketch_import::tools());
         tools.extend(features::tools());
         tools.extend(datums::tools());
+        tools.extend(primitives::tools());
         tools.extend(print::tools());
         tools.extend(import::tools());
         tools.extend(import_mesh::tools());

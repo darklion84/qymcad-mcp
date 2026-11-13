@@ -213,6 +213,7 @@ fn limits_allowlist_and_outer_schema() {
         "plane_offset",
         "datum_point",
         "datum_axis",
+        "primitive",
         "extrude",
         "revolve",
         "sweep",

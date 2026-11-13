@@ -264,6 +264,7 @@ fn lists_tools_with_object_schemas() {
         "plane_offset",
         "datum_point",
         "datum_axis",
+        "primitive",
         "export",
         "render",
         "topology",

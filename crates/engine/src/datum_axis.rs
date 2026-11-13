@@ -227,9 +227,9 @@ mod tests {
     fn a_healed_datum_leaves_the_open_fault_set() {
         let mut s = Session::new_part();
         let (axis, _) = s.datum_axis(&AxisSpec::Manual { origin: [0.0; 3], dir: [0.0, 0.0, 1.0] }, None).unwrap();
-        s.open_datum_faults.insert(axis.id);
-        s.open_datum_faults.insert(9999);
+        s.open_node_faults.insert(axis.id);
+        s.open_node_faults.insert(9999);
         s.param_set("unrelated", &1.0.into()).unwrap();
-        assert!(s.open_datum_faults.is_empty(), "{:?}", s.open_datum_faults);
+        assert!(s.open_node_faults.is_empty(), "{:?}", s.open_node_faults);
     }
 }

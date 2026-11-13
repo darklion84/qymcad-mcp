@@ -316,8 +316,8 @@ pub struct Session {
     /// Numeric joint drives a native solve clamped since the tool call began: `(joint, slot, requested, applied)`.
     /// Natively the request is overwritten by the clamped value; this keeps it long enough to report (F-165).
     pub(crate) drive_clamps: Vec<(Id, usize, f64, f64)>,
-    /// Datum nodes that were already faulty when the file was opened: reported then, they do not block other edits.
-    pub(crate) open_datum_faults: HashSet<Id>,
+    /// Datum and primitive nodes that were already faulty when the file was opened: reported then, they do not block other edits.
+    pub(crate) open_node_faults: HashSet<Id>,
 }
 
 fn first_body_feature(project: &Project) -> Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)> {
@@ -342,7 +342,7 @@ impl Session {
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
             drive_clamps: Vec::new(),
-            open_datum_faults: HashSet::new(),
+            open_node_faults: HashSet::new(),
         }
     }
 
@@ -387,7 +387,7 @@ impl Session {
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
             drive_clamps: Vec::new(),
-            open_datum_faults: HashSet::new(),
+            open_node_faults: HashSet::new(),
         };
         // qymcad-io settles sketches while loading, including offset cleanup. Read the original
         // recipe through the non-solving parser so that cleanup cannot erase user Point records.
@@ -441,7 +441,14 @@ impl Session {
         sess.check_file_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
         for (id, error) in sess.datum_faults() {
             let warning = sess.issue(id, format!("datum fault in the file (edits of other things stay possible): {error}"));
-            sess.open_datum_faults.insert(id);
+            sess.open_node_faults.insert(id);
+            sess.advisory_warnings.push(AdvisoryWarning::Geometry(warning.clone()));
+            r.warnings.push(warning);
+        }
+        for (id, error) in sess.primitive_faults() {
+            let warning = sess
+                .issue(id, format!("primitive outside the app's field limits in the file (edits of other things stay possible): {error}"));
+            sess.open_node_faults.insert(id);
             sess.advisory_warnings.push(AdvisoryWarning::Geometry(warning.clone()));
             r.warnings.push(warning);
         }
@@ -610,7 +617,8 @@ impl Session {
     /// Refuse native coercions on the settled scope, even on a previously failed node.
     pub(crate) fn check_evaluated_features(&self) -> std::result::Result<(), (Id, Error)> {
         self.check_file_features()?;
-        self.check_datum_nodes()
+        self.check_datum_nodes()?;
+        self.check_primitive_nodes()
     }
 
     /// What a file's own features must satisfy to be opened. The datum points and axes are not here: opening only reads
@@ -1190,10 +1198,10 @@ impl Session {
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
             self.shapes.retain(|id, _| live.contains(id) && before_shape_ids.contains(id));
             self.shapes.extend(saved);
-        } else if !self.open_datum_faults.is_empty() {
+        } else if !self.open_node_faults.is_empty() {
             // A datum that has become healthy no longer needs its exemption: a later fault on it is a new one.
-            let faulty: HashSet<Id> = self.datum_faults().into_iter().map(|(id, _)| id).collect();
-            self.open_datum_faults.retain(|id| faulty.contains(id));
+            let faulty: HashSet<Id> = self.datum_faults().into_iter().chain(self.primitive_faults()).map(|(id, _)| id).collect();
+            self.open_node_faults.retain(|id| faulty.contains(id));
         }
         result
     }
