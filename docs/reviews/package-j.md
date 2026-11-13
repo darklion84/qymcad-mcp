@@ -73,3 +73,5 @@ Reviewers: Codex (code-read only) and Opus (ran probes against `a009769`; `tasks
 | 7 | This log, full `scripts/check.sh` | See below. |
 
 Not done: nothing skipped. Not run: the GUI. The IGES prior (Opus h) was not given a test.
+
+Evidence, round 2 (observed): `scripts/check.sh` on `dd59d4b`: OK, 1512 passed, 0 failed, 3 ignored (the sum of the `test result` lines). The first run on `4d8d618` stopped at clippy (`clone` on a Copy type in a new test), fixed in `dd59d4b`. Mutations seen: the previous code fails the settled-scope test (false refusal) and hangs on the side-count test (1993 sides built), and fails the vertex and mesh tests; the unit tests for points 2 and 3 were not run against the old code.
