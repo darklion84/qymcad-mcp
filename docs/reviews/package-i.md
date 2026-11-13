@@ -54,3 +54,18 @@ Subject: `sketch_edit op:"construction"`, `datum_point` and `datum_axis` (ADR 00
 | F-176: no false refusals found (fillet, chamfer, add-absorb, rollback) | Opus (clean) | F-176 now states that consuming the body by a later feature is not an edit of its edges. |
 | `package-i.md` line 34 broken; the test comment in `an_axis_needs_the_active_part_s_points...` promises an unchecked case | Opus nit | Line fixed; the test now checks the first Part's pair after `part_select` and the mixed pair from the other side. |
 
+
+## GUI check in QymCAD.app (2026-11-13, kit `tmp/gui-check-I`, tester session)
+
+12/14 PASS. File hashes stayed intact (3/3). The tree shows the datum names given through the server (F-171 fix confirmed).
+- PASS:
+  - opening without errors;
+  - the coordinates and directions of every point and axis;
+  - `px` moves the coordinate points and the two-point axis; `w` moves the vertex point and the edge axis; undo works;
+  - «Пересобрать всё» changes nothing;
+  - the circular array's edit panel shows the axis `A_z` and 4 copies;
+  - the revolve's edit panel shows `A_rev`;
+  - the construction circle is drawn dashed, the plate has no hole, and X in the app gives the hole back.
+- FAIL 1.3: the panel labels edge and face axes «Ручная» and does not tell a vertex point from a coordinate point. This is app UI, the links are live: F-178.
+- FAIL 2.5: a datum point coordinate typed in the panel is outside undo, and the revolve follows it only on «Пересобрать всё». This is an app defect that the server cannot reach: F-179.
+- Not checked: volumes (the app does not show them; bounding boxes match).

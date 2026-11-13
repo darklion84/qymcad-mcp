@@ -3103,3 +3103,23 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Server policy (refusal):** the F-168 rule (see there) sits in the shared `Session::sketch_edit` path, so `sketch_remove`, the `sketch_edit` ops (trim, extend, break, offset, corner, mirror_point, construction), `sketch_add` and `sketch_constrain` are refused and rolled back when a closed held contour of a built feature with several profiles vanishes (removed, or opened by a trim) and is not merged into a surviving held contour. Tests: `golden_sketch_construction::removing_an_island_under_a_several_profile_feature_is_refused_and_a_hole_passes`, `trimming_a_held_island_open_is_refused`, `p16`.
 - **Accepted app behaviour, not refused:** a held contour that changes shape keeps its id by the app's matching: a circle cut in two by a new line stays the held profile on one half and the other half is silently not built (`dividing_a_held_contour_or_adding_a_hole_is_accepted_app_behaviour`: 892.70 -> 696.35); a new hole inside a held contour changes the profile; removing a divider merges regions (volume unchanged). These are legal shape edits the consumer follows.
 - **Not covered by the guard:** edits that do not pass through `Session::sketch_edit`: `param_set` and `dimension_set` of sketch dimensions, projection refresh and the hole sketches. A contour lost through a parameter was not reproduced (a parameter that merges an island into another region is a merge).
+
+## F-178 The properties panel shows an edge or face datum axis as "Manual" and a vertex datum point as plain coordinates
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Observed in QymCAD.app (GUI check I, 2026-11-13, `tmp/gui-check-I/REPORT.md` item 1.3):** in the right-hand panel, axes `A_edge` (`FromEdge`) and `A_face` (`FromFace`) read «Тип: Ручная». The point `P_vertex` (`AtVertex`) shows the same «Координаты» block as a manual point. The links are live: `A_edge` and `P_vertex` follow a change of the body width `w`, and «Пересобрать всё» keeps them. A two-point axis shows «Через 2 точки» with A and B correctly.
+- **Source:** the panel offers only the manual/two-points switch and shows the Manual editor for `FromEdge`/`FromFace` (`gui/panels_props.rs:956-1060`). The point panel edits `at` and does not change `def` (`gui/panel_bits.rs:315-340`). [read in source]
+- **Server policy:** none. The file is correct and the server reports `def` in `doc_info.datums`. Risk to users: a value typed in that panel silently turns a linked axis into a manual one (source, not run).
+
+## F-179 Editing a datum point's coordinate in the properties panel is outside undo, and a revolve about an axis through that point does not follow later changes
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Observed in QymCAD.app (GUI check I, 2026-11-13, item 2.5):**
+  - Q2.x was changed from −40 to −45 in the panel, under a `TwoPoints` axis `A_rev` that a 360° revolve `ring` uses. The axis tilted to [−0.45, 0.89, 0] and the ring rebuilt once, to a box of 16.6 × 28.9 × 30.0 that fits neither −40 nor −45.
+  - «Правка → Отменить» stayed greyed out.
+  - Q2 was then typed back to −40. The axis returned but the ring stayed tilted; only «Пересобрать всё» restored 40 × 10 × 40.
+  - Again −45 gave the same stale box, and «Пересобрать всё» then gave 32.0 × 22.0 × 35.8.
+- **Source:** the panel writes `at` directly (`panel_bits.rs:324-330`) without `begin_edit`. `Revolve.inputs()` has no `axis_datum` (`kind.rs:917-918`), so the revolve is re-run only when it is marked dirty explicitly. [read in source]
+- **Server policy:** not reachable through the server. Point coordinates change only through `dimension_set` and `param_set`, which go through a full rebuild with checks, and a revolve about a two-point axis follows them (tested in `golden_datum_axis`).
