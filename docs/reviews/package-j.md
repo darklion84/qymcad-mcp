@@ -29,4 +29,5 @@ Subject: `primitive` (ADR 0056), branch medium-j on top of 0.1.1-dev.20261026.15
 ## Evidence
 
 - Targeted (observed): `j0_probes` (8), `golden_primitives` (12), the unit test in `primitive.rs`, `mcp/tests/j1_primitive` (5), `protocol`, `batch`, `docs_fresh` and `coverage_matrix` pass; `cargo fmt` and `cargo clippy --workspace --all-targets -D warnings` clean.
+- `scripts/check.sh` on `007fc88`: OK, 1494 passed, 0 failed, 3 ignored (fmt, clippy `-D warnings`, `cargo test --workspace`; the sum of the `test result` lines of the run).
 - Not run: QymCAD.app itself (the GUI); every app-side claim is a native core-API probe or read in source, as marked in FINDINGS. No independent review round of this package has happened yet.
