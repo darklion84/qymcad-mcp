@@ -303,3 +303,18 @@ fn inside_the_box(dx: f64) -> f64 {
     let cap = PI * h * h * (3.0 * 5.0 - h) / 3.0;
     4.0 / 3.0 * PI * 125.0 / 2.0 - cap / 2.0
 }
+
+/// P14 (F-185): a primitive united with a prior body that is not built (suppressed) gives no body and no error.
+#[test]
+fn p14_a_primitive_over_an_unbuilt_prior_is_empty_without_an_error() {
+    let mut p = fresh();
+    let prior = p.add_box(20.0, 20.0, 20.0);
+    assert!(p.set_feature_suppressed(0, true));
+    let ball = p.add_sphere(5.0);
+    let union = p.finish_base_body(ball, 1);
+    assert_ne!(union, ball, "the app united the sphere with the suppressed box");
+    let n = measure(p, Some(union));
+    show("P14 sphere over a suppressed box", &n);
+    assert!(n.volume.is_none() && n.errors.is_empty(), "no body and no error: {n:?}");
+    let _ = prior;
+}

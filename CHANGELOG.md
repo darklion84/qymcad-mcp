@@ -9,9 +9,10 @@ All notable changes to this project are documented here. The format follows
 - `primitive`: the app's Box, Cylinder, Sphere, Cone, Torus and Prism commands as one tool with `kind` — sizes as numbers or formulas (the keys `dx dy dz`, `r h`, `r1 r2 h`, `major minor`, `r h n` are what `dimension_set` takes), `place` at a datum point or a vertex (pure translation, no association), the result united with the Part's body as the app does; atomic, batch-allowed, one undo step. Returns the primitive's node (`feature`), the Part's `body`, evaluated `sizes` and the union.
 
 ### Changed
-- The app's field limits hold for primitives at creation and on every later edit (`dimension_set`, `param_set`, formulas), because the core builds a thin primitive silently wrong (F-180) and rounds a prism's `n` silently (F-181); a cone with equal radii is refused with a clear text (F-182). A file made in the app that is outside the fields opens with a warning and its other edits stay possible.
+- The app's field limits hold for primitives at creation and on every later edit (`dimension_set`, `param_set`, formulas), because the core builds a thin primitive silently wrong (F-180) and rounds a prism's `n` silently (F-181); a cone with equal radii is refused with a clear text (F-182). `param_set` judges the sizes and `n` before the rebuild (a million-sided prism is refused at once); the fields' 1e-9 tolerance applies; the torus tube's bound is `max(major - 0.001, 0.1)`. A file made in the app that is outside the fields opens with a warning; only that size stays tolerated while unchanged (per size, kept by undo and carried by `part_copy`).
+- A primitive over a body that is not built (suppressed or cascaded) is refused (F-185); `place.point` beyond the rollback bar and `place.vertex` on a closed or smooth edge (which the app's click does not reach) are refused; `body` is the primitive, its placement Move or the union (documented).
 - Findings recorded as accepted behaviour: suppressing a united primitive hides the Part's body (F-183); with several bodies in a Part a primitive is united with the last one (F-184).
-- Internal: `Session::open_datum_faults` became `open_node_faults` (datum and primitive nodes faulty at opening).
+- Internal: `Session::open_datum_faults` became `open_node_faults` (datum nodes faulty at opening); primitives have `open_primitive_faults` per size. Both are in the undo snapshot.
 
 ## 0.1.1-dev.20261026.15 — datum points and axes, construction toggle (ADR 0055)
 
