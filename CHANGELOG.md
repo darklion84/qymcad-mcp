@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased — datum points and axes, construction toggle (ADR 0055)
+## 0.1.1-dev.20261026.15 — datum points and axes, construction toggle (ADR 0055)
 
 ### Added
 - `datum_point`: the app's Datum point command — by coordinates `at` (numbers or formulas on x, y, z, within ±1e7 on every edit) or at a vertex of a current body of the active Part (`vertex {edge, end, body?}`, follows the vertex); batch and one-step undo.
