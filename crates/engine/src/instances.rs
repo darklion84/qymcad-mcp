@@ -257,7 +257,7 @@ impl Session {
         }
         let args = json!({"source":source,"name":name,"translation_mm":translation_mm,"rotation":rotation});
         self.assembly_edit("part_copy", args, |s| {
-            let ((copy, pairs), _) = s.atomic(|s| {
+            let ((copy, pairs, nodes), _) = s.atomic(|s| {
                 let target = s.p.components.iter().find(|c| c.id == src).and_then(|c| c.parent).unwrap_or(s.p.root);
                 let mut subtree = s.p.descendants(src);
                 subtree.push(src);
@@ -270,12 +270,15 @@ impl Session {
                     .zip(&s.p.timeline[start..])
                     .flat_map(|(a, b)| a.kind.bodies().into_iter().zip(b.kind.bodies()))
                     .collect();
+                let nodes: Vec<(Id, Id)> = sources.iter().zip(&s.p.timeline[start..]).map(|(a, b)| (a.id, b.id)).collect();
                 s.p.rename_component(copy, name.clone());
                 if let Some(t) = place {
                     s.p.set_component_transform(copy, t);
                 }
-                Ok((copy, pairs))
+                Ok((copy, pairs, nodes))
             })?;
+            // The copy's nodes are new ids: a file's tolerated faults go with them (the copy has the same sizes).
+            s.copy_open_faults(&nodes);
             let current = s.current_body_ids();
             let mut r = s.part_result(copy, true);
             r["copied_from"] = json!(src);

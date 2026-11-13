@@ -18,6 +18,9 @@ pub struct Snapshot {
     shapes: HashMap<Id, Shape>,
     warnings: Vec<AdvisoryWarning>,
     detached_projections: HashMap<(Id, Id), crate::session::DetachedProjection>,
+    /// The exemptions of a file that was faulty when opened: undo restores them with the recipe they belong to.
+    open_node_faults: HashSet<Id>,
+    open_primitive_faults: HashMap<(Id, &'static str), Option<f64>>,
     call: Option<ToolCall>,
     created_node: Option<Id>,
 }
@@ -123,6 +126,8 @@ impl Session {
             shapes: std::mem::replace(&mut self.shapes, copies),
             warnings: self.advisory_warnings.clone(),
             detached_projections: self.detached_projections.clone(),
+            open_node_faults: self.open_node_faults.clone(),
+            open_primitive_faults: self.open_primitive_faults.clone(),
             call: None,
             created_node: None,
         })
@@ -173,6 +178,8 @@ impl Session {
         self.shapes = snapshot.shapes;
         self.advisory_warnings = snapshot.warnings;
         self.detached_projections = snapshot.detached_projections;
+        self.open_node_faults = snapshot.open_node_faults;
+        self.open_primitive_faults = snapshot.open_primitive_faults;
     }
 
     /// Restore the last successful modelling tool call, without regenerating the retained geometry.

@@ -133,3 +133,34 @@ fn the_assembly_root_is_refused_and_a_part_works() {
     assert_eq!(ok["kind"], "torus");
     assert!((volume(&mut r) - 2.0 * std::f64::consts::PI.powi(2) * 12.0 * 16.0).abs() < 1e-3);
 }
+
+#[test]
+fn the_first_placed_primitive_is_its_move_and_survives_undo_save_and_open() {
+    let mut r = Registry::new();
+    call(&mut r, "doc_new", json!({}));
+    call(&mut r, "datum_point", json!({"at":[10,0,0],"name":"p"}));
+    let s = call(&mut r, "primitive", json!({"kind":"sphere","r":5,"place":{"point":"p"}}));
+    // `body` is the Move node, not the primitive: three variants (primitive; Move when placed into an empty Part; union).
+    assert_ne!(s["feature"], s["body"]);
+    assert!(s.get("joined").is_none(), "{s}");
+    let info = call(&mut r, "doc_info", json!({}));
+    assert_eq!(info["bodies"][0]["id"], s["body"]);
+    let expected = 4.0 / 3.0 * std::f64::consts::PI * 125.0;
+    assert!((volume(&mut r) - expected).abs() < 1e-3);
+    let kinds = |r: &mut Registry| -> Vec<String> {
+        call(r, "doc_info", json!({}))["timeline"].as_array().unwrap().iter().map(|n| n["kind"].as_str().unwrap().to_string()).collect()
+    };
+    assert_eq!(kinds(&mut r), ["datumpoint", "sphere", "move"]);
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-j1-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("placed.qcad").to_str().unwrap().to_string();
+    call(&mut r, "doc_save", json!({"path":path}));
+    // One undo takes the primitive and its Move together.
+    call(&mut r, "undo", json!({}));
+    assert_eq!(kinds(&mut r), ["datumpoint"]);
+    // Open keeps the same body.
+    call(&mut r, "doc_open", json!({"path":path}));
+    assert_eq!(kinds(&mut r), ["datumpoint", "sphere", "move"]);
+    assert!((volume(&mut r) - expected).abs() < 1e-3);
+    assert_eq!(call(&mut r, "doc_info", json!({}))["bodies"][0]["id"], s["body"]);
+}

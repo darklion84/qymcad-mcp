@@ -75,6 +75,13 @@ impl Session {
             self.p = before;
             return Err(Error::Expr(message));
         }
+        // A primitive's sizes and side count follow parameters too: judge them now, before propagation and the rebuild would
+        // build a million-sided prism (the same early place as the polygon side counts above). The check after the rebuild stays.
+        if let Err((id, error)) = self.check_primitive_nodes() {
+            let message = format!("{} ({id}): {error}", self.node_name(id));
+            self.p = before;
+            return Err(Error::Invalid(message));
+        }
         // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
         if let Err(e) = self.check_array_limits() {
             self.p = before;

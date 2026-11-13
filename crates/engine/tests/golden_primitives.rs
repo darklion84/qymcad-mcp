@@ -216,11 +216,11 @@ fn the_fields_hold_on_every_edit_and_the_cones_first_radius_may_reach_zero_on_ed
     s.param_set("w", &30.0.into()).unwrap();
     let b = make(&mut s, json!({"kind":"box","dx":"w","dy":20,"dz":20}));
     let before = snap(&s);
-    // Zero and below are stopped by the core's own check (a visible error); the rest by the field.
+    // Every one is stopped by the field, before the rebuild (the core's own zero check is never reached).
     for (bad, word) in [
         (0.05, "box dx must be within 0.1..=100000"),
-        (0.0, "a size of the primitive is zero or below"),
-        (-1.0, "a size of the primitive is zero or below"),
+        (0.0, "box dx must be within 0.1..=100000"),
+        (-1.0, "box dx must be within 0.1..=100000"),
         (100001.0, "box dx must be within 0.1..=100000"),
     ] {
         let e = s.param_set("w", &bad.into()).unwrap_err().to_string();
@@ -343,12 +343,8 @@ fn placement_at_a_vertex_or_a_datum_point_is_a_pure_translation_without_associat
     };
     s.param_set("w", &30.0.into()).unwrap();
     let (xmax, volume) = cube_box(&s);
-    assert_close(
-        volume,
-        30.0 * 6.0 * 4.0 + 2.0 * 2.0 * (corner[2] + 2.0 - 4.0).max(0.0) + 0.0,
-        20.0,
-        "the cube stayed where it was placed; only the block grew",
-    );
+    // The cube (z 4..6) only touches the block's top face: the volumes add exactly, the cube did not follow the corner.
+    assert_close(volume, 30.0 * 6.0 * 4.0 + 2.0 * 2.0 * 2.0, 1e-3, "the cube stayed where it was placed; only the block grew");
     assert_close(xmax, 15.0, 1e-3, "the block's new face is the largest x; the cube did not follow the corner");
 }
 
@@ -492,4 +488,123 @@ fn in_a_part_with_several_bodies_the_primitive_unites_with_the_last_current_one_
     let united = bodies.iter().find(|b| b.id == info.body).unwrap();
     // The cube stands at the Part's origin, 100 mm from the second block: two pieces, both volumes.
     assert_close(united.volume, 400.0 + 8.0, 1e-3, "the second block and the cube");
+}
+
+#[test]
+fn a_primitive_over_a_prior_body_that_is_not_built_is_refused_f185() {
+    let spec_cyl = spec(json!({"kind":"cylinder","r":3,"h":40}));
+    // The Part's only body is suppressed: the app would unite with it and give an empty result without a word.
+    let mut s = Session::new_part();
+    let a = make(&mut s, json!({"kind":"box","dx":20,"dy":20,"dz":20}));
+    s.feature_suppress(a.feature, true).unwrap();
+    let before = snap(&s);
+    let e = s.primitive(&spec_cyl, &Placement::Origin, None).unwrap_err().to_string();
+    assert!(e.contains("is not built") && e.contains("F-185"), "{e}");
+    assert!(snap(&s) == before, "a refusal changes nothing");
+    s.feature_suppress(a.feature, false).unwrap();
+    let (info, r) = s.primitive(&spec_cyl, &Placement::Origin, None).unwrap();
+    assert!(r.errors.is_empty() && info.joined.is_some());
+    assert_close(only_body(&s).volume, 8000.0 + PI * 9.0 * 20.0, 1e-3, "the union is built once the prior is");
+    // The F-183 chain: the united primitive is suppressed, so the Part's last body (the union) is not built either.
+    let mut s = Session::new_part();
+    make(&mut s, json!({"kind":"box","dx":20,"dy":20,"dz":20}));
+    let (b, _) = s.primitive(&spec(json!({"kind":"sphere","r":5})), &Placement::Origin, None).unwrap();
+    s.feature_suppress(b.feature, true).unwrap();
+    assert!(s.result_bodies().is_empty());
+    let before = snap(&s);
+    let e = s.primitive(&spec_cyl, &Placement::Origin, None).unwrap_err().to_string();
+    assert!(e.contains("is not built") && e.contains("F-185"), "{e}");
+    assert!(snap(&s) == before);
+}
+
+#[test]
+fn the_first_placed_primitive_is_its_move_and_a_point_beyond_the_rollback_bar_is_refused() {
+    let mut s = Session::new_part();
+    let (point, _) = s.datum_point(&PointSpec::At([Num::Value(10.0), Num::Value(0.0), Num::Value(0.0)]), None).unwrap();
+    let (info, r) = s.primitive(&spec(json!({"kind":"sphere","r":5})), &Placement::Point(point.id), None).unwrap();
+    assert!(r.errors.is_empty());
+    // Three variants of `body`: the primitive (unplaced, first), the Move (placed, Part empty), the union (a prior body).
+    assert_ne!(info.body, info.feature, "placed: the body is the Move");
+    assert!(info.joined.is_none(), "nothing to unite with");
+    assert!(matches!(
+        s.project().timeline.iter().find(|n| n.id == info.body).unwrap().kind,
+        qymcad_core::feature::FeatureKind::Move { .. }
+    ));
+    let b = only_body(&s);
+    assert_eq!(b.id, info.body);
+    assert_close(b.volume, 4.0 / 3.0 * PI * 125.0, 1e-3, "the sphere");
+    assert_box(&b, [5.0, -5.0, -5.0, 15.0, 5.0, 5.0], 0.05, "moved to the point");
+    // A datum point after the rollback bar is not in the active history.
+    let mut s = Session::new_part();
+    let a = make(&mut s, json!({"kind":"box","dx":20,"dy":20,"dz":20}));
+    let (late, _) = s.datum_point(&PointSpec::At([Num::Value(50.0), Num::Value(0.0), Num::Value(0.0)]), None).unwrap();
+    s.history_rollback(Some(a.feature), None).unwrap();
+    let before = snap(&s);
+    let e = s.primitive(&spec(json!({"kind":"box","dx":2,"dy":2,"dz":2})), &Placement::Point(late.id), None).unwrap_err().to_string();
+    assert!(e.contains("beyond the rollback bar"), "{e}");
+    assert!(snap(&s) == before);
+    s.history_rollback(None, Some("end")).unwrap();
+    s.primitive(&spec(json!({"kind":"box","dx":2,"dy":2,"dz":2})), &Placement::Point(late.id), None).unwrap();
+}
+
+#[test]
+fn a_vertex_the_apps_click_cannot_reach_is_refused() {
+    // The app's vertex pick skips closed edges (a circle's single seam vertex) and smooth junctions.
+    let mut s = Session::new_part();
+    let c = make(&mut s, json!({"kind":"cylinder","r":10,"h":20}));
+    let topo = s.topology(Some(c.body), false).unwrap();
+    let circle = topo.edges.iter().find(|e| e.kind == EdgeKind::Circle).expect("the cylinder's rim");
+    let before = snap(&s);
+    let e = s
+        .primitive(
+            &spec(json!({"kind":"box","dx":2,"dy":2,"dz":2})),
+            &Placement::Vertex { edge: circle.id, end: VertexEnd::Start, body: None },
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("is closed") && e.contains("vertex pick skips"), "{e}");
+    assert!(!e.contains("datum point's"), "{e}");
+    // The cylinder's seam line is a smooth junction of its face with itself.
+    let seam = topo.edges.iter().find(|e| e.kind == EdgeKind::Line).expect("the seam line");
+    let e = s
+        .primitive(
+            &spec(json!({"kind":"box","dx":2,"dy":2,"dz":2})),
+            &Placement::Vertex { edge: seam.id, end: VertexEnd::End, body: None },
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("smooth, tangent junction") && e.contains("vertex pick skips"), "{e}");
+    assert!(snap(&s) == before, "refusals change nothing");
+    // A body of another Part: the refusal does not speak of a datum point.
+    s.part_new("second").unwrap();
+    let e = s
+        .primitive(
+            &spec(json!({"kind":"box","dx":2,"dy":2,"dz":2})),
+            &Placement::Vertex { edge: circle.id, end: VertexEnd::Start, body: Some(c.body) },
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("belongs to another Part") && !e.contains("datum point's"), "{e}");
+}
+
+#[test]
+fn the_torus_and_prism_limits_take_the_fields_tolerance_at_creation() {
+    let mut s = Session::new_part();
+    // The field's upper bound for the tube is max(major - 0.001, 0.1): a tube of 0.1 on a ring of 0.1005 is inside.
+    let (info, r) = s.primitive(&spec(json!({"kind":"torus","major":0.1005,"minor":0.1})), &Placement::Origin, None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_close(only_body(&s).volume, 2.0 * PI * PI * 0.1005 * 0.01, 1e-9, "the fat thin torus");
+    assert_eq!(info.sizes["minor"], 0.1);
+    // Float noise at the bounds is inside; a whole number within 1e-9 builds that many sides.
+    let mut t = Session::new_part();
+    t.param_set("k", &0.3.into()).unwrap();
+    make(&mut t, json!({"kind":"box","dx":"k-0.2","dy":10,"dz":10}));
+    assert_close(only_body(&t).volume, 0.1 * 100.0, 1e-9, "0.3 - 0.2 is the field's floor, within its tolerance");
+    let mut p = Session::new_part();
+    let (prism, _) = p.primitive(&spec(json!({"kind":"prism","r":10,"h":20,"n":"0.1*3*10"})), &Placement::Origin, None).unwrap();
+    assert_close(only_body(&p).volume, 3.0 * 0.5 * 100.0 * (2.0 * PI / 3.0).sin() * 20.0, 1e-6, "three sides");
+    assert_close(prism.sizes["n"], 3.0, 1e-9, "n as evaluated");
 }

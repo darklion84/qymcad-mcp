@@ -217,6 +217,25 @@ fn p5_cone_radii() {
     assert!(n.volume.is_none() && n.errors.iter().any(|e| e.contains("PrimitiveSizeNotAboveZero")), "{n:?}");
 }
 
+/// P5b: where the core's cone stops failing (F-182): `10` against `10 - d` fails at d = 1e-7 and builds at d = 1.01e-7, so the
+/// core's threshold is 1e-7 (OCCT's `Precision::Confusion`, inferred), which is the server's `CONE_EQUAL`.
+#[test]
+fn p5b_cone_equal_radii_threshold() {
+    let built = |diff: &str| {
+        let mut p = fresh();
+        let id = p.add_cone(10.0, 4.0, 20.0);
+        typed(&mut p, id, "r1", "10");
+        typed(&mut p, id, "r2", &format!("10-{diff}"));
+        measure(p, Some(id)).volume.is_some()
+    };
+    for diff in ["0.00000005", "0.0000001"] {
+        assert!(!built(diff), "{diff} apart fails");
+    }
+    for diff in ["0.000000101", "0.00000012", "0.000001"] {
+        assert!(built(diff), "{diff} apart builds");
+    }
+}
+
 /// P7: a torus whose tube nearly touches the ring's radius builds with the exact volume (the field stops at major - 0.001; the core
 /// only at minor >= major, a visible `TorusThroughItself`).
 #[test]

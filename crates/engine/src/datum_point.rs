@@ -99,7 +99,7 @@ impl Session {
         let body = self.source_body(body)?;
         if self.has_assembly_structure() && self.p.body_owner(body) != self.p.active_component {
             return Err(Error::Invalid(if app_limit {
-                format!("body {body} belongs to another Part; the app takes a datum point's {what} only on the current Part's bodies (part_select first)")
+                format!("body {body} belongs to another Part; the app takes a {what} pick only on the current Part's bodies (part_select first)")
             } else {
                 format!(
                     "body {body} belongs to another Part; this server takes the {what} of the active Part's bodies only, because a datum is stored in its Part's frame (the app itself would offer any visible body); part_select first"

@@ -316,8 +316,11 @@ pub struct Session {
     /// Numeric joint drives a native solve clamped since the tool call began: `(joint, slot, requested, applied)`.
     /// Natively the request is overwritten by the clamped value; this keeps it long enough to report (F-165).
     pub(crate) drive_clamps: Vec<(Id, usize, f64, f64)>,
-    /// Datum and primitive nodes that were already faulty when the file was opened: reported then, they do not block other edits.
+    /// Datum nodes that were already faulty when the file was opened: reported then, they do not block other edits.
     pub(crate) open_node_faults: HashSet<Id>,
+    /// Primitive sizes that were already outside the app's fields when the file was opened, with the value they had (`None`: a
+    /// formula that did not evaluate): reported then. The exemption is per size and holds while the size keeps that value.
+    pub(crate) open_primitive_faults: HashMap<(Id, &'static str), Option<f64>>,
 }
 
 fn first_body_feature(project: &Project) -> Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)> {
@@ -343,6 +346,7 @@ impl Session {
             detached_projections: HashMap::new(),
             drive_clamps: Vec::new(),
             open_node_faults: HashSet::new(),
+            open_primitive_faults: HashMap::new(),
         }
     }
 
@@ -388,6 +392,7 @@ impl Session {
             detached_projections: HashMap::new(),
             drive_clamps: Vec::new(),
             open_node_faults: HashSet::new(),
+            open_primitive_faults: HashMap::new(),
         };
         // qymcad-io settles sketches while loading, including offset cleanup. Read the original
         // recipe through the non-solving parser so that cleanup cannot erase user Point records.
@@ -445,10 +450,12 @@ impl Session {
             sess.advisory_warnings.push(AdvisoryWarning::Geometry(warning.clone()));
             r.warnings.push(warning);
         }
-        for (id, error) in sess.primitive_faults() {
-            let warning = sess
-                .issue(id, format!("primitive outside the app's field limits in the file (edits of other things stay possible): {error}"));
-            sess.open_node_faults.insert(id);
+        for (id, fault) in sess.primitive_faults() {
+            let warning = sess.issue(
+                id,
+                format!("primitive outside the app's field limits in the file (edits of other things stay possible): {}", fault.error),
+            );
+            sess.exempt_primitive_fault(id, &fault);
             sess.advisory_warnings.push(AdvisoryWarning::Geometry(warning.clone()));
             r.warnings.push(warning);
         }
@@ -1200,8 +1207,11 @@ impl Session {
             self.shapes.extend(saved);
         } else if !self.open_node_faults.is_empty() {
             // A datum that has become healthy no longer needs its exemption: a later fault on it is a new one.
-            let faulty: HashSet<Id> = self.datum_faults().into_iter().chain(self.primitive_faults()).map(|(id, _)| id).collect();
+            let faulty: HashSet<Id> = self.datum_faults().into_iter().map(|(id, _)| id).collect();
             self.open_node_faults.retain(|id| faulty.contains(id));
+        }
+        if result.is_ok() {
+            self.prune_primitive_exemptions();
         }
         result
     }
