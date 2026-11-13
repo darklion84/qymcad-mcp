@@ -608,3 +608,149 @@ fn the_torus_and_prism_limits_take_the_fields_tolerance_at_creation() {
     assert_close(only_body(&p).volume, 3.0 * 0.5 * 100.0 * (2.0 * PI / 3.0).sin() * 20.0, 1e-6, "three sides");
     assert_close(prism.sizes["n"], 3.0, 1e-9, "n as evaluated");
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Review round 2
+
+use qymcad_core::model::Project;
+
+/// A Part with a 3 mm tall rectangle `w` wide whose diagonal is a named REFERENCE dimension (`diagonal`, driven by `w`): the
+/// settled scope differs from the one before propagation.
+fn with_diagonal(label: &str, w: f64) -> Session {
+    let mut s = Session::new_part();
+    s.param_set("w", &w.into()).unwrap();
+    let a = s.sketch_create(&PlaneRef::Base(BaseName::XY), Some("A")).unwrap();
+    let lines = s.sketch_rect(a, &0.0.into(), &0.0.into(), &Num::Expr("w".into()), &3.0.into(), false).unwrap();
+    let details = s.sketch_detail(a).unwrap();
+    let bottom = &details.entities.iter().find(|e| e.id == lines[0]).unwrap().points;
+    let top = &details.entities.iter().find(|e| e.id == lines[2]).unwrap().points;
+    let index = s
+        .sketch_constrain(
+            a,
+            &ConstrainSpec {
+                kind: ConstraintKind::Distance,
+                refs: vec![SketchRef::Id(bottom[0]), SketchRef::Id(top[0])],
+                value: None,
+                axis: DistAxis::Aligned,
+                reference: true,
+            },
+        )
+        .unwrap()
+        .index
+        .unwrap();
+    let path = scratch(&format!("j2-diagonal-{label}.qcad"));
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    let si = project.sketch_index(a).unwrap();
+    let refs = Project::dim_refs(&project.sketches[si].constraints[index]).unwrap();
+    assert!(project.add_named_dim("diagonal".into(), a, refs));
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    let (s, r) = Session::open(&path).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    s
+}
+
+/// J2 #1: `param_set` judges a primitive's sizes on the settled scope (after the named reference dimensions followed the new
+/// parameter), as `dimension_set` does: no false refusal from the stale value, no bypass through it.
+#[test]
+fn param_set_judges_the_sizes_on_the_settled_scope() {
+    // diagonal = sqrt(w^2 + 9). dx = diagonal - w + 0.5 is 0.94 at w = 10 and 0.72 at w = 20: legal both times, but with the
+    // stale diagonal (10.44) and the new w = 20 it reads -9.06.
+    let mut s = with_diagonal("legal", 10.0);
+    make(&mut s, json!({"kind":"box","dx":"diagonal - w + 0.5","dy":10,"dz":10}));
+    s.param_set("w", &20.0.into()).unwrap();
+    assert_close(s.project().param_map()["diagonal"], (400.0f64 + 9.0).sqrt(), 1e-9, "diagonal followed w");
+    assert_close(only_body(&s).volume, ((409.0f64).sqrt() - 20.0 + 0.5) * 100.0, 1e-6, "dx on the settled scope");
+}
+
+#[test]
+fn a_side_count_through_a_reference_dimension_is_refused_before_the_rebuild() {
+    // n = round(diagonal) - 7: 5 sides at w = 12 (diagonal 12.37).
+    let mut s = with_diagonal("n", 12.0);
+    make(&mut s, json!({"kind":"prism","r":10,"h":20,"n":"round(diagonal)-7"}));
+    let before = snap(&s);
+    let started = std::time::Instant::now();
+    // w = 2000: the stale diagonal gives 5 sides, the settled one 1993; it must be refused, not built.
+    let e = s.param_set("w", &2000.0.into()).unwrap_err().to_string();
+    assert!(e.contains("prism n must be a whole number of sides in 3..=64"), "{e}");
+    assert_eq!(e.matches("invalid request:").count(), 1, "one prefix only: {e}");
+    assert!(snap(&s) == before, "refused with the document unchanged");
+    assert!(started.elapsed() < std::time::Duration::from_secs(20), "refused before the rebuild: {:?}", started.elapsed());
+    // The named dimension itself as the side count (Codex M1): L = diagonal.
+    let mut s = with_diagonal("n2", 4.0);
+    make(&mut s, json!({"kind":"prism","r":10,"h":20,"n":"diagonal"}));
+    let e = s.param_set("w", &1.0e6.into()).unwrap_err().to_string();
+    assert!(e.contains("prism n must be a whole number of sides in 3..=64"), "{e}");
+}
+
+/// J2 #5: the app's vertex pick skips smooth edges, but it picks a point: the end of a smooth edge where a reachable (sharp) edge
+/// ends too is a vertex the click gives.
+#[test]
+fn a_smooth_edge_end_where_a_sharp_edge_ends_is_a_vertex_the_click_gives() {
+    let rounded = || {
+        let mut s = Session::new_part();
+        make(&mut s, json!({"kind":"box","dx":40,"dy":30,"dz":10}));
+        s.fillet(None, &Sel::Along { dir: [0.0, 0.0, 1.0], tol_deg: 1.0 }, &3.0.into(), None).unwrap();
+        s
+    };
+    let mut s = rounded();
+    let body = only_body(&s).id;
+    let topo = s.topology(Some(body), false).unwrap();
+    // The four rounded corners leave eight vertical lines, every one a smooth junction of the round face and a flat one.
+    let smooth: Vec<_> = topo.edges.iter().filter(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 9.0).collect();
+    assert_eq!(smooth.len(), 8, "{:?}", topo.edges.iter().map(|e| (e.id, e.kind.clone())).collect::<Vec<_>>());
+    for edge in smooth {
+        for end in [VertexEnd::Start, VertexEnd::End] {
+            let mut s = rounded();
+            let (info, r) = s
+                .primitive(&spec(json!({"kind":"sphere","r":1})), &Placement::Vertex { edge: edge.id, end, body: Some(body) }, None)
+                .unwrap_or_else(|e| panic!("edge {} {end:?}: {e}", edge.id));
+            assert!(r.errors.is_empty(), "{:?}", r.errors);
+            let want = if end == VertexEnd::End { edge.b } else { edge.a };
+            assert_eq!(info.placed_at, Some(want));
+        }
+    }
+}
+
+/// J2 #4: F-185 is for a suppressed prior (or one in a suppressed chain) only. An unbuilt prior of another kind (a mesh piece
+/// without a B-rep) is left to the app, whose own error `Body A was not built` shows and rolls the action back.
+#[test]
+fn a_primitive_over_a_mesh_body_is_left_to_the_app() {
+    let path = scratch("j2-cube.stl");
+    let v = [[0., 0., 0.], [10., 0., 0.], [10., 10., 0.], [0., 10., 0.], [0., 0., 10.], [10., 0., 10.], [10., 10., 10.], [0., 10., 10.]];
+    let tris = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    let mut bytes = vec![0u8; 84 + tris.len() * 50];
+    bytes[80..84].copy_from_slice(&(tris.len() as u32).to_le_bytes());
+    for (k, t) in tris.into_iter().enumerate() {
+        for (j, p) in t.into_iter().map(|i| v[i]).enumerate() {
+            for (axis, value) in p.into_iter().enumerate() {
+                let o = 84 + k * 50 + 12 + j * 12 + axis * 4;
+                bytes[o..o + 4].copy_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+    }
+    std::fs::write(&path, bytes).unwrap();
+    let mut s = Session::new_part();
+    let imported = s.import_mesh(&path, None, Some("mm"), 1., Some("mesh_cube")).unwrap();
+    // The mesh piece lives in a Part of its own: make that Part the active one.
+    let owner = s.project().body_owner(imported.pieces[0].body).expect("the piece's Part");
+    s.part_select(&PartRef::Id(owner)).unwrap();
+    let before = snap(&s);
+    let e = s.primitive(&spec(json!({"kind":"box","dx":4,"dy":4,"dz":4})), &Placement::Origin, None).unwrap_err().to_string();
+    assert!(!e.contains("F-185"), "not the suppression refusal: {e}");
+    assert!(e.contains("was not built"), "the app's own error shows: {e}");
+    assert!(snap(&s) == before, "rolled back");
+}

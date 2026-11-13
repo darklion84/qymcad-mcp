@@ -75,13 +75,6 @@ impl Session {
             self.p = before;
             return Err(Error::Expr(message));
         }
-        // A primitive's sizes and side count follow parameters too: judge them now, before propagation and the rebuild would
-        // build a million-sided prism (the same early place as the polygon side counts above). The check after the rebuild stays.
-        if let Err((id, error)) = self.check_primitive_nodes() {
-            let message = format!("{} ({id}): {error}", self.node_name(id));
-            self.p = before;
-            return Err(Error::Invalid(message));
-        }
         // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
         if let Err(e) = self.check_array_limits() {
             self.p = before;
@@ -117,6 +110,13 @@ impl Session {
                  keep the side they were created on, FINDINGS F-045).",
                 unsolved.join(", ")
             )));
+        }
+        // A primitive's sizes and side count follow parameters and named reference dimensions: judge them on the settled scope (after
+        // propagation, as `dimension_set` does) and before the rebuild would build a million-sided prism.
+        if let Err((id, error)) = self.check_primitive_nodes() {
+            let message = self.node_refusal(id, &error);
+            self.p = before;
+            return Err(Error::Invalid(message));
         }
         // Propagation has dirtied every affected node. Preserve their original handles and rebuild on
         // independent B-rep copies, like sketch_edit: rollback must retain the original representation (F-034).

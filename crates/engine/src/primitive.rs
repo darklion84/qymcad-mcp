@@ -136,8 +136,9 @@ fn fault(keys: &[&'static str], message: String) -> Fault {
 }
 
 /// Judge evaluated sizes against the app's fields, with the field's own tolerance (`lo - 1e-9 ..= hi + 1e-9`, `n` within 1e-9 of
-/// a whole number, then rounded). `value` gives a size by key.
-fn judge(kind: &str, value: &dyn Fn(&str) -> f64, creating: bool) -> Vec<Fault> {
+/// a whole number, then rounded). `value` gives a size by key, `None` for one that does not evaluate (judged elsewhere; a check that
+/// needs it is skipped).
+fn judge(kind: &str, value: &dyn Fn(&str) -> Option<f64>, creating: bool) -> Vec<Fault> {
     let keys: &[&'static str] = match kind {
         "box" => &["dx", "dy", "dz"],
         "cylinder" => &["r", "h"],
@@ -148,29 +149,34 @@ fn judge(kind: &str, value: &dyn Fn(&str) -> f64, creating: bool) -> Vec<Fault> 
     };
     let mut faults = Vec::new();
     for key in keys {
-        let v = value(key);
+        let Some(v) = value(key) else { continue };
         let lo = lower(kind, key, creating);
-        // The app's torus field: `(major - 0.001).max(minor.lo)` (`sync_torus_params`).
+        // The app's torus field: `(major - 0.001).max(minor.lo)` (`sync_torus_params`): the upper bound of `minor` is a pair
+        // `(minor, major)`, so its fault concerns both sizes (as the cone's radii).
         let torus_minor = kind == "torus" && *key == "minor";
-        let hi = if torus_minor { (value("major") - TORUS_GAP).max(lo).min(PRIMITIVE_MAX) } else { PRIMITIVE_MAX };
+        let major = if torus_minor { value("major") } else { None };
+        let hi = match major {
+            Some(major) => (major - TORUS_GAP).max(lo).min(PRIMITIVE_MAX),
+            None => PRIMITIVE_MAX,
+        };
         if v < lo - FIELD_TOL {
             faults.push(fault(
                 &[key],
                 format!("{kind} {key} must be within {lo}..={hi} mm, as the app's field requires (below {lo} the core builds silently wrong bodies, F-180), got {v}"),
             ));
-        } else if v > hi + FIELD_TOL {
+        } else if v > hi + FIELD_TOL && (!torus_minor || major.is_some()) {
             let why = if torus_minor {
                 "the tube stays 0.001 mm inside the ring's radius `major`: the app's field limit"
             } else {
                 "the app's field limit; the core would build it, this server keeps the app's field"
             };
-            faults.push(fault(&[key], format!("{kind} {key} must be within {lo}..={hi} mm, {why}, got {v}")));
+            let keys: &[&'static str] = if torus_minor { &["major", "minor"] } else { &[key] };
+            faults.push(fault(keys, format!("{kind} {key} must be within {lo}..={hi} mm, {why}, got {v}")));
         }
     }
     match kind {
         "prism" => {
-            let n = value("n");
-            if (n - n.round()).abs() > FIELD_TOL || !(3.0..=64.0).contains(&n.round()) {
+            if let Some(n) = value("n").filter(|n| (n - n.round()).abs() > FIELD_TOL || !(3.0..=64.0).contains(&n.round())) {
                 faults.push(fault(
                     &["n"],
                     format!("prism n must be a whole number of sides in 3..=64, got {n} (the app silently rounds it and takes at least 3, F-181)"),
@@ -178,8 +184,7 @@ fn judge(kind: &str, value: &dyn Fn(&str) -> f64, creating: bool) -> Vec<Fault> 
             }
         }
         "cone" => {
-            let (r1, r2) = (value("r1"), value("r2"));
-            if (r1 - r2).abs() <= CONE_EQUAL {
+            if let Some((r1, _)) = value("r1").zip(value("r2")).filter(|(r1, r2)| (r1 - r2).abs() <= CONE_EQUAL) {
                 faults.push(fault(
                     &["r1", "r2"],
                     format!("cone r1 and r2 are equal ({r1}): the app's cone fails there (OpFailed); use a cylinder (F-182)"),
@@ -204,7 +209,7 @@ impl Session {
             for (key, input) in spec.fields() {
                 values.insert(key, input.eval(&vars).map_err(|e| Error::Expr(format!("{} {key}: {e}", spec.kind())))?);
             }
-            if let Some(f) = judge(spec.kind(), &|key| values[key], true).into_iter().next() {
+            if let Some(f) = judge(spec.kind(), &|key| Some(values[key]), true).into_iter().next() {
                 return Err(f.error);
             }
             let at = s.placement_point(place)?;
@@ -235,13 +240,14 @@ impl Session {
                 _ => id,
             };
             let body = s.p.finish_base_body(placed, 1);
-            // F-185: the app unites with the Part's last body even when it is not built (suppressed, in a suppressed chain) and
-            // the result is silently empty.
+            // F-185: the app unites with the Part's last body even when it is suppressed or in a suppressed chain, and the result is
+            // silently empty. A body that is unbuilt for another reason (a mesh piece without a B-rep) is left to the app, which
+            // reports `Body A was not built` itself.
             if body != placed {
                 if let Some(FeatureKind::BodyBoolean { a, .. }) = s.p.timeline.iter().find(|n| n.id == body).map(|n| &n.kind) {
-                    if !s.built_body(*a) {
+                    if crate::session::suppression_unbuilt(&s.p, None).contains(a) {
                         return Err(Error::Invalid(format!(
-                            "the Part's last body {a} is not built (it or a feature it depends on is suppressed): the app would unite the primitive with it and give a silently empty result (F-185); unsuppress it first"
+                            "the Part's last body {a} is not built because it or a feature it depends on is suppressed: the app would unite the primitive with it and give a silently empty result (F-185); unsuppress it first"
                         )));
                     }
                 }
@@ -323,28 +329,40 @@ impl Session {
                 let found = self.p.regen_edges.get(&body).and_then(|edges| edges.iter().find(|e| e.id == *edge));
                 let found =
                     found.ok_or_else(|| Error::NotFound(format!("edge {edge} of body {body} (re-read topology after each feature)")))?;
-                // The app's vertex pick (`pick_vertex_pos`) skips closed and smooth edges: no click reaches their ends, so a
-                // placement there would be one the app cannot make.
-                let skipped = self.shapes.get(&body).and_then(|shape| {
+                let point = if *end == VertexEnd::End { found.b } else { found.a };
+                // The app's vertex pick (`pick_vertex_pos`) skips closed and smooth edges, but it picks a POINT: the end of a smooth
+                // edge is clickable when an edge the click does reach (not closed, not smooth) ends at the same point. So the
+                // placement is judged by the point, not by the edge it was named by.
+                let skipped = self.shapes.get(&body).map(|shape| {
                     let _gate = qymcad_kernel::kernel_gate();
-                    let info = shape.edges_info();
-                    let e = info.iter().find(|e| e.id == *edge)?;
-                    let (first, last) = (e.poly.first()?, e.poly.last()?);
-                    let closed = (0..3).all(|i| (first[i] - last[i]).abs() < 1e-5);
-                    if closed {
-                        Some("closed (a circle's or a seam's single vertex)")
-                    } else if e.smooth {
-                        Some("a smooth, tangent junction of faces")
-                    } else {
-                        None
-                    }
+                    // Per edge id: why the click skips it (`None`: it is reachable).
+                    let skip: BTreeMap<u32, Option<&'static str>> = shape
+                        .edges_info()
+                        .into_iter()
+                        .map(|e| {
+                            let closed = e.poly.first().zip(e.poly.last()).is_none_or(|(f, l)| (0..3).all(|i| (f[i] - l[i]).abs() < 1e-5));
+                            let why = if closed {
+                                Some("closed (a circle's or a seam's single vertex)")
+                            } else if e.smooth {
+                                Some("a smooth, tangent junction of faces")
+                            } else {
+                                None
+                            };
+                            (e.id, why)
+                        })
+                        .collect();
+                    let near = |q: &[f64; 3]| (0..3).all(|i| (q[i] - point[i]).abs() < 1e-5 * point[i].abs().max(1.0));
+                    let reached = self.p.regen_edges.get(&body).is_some_and(|edges| {
+                        edges.iter().any(|e| skip.get(&e.id).is_some_and(|why| why.is_none()) && (near(&e.a) || near(&e.b)))
+                    });
+                    (skip.get(edge).copied().flatten(), reached)
                 });
-                if let Some(why) = skipped {
+                if let Some((Some(why), false)) = skipped {
                     return Err(Error::Invalid(format!(
-                        "edge {edge} of body {body} is {why}: the app's vertex pick skips such edges, so no click gives its end as a vertex"
+                        "edge {edge} of body {body} is {why}: the app's vertex pick skips such edges, and no edge it does reach ends at this point, so no click gives it as a vertex"
                     )));
                 }
-                Ok(Some(if *end == VertexEnd::End { found.b } else { found.a }))
+                Ok(Some(point))
             }
         }
     }
@@ -365,26 +383,34 @@ impl Session {
         let mut faults = Vec::new();
         for node in &self.p.timeline {
             let Some(kind) = primitive_kind(&node.kind) else { continue };
+            // A size that does not evaluate is a fault of its own (an exempt one stays exempt); it neither stops the judging of the
+            // node's other sizes nor lets them pass unjudged.
             let mut values: BTreeMap<&'static str, f64> = BTreeMap::new();
-            let mut unreadable = None;
             for (key, seed) in node.kind.dims() {
                 match self.p.feat_dim(node.id, key).filter(|e| !e.is_empty()) {
                     Some(text) => match Num::Expr(text.to_string()).eval(&vars) {
-                        Ok(v) => values.insert(key, v),
-                        Err(e) => {
-                            unreadable = Some((key, e));
-                            break;
+                        Ok(v) => {
+                            values.insert(key, v);
                         }
+                        Err(error) => faults.push((node.id, Fault { keys: vec![key], error })),
                     },
-                    None => values.insert(key, seed),
-                };
+                    None => {
+                        values.insert(key, seed);
+                    }
+                }
             }
-            match unreadable {
-                Some((key, e)) => faults.push((node.id, Fault { keys: vec![key], error: e })),
-                None => faults.extend(judge(kind, &|key| values[key], false).into_iter().map(|f| (node.id, f))),
-            }
+            faults.extend(judge(kind, &|key| values.get(key).copied(), false).into_iter().map(|f| (node.id, f)));
         }
         faults
+    }
+
+    /// A refusal's text for the node it concerns: `name (id): reason`, the reason without its own `invalid request:` prefix.
+    pub(crate) fn node_refusal(&self, node: Id, error: &Error) -> String {
+        let reason = match error {
+            Error::Invalid(message) => message.clone(),
+            other => other.to_string(),
+        };
+        format!("{} ({node}): {reason}", self.node_name(node))
     }
 
     /// Record the faults of a file as it was opened: each size involved with the value it had. The exemption is per size (a fault
@@ -584,7 +610,7 @@ mod tests {
         assert!(loaded.primitive_faults().is_empty());
         let inside = |kind: &str, values: &[(&str, f64)]| {
             let v = |key: &str| values.iter().find(|(k, _)| *k == key).unwrap().1;
-            judge(kind, &v, true).into_iter().map(|f| f.error.to_string()).collect::<Vec<_>>()
+            judge(kind, &|key| Some(v(key)), true).into_iter().map(|f| f.error.to_string()).collect::<Vec<_>>()
         };
         assert!(inside("box", &[("dx", 0.1 - 1e-10), ("dy", 1e5 + 1e-10), ("dz", 5.0)]).is_empty());
         assert!(inside("prism", &[("r", 5.0), ("h", 5.0), ("n", 3.0000000004)]).is_empty());
@@ -603,5 +629,43 @@ mod tests {
         let e = s.param_set("k", &1.0e6.into()).unwrap_err().to_string();
         assert!(e.contains("prism n must be a whole number of sides in 3..=64"), "{e}");
         assert!(started.elapsed() < std::time::Duration::from_secs(10), "refused early, not after a rebuild: {:?}", started.elapsed());
+    }
+
+    /// J2 #2: a size that does not evaluate and is tolerated (the file had it) neither stops the judging of the node's other sizes
+    /// nor lets them pass.
+    #[test]
+    fn an_exempt_size_that_does_not_evaluate_does_not_hide_the_nodes_other_sizes() {
+        let (mut s, feature) = cube();
+        let (mut loaded, _) = file_with(&mut s, feature, "dx", "missing_name", "missing");
+        assert!(loaded.open_primitive_faults.contains_key(&(feature, "dx")), "{:?}", loaded.open_primitive_faults);
+        loaded.param_set("unrelated", &1.0.into()).unwrap();
+        let e = loaded.dimension_set(&dim(feature, "dy"), Some(&1e-6.into()), None).unwrap_err().to_string();
+        assert!(e.contains("box dy must be within 0.1"), "{e}");
+        // The same through a parameter that drives another size of the node.
+        loaded.param_set("k", &20.0.into()).unwrap();
+        loaded.dimension_set(&dim(feature, "dz"), Some(&Num::Expr("k".into())), None).unwrap();
+        let e = loaded.param_set("k", &1e-6.into()).unwrap_err().to_string();
+        assert!(e.contains("box dz must be within 0.1"), "{e}");
+    }
+
+    /// J2 #3: the torus tube's upper bound is a pair `(minor, major)`: a tolerated gap stays tolerated while both keep their
+    /// values, and a change of `major` that leaves the gap faulty is a new fault.
+    #[test]
+    fn the_torus_exemption_holds_for_the_pair_minor_and_major() {
+        let mut s = Session::new_part();
+        let (info, _) = s.primitive(&PrimitiveSpec::Torus { major: 10.0.into(), minor: 2.0.into() }, &Placement::Origin, None).unwrap();
+        let feature = info.feature;
+        // 9.9995 against 10: a gap of 0.0005, under the field's 0.001.
+        let (mut loaded, report) = file_with(&mut s, feature, "minor", "9.9995", "torus-gap");
+        assert!(report.warnings.iter().any(|w| w.message.contains("torus minor must be within")), "{:?}", report.warnings);
+        loaded.param_set("unrelated", &1.0.into()).unwrap();
+        let before = ron::to_string(loaded.project()).unwrap();
+        // Worse by `major`: 9.9996 leaves a gap of 0.0001.
+        let e = loaded.dimension_set(&dim(feature, "major"), Some(&9.9996.into()), None).unwrap_err().to_string();
+        assert!(e.contains("torus minor must be within"), "{e}");
+        assert_eq!(ron::to_string(loaded.project()).unwrap(), before, "refused, nothing changed");
+        // Into the field by `major`: allowed, and the exemption goes.
+        loaded.dimension_set(&dim(feature, "major"), Some(&20.0.into()), None).unwrap();
+        assert!(loaded.open_primitive_faults.is_empty(), "{:?}", loaded.open_primitive_faults);
     }
 }
