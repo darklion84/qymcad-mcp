@@ -698,7 +698,7 @@ fn a_smooth_edge_end_where_a_sharp_edge_ends_is_a_vertex_the_click_gives() {
     let topo = s.topology(Some(body), false).unwrap();
     // The four rounded corners leave eight vertical lines, every one a smooth junction of the round face and a flat one.
     let smooth: Vec<_> = topo.edges.iter().filter(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 9.0).collect();
-    assert_eq!(smooth.len(), 8, "{:?}", topo.edges.iter().map(|e| (e.id, e.kind.clone())).collect::<Vec<_>>());
+    assert_eq!(smooth.len(), 8, "{:?}", topo.edges.iter().map(|e| (e.id, e.kind)).collect::<Vec<_>>());
     for edge in smooth {
         for end in [VertexEnd::Start, VertexEnd::End] {
             let mut s = rounded();
