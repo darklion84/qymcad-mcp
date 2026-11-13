@@ -3027,7 +3027,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-168 A construction toggle that makes a profile of a several-profile feature vanish drops it from the feature with no error
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed (owner files after dedupe).
+- **Upstream:** [#390](https://github.com/QymIs-Tech/QymCAD/issues/390).
 - **Source:** `Project::toggle_construction` (`model/sketch/entities.rs:904-919`) checks nothing about consumers. `regen_sketch` builds contours from non-construction curves only, and `replace_contours` finds each loop again by its boundary entities first, by centroid and area after (`model/sketch/contours.rs:12-17`), so a held contour that only changes shape (a hole circle turned construction) stays the same profile for its consumers: that is the legal action the app's help describes (`docs/help/en/sketch/23-construction.md` in the app source). A held contour that no longer exists is another matter: a feature whose only profile it was fails ("The sketch profile was not found"), a feature with several profiles is built from the rest. [read in source]
 - **Executed (`i0_probes::p11_native_*`, app data path, no server involved):** (a) a 20 x 10 plate with a Ø4 hole, extruded 5 (937.17 mm³): the hole circle turned construction, the consumer follows, `errors: []`, volume 1000. (b) a 10 x 10 square and a Ø10 disc in one extrude (two profiles, 892.70 mm³): the disc turned construction gives `errors: []` and volume 500, the island has silently gone from the feature. (c) one profile only (a Ø4 disc): the app errors "profile was not found". The app's text toggle does nothing either (`p12_*`: `toggle_construction` on a text id returns false), so texts are refused.
 - **Server policy (refusal):** the guard sits in the shared sketch-edit path (see F-177): an edit is refused and rolled back when a CLOSED contour held by a built feature with at least two profiles is gone (removed or opened) and its region is not inside a surviving held contour of that feature (case b); `golden_sketch_construction::a_vanished_island_of_a_several_profile_feature_is_refused_f168`. A changed shape of a held contour (a), a merge of held regions (removing a divider: volume unchanged), open chains, contours no feature holds, and suppressed or rolled-back features pass (`a_hole_turned_construction_under_a_consumer_is_followed_by_it`, `removing_or_turning_a_divider_into_construction_merges_regions_and_passes`, `open_chains_are_not_profiles_to_the_guard`, `an_unused_ring_turned_construction_passes`, `suppressed_and_rolled_back_features_are_not_judged`); case (c) is rolled back by the app's own error (`the_only_profile_turned_construction_rolls_back_through_the_apps_error`).
@@ -3035,7 +3035,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-169 A body under a datum point or axis can be suppressed or removed: the datum keeps its last place and nothing turns red
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** [#391](https://github.com/QymIs-Tech/QymCAD/issues/391).
 - **Source:** `node_required_refs` has no `DatumPoint` branch (`model/keys.rs:455-498`); the missing-source error is raised for `Plane` and `DatumAxis` only when the body is absent from `made` (`run.rs:541-545`); `resolve_point_into` keeps the previous `at` when the edge is gone (`model/regen/refs.rs:224-244`). [read in source]
 - **Executed native evidence (`i0_probes::p2_p3_vertex_points_axis_after_open_and_delete`, app data path, no Session):** two `AtVertex` points and a `TwoPoints` axis on block C; `delete_feature_op(C)` and a dirty rebuild give `errors: []` and the points stay at (35, 5, 0) and (35, 5, 10).
 - **Server policy:** the deletion closure already includes points and axes standing on a body, so `feature_delete` refuses without `cascade` (tests: `golden_datum_point`, `golden_datum_axis`); `feature_suppress` of such a body is refused outright (it has no cascade). The consumers (an array about the axis) are refused through the same closure.
@@ -3043,7 +3043,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-170 A formula typed into a manual datum axis does not move the axis
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** [#392](https://github.com/QymIs-Tech/QymCAD/issues/392).
 - **Source:** `resolve_axis_into` evaluates `ox..dz` for a `Manual` axis and writes the resolution cache (`refs.rs:283-288`), but `DatumAxis::origin()/dir()` read the definition for `Manual` (`model.rs:466-479`) and every consumer calls those (`prep_profiles.rs:32`, `prep_bodies.rs:537`).
 - **Executed native evidence (`i0_probes::p1_a_formula_on_a_manual_axis`, app data path):** a circular array about a manual axis through (30, 0, 0) with `feat_dims[axis].ox = "px"`; `px` 30 → 20 and a rebuild: the axis origin stays (30, 0, 0) and the array's box stays centred on x = 30 (−3..63).
 - **Server policy:** `datum_axis` takes numbers only for `origin`/`dir`; `dimension_set` on an axis coordinate is refused with this finding (`golden_datum_axis::a_formula_on_an_axis_coordinate_is_refused_because_the_app_ignores_it_f170`). An axis that must move uses `points` through two datum points whose coordinates are formulas (that path moves, tested).
@@ -3059,7 +3059,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-172 A two-point datum axis whose points coincide or vanish keeps its last line silently
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** covered in [#395](https://github.com/QymIs-Tech/QymCAD/issues/395).
 - **Source:** `resolve_axis_into` for `TwoPoints` sets the cache only when `|b − a| > 1e-9` and both points exist; otherwise it does nothing and registers no error (`refs.rs:260-268`); `delete_datum_point` marks the axis dirty but adds no error (`features.rs:147-161`). [read in source; the native path was not executed]
 - **Server policy (refusal):** every edit is judged on the datum axes (`check_datum_axis_values`): a parameter edit that puts the two points on one spot, or an axis whose point is gone, is refused with nothing changed (`golden_datum_axis::a_two_point_axis_follows_its_points_and_a_collapse_is_refused`). Deleting a point under an axis is refused by the closure.
 
@@ -3073,7 +3073,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-174 A coordinate typed on a vertex datum point is written and ignored
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** [#393](https://github.com/QymIs-Tech/QymCAD/issues/393).
 - **Source:** `resolve_point_into` evaluates the `x`, `y`, `z` formulas for a `Manual` point only; an `AtVertex` point takes its place from the edge's end on every rebuild (`model/regen/refs.rs:224-244`). The feature-dimension path stores the typed value anyway. [read in source]
 - **Executed (`i0_probes::p14_native_a_coordinate_typed_on_a_vertex_point_is_ignored`, app data path):** `x` = 123 written on a vertex point, forced rebuild: `errors: []`, the point stays on its vertex.
 - **Server policy (refusal):** `dimension_set` on `x`/`y`/`z` of a vertex point is refused (`golden_datum_point::dimension_set_on_a_vertex_point_is_refused_f174`).
@@ -3081,7 +3081,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-175 The app's Part copy leaves a vertex datum point on the source body
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed (candidate for an upstream issue).
+- **Upstream:** [#394](https://github.com/QymIs-Tech/QymCAD/issues/394).
 - **Source:** `clone_subtree_into` copies a datum point as `DatumPoint { id: map[&point], ..dp }`: the new id is mapped but the body and edge of an `AtVertex` definition are not (`model/timeline/clone.rs:166-171`), while axes get their `body`, `edge`, `face` and point ids remapped. The copy's point therefore resolves on the SOURCE body, and a cascade deleting the source body deletes the copy's point or leaves it dangling. [read in source]
 - **Executed (`i0_probes::p15_native_a_part_copy_leaves_a_vertex_point_on_the_source_body`, app data path):** after `clone_component` both the source's and the copy's vertex point name the same body.
 - **Server policy (refusal):** `part_copy` of a Part whose subtree holds a vertex point is refused before anything changes (`golden_datum_lifecycle::part_copy_with_a_vertex_point_is_refused_f175_and_part_instance_does_not_copy_datums`). Edge, face and two-point axes are remapped by the app and the copy works (`part_copy_remaps_edge_face_and_two_point_axes_onto_its_own_bodies`). `part_instance` (the app's clone) repeats the body only and copies no datum node, so it is unaffected.
@@ -3089,7 +3089,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-176 An edit that removes the edge or face under a datum, while the body stays, leaves the datum at its old place with no error
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** [#395](https://github.com/QymIs-Tech/QymCAD/issues/395).
 - **Source:** `resolve_point_into` (`AtVertex`) and `resolve_axis_into` (`FromEdge`, `FromFace`) update the datum only when the edge or the face axis is found on the body and otherwise keep the previous value, registering nothing (`model/regen/refs.rs:224-279`). [read in source]
 - **Executed (`i0_probes::p13_native_an_edge_that_vanishes_under_datums_leaves_them_in_place_without_an_error`, app data path):** a hexagonal prism with a vertex point and an edge axis on one vertical edge; the side count parameter 6 -> 4 removes that edge while the body stays: `errors: []`, the point and the axis keep their last place.
 - **Server policy (refusal):** after the rebuild of any edit, a vertex point or an edge axis whose edge is gone from a body that is still built, or a face axis whose face is no longer a cylinder or cone, refuses the edit (rolled back): `golden_datum_point::an_edge_that_vanishes_under_a_vertex_point_refuses_the_edit_f176`, `golden_datum_axis::an_edge_that_vanishes_under_an_axis_refuses_the_edit_f176`, `a_bore_that_vanishes_under_a_face_axis_refuses_the_edit_f176`. A feature that consumes the body under a datum (a fillet, an array) is not an edit of the body's edges and is not refused: the datum goes on resolving on the consumed body, as in the app. A file that already holds such a datum opens with a warning and its other edits stay possible.
@@ -3097,7 +3097,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-177 Removing or reshaping a curve (`sketch_remove`, `sketch_edit` ops) drops one profile of a several-profile feature with no error
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed. Found as a side note of the package I review ("a circle under an extrude passes, volume unchanged, errors []"); the same mechanism as F-168 through another door.
+- **Upstream:** covered in [#390](https://github.com/QymIs-Tech/QymCAD/issues/390). Found as a side note of the package I review ("a circle under an extrude passes, volume unchanged, errors []"); the same mechanism as F-168 through another door.
 - **Source:** any edit that makes a held contour disappear takes the same path as the construction toggle: `regen_sketch` rebuilds the contours, `replace_contours` no longer finds the held one (`model/sketch/contours.rs:12-17`), a feature with one profile fails and a feature with several is built from the rest. [read in source; the native drop-out itself is observed in F-168, `i0_probes::p11_native_a_vanished_island_drops_out_silently`]
 - **Executed on the server path (`i0_probes::p16_sketch_remove_of_a_curve_under_an_extrude`):** (A) a hole circle removed from a plate extrude: volume 937.17 -> 1000, `errors: []` (the consumer follows its held outer contour: legal). (B) the disc of a square + disc two-profile extrude removed: observed before the guard: 892.70 -> 500, `errors: []`; now refused. (C) the only profile removed: "profile was not found", rolled back. The reviewer's "volume unchanged" is not reproduced: the volume follows the geometry.
 - **Server policy (refusal):** the F-168 rule (see there) sits in the shared `Session::sketch_edit` path, so `sketch_remove`, the `sketch_edit` ops (trim, extend, break, offset, corner, mirror_point, construction), `sketch_add` and `sketch_constrain` are refused and rolled back when a closed held contour of a built feature with several profiles vanishes (removed, or opened by a trim) and is not merged into a surviving held contour. Tests: `golden_sketch_construction::removing_an_island_under_a_several_profile_feature_is_refused_and_a_hole_passes`, `trimming_a_held_island_open_is_refused`, `p16`.
@@ -3107,7 +3107,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-178 The properties panel shows an edge or face datum axis as "Manual" and a vertex datum point as plain coordinates
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** [#396](https://github.com/QymIs-Tech/QymCAD/issues/396).
 - **Observed in QymCAD.app (GUI check I, 2026-11-13, `tmp/gui-check-I/REPORT.md` item 1.3):** in the right-hand panel, axes `A_edge` (`FromEdge`) and `A_face` (`FromFace`) read «Тип: Ручная». The point `P_vertex` (`AtVertex`) shows the same «Координаты» block as a manual point. The links are live: `A_edge` and `P_vertex` follow a change of the body width `w`, and «Пересобрать всё» keeps them. A two-point axis shows «Через 2 точки» with A and B correctly.
 - **Source:** the panel offers only the manual/two-points switch and shows the Manual editor for `FromEdge`/`FromFace` (`gui/panels_props.rs:956-1060`). The point panel edits `at` and does not change `def` (`gui/panel_bits.rs:315-340`). [read in source]
 - **Server policy:** none. The file is correct and the server reports `def` in `doc_info.datums`. Risk to users: a value typed in that panel silently turns a linked axis into a manual one (source, not run).
@@ -3115,7 +3115,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-179 Editing a datum point's coordinate in the properties panel is outside undo, and a revolve about an axis through that point does not follow later changes
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed.
+- **Upstream:** [#397](https://github.com/QymIs-Tech/QymCAD/issues/397).
 - **Observed in QymCAD.app (GUI check I, 2026-11-13, item 2.5):**
   - Q2.x was changed from −40 to −45 in the panel, under a `TwoPoints` axis `A_rev` that a 360° revolve `ring` uses. The axis tilted to [−0.45, 0.89, 0] and the ring rebuilt once, to a box of 16.6 × 28.9 × 30.0 that fits neither −40 nor −45.
   - «Правка → Отменить» stayed greyed out.
