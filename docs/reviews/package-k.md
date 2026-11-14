@@ -67,3 +67,5 @@ Reviewers: Opus and Sonnet (ran the server and probes against `3098356`); Codex 
 | 5 | Texts (Sonnet MINOR-A, C, D; Opus MINOR-5) | After a rolled-back edit the text says the edit was not applied and the document is unchanged (no "Undo this edit", no "doc_info shows its bounds" for the old document); a batch strips the id of a node an earlier step made (`k1_split_face::a_batch_error_does_not_name_a_node_the_batch_made_and_rolled_back`); the `doc_open` warning gives the cause without the nested rollback text and without a double full stop; F-189 says "a few parallel splits (on a block between 1 and 4 in a row)", also in the description and the ADR. |
 
 Not done: Codex was not run. Not run: the GUI.
+
+Evidence, round 2 (observed): `scripts/check.sh` on `7e964e8`: OK (EXIT 0), 1591 passed, 0 failed, 3 ignored (the sum of the `test result` lines); fmt, clippy `-D warnings`, `docs_fresh` and `coverage_matrix` included.
