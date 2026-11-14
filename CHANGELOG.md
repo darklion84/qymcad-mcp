@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased — primitives (ADR 0056)
+## 0.1.1-dev.20261026.16 — primitives (ADR 0056)
 
 ### Added
 - `primitive`: the app's Box, Cylinder, Sphere, Cone, Torus and Prism commands as one tool with `kind` — sizes as numbers or formulas (the keys `dx dy dz`, `r h`, `r1 r2 h`, `major minor`, `r h n` are what `dimension_set` takes), `place` at a datum point or a vertex (pure translation, no association), the result united with the Part's body as the app does; atomic, batch-allowed, one undo step. Returns the primitive's node (`feature`), the Part's `body`, evaluated `sizes` and the union.
