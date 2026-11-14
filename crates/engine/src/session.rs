@@ -835,6 +835,7 @@ impl Session {
         self.dirty_hole_dependents();
         let projections_before = self.projection_provenance();
         let split_identities = self.split_identities();
+        let split_face_snapshots = self.split_face_snapshots();
         let boolean_identities = self.boolean_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
@@ -915,6 +916,12 @@ impl Session {
         for (node, message) in self.split_identity_refusals(&split_identities, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
+        }
+        for (node, message) in self.split_face_refusals(&split_face_snapshots, &rebuilt) {
+            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+            if !errors.iter().any(|e| e.node == node) {
+                errors.push(self.issue(node, message));
+            }
         }
         for (node, message) in self.boolean_identity_refusals(&boolean_identities, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
@@ -1135,6 +1142,7 @@ impl Session {
             return Err(error);
         }
         let split_identities = self.split_identities();
+        let split_face_snapshots = self.split_face_snapshots();
         let boolean_identities = self.boolean_identities();
         let before_warnings = self.advisory_warnings.clone();
         let before_detached = self.detached_projections.clone();
@@ -1184,6 +1192,11 @@ impl Session {
                 .collect();
             refused.extend(
                 self.split_identity_refusals(&split_identities, &identity_nodes)
+                    .into_iter()
+                    .map(|(node, message)| self.issue(node, message)),
+            );
+            refused.extend(
+                self.split_face_refusals(&split_face_snapshots, &identity_nodes)
                     .into_iter()
                     .map(|(node, message)| self.issue(node, message)),
             );

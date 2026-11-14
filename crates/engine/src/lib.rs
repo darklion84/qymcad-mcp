@@ -52,6 +52,7 @@ mod session;
 mod sketch;
 mod sketch_import;
 mod split;
+mod split_face;
 mod sweep;
 #[cfg(test)]
 mod test_support;
@@ -102,6 +103,7 @@ pub use sketch::{
 };
 pub use sketch_import::{SketchImportFormat, SketchImportResult};
 pub use split::{SplitOptions, SplitResult};
+pub use split_face::{FaceCounts, SplitFaceOptions, SplitFaceResult};
 pub use sweep::{Loft, LoftSection, Sweep, SweepPath};
 pub use thread::{ThreadOptions, ThreadResult};
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, SelectionKind, Topology};

@@ -1079,6 +1079,41 @@ fn p14b_second_plane_below_or_above_the_first() {
     }
 }
 
+/// P14c: two splits in a row by planes of different directions (a cross cut), and by two parallel planes of the other axes: ids repeat
+/// for every crossing pair and for parallel planes in the wrong order.
+#[test]
+fn p14c_the_second_plane_of_another_direction() {
+    // (plane code 0 XY / 1 XZ / 2 YZ, offset): the block stands x -20..20, y -15..15, z 0..10.
+    let cases = [
+        ((0, 3.0), (1, 0.0)),
+        ((0, 6.0), (2, 0.0)),
+        ((1, 0.0), (0, 5.0)),
+        ((2, 0.0), (1, 5.0)),
+        ((1, 0.0), (1, 5.0)),
+        ((1, 5.0), (1, 0.0)),
+        ((2, 0.0), (2, -7.0)),
+        ((2, -7.0), (2, 0.0)),
+    ];
+    for ((c1, o1), (c2, o2)) in cases {
+        let mut d = Doc::new();
+        let a = d.p.add_box(40.0, 30.0, 10.0);
+        let s1 = d.split(a, c1, o1);
+        let s2 = d.split(s1, c2, o2);
+        d.build();
+        let r = d.sum(Some(s2));
+        eprintln!(
+            "K0 P14c plane {c1} at {o1} then plane {c2} at {o2}: faces {} distinct ids {} errors {:?} volume {:?}",
+            r.faces, r.distinct_ids, r.errors, r.volume
+        );
+        assert!(r.errors.is_empty() && r.valid == Some(true), "{r:?}");
+        close(r.volume, 12000.0, 1e-6, "volume");
+        // Parallel planes are clean only in the order in which the app keeps the first piece's id on the near side: rising along z and y,
+        // falling along x (P1: YZ keeps the higher piece). Every crossing pair repeats ids.
+        let clean = c1 == c2 && if c2 == 2 { o2 < o1 } else { o2 > o1 };
+        assert_eq!(r.distinct_ids == r.faces, clean, "{r:?}");
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 // P19: save and open.
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -1117,7 +1152,16 @@ fn p19_save_then_open() {
         qymcad_io::save_project_guarded_with_brep(&m.d.p, path.to_str().unwrap(), &breps).unwrap();
         let (mut s, report) = Session::open(&path).unwrap();
         let after: Vec<F> = {
-            let topo = s.topology(Some(m.sp), false).unwrap();
+            // The file with repeated ids (case C) was open-able when the probe was written; the server's guard (F-189) now refuses the
+            // full rebuild that reading its topology needs, since the file stores no faces.
+            let topo = match s.topology(Some(m.sp), false) {
+                Ok(topo) => topo,
+                Err(e) => {
+                    assert!(label.starts_with("two splits") && e.to_string().contains("F-189"), "{label}: {e}");
+                    eprintln!("K0 P19 {label}: topology refused by the server's guard: {e}");
+                    continue;
+                }
+            };
             let mut v: Vec<F> =
                 topo.faces.iter().map(|f| F { id: f.id, c: f.centroid, n: f.normal.unwrap_or([0.0; 3]), area: f.area }).collect();
             v.sort_by_key(|f| f.id);
