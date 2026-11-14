@@ -30,5 +30,5 @@ Subject: `split_face` (ADR 0057), branch medium-k on top of 0.1.1-dev.20261026.1
 ## Evidence
 
 - Targeted (observed): `golden_split_face` (20), `split_face::tests`, `k0_probes` (28), `mcp/tests/k1_split_face` (6), `print_split`, `golden_split_print`, `review_r3`; `cargo fmt` and `cargo clippy --workspace --all-targets -D warnings` clean.
-- `scripts/check.sh`: see below.
+- `scripts/check.sh` on `123fa69`: OK (EXIT 0), 1567 passed, 0 failed, 3 ignored (the sum of the `test result` lines); fmt, clippy `-D warnings`, all tests, `docs_fresh` and `coverage_matrix` included.
 - Not run: QymCAD.app itself (the GUI); every app-side claim is a native core-API probe or read in source, as marked in FINDINGS.
