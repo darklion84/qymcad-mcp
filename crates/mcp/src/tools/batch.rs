@@ -76,10 +76,13 @@ fn step_error(index: usize, step: &Step, reason: &str) -> String {
 
 fn execute(tools: &[Tool], state: &mut State, batch: &BatchArgs, handlers: &[&Tool]) -> Result<Value, String> {
     let mut steps = Vec::with_capacity(batch.steps.len());
+    let mut made: Vec<u64> = Vec::new();
     for (index, (step, tool)) in batch.steps.iter().zip(handlers).enumerate() {
         state.created_node = None;
         state.skip_history = false;
-        let content = (tool.handler)(tools, state, step.args.clone()).map_err(|e| step_error(index, step, &e))?;
+        // A node an earlier step made is rolled back with the whole batch: its id means nothing to the caller.
+        let content = (tool.handler)(tools, state, step.args.clone())
+            .map_err(|e| step_error(index, step, &made.iter().fold(e, |text, id| text.replace(&format!(" ({id})"), ""))))?;
         let result: Value = content
             .first()
             .and_then(|c| c["text"].as_str())
@@ -87,6 +90,7 @@ fn execute(tools: &[Tool], state: &mut State, batch: &BatchArgs, handlers: &[&To
             .and_then(|text| serde_json::from_str(text).map_err(|e| step_error(index, step, &e.to_string())))?;
         let mut entry = json!({"step":index + 1, "tool":step.tool});
         if let Some(id) = state.created_node {
+            made.push(id);
             entry["created"] = json!({"id":id, "name":state.doc()?.node_name(id)});
         }
         // Small operation metadata is useful without repeating full sketch details or body metrics.

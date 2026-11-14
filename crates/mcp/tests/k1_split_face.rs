@@ -130,3 +130,16 @@ fn the_description_says_what_the_tool_does_and_what_it_does_not() {
         assert!(description.contains(phrase), "the description lacks `{phrase}`");
     }
 }
+
+#[test]
+fn a_batch_error_does_not_name_a_node_the_batch_made_and_rolled_back() {
+    let mut r = block();
+    call(&mut r, "param_set", json!({"name":"cut","value":5}));
+    let e = fail(
+        &mut r,
+        "batch",
+        json!({"steps":[{"tool":"split_face","args":{"plane":"XY","offset":"cut","name":"a"}},{"tool":"param_set","args":{"name":"cut","value":50}}]}),
+    );
+    assert!(e.contains("step 2") && e.contains("a: operation failed"), "{e}");
+    assert!(!e.contains("Undo this edit") && e.contains("not applied"), "{e}");
+}
