@@ -28,14 +28,14 @@ At creation, and on every later rebuild of an existing node (`param_set`, `dimen
 
 1. **A curved face as the plane** (creation; F-191). The server is stricter than the app, as `split`.
 2. **No face gained** (F-187): after the build the result must have more faces than its source; a plane 1e-6..1e-5 mm from a face or through a torus's axis is green and splits nothing in the app, and near a face it damages the body.
-3. **Repeated face ids** (F-189): fewer distinct ids than faces. The app does this for a second split that crosses the first or runs parallel on the wrong side of it.
+3. **Repeated face ids** (F-189): fewer distinct ids than faces. The app does this for a split that crosses an earlier split of the same body and for parallel splits after the first two or so (2 rising along z and y, 1 falling; 4 falling along x, 1 rising, on a block): a body takes only a few cuts in a row. The text promises no order and names `split`.
 4. **The plane's face is gone** (F-190): after a rebuild the face's id is no longer on the body; the app keeps cutting at the place of creation.
-5. **Another set of cut faces** (F-188, edits only): the set of face ids of the result must equal the one before the edit, and each id this node cut must stay on its piece: positive bounding-box overlap along every axis in which either box extends, the axis of a flat face not compared (a wall moves with its body), tolerance `max(1e-4, 1e-6 * scale)` mm (the mesh holds f32 coordinates). Conservative: a false refusal is allowed (a piece that moves by more than its own extent), a silent move of an id is not. The edit is rolled back from the snapshot; recreate the split.
-6. **General paths:** no body, a mesh body, a body that a suppressed feature leaves unbuilt, a consumed body, a clone made by `part_instance` (`atomic`, ADR 0053), an assembly as the active context with no `body` named (a named body works, as for `split`), a non-finite offset, a formula that does not evaluate, a plane that splits nothing or misses the body (the kernel's own question, asked in the local frame of the body), a plane that the native rebuild rejects (the app's own text, rolled back).
+5. **Another set of cut faces** (F-188, edits only): the node's pieces as last ACCEPTED are kept in `Session::split_face_witness` (id, local bounding box, cut flag, the point its plane passed through): updated after each accepted rebuild, kept while the node is suppressed or past the rollback bar, in the undo snapshot, rolled back with a refused edit, rebuilt by `part_copy` (the copy's ids are its own) and recorded at `doc_open` (a node whose topology cannot be read gets none and refuses edits that rebuild it). Only the faces this node cut are compared: the set of cut ids must be the same, and each stays on its piece: positive bounding-box overlap along every axis in which either box extends, or the same after moving the old box by the movement of the plane's point (a plane that follows a face of a growing body); the axis of a flat face is compared by neither. Tolerance `max(1e-4, 1e-6 * scale)` mm (the mesh holds f32 coordinates). Conservative: a false refusal is allowed (a piece that moves by more than its own extent without its plane), a silent move of an id is not. A change of faces the node did not cut is the business of the nodes above it. The edit is rolled back; recreate the split.
+6. **General paths:** no body, a mesh body, a body that a suppressed feature leaves unbuilt, a consumed body, a clone made by `part_instance` (`atomic`, ADR 0053), an assembly as the active context with no `body` named (a named body works, as for `split`), a non-finite offset, a formula that does not evaluate, a sheet body, a plane that splits nothing or misses the body (the kernel's own question, asked in the local frame of the body; for a face the text says the offset runs along the OUTWARD normal), a plane that the native rebuild rejects (the app's own failure with the server's hint: the plane no longer meets the body, undo or change the offset). A clone is refused as a clone before the plane is looked at.
 
 ### Accepted, described in the tool
 
-- Suppressing the node gives its consumers (a `push_face` on a piece) the WHOLE face; unsuppressing returns the pieces (F-192).
+- Suppressing the node gives its consumers (a `push_face` on a piece) the WHOLE face; unsuppressing returns the pieces (F-192); `feature_suppress` says so in its notes.
 - A fillet on the edge of one piece rounds the whole chain of that edge (F-193).
 - The frame is the body's local frame (F-194).
 
@@ -43,11 +43,12 @@ At creation, and on every later rebuild of an existing node (`param_set`, `dimen
 
 - `Session::resolve_op_plane`: the one place that turns a plane reference into the stored code, datum or face witness and the plane in the body's frame; `split` uses it too (behaviour unchanged; the text for a curved face now names the app's averaged plane).
 - `modelling_tool` and the batch allowlist know `split_face`; the batch description names it. `doc_info.timeline[].kind` shows `splitface`.
+- At `doc_open` F-187, F-189 and F-190 are judged on every active Split faces node by its stored geometry (nodes the open did not rebuild too); a warning in the reply and in `doc_info` names the node and the way out (feature_suppress or feature_delete it), the file is not changed; the refusals on such a node and the repeated-id texts of `topology` and selections give the same way out. The `plane` argument names its forms when it is wrong.
 - `k0_probes::p19_save_then_open`: the case with repeated ids is now refused on the full rebuild that reading a file's topology needs (the file stores no faces).
 
 ## Tests
 
-`golden_split_face` (the block 6 -> 10 faces, 12 -> 20 edges, volume and bounds unchanged; a cylinder; a datum plane and a face plane that follows its face; a formula, `param_set`, `dimension_set`; each refusal with the document byte-identical, at creation and by edit; F-188 on the U body; F-190 on two boxes; the app's own error kept; suppress, rollback, delete, reorder, save and open, `part_copy`, a clone, the assembly root; F-192 and F-193), `split_face::tests` (the piece overlap rule), `k0_probes` (native), `mcp/tests/k1_split_face` (strict arguments, reply, undo label, batch and its rollback, timeline kind, the description's phrases).
+`golden_split_face` (the block 6 -> 10 faces, 12 -> 20 edges, volume and bounds unchanged; a cylinder; a datum plane and a face plane that follows its face; a formula, `param_set`, `dimension_set`; each refusal with the document byte-identical, at creation and by edit; F-188 on the U body; F-190 on two boxes; the app's own error kept; suppress, rollback, delete, reorder, save and open, `part_copy`, a clone, the assembly root; F-192 and F-193), suppress then edit then unsuppress, rollback then edit then roll forward, the first edit after `doc_open` (with and without stored faces), a file already wrong, a cut that moves with its plane (a boss on a block), a change upstream, a fillet below the split, a third parallel cut, the hint for a plane off the body, the face-plane offset text, a clone of a placed Part, the text of a refused creation, the note of `feature_suppress`, a mesh body; `golden_split_print` (a curved face as the plane of `split`); `split_face::tests` (the piece overlap rule, a sheet body), `k0_probes` (native), `mcp/tests/k1_split_face` (strict arguments, reply, undo label, batch and its rollback, timeline kind, the description's phrases).
 
 ## Not done
 
@@ -57,8 +58,9 @@ At creation, and on every later rebuild of an existing node (`param_set`, `dimen
 
 ## Known limits
 
-- Crossing cuts of one body are impossible while the app repeats ids for them (F-189); use `split` for separate bodies.
-- F-188 refuses large moves of a piece conservatively (see above); an upstream edit that adds or removes faces on the cut walls is refused as well.
+- Crossing cuts of one body, and more than a few parallel ones, are impossible while the app repeats ids for them (F-189); use `split` for separate bodies.
+- F-188 refuses a piece that moves by more than its own extent without its plane moving with it; a plane that follows a face (or a datum that moves with the cut) is allowed. The flat axis of a face is not compared, so the move of a face to a parallel plane with the same extent is not seen.
+- A node suppressed in a file when it is opened, or whose copy was suppressed, has no pieces to compare: the first edit that rebuilds it is refused until it is deleted.
 - Which parallel pairs are clean was measured on a block; the rule is stated as observed.
 - The refusals read the faces of the node after the rebuild: a node already red from the app is left to its own error.
 
@@ -80,6 +82,7 @@ Executable in `crates/engine/tests/k0_probes.rs` (the app's data path: `Project`
 | 11 | Suppress the node under a consumer of a piece | Observed: the consumer stays green and takes the whole wall; unsuppress returns the pieces. | Accepted, described; F-192. |
 | 13 | Open a file whose node is red | Observed: `report.errors` shows `Split faces: operation failed: SplitFaces`, the body is a copy of the source. | Visible; nothing to add. |
 | 14 | Two splits in a row (14, 14b, 14c) | Observed: 3 then 6: 14 faces, ids unique; 6 then 3 (and every second plane below the first along z): 14 faces, 10 distinct ids; every crossing pair (XY then XZ or YZ, XZ then XY, YZ then XZ): 16 faces, 14 distinct; the repeats survive save and open; `Rebuild.warnings` is empty. | Refused; F-189. |
+| 14d | Three and more parallel splits | Observed (`p14d`): clean splits before the first repeat: along z and y rising 2, falling 1; along x falling 4, rising 1. | The limit is stated, no order is promised; F-189. |
 | 15 | A fillet on a seam edge, on one piece of an edge | Observed: the seam gives `AllEdgesSmooth`; one piece of a corner edge rounds the whole edge. | Accepted, described; F-193. |
 | 19 | Save and open | Observed: the same faces and ids, no warnings, except the repeated ids of probe 14 (shown only by `topology.warnings`). | Nothing to add; the repeats are refused (F-189). |
 | 9, 12, 16-18, 20 | A face of another body, reorder and rollback, draft/shell/hole by a piece, `select` by feature, mesh and sheet bodies, export | Not probed natively; reorder, rollback, `part_copy`, clones and the root are `golden_split_face` tests; a mesh body is refused by the existing `source_body` path. | Not claimed. |
