@@ -147,6 +147,7 @@ fn modelling_tool(name: &str) -> bool {
             | "thread"
             | "body_boolean"
             | "split"
+            | "split_face"
             | "import"
             | "import_mesh"
             | "recognise"

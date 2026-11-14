@@ -2,7 +2,9 @@
 use super::common::{err, rebuild_json, ObjRef};
 use super::topology::SelArg;
 use super::{tool, Tool};
-use qymcad_engine::{BaseName, BodyBooleanOptions, BooleanOp, Element, Num, PlaneRef, Session, SplitOptions, ThreadOptions};
+use qymcad_engine::{
+    BaseName, BodyBooleanOptions, BooleanOp, Element, Num, PlaneRef, Session, SplitFaceOptions, SplitOptions, ThreadOptions,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
@@ -144,6 +146,22 @@ struct SplitArgs {
     piece_names: Option<Vec<String>>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SplitFaceArgs {
+    /// Body to cut, by id or name. Default: the current unconsumed body of the active Part.
+    #[serde(default)]
+    body: Option<ObjRef>,
+    /// Cutting plane: XY (+Z), XZ (+Y), YZ (+X), {"plane":<datum id/name>} or {"body":<id/name>,"face":<one PLANAR face selection>}. Base planes and offsets are in the local frame of the body's Part, not the world.
+    plane: SplitPlaneArg,
+    /// Offset in mm along the plane's normal (number or expression). Default 0; XZ points along +Y. A formula stays on the node and follows its parameters.
+    #[serde(default = "zero")]
+    offset: Num,
+    /// Name of the Split faces feature; names interpreted as numeric ids are refused.
+    #[serde(default)]
+    name: Option<String>,
+}
+
 fn zero() -> Num {
     Num::Value(0.0)
 }
@@ -187,6 +205,18 @@ pub(super) fn tools() -> Vec<Tool> {
             let body = a.body.as_ref().map(|body| body.resolve(session)).transpose()?;
             let plane = a.plane.resolve(session)?;
             let result = session.split(&SplitOptions { body, plane, offset: a.offset, name: a.name, piece_names: a.piece_names }).map_err(err)?;
+            let mut value = json!(&result);
+            value["rebuild"] = rebuild_json(&result.rebuild);
+            Ok(value)
+        },
+    ), tool(
+        "split_face",
+        "Split faces, as the app's Split faces command: cut the faces of a body along a plane and keep the body in ONE piece. Nothing is removed and the volume does not change; the result has more faces, so that a later tool can pick a part of a wall (push_face, draft, shell, hole, thicken, remove_face, a datum or a sketch on it). This is not `split`, which cuts the material into separate bodies. The plane is a base plane (XY +Z, XZ +Y, YZ +X), a datum plane or one planar face, shifted by `offset` (number or formula, along the plane's normal); it is an infinite plane and cuts EVERY face it crosses, curved faces and the walls of holes included; there is no choice of faces. Base planes and offsets are in the local frame of the body's Part (the frame the rebuild cuts in; the app's own pre-check measures in the world frame, F-194), so for a placed Part read the body's bounds in doc_info. A plane taken from a face follows that face when it moves. One action: one timeline node, atomic, one undo step, allowed in batch. Returns `feature` (the node; also the body's id), `body`, `name`, the evaluated `offset`, `faces` {before, after}, `added_faces` (ids the result has and the source did not) and the rebuild report. The cut face keeps its first piece's id; the other pieces get fresh ids, so read topology (or use select with the added ids) after the call to choose a piece: the pieces of one face share a normal and are told apart by centroid or position. Behaviour of the app, accepted: suppressing a Split faces node gives its consumers (a push_face on a piece, for instance) the WHOLE face instead of the piece, and unsuppressing returns the pieces (F-192); a fillet on the edge of one piece rounds the whole edge chain, not only that piece's part (F-193). Refused, each with a reason and the document unchanged: a plane that splits nothing or misses the body; a curved face as the plane (F-191); a plane within about 1e-5 mm of a face or through a torus's axis, where the app reports success but splits nothing and can damage the body (F-187); a result whose face ids are not unique (a second split that crosses the first, or runs parallel to it on the wrong side: below it along +Z or +Y, above it along +X, F-189); a plane taken from a face that later disappears (F-190); a later edit (param_set, dimension_set, an edit upstream, reorder) that changes which faces the node cuts, because the old ids would then silently point at other pieces (F-188: recreate the split); a non-finite offset; no body, a mesh body, a suppressed body, a clone made by part_instance, or an assembly as the active context.",
+        |st, a: SplitFaceArgs| {
+            let session = st.doc()?;
+            let body = a.body.as_ref().map(|body| body.resolve(session)).transpose()?;
+            let plane = a.plane.resolve(session)?;
+            let result = session.split_face(&SplitFaceOptions { body, plane, offset: a.offset, name: a.name }).map_err(err)?;
             let mut value = json!(&result);
             value["rebuild"] = rebuild_json(&result.rebuild);
             Ok(value)

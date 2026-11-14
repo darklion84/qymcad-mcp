@@ -287,6 +287,7 @@ fn lists_tools_with_object_schemas() {
         "thread",
         "body_boolean",
         "split",
+        "split_face",
         "import",
         "import_mesh",
         "recognise",

@@ -233,6 +233,7 @@ fn limits_allowlist_and_outer_schema() {
         "thread",
         "body_boolean",
         "split",
+        "split_face",
         "import",
         "import_mesh",
         "recognise",
