@@ -28,11 +28,11 @@ fn arguments_are_strict_and_nothing_is_created_by_a_bad_call() {
     let mut r = block();
     for (bad, word) in [
         (json!({}), "plane"),
-        (json!({"plane":"AB"}), "SplitPlaneArg"),
+        (json!({"plane":"AB"}), "plane must be one of"),
         (json!({"plane":"XY","faces":[1]}), "faces"),
         (json!({"plane":"XY","piece_names":["a","b"]}), "piece_names"),
         (json!({"plane":"XY","offset":"x","typo":1}), "typo"),
-        (json!({"plane":{"plane":1,"face":2}}), "SplitPlaneArg"),
+        (json!({"plane":{"plane":1,"face":2}}), "plane must be one of"),
     ] {
         let e = fail(&mut r, "split_face", bad.clone());
         assert!(e.contains("bad arguments for `split_face`") && e.contains(word), "{bad}: {e}");
