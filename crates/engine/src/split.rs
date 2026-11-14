@@ -1,8 +1,8 @@
 //! Fixed-count native body splitting and native output-body names.
 use crate::{BaseName, BodyInfo, Element, Error, Id, Num, PlaneRef, Rebuild, Result, Sel, Session};
 use qymcad_core::{
-    feature::PlaneAt,
-    model::{FeatNumber, PlainNumber},
+    feature::{FaceKey, PlaneAt},
+    model::{FeatNumber, PlainNumber, Project},
 };
 use serde::Serialize;
 use std::collections::HashSet;
@@ -39,7 +39,79 @@ pub struct SplitResult {
     pub rebuild: Rebuild,
 }
 
+/// What an operation that cuts by a plane stores about it: the same three references as the app's Split body and Split faces
+/// (a base plane code, a datum plane, or a face), and the plane they stand for in the body's local frame.
+pub(crate) struct OpPlane {
+    /// Base plane code of the node: 0 XY, 1 XZ, 2 YZ (0 as well for a datum or a face).
+    pub(crate) code: u8,
+    /// Datum plane id, 0 when the plane is a base plane or a face.
+    pub(crate) datum: Id,
+    /// The face the plane is taken from, with the witness the node stores.
+    pub(crate) face: Option<(Id, FaceKey)>,
+    origin: [f64; 3],
+    /// Unit normal; the offset runs along it.
+    normal: [f64; 3],
+}
+
+impl OpPlane {
+    /// The plane shifted by `offset` mm along its normal.
+    pub(crate) fn at(&self, offset: f64) -> PlaneAt {
+        PlaneAt { origin: std::array::from_fn(|i| self.origin[i] + offset * self.normal[i]), normal: self.normal }
+    }
+
+    /// Store the face reference on a node the app's adder made (the datum is cleared by the app's own setter).
+    pub(crate) fn attach(&self, p: &mut Project, node: Id) {
+        if let Some((body, key)) = &self.face {
+            p.set_op_face(node, *body, *key);
+        }
+    }
+}
+
 impl Session {
+    /// The one place that turns a plane reference into what the nodes store and the plane they mean: base plane (XZ offsets
+    /// along +Y, as `BasePlane::offset_direction`), datum plane, or exactly one planar face. A curved face is refused: the app
+    /// would build its plane from the face's centre and an averaged normal (F-191).
+    pub(crate) fn resolve_op_plane(&self, plane: &PlaneRef) -> Result<OpPlane> {
+        let (code, datum, face, origin, normal) = match plane {
+            PlaneRef::Base(base) => {
+                let (code, normal) = match base {
+                    BaseName::XY => (0, [0.0, 0.0, 1.0]),
+                    BaseName::XZ => (1, [0.0, 1.0, 0.0]),
+                    BaseName::YZ => (2, [1.0, 0.0, 0.0]),
+                };
+                (code, 0, None, [0.0; 3], normal)
+            }
+            PlaneRef::Plane(id) => {
+                let p = self.p.planes.iter().find(|p| p.id == *id).ok_or_else(|| Error::NotFound(format!("datum plane {id}")))?;
+                (0, *id, None, p.origin, p.normal)
+            }
+            PlaneRef::Face { body, face } => {
+                self.resolve_sel(*body, Element::Faces, &Sel::Ids(vec![*face]))?;
+                if !self.face_is_planar(*body, *face) {
+                    return Err(Error::Invalid(format!(
+                        "plane face {face} of body {body} is not planar: the app would cut by a plane built from the curved face's centre and an averaged normal, which is not the surface (F-191); use a base plane, a datum plane or a planar face"
+                    )));
+                }
+                let f = self
+                    .p
+                    .regen_faces
+                    .get(body)
+                    .into_iter()
+                    .flatten()
+                    .find(|f| f.id == *face)
+                    .ok_or_else(|| Error::NotFound(format!("face {face} of body {body}")))?;
+                let key = crate::topology::face_key(f);
+                let (origin, normal) = self.p.resolve_face(*body, &key);
+                (0, 0, Some((*body, key)), origin, normal)
+            }
+        };
+        let magnitude = normal.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if !magnitude.is_finite() || magnitude < 1e-12 || origin.iter().any(|v| !v.is_finite()) {
+            return Err(Error::Invalid("split plane needs a finite origin and nonzero finite normal".into()));
+        }
+        Ok(OpPlane { code, datum, face, origin, normal: normal.map(|v| v / magnitude) })
+    }
+
     /// Split a current body by a plane, fixing the measured output count and native piece ids at creation.
     /// Later count-changing edits fail through the normal atomic rebuild path; recreate the split to change count.
     /// Precondition: the caller must not hold the kernel gate (`ask::split_pieces` acquires it).
@@ -48,52 +120,16 @@ impl Session {
         let ((ids, names, offset), mut rebuild) = self.atomic(|s| {
             let src = s.source_body(options.body)?;
             let offset = options.offset.eval(&s.p.param_map())?;
-            let (plane, datum, face, origin, normal) = match &options.plane {
-                PlaneRef::Base(base) => {
-                    let (code, normal) = match base {
-                        BaseName::XY => (0, [0.0, 0.0, 1.0]),
-                        BaseName::XZ => (1, [0.0, 1.0, 0.0]),
-                        BaseName::YZ => (2, [1.0, 0.0, 0.0]),
-                    };
-                    (code, 0, None, [0.0; 3], normal)
-                }
-                PlaneRef::Plane(id) => {
-                    let p = s.p.planes.iter().find(|p| p.id == *id).ok_or_else(|| Error::NotFound(format!("datum plane {id}")))?;
-                    (0, *id, None, p.origin, p.normal)
-                }
-                PlaneRef::Face { body, face } => {
-                    s.resolve_sel(*body, Element::Faces, &Sel::Ids(vec![*face]))?;
-                    if !s.face_is_planar(*body, *face) {
-                        return Err(Error::Invalid(format!("split face {face} of body {body} is not planar")));
-                    }
-                    let f =
-                        s.p.regen_faces
-                            .get(body)
-                            .into_iter()
-                            .flatten()
-                            .find(|f| f.id == *face)
-                            .ok_or_else(|| Error::NotFound(format!("face {face} of body {body}")))?;
-                    let key = crate::topology::face_key(f);
-                    let (origin, normal) = s.p.resolve_face(*body, &key);
-                    (0, 0, Some((*body, key)), origin, normal)
-                }
-            };
-            let magnitude = normal.iter().map(|v| v * v).sum::<f64>().sqrt();
-            if !magnitude.is_finite() || magnitude < 1e-12 || origin.iter().any(|v| !v.is_finite()) {
-                return Err(Error::Invalid("split plane needs a finite origin and nonzero finite normal".into()));
-            }
-            let normal = normal.map(|v| v / magnitude);
-            let at = PlaneAt { origin: std::array::from_fn(|i| origin[i] + offset * normal[i]), normal };
+            let op = s.resolve_op_plane(&options.plane)?;
+            let at = op.at(offset);
             let shape = s.shapes.get(&src).ok_or_else(|| Error::NotFound(format!("body {src} has no built shape")))?;
             // This public question copies the source and owns its gate. Never wrap it in an outer gate.
             let count = qymcad_kernel::ask::split_pieces(shape, at)
                 .filter(|n| *n >= 2)
                 .ok_or_else(|| Error::Invalid("split plane cuts nothing: it must divide the body into at least two pieces".into()))?;
-            let ids = s.in_component(s.p.body_owner(src), |p| p.add_split_body(src, plane, datum, offset, count));
+            let ids = s.in_component(s.p.body_owner(src), |p| p.add_split_body(src, op.code, op.datum, offset, count));
             let feature = ids[0]; // count>=2 checked before the native adder's assertion.
-            if let Some((body, key)) = face {
-                s.p.set_op_face(feature, body, key);
-            }
+            op.attach(&mut s.p, feature);
             let text = options.offset.expr().unwrap_or_else(|| offset.to_string());
             s.p.write_feat_formula(&FeatNumber { node: feature, key: "offset" }, &text, PlainNumber::Stands)
                 .map_err(|e| Error::Expr(format!("split offset: {e:?}")))?;
