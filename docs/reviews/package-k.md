@@ -51,3 +51,5 @@ Reviewers: Codex (code-read only), Opus and Sonnet (ran the server and probes ag
 | 10 | The text of `split` for a curved face changed with the shared resolver and no test covered it (Opus m5) | `golden_split_print::a_curved_face_is_refused_as_the_plane_of_a_split_with_the_document_unchanged`. |
 
 Not done or changed against the decisions: the flat axis is not compared in the moved frame (it closes no case that was seen and would refuse walls that move with a body); `part_copy` builds the copy's witness from the copy's own rebuild, not by renaming the source's. Not run: the GUI. Open from Opus: a matching gap in `split_identities` for `split` (a suppressed split, edit, unsuppress) was read, not run, and is not touched here.
+
+Evidence, round 1 (observed): `scripts/check.sh` on `328c789`: OK (EXIT 0), 1584 passed, 0 failed, 3 ignored (the sum of the `test result` lines); fmt, clippy `-D warnings`, `docs_fresh` and `coverage_matrix` included.
