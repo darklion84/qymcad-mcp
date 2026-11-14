@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased — split faces (ADR 0057)
+
+### Added
+- `split_face`: the app's Split faces command — cut every face a plane crosses and keep the body in one piece (nothing removed, volume unchanged; not `split`). The plane is a base plane, a datum plane or one planar face, `offset` a number or a formula (stays on the node, `dimension_set` key `offset`), `name` optional; atomic, batch-allowed, one undo step. Returns `feature` (also the body's id), `body`, `name`, `offset`, `faces` {before, after}, `added_faces` and the rebuild. Base planes and offsets are in the local frame of the body's Part (F-194).
+
+### Changed
+- Refused at creation and on every rebuild of the node (`param_set`, `dimension_set`, edits upstream, reorder), with the document unchanged, because the app builds them green and wrong: a split that gains no face, near a face or through a torus's axis (F-187); an edit that changes which faces the node cuts, so the ids of the pieces move (F-188); repeated face ids, which a second split that crosses the first or lies on the wrong side of a parallel one causes (F-189); a plane taken from a face that has gone (F-190); a curved face as the plane (F-191).
+- Recorded as accepted behaviour and described in the tool: suppressing the node gives its consumers the whole face (F-192); a fillet on one piece of an edge rounds the whole edge (F-193).
+- Internal: `Session::resolve_op_plane` is the one resolver of a plane reference for `split` and `split_face` (the text for a curved plane face changed); `k0_probes` gained probe 14c.
+
 ## 0.1.1-dev.20261026.16 — primitives (ADR 0056)
 
 ### Added

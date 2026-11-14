@@ -191,6 +191,11 @@ fn a_plane_a_hair_from_a_face_gains_no_face_and_is_refused_f187() {
     // 1e-4 mm is a real split (observed): the refusal is the missing face, not the distance.
     let r = s.split_face(&xy(10.0 - 1e-4)).unwrap();
     assert_eq!((r.faces.before, r.faces.after), (6, 10));
+    // Above the bottom face 1e-5 mm splits normally too, with the volume intact.
+    let (mut b, _) = block();
+    let r = b.split_face(&xy(1e-5)).unwrap();
+    assert_eq!((r.faces.before, r.faces.after), (6, 10));
+    assert_close(only_body(&b).volume, 12000.0, 1e-6, "volume");
     // A torus cut through its axis: the app builds it green and splits nothing.
     let mut t = Session::new_part();
     t.primitive(&PrimitiveSpec::Torus { major: 12.0.into(), minor: 4.0.into() }, &Placement::Origin, None).unwrap();

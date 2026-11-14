@@ -17,7 +17,7 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P11 | Push face | covered | — | `push_face` | `FeatureKind::PushFace,PartTool::PushFace` |
 | P12 | Remove face | covered | Native face healing, persistent face witnesses, failure rollback, save/open and app-path parameter edits | `remove_face` | `FeatureKind::RemoveFace,PartTool::RemoveFace` |
 | P13 | Split body | covered | — | `split` | `FeatureKind::SplitBody,PartTool::SplitBody` |
-| P14 | Split faces | not covered | Split a face without splitting the body | none | `FeatureKind::SplitFace,PartTool::SplitFace` |
+| P14 | Split faces | covered | One tool; base plane, datum plane or one planar face with a formula offset; refuses a curved plane face (F-191), a split that gains no face (F-187), repeated face ids (F-189), a vanished plane face (F-190) and an edit that changes the cut faces (F-188), at creation and on every rebuild; no re-pick of the plane (ADR 0057) | `split_face` | `FeatureKind::SplitFace,PartTool::SplitFace` |
 | P15 | Thicken | covered | Solid faces, planar or curved, united with the part; thickness > 0 only (F-150); single frozen face id, re-pick. Sheet sources: the server has no sheet bodies (ADR 0052) | `thicken` | `FeatureKind::Thicken,PartTool::Thicken` |
 | P16 | Mirror body | covered | — | `mirror` | `FeatureKind::Mirror,PartTool::Mirror` |
 | P17 | Linear pattern | partial | Third direction | `linear_array` | `FeatureKind::LinearArray,PartTool::LinearPattern` |

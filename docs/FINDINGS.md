@@ -3176,3 +3176,64 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Source:** the unsaved-work key hashes `active_component` (`qymcad-core/src/model/keys.rs:195`). On open the GUI takes the saved key first, and then the next command sync sets `active_component` from the window's context path, which an open leaves at the root (`qymcad/src/gui/commands.rs:65`, `io_jobs.rs:169`). [read in source]
 - **Observed (GUI check J, 2026-11-13):** both server files (`active_component` = the last Part made) show "*" on the first frame after opening. The same document saved again by the app (its `active_component` is the root) opens clean. The only other differences in `document.ron` are `created` and `saved_by`.
 - **Server policy:** accepted. The file holds what the app itself writes when it is saved from inside a Part. Writing the root instead would hide #311, so the server does not do that.
+
+## F-187 A split plane 1e-6..1e-5 mm from a face, or through a torus's axis, builds green without splitting; near a face it also damages the body
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `qym_shape_split_faces` (`occt_io.cpp:2171-2220`) sections the body with an infinite plane and refuses only when `added == 0` or `IsDone()` is false; the app's pre-check `ask::splits_faces` is the same question and answers "divides" in the gap. [read in source]
+- **Executed (`k0_probes::p3a..p3d`, `p5`, app data path):** on a 40 x 30 x 10 block, a plane at z = 10 - d for d between 1e-6 and 1e-5 (and at z = 1e-6 above the bottom, and by a 45-degree cube's edge) leaves the node GREEN with 6 faces before and after; the body is damaged: the tolerance grows (bbox +6e-7 .. +5e-6), the volume falls by 8e-4 (d = 1e-6) .. 8e-3 (d = 1e-5). At d <= 5e-7 the app fails visibly (`OpFailed(SplitFaces)`), at d >= 1e-4 it splits normally (6 -> 10). A torus cut through its axis (y = 0, or its own face as the plane) gives 1 face -> 1 face, green; a sphere through a meridian fails visibly. The plane 1e-5 above the bottom face splits normally (`golden_split_face`).
+- **Server policy (refusal):** after the rebuild of the node the result must have more faces than its source, otherwise creation and every later rebuild is refused with the reason (`golden_split_face::a_plane_a_hair_from_a_face_gains_no_face_and_is_refused_f187`, `an_edit_that_moves_the_plane_into_the_gap_is_refused_and_rolled_back`); a plane the pre-check or the app itself rejects keeps its own text.
+
+## F-188 An edit that changes which faces a Split faces node cuts moves the ids of its pieces onto other pieces
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (the same class as QymIs-Tech/QymCAD#350 for Split body).
+- **Source:** the first piece of a cut face keeps the face's id and the rest get fresh ids in OCCT's order; the app has no check on edit (Split body counts its pieces, `update.rs:388-396`; Split faces does not). [read in source]
+- **Executed (`k0_probes::p2`, `p2b`, `p2c`):** a U body (a 40 x 30 x 20 block less a slot 20 wide and 10 deep from the top) cut at z = 5, then the offset edited to 15: the cut walls go from 4 to 6 faces and the body from 14 to 18; all 14 old ids stay, four new ones appear, but id 837 (a wall piece of 400 mm2) now stands on a tower of 50 mm2: a push_face on that id moves 50 mm3 instead of 400, without an error. An L body, 5 -> 15: the id of the x = 20 piece vanishes and the consumer "found by place" takes the whole wall (+300 against +150). A simple edit within one topology (offset 5 -> 3 -> 7, the body's height) never swaps ids (`p1a..p1g`): the lower piece keeps the old id for XY z and XZ y, the higher for YZ x.
+- **Server policy (refusal):** a rebuild of an existing node (`param_set`, `dimension_set`, an edit upstream, reorder, undo chains that rebuild) is refused when the set of face ids of the result differs from the one before it, or when an id that this node cut (not in its source with the same area, before or after) no longer overlaps its old place: positive overlap in every axis in which either box extends, the axis of a flat face compared by neither (a wall moves with its body); the tolerance is `max(1e-4, 1e-6 * scale)` mm because the mesh holds f32 coordinates (F-063). It is conservative: a piece that moves by more than its own extent (a plane following a face whose body grows, 5 -> 8 mm on a box 5 mm tall) is refused too; recreate the split (`golden_split_face::an_edit_that_changes_which_faces_are_cut_is_refused_f188`, `split_face::tests`).
+
+## F-189 A second split that crosses the first, or runs parallel on the wrong side, repeats face ids
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed (the class of QymIs-Tech/QymCAD#173, closed: two pairs of faces with one id after a chamfer).
+- **Executed (`k0_probes::p14`, `p14b`, `p14c`):** on the block, a second split BELOW the first along z (3 after 6, 6 after 8, 3 after 5, 2 after 9) gives 14 faces with 10 distinct ids; the same with the first above is clean (6 after 3, 7 after 5, 9 after 2). Every CROSSING pair (XY then XZ or YZ, XZ then XY, YZ then XZ) gives 16 faces with 14 distinct ids. Parallel planes along y repeat ids when the second is lower (5 after 0 repeats, 0 then 5 is clean); along x the order is the other way (0 then -7 is clean), the side whose piece keeps the id. The volume, the validity and `Rebuild` are fine; `Rebuild.warnings` is empty; the repeats survive save and open; only `topology.warnings` shows them, with a text about a "revolved cone" that misleads here. Which pairs are clean was measured on the block only.
+- **Server policy (refusal):** a result with fewer distinct face ids than faces is refused at creation and at every rebuild (`golden_split_face::a_second_split_below_the_first_has_duplicate_face_ids_and_is_refused_f189`, `an_edit_that_turns_the_order_of_two_splits_is_refused_f189`, `reordering_two_splits_into_the_bad_order_is_refused_and_leaves_the_document`). A cross cut of one body is therefore not possible with this tool; a file the app made with repeated ids opens, and a full rebuild of its node (reading topology of a file stored without faces) is refused with this text.
+
+## F-190 A plane taken from a face stays at its creation place when the face has gone
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `resolve_face` returns the centre and normal stored at creation when the face's id is no longer on the body (`refs.rs:266-281`); `rebind_lost_face_refs` handles sketches only and `SplitFace.face` is not in it. [read in source]
+- **Executed (`k0_probes::p8`):** the plane is the top of the lower of two boxes (offset -5); the upper box is lowered until the union eats that face: the node stays GREEN, the plane stays at z = 5 from creation while the body's top is now z = 16. While the id is alive the plane follows the face (height 10 -> 14: plane 5 -> 9).
+- **Server policy (refusal):** a rebuild is refused when the face of the plane is no longer on its body (`golden_split_face::a_plane_taken_from_a_face_that_disappears_is_refused_f190`: an edit that closes the gap between two boxes).
+
+## F-191 A curved face used as the cutting plane gives an unpredictable plane
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** the app takes any face under the cursor and builds the plane from its centre and a normal averaged over the face (`face_under_cursor`, `FaceKey.normal`). [read in source]
+- **Executed (`k0_probes::p6`):** no error: a cylinder gives a plane x = 0 through its axis (normal (-1,0,0)), a sphere x = 0 (4188.771 against 4188.790, -4.5e-6 volume), a cone an inclined plane (3 -> 7 faces), a torus a no-op; each reads as a reasonable cut and none is the surface.
+- **Server policy (refusal):** a face that is not planar is refused as the plane, as in `split` (`golden_split_face::a_curved_face_as_the_plane_is_refused_with_the_document_unchanged`). The faces CUT may be curved: the app handles them (`k0_probes::p5`: cylinder across 3 -> 4, through the axis 3 -> 6, a cone, a sphere's equator).
+
+## F-192 Suppressing a Split faces node gives its consumers the whole face
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Executed (`k0_probes::p11`, `golden_split_face::suppressing_the_split_gives_a_consumer_the_whole_face_f192_and_unsuppressing_returns_the_pieces`):** a push_face on the upper piece of the x = 20 wall moves 150 mm2 of it; with the Split faces node suppressed the consumer stays green, "found by place", and moves the whole wall (300 mm2); unsuppressing returns the pieces. The consumer's id is gone from the unsplit body, and the app looks the face up by its place.
+- **Server policy:** accepted, not refused; the tool description says it. `feature_suppress` needs no new check (a suppressed modifier is a pass-through of its source).
+
+## F-193 A fillet on the edge of one piece rounds the whole chain of that edge
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Executed (`k0_probes::p15`, `p15b`, `golden_split_face::a_fillet_on_the_edge_of_one_piece_rounds_the_whole_edge_f193`):** a fillet picked on the upper 5 mm piece of a corner edge removes the volume of the whole 10 mm corner; the seam edge itself between the pieces gives a visible `AllEdgesSmooth`. The pieces of a straight edge are one chain to the fillet.
+- **Server policy:** accepted; the tool description says it.
+
+## F-194 The app's pre-check of a Split faces plane measures in the world frame; the build cuts in the body's local frame
+
+- **Version:** v0.1.1-dev.20261026, source f25f27d.
+- **Upstream:** not filed.
+- **Source:** `apply_split_face_cmd` converts the plane from world to the body's local frame for `ask::splits_faces` (`apply/faces.rs:134-148`), while `prep_splitface` takes the stored plane as it is (`prep_ops.rs:272-289`, no transform). [read in source]
+- **Emulated (`k0_probes::p10`; the GUI was not run):** a Part placed +100 in z with a base XY plane at offset 5 cuts at the LOCAL z = 5 (edges at z 0 / 5 / 10, 10 faces); an emulated pre-check in world coordinates says "splits nothing" for world z = 5 and "divides" for world z = 105, where the build with offset 105 cuts beside the body (red).
+- **Server policy:** the pre-check is asked of the same shape in the same local frame the build uses; the tool description says that base planes and offsets are local to the body's Part (read the bounds in `doc_info`). What the app's own pre-check says on a placed Part is inferred, not run.
