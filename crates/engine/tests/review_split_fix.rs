@@ -150,3 +150,40 @@ fn a_split_edit_that_misses_the_body_says_why_once() {
     assert_eq!(text.matches("divide (").count(), 1, "the failing node is named once: {text}");
     assert_eq!(s.info(), before);
 }
+
+/// The node just before the split in the timeline.
+fn timeline_head(s: &Session, split: Id) -> Id {
+    let at = s.project().timeline.iter().position(|n| n.id == split).unwrap();
+    s.project().timeline[at - 1].id
+}
+
+#[test]
+fn a_split_past_the_rollback_bar_does_not_forget_who_is_left_and_right() {
+    let (mut s, result) = u_part();
+    let before_split = timeline_head(&s, result.feature);
+    s.history_rollback(Some(before_split), None).unwrap();
+    // The same edit that is refused while the split is built.
+    s.param_set("right_end", &18.0.into()).unwrap();
+    let before = serde_json::to_string(&s.info()).unwrap();
+    let e = s.history_rollback(None, Some("end")).unwrap_err().to_string();
+    assert!(e.contains("identity"), "{e}");
+    assert_eq!(serde_json::to_string(&s.info()).unwrap(), before, "still behind the bar, the parameter at 18");
+    // An edit that keeps the pieces where they were is accepted when rolling forward.
+    s.param_set("right_end", &24.0.into()).unwrap();
+    s.history_rollback(None, Some("end")).unwrap();
+}
+
+#[test]
+fn a_split_saved_past_the_rollback_bar_is_judged_by_what_it_cut_when_the_file_is_opened() {
+    let (mut s, result) = u_part();
+    let before_split = timeline_head(&s, result.feature);
+    s.history_rollback(Some(before_split), None).unwrap();
+    let path = std::env::temp_dir().join(format!("k2-split-bar-{}.qcad", std::process::id()));
+    s.save(Some(&path)).unwrap();
+    let (mut opened, _) = Session::open(&path).unwrap();
+    opened.param_set("right_end", &18.0.into()).unwrap();
+    let e = opened.history_rollback(None, Some("end")).unwrap_err().to_string();
+    assert!(e.contains("identity"), "{e}");
+    opened.param_set("right_end", &24.0.into()).unwrap();
+    opened.history_rollback(None, Some("end")).unwrap();
+}

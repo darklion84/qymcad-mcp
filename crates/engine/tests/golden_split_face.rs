@@ -667,6 +667,11 @@ fn a_file_that_is_already_wrong_opens_with_a_warning_that_names_the_way_out() {
             info.warnings
         );
         // Tools that need the topology of the file say how to go on, and the way out works.
+        assert!(
+            !warning.message.contains("rolled back") && !warning.message.contains(".."),
+            "{stored}: one clean sentence: {}",
+            warning.message
+        );
         if !stored {
             let e = s.topology(None, false).unwrap_err().to_string();
             assert!(e.contains("feature_suppress or feature_delete"), "{e}");
@@ -684,7 +689,7 @@ fn a_third_parallel_cut_is_refused_and_the_text_says_what_to_do() {
     s.split_face(&xy(6.0)).unwrap();
     let e = refused(&mut s, &xy(8.0));
     assert!(e.contains("distinct ids") && e.contains("`split`"), "{e}");
-    assert!(!e.contains("order that keeps"), "no order is promised: {e}");
+    assert!(!e.contains("order that keeps") && e.contains("between 1 and 4"), "no order is promised, the limit is the measured range: {e}");
     assert!(!e.contains("upstream #"), "{e}");
 }
 
@@ -696,7 +701,7 @@ fn an_edit_that_puts_the_plane_off_the_body_says_what_happened_and_what_to_do() 
     s.param_set("h", &9.0.into()).ok();
     let before = snap(&s);
     let e = s.param_set("cut", &50.0.into()).unwrap_err().to_string();
-    assert!(e.contains("no longer meets the body") && e.contains("Undo this edit"), "{e}");
+    assert!(e.contains("would no longer meet the body") && e.contains("not applied") && !e.contains("Undo this edit"), "{e}");
     assert!(snap(&s) == before);
     let _ = r;
 }
@@ -797,4 +802,109 @@ fn a_change_upstream_that_moves_the_cut_faces_is_refused() {
     assert!(snap(&s) == before);
     s.param_set("ah", &13.0.into()).unwrap();
     assert_eq!(faces(&s, r.body), r.faces.after);
+}
+
+// ---- review round 2 ----
+
+#[test]
+fn a_block_with_rounded_corners_can_be_resized_without_moving_a_cut_id() {
+    let mut s = Session::new_part();
+    s.param_set("d", &30.0.into()).unwrap();
+    s.param_set("w", &44.0.into()).unwrap();
+    let b = s.primitive(&spec_box(expr("w"), expr("d"), 10.0), &Placement::Origin, None).unwrap().0.body;
+    let corners: Vec<u32> = s.project().regen_edges[&b].iter().filter(|e| e.dir[2].abs() > 0.99).map(|e| e.id).collect();
+    assert_eq!(corners.len(), 4);
+    s.fillet(Some(b), &Sel::Ids(corners), &3.0.into(), None).unwrap();
+    let r = s.split_face(&xy(5.0)).unwrap();
+    let before = ids(&s, r.body);
+    for (name, value) in [("d", 24.0), ("d", 30.0), ("d", 60.0), ("d", 20.0), ("w", 50.0), ("w", 44.0)] {
+        s.param_set(name, &value.into()).unwrap_or_else(|e| panic!("{name} = {value}: {e}"));
+        assert_eq!(ids(&s, r.body), before, "the same ids after {name} = {value}");
+    }
+}
+
+#[test]
+fn a_body_moved_by_a_parameter_further_than_its_size_keeps_its_cut_ids() {
+    let mut s = Session::new_part();
+    s.param_set("cx", &0.0.into()).unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &expr("cx"), &0.0.into(), &40.0.into(), &30.0.into(), false).unwrap();
+    s.extrude(&Extrude {
+        down: None,
+        sketch: sk,
+        profiles: None,
+        profiles_at: None,
+        height: 10.0.into(),
+        op: Op::NewBody,
+        direction: Direction::Normal,
+        through: false,
+        target: None,
+        name: None,
+    })
+    .unwrap();
+    let r = s.split_face(&xy(5.0)).unwrap();
+    let before = ids(&s, r.body);
+    s.param_set("cx", &100.0.into()).unwrap();
+    assert_eq!(ids(&s, r.body), before);
+}
+
+/// A U split, saved while suppressed or past the rollback bar, and opened.
+fn opened_with_the_split_not_built(bar: bool) -> (Session, SplitFaceResult) {
+    let (mut s, r) = boxed_u();
+    if bar {
+        let at = s.project().timeline.iter().position(|n| n.id == r.feature).unwrap();
+        let before = s.project().timeline[at - 1].id;
+        s.history_rollback(Some(before), None).unwrap();
+    } else {
+        s.feature_suppress(r.feature, true).unwrap();
+    }
+    let path = scratch(if bar { "split_face_bar.qcad" } else { "split_face_suppressed.qcad" });
+    s.save(Some(&path)).unwrap();
+    let (opened, report) = Session::open(&path).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    (opened, r)
+}
+
+fn bring_back(s: &mut Session, r: &SplitFaceResult, bar: bool) -> std::result::Result<(), String> {
+    if bar {
+        s.history_rollback(None, Some("end")).map(|_| ()).map_err(|e| e.to_string())
+    } else {
+        s.feature_suppress(r.feature, false).map(|_| ()).map_err(|e| e.to_string())
+    }
+}
+
+#[test]
+fn a_split_saved_not_built_comes_back_without_an_edit_and_is_judged_by_what_it_cut_after_one() {
+    for bar in [false, true] {
+        let (mut s, r) = opened_with_the_split_not_built(bar);
+        bring_back(&mut s, &r, bar).unwrap_or_else(|e| panic!("bar {bar}: no edit, nothing to refuse: {e}"));
+        assert_eq!(faces(&s, r.body), 18, "bar {bar}");
+        let (mut s, r) = opened_with_the_split_not_built(bar);
+        s.param_set("y", &2.0.into()).unwrap();
+        let before = snap(&s);
+        let e = bring_back(&mut s, &r, bar).unwrap_err();
+        assert!(e.contains("changes the faces the split cuts"), "bar {bar}: {e}");
+        assert!(!e.contains("feature_suppress"), "no advice to suppress what is being unsuppressed: {e}");
+        assert!(snap(&s) == before, "bar {bar}");
+        s.param_set("y", &12.0.into()).unwrap();
+        bring_back(&mut s, &r, bar).unwrap();
+    }
+}
+
+#[test]
+fn the_copy_of_a_suppressed_split_is_measured_not_stuck() {
+    let (mut s, r) = boxed_u();
+    s.feature_suppress(r.feature, true).unwrap();
+    let part = s.project().components.iter().find(|c| c.kind == qymcad_core::feature::ComponentKind::Part).unwrap().id;
+    s.part_copy(&PartRef::Id(part), "copy", None, None).unwrap();
+    let copy = s
+        .project()
+        .timeline
+        .iter()
+        .filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::SplitFace { .. }) && n.id != r.feature)
+        .map(|n| n.id)
+        .next()
+        .expect("the copied split");
+    s.feature_suppress(copy, false).unwrap();
+    assert_eq!(faces(&s, copy), 18);
 }

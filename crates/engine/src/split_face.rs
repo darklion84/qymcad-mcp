@@ -50,46 +50,105 @@ pub struct SplitFaceResult {
     pub rebuild: Rebuild,
 }
 
-/// Two boxes (min xyz, max xyz) lie on the same piece: positive overlap along every axis in which either is extended. An axis
-/// in which both are flat (a planar face's normal axis) is not compared: a face moves with its body when the body is resized.
-fn same_piece(before: &[f64; 6], after: &[f64; 6]) -> bool {
-    let scale = before.iter().chain(after).fold(1.0_f64, |m, v| m.max(v.abs()));
-    // The mesh holds f32 coordinates (F-063): the tolerance grows with the coordinates, 1e-4 mm up to a body of 100 m.
-    let tol = (1e-6 * scale).max(1e-4);
-    (0..3).all(|i| {
-        let (extent_before, extent_after) = (before[i + 3] - before[i], after[i + 3] - after[i]);
-        if extent_before <= tol && extent_after <= tol {
-            return true;
-        }
-        before[i + 3].min(after[i + 3]) - before[i].max(after[i]) > tol
-    })
-}
-
 /// One face of a Split faces result, as the rebuild left it.
 #[derive(Clone)]
 struct Piece {
     id: u32,
-    bbox: [f64; 6],
+    centroid: [f64; 3],
+    normal: [f64; 3],
     /// The source has no face of this id and area: this node cut it (or made it). Not told apart reliably means cut.
     cut: bool,
 }
 
-/// What a Split faces node last cut that was accepted: its faces with local bounds and the point its cutting plane passed through.
-/// `pieces` is `None` when they could not be measured (a file whose topology cannot be read, a face without triangles): an edit that
-/// rebuilds the node is then refused, since nothing proves its ids stay on their pieces.
+/// What a Split faces node last cut that was accepted: its faces and the cutting plane (a point and the unit normal).
+/// `pieces` is `None` when nothing could be measured (a file whose topology cannot be read, a node that cannot be built to measure):
+/// an edit that rebuilds the node is then refused, since nothing proves its ids stay on their pieces.
 #[derive(Clone)]
 pub(crate) struct Witness {
     pieces: Option<Vec<Piece>>,
-    origin: Option<[f64; 3]>,
+    plane: Option<([f64; 3], [f64; 3])>,
 }
 
-pub(crate) type Witnesses = HashMap<Id, Witness>;
-
-fn moved(bbox: &[f64; 6], by: [f64; 3]) -> [f64; 6] {
-    std::array::from_fn(|i| bbox[i] + by[i % 3])
+/// The last accepted state of the nodes whose ids another tool can hold: the pieces of every Split faces node, and the bounds of the
+/// outputs of every Split body (F-100). Kept in the undo snapshot and rolled back with a refused edit.
+#[derive(Clone, Default)]
+pub(crate) struct Witnesses {
+    pub(crate) faces: HashMap<Id, Witness>,
+    pub(crate) splits: HashMap<Id, Vec<(Id, [f64; 6])>>,
 }
 
-const EXIT: &str = "To go on, feature_suppress or feature_delete this node.";
+fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
+    (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
+}
+
+fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    std::array::from_fn(|i| a[i] + b[i])
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    (0..3).map(|i| a[i] * b[i]).sum()
+}
+
+type Plane = ([f64; 3], [f64; 3]);
+
+/// Which side of the plane a point lies on: 1, -1, or 0 when it is on it (the pieces of a cut face lie on both sides).
+fn side(plane: Option<Plane>, at: [f64; 3]) -> i8 {
+    plane.map_or(0, |(p, n)| {
+        let d = dot(std::array::from_fn(|i| at[i] - p[i]), n);
+        if d.abs() <= 1e-6 {
+            0
+        } else {
+            d.signum() as i8
+        }
+    })
+}
+
+/// The ids among `pairs` (old, new, one id each) that moved. A piece stays on its side of the cutting plane (the plane as it was and as it
+/// is now); among the pieces on that side with a similar normal, the new one must lie clearly nearer to its own old one than to any other
+/// one, once the old ones are moved by `shift`. A piece alone on its side with its normal has nothing to swap with, so a body that is
+/// resized far past its pieces' size keeps its ids.
+fn displaced(pairs: &[(&Piece, &Piece)], old_cut: &[&Piece], shift: [f64; 3], planes: (Option<Plane>, Option<Plane>)) -> Vec<u32> {
+    pairs
+        .iter()
+        .filter(|(o, n)| {
+            let on = side(planes.0, o.centroid);
+            if on != side(planes.1, n.centroid) {
+                return true;
+            }
+            let own = dist(add(o.centroid, shift), n.centroid);
+            let other = old_cut
+                .iter()
+                .filter(|q| q.id != o.id && dot(q.normal, n.normal) > 0.99 && side(planes.0, q.centroid) == on)
+                .map(|q| dist(add(q.centroid, shift), n.centroid))
+                .fold(f64::INFINITY, f64::min);
+            // Clearly nearer, with a margin: a tie is a piece that may stand on the other one.
+            !(own <= 1e-6 || own < 0.9 * other)
+        })
+        .map(|(o, _)| o.id)
+        .collect()
+}
+
+/// The cut ids that moved to another piece (see `displaced`). Where the old piece was is judged in the frame of the plane's movement
+/// (the part of it along the normal: a plane that follows a face of a body that grew takes its cut along) or, failing that, in the frame
+/// of the mean movement of the cut pieces (the whole body was moved by a parameter, the plane was not).
+fn moved_ids(old: &[Piece], new: &[Piece], plane_shift: [f64; 3], planes: (Option<Plane>, Option<Plane>)) -> Vec<u32> {
+    let pairs: Vec<(&Piece, &Piece)> =
+        old.iter().filter_map(|o| new.iter().find(|n| n.id == o.id).filter(|n| o.cut || n.cut).map(|n| (o, n))).collect();
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    let old_cut: Vec<&Piece> = old.iter().filter(|o| o.cut).collect();
+    let mean: [f64; 3] =
+        std::array::from_fn(|i| pairs.iter().map(|(o, n)| n.centroid[i] - o.centroid[i]).sum::<f64>() / pairs.len() as f64);
+    let first = displaced(&pairs, &old_cut, plane_shift, planes);
+    if first.is_empty() || displaced(&pairs, &old_cut, mean, planes).is_empty() {
+        return Vec::new();
+    }
+    first
+}
+
+const EXIT_FAULT: &str = "To go on, feature_suppress or feature_delete this node.";
+const EXIT_EDIT: &str = "To go on, put the edit back, or recreate the split; feature_delete removes the node.";
 
 impl Session {
     /// Add Split faces as the app's one action: the node, the plane reference, the offset formula and the name; refused with the
@@ -178,42 +237,17 @@ impl Session {
         })
     }
 
-    /// Local bounds of each face of `body`, from its tessellation; `None` when a face has no triangles to measure.
-    fn face_boxes(&self, body: Id) -> Option<Vec<[f64; 6]>> {
-        let faces = self.p.regen_faces.get(&body)?;
-        let mesh = &self.p.bodies[self.p.mesh_index(body)?].mesh;
-        let mut boxes = Vec::with_capacity(faces.len());
-        for face in faces {
-            let mut b = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
-            for &ti in &face.triangles {
-                for &vi in mesh.tris.get(ti as usize)? {
-                    let v = mesh.verts.get(vi as usize)?;
-                    for (axis, c) in [v.x, v.y, v.z].into_iter().enumerate() {
-                        b[axis] = b[axis].min(c);
-                        b[axis + 3] = b[axis + 3].max(c);
-                    }
-                }
-            }
-            if b.iter().any(|v| !v.is_finite()) {
-                return None;
-            }
-            boxes.push(b);
-        }
-        Some(boxes)
-    }
-
-    /// The faces of a Split faces result as they stand, measured the same way before and after an edit; `None` when a face cannot be.
+    /// The faces of a Split faces result as they stand: centre, normal and whether this node cut them.
     fn split_face_pieces(&self, src: Id, body: Id) -> Option<Vec<Piece>> {
         let source = self.p.regen_faces.get(&src)?;
         let faces = self.p.regen_faces.get(&body)?;
-        let boxes = self.face_boxes(body)?;
         Some(
             faces
                 .iter()
-                .zip(boxes)
-                .map(|(f, bbox)| Piece {
+                .map(|f| Piece {
                     id: f.id,
-                    bbox,
+                    centroid: [f.centroid.x, f.centroid.y, f.centroid.z],
+                    normal: f.normal,
                     // A face that keeps its id and its area to 1e-6 is the source's; any doubt is a cut face, compared more strictly.
                     cut: !source.iter().any(|s| s.id == f.id && (s.area - f.area).abs() <= 1e-6 * s.area.abs().max(1e-9)),
                 })
@@ -221,8 +255,8 @@ impl Session {
         )
     }
 
-    /// The point the node's cutting plane passes through, in the body's local frame.
-    fn split_face_origin(&self, node: &FeatureNode) -> Option<[f64; 3]> {
+    /// The node's cutting plane in the body's local frame: a point on it (the offset applied) and its unit normal.
+    fn split_face_plane(&self, node: &FeatureNode) -> Option<([f64; 3], [f64; 3])> {
         let FeatureKind::SplitFace { plane, datum, offset, face, .. } = &node.kind else { return None };
         let offset = self.p.feat_dim_value(node.id, "offset", *offset, &self.p.param_map());
         let (origin, normal) = if let Some((body, key)) = face {
@@ -235,17 +269,18 @@ impl Session {
             ([0.0; 3], [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]][(*plane as usize).min(2)])
         };
         let m = normal.iter().map(|v| v * v).sum::<f64>().sqrt();
-        (m > 1e-12 && origin.iter().all(|v| v.is_finite())).then(|| std::array::from_fn(|i| origin[i] + offset * normal[i] / m))
+        (m > 1e-12 && origin.iter().all(|v| v.is_finite()))
+            .then(|| (std::array::from_fn(|i| origin[i] + offset * normal[i] / m), normal.map(|v| v / m)))
     }
 
-    /// After a rebuild: remember the pieces of every Split faces node that was built clean and really split something, so that a later
-    /// rebuild is judged against them also when the node is not built in between (suppressed, past the rollback bar). A node that
-    /// failed or was refused keeps its earlier witness.
+    /// After a rebuild: remember the pieces of every Split faces node that was built clean and really split something, and the bounds
+    /// of the outputs of every Split body that was built clean, so that a later rebuild is judged against them also when the node is
+    /// not built in between (suppressed, past the rollback bar). A node that failed or was refused keeps its earlier witness.
     pub(crate) fn accept_split_faces(&mut self, rebuilt: &HashSet<Id>, failed: &HashSet<Id>) {
         let buildable = Self::geometry_check_nodes(&self.p);
         let mut accepted = Vec::new();
+        let mut splits = Vec::new();
         for node in &self.p.timeline {
-            let FeatureKind::SplitFace { src, body, .. } = &node.kind else { continue };
             if !buildable.contains(&node.id)
                 || !rebuilt.contains(&node.id)
                 || failed.contains(&node.id)
@@ -253,24 +288,78 @@ impl Session {
             {
                 continue;
             }
-            let (Some(source), Some(result)) = (self.p.regen_faces.get(src), self.p.regen_faces.get(body)) else { continue };
-            if result.len() > source.len() {
-                accepted.push((node.id, Witness { pieces: self.split_face_pieces(*src, *body), origin: self.split_face_origin(node) }));
+            match &node.kind {
+                FeatureKind::SplitFace { src, body, .. } => {
+                    let (Some(source), Some(result)) = (self.p.regen_faces.get(src), self.p.regen_faces.get(body)) else { continue };
+                    if result.len() > source.len() {
+                        accepted
+                            .push((node.id, Witness { pieces: self.split_face_pieces(*src, *body), plane: self.split_face_plane(node) }));
+                    }
+                }
+                FeatureKind::SplitBody { .. } => {
+                    if let Some(pieces) = self.split_piece_bounds(node) {
+                        splits.push((node.id, pieces));
+                    }
+                }
+                _ => {}
             }
         }
-        self.split_face_witness.extend(accepted);
+        self.split_face_witness.faces.extend(accepted);
+        self.split_face_witness.splits.extend(splits);
         let live: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.split_face_witness.retain(|id, _| live.contains(id));
+        self.split_face_witness.faces.retain(|id, _| live.contains(id));
+        self.split_face_witness.splits.retain(|id, _| live.contains(id));
     }
 
     /// `part_copy` makes new nodes whose faces have ids of their own, so the copy's witness is not the source's renamed: the rebuild of
-    /// the copy has already recorded its pieces. A copied node that was not built (suppressed) has none: it is unverifiable until deleted.
+    /// the copy has already recorded its pieces. A copied node that was not built (suppressed, past the bar) is measured on a copy of
+    /// the document with the node active.
     pub(crate) fn copy_split_face_witness(&mut self, nodes: &[(Id, Id)]) {
         for (from, to) in nodes {
-            if self.split_face_witness.contains_key(from) && !self.split_face_witness.contains_key(to) {
-                self.split_face_witness.insert(*to, Witness { pieces: None, origin: None });
+            if self.split_face_witness.faces.contains_key(from) && !self.split_face_witness.faces.contains_key(to) {
+                let measured = self.measure_unbuilt_split_face(*to);
+                self.split_face_witness.faces.insert(*to, measured);
             }
         }
+    }
+
+    /// What `read` finds in the document when `node` is built: measured on a copy where the node is active (unsuppressed, the rollback
+    /// bar at the end); the document is restored whatever happens. `None` when it cannot be built there or `read` finds nothing.
+    fn measured_when_active<T>(&mut self, node: Id, read: impl FnOnce(&Session) -> Option<T>) -> Option<T> {
+        let found = std::cell::Cell::new(None);
+        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        let before = self.p.clone();
+        self.establishing_topology = true;
+        let _ = self.with_rebuild_copies(before, &nodes, "measuring a node that is not built", |s| {
+            if let Some(ti) = s.p.timeline.iter().position(|n| n.id == node) {
+                s.p.set_feature_suppressed(ti, false);
+                s.p.set_rollback(None);
+            }
+            if s.rebuild_for_edit(Some(&nodes))?.errors.is_empty() {
+                found.set(read(s));
+            }
+            // Never keep the measuring: the closure fails on purpose and the document goes back as it was.
+            Err::<(), _>(Error::Invalid("measured".into()))
+        });
+        self.establishing_topology = false;
+        found.take()
+    }
+
+    /// The pieces of a Split faces node that is not built now, measured when it is active. A node that cannot be built there is faulty
+    /// when it is active, and gets a witness with no pieces.
+    fn measure_unbuilt_split_face(&mut self, node: Id) -> Witness {
+        let read = |s: &Session| {
+            let n = s.p.timeline.iter().find(|n| n.id == node)?;
+            let FeatureKind::SplitFace { src, body, .. } = &n.kind else { return None };
+            let (source, faces) = (s.p.regen_faces.get(src)?.len(), s.p.regen_faces.get(body)?.len());
+            (faces > source).then(|| Witness { pieces: s.split_face_pieces(*src, *body), plane: s.split_face_plane(n) })
+        };
+        self.measured_when_active(node, read).unwrap_or(Witness { pieces: None, plane: None })
+    }
+
+    /// The outputs of a Split body that is not built now (past the rollback bar), measured when it is active.
+    fn measure_unbuilt_split_body(&mut self, node: Id) -> Option<Vec<(Id, [f64; 6])>> {
+        self.measured_when_active(node, |s| s.split_piece_bounds(s.p.timeline.iter().find(|n| n.id == node)?))
     }
 
     /// Every Split faces node that was rebuilt must still be a clean split of its source. The app builds the node green in all
@@ -288,17 +377,17 @@ impl Session {
             }
             let (Some(source), Some(result)) = (self.p.regen_faces.get(src), self.p.regen_faces.get(body)) else { continue };
             // A node that was split before can be got past by suppressing or deleting it; a node being created is rolled back instead.
-            let exit = if before.contains_key(&node.id) { format!(" {EXIT}") } else { String::new() };
+            let existing = before.faces.contains_key(&node.id);
             if let Some(message) = self.split_face_fault(node, source.len(), result) {
-                refused.push((node.id, format!("{message}{exit}")));
+                refused.push((node.id, if existing { format!("{message} {EXIT_FAULT}") } else { message }));
                 continue;
             }
-            let Some(old) = before.get(&node.id) else { continue };
+            let Some(old) = before.faces.get(&node.id) else { continue };
             if old.pieces.is_none() && self.establishing_topology {
                 continue;
             }
             if let Some(message) = self.changed_pieces(node, old, *src, *body) {
-                refused.push((node.id, format!("{message}{exit}")));
+                refused.push((node.id, format!("{message} {EXIT_EDIT}")));
             }
         }
         refused
@@ -318,7 +407,7 @@ impl Session {
         let distinct: HashSet<u32> = result.iter().map(|f| f.id).collect();
         if distinct.len() < result.len() {
             return Some(format!(
-                "the split leaves {} faces with only {} distinct ids, so one face id would name two faces and a later tool, selection or export could take either. The app does this when a split crosses an earlier split of the same body, and for parallel splits after the first two or three (fewer in some directions); the next split must be a separate body: use `split` for that (F-189).",
+                "the split leaves {} faces with only {} distinct ids, so one face id would name two faces and a later tool, selection or export could take either. The app does this when a split crosses an earlier split of the same body, and after a few parallel splits (on a block between 1 and 4 in a row, by axis and direction); the next split must be a separate body: use `split` for that (F-189).",
                 result.len(),
                 distinct.len()
             ));
@@ -333,11 +422,14 @@ impl Session {
     }
 
     /// The faces this node cut, before the rebuild against after: the set of cut ids must be the same and every cut id must stay on its
-    /// piece, also when the whole cut moved with its plane. The app lets a new offset cut another set of faces; the old ids then point at
-    /// other pieces without a word (F-188). Faces the node did not cut are the business of the nodes above it.
+    /// piece (see `moved_ids`). The app lets a new offset cut another set of faces; the old ids then point at other pieces without a
+    /// word (F-188). Faces the node did not cut are the business of the nodes above it.
     fn changed_pieces(&self, node: &FeatureNode, old: &Witness, src: Id, body: Id) -> Option<String> {
         let (Some(old_pieces), Some(new)) = (old.pieces.as_ref(), self.split_face_pieces(src, body)) else {
-            return Some("the pieces this split cut cannot be measured, so nothing proves that its face ids stay on their pieces; edit refused (F-188).".into());
+            return Some(
+                "the pieces this split cut are not known, so nothing proves that its face ids stay on their pieces; edit refused (F-188)."
+                    .into(),
+            );
         };
         let was: HashSet<u32> = old_pieces.iter().filter(|p| p.cut).map(|p| p.id).collect();
         let now: HashSet<u32> = new.iter().filter(|p| p.cut).map(|p| p.id).collect();
@@ -345,20 +437,14 @@ impl Session {
         let mut fresh: Vec<u32> = now.difference(&was).copied().collect();
         gone.sort_unstable();
         fresh.sort_unstable();
-        // The cut moved with its plane (a plane that follows a face of a body that grew): compare also after moving the old boxes by it.
-        let shift = old.origin.zip(self.split_face_origin(node)).map(|(a, b)| std::array::from_fn(|i| b[i] - a[i]));
-        let mut moved_ids: Vec<u32> = old_pieces
-            .iter()
-            .filter_map(|o| {
-                let n = new.iter().find(|n| n.id == o.id)?;
-                let same = !(o.cut || n.cut)
-                    || same_piece(&o.bbox, &n.bbox)
-                    || shift.is_some_and(|by: [f64; 3]| same_piece(&moved(&o.bbox, by), &n.bbox));
-                (!same).then_some(o.id)
-            })
-            .collect();
-        moved_ids.sort_unstable();
-        if gone.is_empty() && fresh.is_empty() && moved_ids.is_empty() {
+        // The plane's own movement along its normal only: a movement inside the plane is the body's, not the cut's.
+        let shift = old.plane.zip(self.split_face_plane(node)).map_or([0.0; 3], |((a, _), (b, n))| {
+            let along = dot(std::array::from_fn(|i| b[i] - a[i]), n);
+            n.map(|v| v * along)
+        });
+        let mut moved = moved_ids(old_pieces, &new, shift, (old.plane, self.split_face_plane(node)));
+        moved.sort_unstable();
+        if gone.is_empty() && fresh.is_empty() && moved.is_empty() {
             return None;
         }
         let mut what = Vec::new();
@@ -368,11 +454,11 @@ impl Session {
         if !fresh.is_empty() {
             what.push(format!("face ids {fresh:?} are cut now"));
         }
-        if !moved_ids.is_empty() {
-            what.push(format!("face ids {moved_ids:?} move to another piece"));
+        if !moved.is_empty() {
+            what.push(format!("face ids {moved:?} move to another piece"));
         }
         Some(format!(
-            "this edit changes the faces the split cuts ({}): the ids kept would silently name other pieces for every tool that uses them, and the app says nothing. Edit refused; recreate the split for this change and read topology again (F-188).",
+            "this edit changes the faces the split cuts ({}): the ids kept would silently name other pieces for every tool that uses them, and the app says nothing. The edit was not applied; the document is unchanged (F-188).",
             what.join("; ")
         ))
     }
@@ -385,58 +471,88 @@ impl Session {
             };
             if matches!(self.p.regen_errors.get(&node.id), Some(CoreError::OpFailed(Op::SplitFaces))) {
                 let at = self
-                    .split_face_origin(node)
-                    .map(|o| format!(" The plane now passes through ({:.4}, {:.4}, {:.4}) in the Part's local frame.", o[0], o[1], o[2]))
+                    .split_face_plane(node)
+                    .map(|(o, _)| {
+                        format!(
+                            " After the edit the plane would pass through ({:.4}, {:.4}, {:.4}) in the Part's local frame.",
+                            o[0], o[1], o[2]
+                        )
+                    })
                     .unwrap_or_default();
                 issue.message.push_str(&format!(
-                    ". The cutting plane no longer meets the body, or lies on one of its faces.{at} Undo this edit, or give the offset a value inside the body's extent (doc_info shows its bounds)."
+                    ". The cutting plane would no longer meet the body, or would lie on one of its faces.{at} The edit was not applied and the document is unchanged; choose a value that keeps the plane inside the body (doc_info shows its bounds)."
                 ));
             }
         }
     }
 
     /// A file the app made can hold a Split faces node that is already wrong (F-187, F-189, F-190). Its stored geometry is judged here, also
-    /// for nodes the open did not rebuild; the file is not changed. Nodes whose topology cannot be read, or that are wrong, get a witness that
-    /// refuses every edit rebuilding them: the way out is to suppress or delete the node.
+    /// for nodes the open did not rebuild; the file is not changed. Nodes that are wrong, or whose topology cannot be read, get a witness
+    /// with no pieces that refuses every edit rebuilding them: the way out is to suppress or delete the node. A node that is not built
+    /// (suppressed, past the rollback bar) is measured by building it on a copy where it is active. The outputs of every Split body are
+    /// recorded as well (F-100).
     pub(crate) fn split_face_open_check(&mut self, checked: &HashSet<Id>) -> Vec<NodeIssue> {
         let mut warnings = Vec::new();
-        let nodes: Vec<FeatureNode> = self.p.timeline.iter().filter(|n| matches!(n.kind, FeatureKind::SplitFace { .. })).cloned().collect();
+        let nodes: Vec<FeatureNode> = self
+            .p
+            .timeline
+            .iter()
+            .filter(|n| matches!(n.kind, FeatureKind::SplitFace { .. } | FeatureKind::SplitBody { .. }))
+            .cloned()
+            .collect();
         if nodes.is_empty() {
             return warnings;
         }
         let topology = self.ensure_topology();
         let buildable = Self::geometry_check_nodes(&self.p);
         for node in nodes {
+            if let FeatureKind::SplitBody { .. } = &node.kind {
+                if buildable.contains(&node.id) {
+                    if let Some(pieces) = self.split_piece_bounds(&node) {
+                        self.split_face_witness.splits.insert(node.id, pieces);
+                    }
+                } else if let Some(pieces) = self.measure_unbuilt_split_body(node.id) {
+                    self.split_face_witness.splits.insert(node.id, pieces);
+                }
+                continue;
+            }
             let FeatureKind::SplitFace { src, body, .. } = &node.kind else { continue };
-            let unverifiable = Witness { pieces: None, origin: None };
+            let unverifiable = || Witness { pieces: None, plane: None };
             if !buildable.contains(&node.id) {
-                // Suppressed or past the bar: nothing to read now; the first edit that builds it has nothing to compare with.
-                self.split_face_witness.entry(node.id).or_insert(unverifiable);
+                let measured = self.measure_unbuilt_split_face(node.id);
+                self.split_face_witness.faces.entry(node.id).or_insert(measured);
                 continue;
             }
             if let Err(e) = &topology {
                 // One word for the whole file, on its first Split faces node.
                 if warnings.is_empty() {
-                    warnings.push(self.issue_for(&node, format!("the faces of the Split faces nodes cannot be read from the file, so what they cut cannot be checked: {e}. Edits that rebuild them are refused. {EXIT}")));
+                    let cause = match e {
+                        Error::Rebuild(lines) => lines.iter().skip(1).cloned().collect::<Vec<_>>().join("; "),
+                        other => other.to_string(),
+                    };
+                    warnings.push(self.issue_for(
+                        &node,
+                        format!("the faces of the Split faces nodes cannot be read from the file, so what they cut cannot be checked: {}. Edits that rebuild them are refused. {EXIT_FAULT}", cause.trim_end_matches('.')),
+                    ));
                 }
-                self.split_face_witness.insert(node.id, unverifiable);
+                self.split_face_witness.faces.insert(node.id, unverifiable());
                 continue;
             }
             let (Some(source), Some(result)) = (self.p.regen_faces.get(src), self.p.regen_faces.get(body)) else {
-                self.split_face_witness.insert(node.id, unverifiable);
+                self.split_face_witness.faces.insert(node.id, unverifiable());
                 continue;
             };
-            let native_error = self.p.regen_errors.contains_key(&node.id) || checked.contains(&node.id);
-            if native_error {
+            // A node the app failed is judged as a creation once an edit makes it build: there is nothing to compare it with.
+            if self.p.regen_errors.contains_key(&node.id) || checked.contains(&node.id) {
                 continue;
             }
             if let Some(message) = self.split_face_fault(&node, source.len(), result) {
-                warnings.push(self.issue_for(&node, format!("this split is already wrong in the file: {message} {EXIT}")));
-                self.split_face_witness.insert(node.id, unverifiable);
+                warnings.push(self.issue_for(&node, format!("this split is already wrong in the file: {message} {EXIT_FAULT}")));
+                self.split_face_witness.faces.insert(node.id, unverifiable());
                 continue;
             }
-            let (pieces, origin) = (self.split_face_pieces(*src, *body), self.split_face_origin(&node));
-            self.split_face_witness.insert(node.id, Witness { pieces, origin });
+            let witness = Witness { pieces: self.split_face_pieces(*src, *body), plane: self.split_face_plane(&node) };
+            self.split_face_witness.faces.insert(node.id, witness);
         }
         for w in &warnings {
             self.advisory_warnings.push(AdvisoryWarning::Geometry(w.clone()));
@@ -451,7 +567,7 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
-    use super::{same_piece, SplitFaceOptions};
+    use super::{moved_ids, Piece, SplitFaceOptions};
     use crate::{BaseName, Num, Placement, PlaneRef, PrimitiveSpec, Session};
 
     #[test]
@@ -468,16 +584,21 @@ mod tests {
     }
 
     #[test]
-    fn pieces_need_positive_overlap_where_they_are_extended() {
-        let lower = [-20.0, -15.0, 0.0, 20.0, -15.0, 5.0]; // a wall at y = -15
-        let upper = [-20.0, -15.0, 5.0, 20.0, -15.0, 10.0];
-        assert!(same_piece(&lower, &lower));
-        assert!(!same_piece(&lower, &upper), "touching along the cut is another piece");
-        let taller = [-20.0, -15.0, 0.0, 20.0, -15.0, 8.0];
-        assert!(same_piece(&lower, &taller));
-        let wider = [-20.0, -17.0, 0.0, 20.0, -17.0, 5.0];
-        assert!(same_piece(&lower, &wider), "a wall moves with its body: the flat axis is not compared");
-        let near = [-20.0, -15.0, 4.99995, 20.0, -15.0, 9.0];
-        assert!(!same_piece(&lower, &near), "an overlap inside the mesh tolerance is none");
+    fn a_cut_id_stays_when_its_piece_is_clearly_nearest_after_the_planes_movement() {
+        let piece = |id, z: f64| Piece { id, centroid: [0.0, 0.0, z], normal: [1.0, 0.0, 0.0], cut: true };
+        let old = [piece(1, 2.5), piece(2, 7.5)];
+        let flat = (Some(([0.0, 0.0, 5.0], [0.0, 0.0, 1.0])), Some(([0.0, 0.0, 5.0], [0.0, 0.0, 1.0])));
+        // The lower piece grew and the upper moved: each is still nearest to itself.
+        assert!(moved_ids(&old, &[piece(1, 4.0), piece(2, 9.0)], [0.0; 3], flat).is_empty());
+        // The ids swapped places.
+        assert_eq!(moved_ids(&old, &[piece(1, 7.5), piece(2, 2.5)], [0.0; 3], flat).len(), 2);
+        // The plane went up by 4 and took its cut with it: the same pieces, 4 higher.
+        assert!(moved_ids(&old, &[piece(1, 6.5), piece(2, 11.5)], [0.0, 0.0, 4.0], (flat.0, Some(([0.0, 0.0, 9.0], [0.0, 0.0, 1.0]))))
+            .is_empty());
+        // The whole body went 100 away and the plane did not: the frame of the mean movement finds the pieces again.
+        let sideways = |id, z: f64| Piece { centroid: [100.0, 0.0, z], ..piece(id, z) };
+        assert!(moved_ids(&old, &[sideways(1, 2.5), sideways(2, 7.5)], [0.0; 3], flat).is_empty());
+        // A tie is no proof: the new piece is as near to the other one.
+        assert!(!moved_ids(&old, &[piece(1, 5.0), piece(2, 5.0)], [0.0; 3], (None, None)).is_empty());
     }
 }

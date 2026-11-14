@@ -162,7 +162,30 @@ fn overlap(a: &[f64; 6], b: &[f64; 6]) -> f64 {
 }
 
 impl Session {
+    /// Local B-rep bounds of every output of a Split body, or `None` when one of them is not built.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
+    pub(crate) fn split_piece_bounds(&self, node: &qymcad_core::feature::FeatureNode) -> Option<Vec<(Id, [f64; 6])>> {
+        let _gate = qymcad_kernel::kernel_gate();
+        node.kind.bodies().into_iter().map(|id| Some((id, self.shapes.get(&id)?.bbox()?))).collect()
+    }
+
     pub(crate) fn split_identities(&self) -> Vec<SplitIdentity> {
+        let mut identities = self.live_split_identities();
+        // A split that is not built now (past the rollback bar) has no shapes: what it last cut is kept in the witness, so that the
+        // rebuild that brings it back is judged like an edit made while it was built.
+        let kept: Vec<SplitIdentity> = self
+            .split_face_witness
+            .splits
+            .iter()
+            .filter(|(node, _)| !identities.iter().any(|s| s.node == **node))
+            .filter(|(node, _)| self.p.timeline.iter().any(|n| n.id == **node && !n.suppressed))
+            .map(|(node, pieces)| SplitIdentity { node: *node, pieces: pieces.clone() })
+            .collect();
+        identities.extend(kept);
+        identities
+    }
+
+    fn live_split_identities(&self) -> Vec<SplitIdentity> {
         let _gate = qymcad_kernel::kernel_gate();
         self.p
             .timeline

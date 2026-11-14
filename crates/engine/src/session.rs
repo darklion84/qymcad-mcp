@@ -352,7 +352,7 @@ impl Session {
             drive_clamps: Vec::new(),
             open_node_faults: HashSet::new(),
             open_primitive_faults: HashMap::new(),
-            split_face_witness: HashMap::new(),
+            split_face_witness: Default::default(),
             establishing_topology: false,
         }
     }
@@ -400,7 +400,7 @@ impl Session {
             drive_clamps: Vec::new(),
             open_node_faults: HashSet::new(),
             open_primitive_faults: HashMap::new(),
-            split_face_witness: HashMap::new(),
+            split_face_witness: Default::default(),
             establishing_topology: false,
         };
         // qymcad-io settles sketches while loading, including offset cleanup. Read the original
