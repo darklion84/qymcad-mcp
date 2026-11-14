@@ -21,6 +21,8 @@ pub struct Snapshot {
     /// The exemptions of a file that was faulty when opened: undo restores them with the recipe they belong to.
     open_node_faults: HashSet<Id>,
     open_primitive_faults: HashMap<(Id, &'static str), Option<f64>>,
+    /// What each Split faces node last cut that was accepted: undo restores it with the recipe it describes.
+    split_face_witness: crate::split_face::Witnesses,
     call: Option<ToolCall>,
     created_node: Option<Id>,
 }
@@ -128,6 +130,7 @@ impl Session {
             detached_projections: self.detached_projections.clone(),
             open_node_faults: self.open_node_faults.clone(),
             open_primitive_faults: self.open_primitive_faults.clone(),
+            split_face_witness: self.split_face_witness.clone(),
             call: None,
             created_node: None,
         })
@@ -180,6 +183,7 @@ impl Session {
         self.detached_projections = snapshot.detached_projections;
         self.open_node_faults = snapshot.open_node_faults;
         self.open_primitive_faults = snapshot.open_primitive_faults;
+        self.split_face_witness = snapshot.split_face_witness;
     }
 
     /// Restore the last successful modelling tool call, without regenerating the retained geometry.
@@ -349,6 +353,11 @@ impl Session {
             }
             let mut result = s.suppression_result(feature, suppressed, true);
             result.lost_body_metadata = s.removed_body_metadata(metadata);
+            if suppressed && matches!(s.p.timeline[ti].kind, FeatureKind::SplitFace { .. }) {
+                result.rebuild.notes.push(
+                    "a suppressed Split faces node gives the tools made on one of its pieces (push_face, draft, hole, ...) the WHOLE face instead of the piece, without an error; unsuppress it to get the pieces back (F-192)".into(),
+                );
+            }
             Ok(result)
         });
         if let Some(snapshot) = snapshot {

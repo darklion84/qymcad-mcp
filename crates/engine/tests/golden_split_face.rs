@@ -286,7 +286,7 @@ fn a_plane_taken_from_a_face_that_disappears_is_refused_f190() {
     let before = snap(&s);
     // The lower box grows to touch the upper one: its top face is fused into the interior and its id is gone.
     let e = s.param_set("ah", &10.0.into()).unwrap_err().to_string();
-    assert!(e.contains("F-190") && e.contains("no longer exists"), "{e}");
+    assert!(e.contains("F-190") && e.contains("is gone"), "{e}");
     assert!(snap(&s) == before);
     // While the face lives the plane follows it.
     s.param_set("ah", &6.0.into()).unwrap();
@@ -492,4 +492,309 @@ fn the_general_preconditions_refuse_with_the_document_unchanged() {
     let e = refused(&mut s, &xy(2.0));
     assert!(e.contains("not a Part"), "{e}");
     assert_eq!(s.split_face(&SplitFaceOptions { body: Some(b), ..xy(2.0) }).unwrap().faces.after, 10);
+}
+
+// ---- review round 1 ----
+
+fn boxed_u() -> (Session, SplitFaceResult) {
+    let mut s = Session::new_part();
+    u_stock(&mut s);
+    s.param_set("y", &10.0.into()).unwrap();
+    let r = s.split_face(&SplitFaceOptions { plane: PlaneRef::Base(BaseName::XZ), ..xy(expr("y")) }).unwrap();
+    (s, r)
+}
+
+fn edge_id(s: &Session, body: Id, at: [f64; 3], tol: f64) -> u32 {
+    s.project().regen_edges[&body].iter().find(|e| (0..3).all(|i| (e.mid[i] - at[i]).abs() < tol)).expect("the edge").id
+}
+
+#[test]
+fn a_change_of_a_face_the_split_did_not_cut_is_not_refused() {
+    // A fillet below the split changes the body's faces on edges the plane does not cross: suppressing it is not the split's business.
+    let (mut s, b) = block();
+    let top_edge = edge_id(&s, b, [0.0, 15.0, 10.0], 1e-6);
+    let (fillet, _) = s.fillet(Some(b), &Sel::Ids(vec![top_edge]), &1.0.into(), None).unwrap();
+    let r = s.split_face(&xy(5.0)).unwrap();
+    assert_eq!(r.faces.after, r.faces.before + 4);
+    s.feature_suppress(fillet, true).unwrap();
+    s.feature_suppress(fillet, false).unwrap();
+    s.dimension_set(&DimensionTarget::Feature { feature: fillet, key: "radius".into() }, Some(&2.0.into()), None).unwrap();
+}
+
+/// A block, a boss on its top face and a split whose plane is that top face moved up by 3.
+fn block_and_boss() -> (Session, SplitFaceResult) {
+    let mut s = Session::new_part();
+    s.param_set("h", &10.0.into()).unwrap();
+    let base = s.primitive(&spec_box(40.0, 30.0, expr("h")), &Placement::Origin, None).unwrap().0.body;
+    let top = face_with(&s, base, [0.0, 0.0, 1.0], 10.0);
+    let sk = s.sketch_create(&PlaneRef::Face { body: base, face: top }, None).unwrap();
+    s.sketch_rect(sk, &0.0.into(), &0.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
+    let (boss, _) = s
+        .extrude(&Extrude {
+            down: None,
+            sketch: sk,
+            profiles: None,
+            profiles_at: None,
+            height: 10.0.into(),
+            op: Op::Add,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: Some("boss".into()),
+        })
+        .unwrap();
+    let ring = s.project().regen_faces[&boss].iter().find(|f| f.normal[2] > 0.99 && (f.centroid.z - 10.0).abs() < 1e-6).unwrap().id;
+    let r = s.split_face(&SplitFaceOptions { body: Some(boss), plane: PlaneRef::Face { body: boss, face: ring }, ..xy(3.0) }).unwrap();
+    (s, r)
+}
+
+#[test]
+fn a_cut_that_moves_with_its_plane_is_the_same_cut() {
+    let (mut s, r) = block_and_boss();
+    assert_eq!((r.faces.before, r.faces.after), (11, 15), "the four boss walls are cut");
+    // The plane follows the top of the block: 13 -> 17. The lower boss pieces (3 mm) move 4 mm, past their own extent.
+    s.param_set("h", &14.0.into()).unwrap();
+    assert_eq!(faces(&s, r.body), 15);
+    assert!(levels(&s, r.body).contains(&17.0), "{:?}", levels(&s, r.body));
+}
+
+#[test]
+fn a_suppressed_split_does_not_forget_what_it_cut() {
+    let (mut s, r) = boxed_u();
+    s.feature_suppress(r.feature, true).unwrap();
+    s.param_set("y", &2.0.into()).unwrap();
+    let before = snap(&s);
+    let e = s.feature_suppress(r.feature, false).unwrap_err().to_string();
+    assert!(e.contains("changes the faces the split cuts"), "{e}");
+    assert!(snap(&s) == before, "still suppressed, the parameter at 2");
+    // Back inside the same cut, the node is built again.
+    s.param_set("y", &12.0.into()).unwrap();
+    s.feature_suppress(r.feature, false).unwrap();
+    assert_eq!(faces(&s, r.body), 18);
+}
+
+#[test]
+fn a_split_past_the_rollback_bar_does_not_forget_what_it_cut() {
+    let (mut s, r) = boxed_u();
+    let before_split = s.project().timeline.iter().rev().find(|n| n.id != r.feature).unwrap().id;
+    s.history_rollback(Some(before_split), None).unwrap();
+    s.param_set("y", &2.0.into()).unwrap();
+    let before = snap(&s);
+    let e = s.history_rollback(None, Some("end")).unwrap_err().to_string();
+    assert!(e.contains("changes the faces the split cuts"), "{e}");
+    assert!(snap(&s) == before);
+    s.param_set("y", &12.0.into()).unwrap();
+    s.history_rollback(None, Some("end")).unwrap();
+    assert_eq!(faces(&s, r.body), 18);
+}
+
+/// The file of `s` with the faces left out of its bodies, as the app can save one.
+fn file_without_faces(s: &mut Session, name: &str) -> std::path::PathBuf {
+    let path = scratch(name);
+    s.save(Some(&path)).unwrap();
+    let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+    for b in &mut project.bodies {
+        b.faces.clear();
+    }
+    qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+    path
+}
+
+#[test]
+fn the_first_edit_after_opening_is_judged_against_the_pieces_of_the_file() {
+    for with_faces in [true, false] {
+        let (mut s, r) = boxed_u();
+        let path = if with_faces {
+            let path = scratch("split_face_open.qcad");
+            s.save(Some(&path)).unwrap();
+            path
+        } else {
+            file_without_faces(&mut s, "split_face_open_no_faces.qcad")
+        };
+        let (mut opened, report) = Session::open(&path).unwrap();
+        assert!(report.errors.is_empty() && report.warnings.is_empty(), "{with_faces}: {:?} {:?}", report.errors, report.warnings);
+        // No topology call in between: the edit is the first thing done to the document.
+        let before = snap(&opened);
+        let e = opened.param_set("y", &2.0.into()).unwrap_err().to_string();
+        assert!(e.contains("changes the faces the split cuts"), "{with_faces}: {e}");
+        assert!(snap(&opened) == before);
+        opened.param_set("y", &12.0.into()).unwrap();
+        assert_eq!(faces(&opened, r.body), 18);
+    }
+}
+
+/// A document with two splits that cross, built through the core as the app would, saved as it is.
+fn app_file_with_repeated_ids(name: &str, faces_stored: bool) -> (std::path::PathBuf, Id) {
+    let mut p = qymcad_core::model::Project::default();
+    p.new_document();
+    let a = p.add_box(40.0, 30.0, 10.0);
+    let first = p.add_split_face(a, 0, 0, 3.0);
+    p.set_feat_dim(first, "offset", "3".into());
+    let second = p.add_split_face(first, 1, 0, 0.0);
+    p.set_feat_dim(second, "offset", "0".into());
+    p.eval_parameters();
+    let (_, shapes) = qymcad_testkit::regenerate(&mut p);
+    if faces_stored {
+        let all: Vec<(Id, Vec<qymcad_core::geom::MeshFace>)> = p.regen_faces.iter().map(|(b, f)| (*b, f.clone())).collect();
+        for (b, f) in all {
+            p.set_body_faces(b, f);
+        }
+    }
+    let breps: Vec<(Id, Vec<u8>)> = {
+        let _g = qymcad_kernel::kernel_gate();
+        shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
+    };
+    let path = scratch(name);
+    qymcad_io::save_project_guarded_with_brep(&p, path.to_str().unwrap(), &breps).unwrap();
+    (path, second)
+}
+
+#[test]
+fn a_file_that_is_already_wrong_opens_with_a_warning_that_names_the_way_out() {
+    for (name, stored) in [("split_face_wrong_faces.qcad", true), ("split_face_wrong_no_faces.qcad", false)] {
+        let (path, node) = app_file_with_repeated_ids(name, stored);
+        let (mut s, report) = Session::open(&path).unwrap();
+        let warning = report
+            .warnings
+            .iter()
+            .find(|w| w.message.contains("feature_suppress or feature_delete"))
+            .unwrap_or_else(|| panic!("{stored}: {:?} {:?}", report.warnings, report.errors));
+        assert!(warning.message.contains("feature_suppress or feature_delete"), "{stored}: {}", warning.message);
+        let info = s.info();
+        assert!(
+            info.warnings.iter().any(|w| w.contains("feature_suppress or feature_delete")),
+            "{stored}: doc_info shows it too: {:?}",
+            info.warnings
+        );
+        // Tools that need the topology of the file say how to go on, and the way out works.
+        if !stored {
+            let e = s.topology(None, false).unwrap_err().to_string();
+            assert!(e.contains("feature_suppress or feature_delete"), "{e}");
+        }
+        s.feature_delete(node, false).unwrap();
+        let t = s.topology(None, false);
+        assert!(t.is_ok(), "{stored}: {:?}", t.err().map(|e| e.to_string()));
+    }
+}
+
+#[test]
+fn a_third_parallel_cut_is_refused_and_the_text_says_what_to_do() {
+    let (mut s, _) = block();
+    s.split_face(&xy(3.0)).unwrap();
+    s.split_face(&xy(6.0)).unwrap();
+    let e = refused(&mut s, &xy(8.0));
+    assert!(e.contains("distinct ids") && e.contains("`split`"), "{e}");
+    assert!(!e.contains("order that keeps"), "no order is promised: {e}");
+    assert!(!e.contains("upstream #"), "{e}");
+}
+
+#[test]
+fn an_edit_that_puts_the_plane_off_the_body_says_what_happened_and_what_to_do() {
+    let (mut s, r) = block();
+    s.param_set("cut", &5.0.into()).unwrap();
+    s.split_face(&xy(expr("cut"))).unwrap();
+    s.param_set("h", &9.0.into()).ok();
+    let before = snap(&s);
+    let e = s.param_set("cut", &50.0.into()).unwrap_err().to_string();
+    assert!(e.contains("no longer meets the body") && e.contains("Undo this edit"), "{e}");
+    assert!(snap(&s) == before);
+    let _ = r;
+}
+
+#[test]
+fn a_face_plane_offset_runs_along_the_outward_normal_and_a_refusal_says_so() {
+    let (mut s, b) = block();
+    let bottom = face_with(&s, b, [0.0, 0.0, -1.0], 0.0);
+    let e = refused(&mut s, &SplitFaceOptions { plane: PlaneRef::Face { body: b, face: bottom }, ..xy(3.0) });
+    assert!(e.contains("OUTWARD normal"), "{e}");
+    let r = s.split_face(&SplitFaceOptions { plane: PlaneRef::Face { body: b, face: bottom }, ..xy(-3.0) }).unwrap();
+    assert_eq!(levels(&s, r.body), vec![0.0, 3.0, 10.0]);
+}
+
+#[test]
+fn a_clone_of_a_placed_part_is_refused_as_a_clone_before_the_plane_is_looked_at() {
+    let (mut s, _) = block();
+    let part = s.project().components.iter().find(|c| c.kind == qymcad_core::feature::ComponentKind::Part).unwrap().id;
+    s.part_place(&PartRef::Id(part), [0.0, 0.0, 100.0], None).unwrap();
+    s.part_instance(&PartRef::Id(part), "clone", Some([100.0, 0.0, 0.0]), None).unwrap();
+    let clone = s.result_bodies().into_iter().find(|b| b.owner_part != Some(part)).unwrap().id;
+    let e = refused(&mut s, &SplitFaceOptions { body: Some(clone), ..xy(5.0) });
+    assert!(e.contains("is an instance of"), "{e}");
+}
+
+#[test]
+fn the_text_of_a_refused_creation_does_not_name_the_node_that_was_rolled_back() {
+    let (mut s, _) = block();
+    s.split_face(&xy(6.0)).unwrap();
+    let e = refused(&mut s, &xy(3.0));
+    assert!(e.contains("Split faces: the split leaves"), "{e}");
+    assert!(e.contains("(F-189)") && !e.contains("upstream #"), "numbers of findings stand in brackets at the end: {e}");
+}
+
+#[test]
+fn suppressing_a_split_warns_that_its_consumers_will_take_the_whole_face() {
+    let (mut s, _) = block();
+    let r = s.split_face(&xy(5.0)).unwrap();
+    let r = s.feature_suppress(r.feature, true).unwrap();
+    assert!(r.rebuild.notes.iter().any(|n| n.contains("WHOLE face")), "{:?}", r.rebuild.notes);
+}
+
+fn write_cube_stl(name: &str) -> std::path::PathBuf {
+    let path = scratch(name);
+    let v = [[0., 0., 0.], [10., 0., 0.], [10., 10., 0.], [0., 10., 0.], [0., 0., 10.], [10., 0., 10.], [10., 10., 10.], [0., 10., 10.]];
+    let tris = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    let mut bytes = vec![0u8; 84 + tris.len() * 50];
+    bytes[80..84].copy_from_slice(&(tris.len() as u32).to_le_bytes());
+    for (k, t) in tris.into_iter().enumerate() {
+        for (j, p) in t.into_iter().map(|i| v[i]).enumerate() {
+            for (axis, value) in p.into_iter().enumerate() {
+                let o = 84 + k * 50 + 12 + j * 12 + axis * 4;
+                bytes[o..o + 4].copy_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+    }
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[test]
+fn a_mesh_body_is_refused_with_the_document_unchanged() {
+    let mut s = Session::new_part();
+    let imported = s.import_mesh(&write_cube_stl("split_face_cube.stl"), None, Some("mm"), 1., Some("cube")).unwrap();
+    let body = imported.pieces[0].body;
+    let owner = s.project().body_owner(body).unwrap();
+    s.part_select(&PartRef::Id(owner)).unwrap();
+    let e = refused(&mut s, &SplitFaceOptions { body: Some(body), ..xy(5.0) });
+    assert!(e.contains("imported mesh"), "{e}");
+}
+
+#[test]
+fn a_change_upstream_that_moves_the_cut_faces_is_refused() {
+    // A block 12 tall and a 20 x 20 post from z = 10 to 20, united; the plane z = 14 cuts the post's four walls only. Growing the block to
+    // 15 makes the plane cut the block's walls instead: other faces carry the old ids.
+    let mut s = Session::new_part();
+    s.param_set("ah", &12.0.into()).unwrap();
+    s.primitive(&spec_box(40.0, 30.0, expr("ah")), &Placement::Origin, None).unwrap();
+    let (point, _) = s.datum_point(&PointSpec::At([0.0.into(), 0.0.into(), 10.0.into()]), None).unwrap();
+    s.primitive(&spec_box(20.0, 20.0, 10.0), &Placement::Point(point.id), None).unwrap();
+    let r = s.split_face(&xy(14.0)).unwrap();
+    let before = snap(&s);
+    let e = s.param_set("ah", &15.0.into()).unwrap_err().to_string();
+    assert!(e.contains("changes the faces the split cuts"), "{e}");
+    assert!(snap(&s) == before);
+    s.param_set("ah", &13.0.into()).unwrap();
+    assert_eq!(faces(&s, r.body), r.faces.after);
 }

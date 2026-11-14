@@ -581,6 +581,7 @@ impl Session {
         let before = self.p.clone();
         let warnings = self.advisory_warnings.clone();
         let detached = self.detached_projections.clone();
+        let split_faces = self.split_face_witness.clone();
         // Anchor resolution can rebuild even a placement-only call when cached topology is missing.
         // Retain original handles inside an enclosing boundary too; a caller may inspect a refused step.
         let nested_originals = if snapshot.is_none() {
@@ -598,6 +599,7 @@ impl Session {
             self.p = before;
             self.advisory_warnings = warnings;
             self.detached_projections = detached;
+            self.split_face_witness = split_faces;
             if let Some(shapes) = nested_originals {
                 self.shapes = shapes;
             }

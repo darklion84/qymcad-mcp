@@ -1114,6 +1114,40 @@ fn p14c_the_second_plane_of_another_direction() {
     }
 }
 
+/// P14d: three and more parallel splits in a row, per axis, rising and falling: how many are clean before the first repeat.
+#[test]
+fn p14d_how_many_parallel_splits_stay_clean() {
+    let axes: [(u8, [f64; 6], [f64; 6]); 3] = [
+        (0, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [9.0, 8.0, 7.0, 6.0, 5.0, 4.0]),
+        (1, [-12.0, -6.0, 0.0, 6.0, 12.0, 13.0], [12.0, 6.0, 0.0, -6.0, -12.0, -13.0]),
+        (2, [-15.0, -8.0, 0.0, 8.0, 15.0, 17.0], [15.0, 8.0, 0.0, -8.0, -15.0, -17.0]),
+    ];
+    for (code, up, down) in axes {
+        for (label, offsets) in [("rising", up), ("falling", down)] {
+            let mut d = Doc::new();
+            let mut src = d.p.add_box(40.0, 30.0, 10.0);
+            let mut clean = 0;
+            for off in offsets {
+                src = d.split(src, code, off);
+                d.build();
+                let r = d.sum(Some(src));
+                if r.errors.is_empty() && r.distinct_ids == r.faces {
+                    clean += 1;
+                } else {
+                    break;
+                }
+            }
+            eprintln!("K0 P14d axis {code} {label}: {clean} clean splits in a row");
+            let want = match (code, label) {
+                (0, "rising") | (1, "rising") => 2,
+                (2, "falling") => 4,
+                _ => 1,
+            };
+            assert_eq!(clean, want, "axis {code} {label}");
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 // P19: save and open.
 // ---------------------------------------------------------------------------------------------------------------------------------

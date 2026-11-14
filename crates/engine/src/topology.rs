@@ -569,6 +569,19 @@ impl Session {
         })
     }
 
+    /// What to do about repeated face ids: the known cause of the body decides. A Split faces result repeats them when splits cross or
+    /// repeat (F-189); the way out is to suppress or delete that node. Otherwise the revolved-cone advice, `cone`, applies.
+    fn ambiguity_hint(&self, body: Id, cone: &str) -> String {
+        match self.p.timeline.iter().find(|n| n.kind.body() == Some(body) && matches!(n.kind, qymcad_core::feature::FeatureKind::SplitFace { .. })) {
+            Some(node) => format!(
+                "This body comes from the Split faces node `{}` ({}), and the app repeats face ids when splits cross or repeat (F-189): feature_suppress or feature_delete that node to get unique ids",
+                self.node_name(node.id),
+                node.id
+            ),
+            None => format!("For a full-turn revolved cone, {cone}"),
+        }
+    }
+
     /// Native naming diagnostics require only the restored face pool, never tessellation or a kernel gate.
     pub(crate) fn ambiguous_face_warning(&self, body: Id) -> Option<String> {
         if self.p.mesh_born(body) {
@@ -581,7 +594,12 @@ impl Session {
         }
         let mut duplicate_ids: Vec<_> = counts.into_iter().filter_map(|(id, count)| (count > 1).then_some(id)).collect();
         duplicate_ids.sort_unstable();
-        (!duplicate_ids.is_empty()).then(|| format!("ambiguous native face ids {duplicate_ids:?}: multiple faces share each name; face selections using them are refused. For a full-turn revolved cone, reverse the construction-axis line endpoints or draw the axis line toward the sketch's +y and use a profile at larger sketch x than the line"))
+        (!duplicate_ids.is_empty()).then(|| {
+            format!(
+                "ambiguous native face ids {duplicate_ids:?}: multiple faces share each name; face selections using them are refused. {}",
+                self.ambiguity_hint(body, "reverse the construction-axis line endpoints or draw the axis line toward the sketch's +y and use a profile at larger sketch x than the line")
+            )
+        })
     }
 
     /// Native face_sphere is a permissive mesh fit (F-065), not a surface-type query.
@@ -929,7 +947,7 @@ impl Session {
     fn check_face_names(&self, body: Id, ids: &[u32]) -> Result<()> {
         let faces = self.p.regen_faces.get(&body).map(Vec::as_slice).unwrap_or_default();
         if let Some(id) = ids.iter().find(|&&id| faces.iter().filter(|f| f.id == id).count() > 1) {
-            return Err(Error::Invalid(format!("ambiguous face id {id} on body {body}: multiple native faces share this name. For a full-turn revolved cone, reverse the construction-axis line endpoints or draw the axis line toward the sketch's +y with the profile at larger sketch x than the line")));
+            return Err(Error::Invalid(format!("ambiguous face id {id} on body {body}: multiple native faces share this name. {}", self.ambiguity_hint(body, "reverse the construction-axis line endpoints or draw the axis line toward the sketch's +y with the profile at larger sketch x than the line"))));
         }
         Ok(())
     }
@@ -986,17 +1004,21 @@ impl Session {
         // the shapes (as B-rep bytes; a Shape cannot be cloned) to put back. Only files saved without faces get here.
         let before = self.p.clone();
         let before_warnings = self.advisory_warnings.clone();
+        let before_split_faces = self.split_face_witness.clone();
         let saved: Vec<(Id, Vec<u8>)> = {
             let _gate = qymcad_kernel::kernel_gate();
             self.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
         };
         self.p.mark_all_dirty();
+        self.establishing_topology = true;
         let r = self.rebuild();
+        self.establishing_topology = false;
         if r.errors.is_empty() {
             return Ok(());
         }
         self.p = before;
         self.advisory_warnings = before_warnings;
+        self.split_face_witness = before_split_faces;
         self.shapes = crate::session::restore_shapes(saved);
         let mut lines = vec!["the document has no stored faces and needs a full rebuild to read its topology; it failed".to_string()];
         lines.extend(r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)));

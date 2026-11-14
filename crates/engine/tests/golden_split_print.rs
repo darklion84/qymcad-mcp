@@ -384,3 +384,14 @@ fn deleting_split_removes_siblings_and_secondary_dependents_then_undo_restores_t
     s.undo().unwrap();
     assert_eq!(s.info(), before);
 }
+
+#[test]
+fn a_curved_face_is_refused_as_the_plane_of_a_split_with_the_document_unchanged() {
+    let mut s = Session::new_part();
+    let body = s.primitive(&PrimitiveSpec::Cylinder { r: 10.0.into(), h: 20.0.into() }, &Placement::Origin, None).unwrap().0.body;
+    let side = s.project().regen_faces[&body].iter().find(|f| (f.centroid.z - 10.0).abs() < 1e-3 && f.normal[2].abs() < 0.5).unwrap().id;
+    let before = ron::to_string(s.project()).unwrap();
+    let e = s.split(&opts(body, PlaneRef::Face { body, face: side }, 0.0.into())).unwrap_err().to_string();
+    assert!(e.contains("is not planar"), "{e}");
+    assert!(ron::to_string(s.project()).unwrap() == before);
+}

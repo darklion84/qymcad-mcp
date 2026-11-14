@@ -279,6 +279,7 @@ impl Session {
             })?;
             // The copy's nodes are new ids: a file's tolerated faults go with them (the copy has the same sizes).
             s.copy_open_faults(&nodes);
+            s.copy_split_face_witness(&nodes);
             let current = s.current_body_ids();
             let mut r = s.part_result(copy, true);
             r["copied_from"] = json!(src);

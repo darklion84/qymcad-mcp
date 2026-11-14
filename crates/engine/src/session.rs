@@ -321,6 +321,11 @@ pub struct Session {
     /// Primitive sizes that were already outside the app's fields when the file was opened, with the value they had (`None`: a
     /// formula that did not evaluate): reported then. The exemption is per size and holds while the size keeps that value.
     pub(crate) open_primitive_faults: HashMap<(Id, &'static str), Option<f64>>,
+    /// What each Split faces node last cut that was accepted (its pieces and plane), kept while the node is not built (suppressed, past
+    /// the rollback bar, unopened) so a later edit is judged against it (F-188). Rolled back with the edit that refused it.
+    pub(crate) split_face_witness: crate::split_face::Witnesses,
+    /// The full rebuild that reads a document's topology is running: a Split faces node with no pieces to compare is being measured, not edited.
+    pub(crate) establishing_topology: bool,
 }
 
 fn first_body_feature(project: &Project) -> Option<(Id, std::mem::Discriminant<qymcad_core::feature::FeatureKind>)> {
@@ -347,6 +352,8 @@ impl Session {
             drive_clamps: Vec::new(),
             open_node_faults: HashSet::new(),
             open_primitive_faults: HashMap::new(),
+            split_face_witness: HashMap::new(),
+            establishing_topology: false,
         }
     }
 
@@ -393,6 +400,8 @@ impl Session {
             drive_clamps: Vec::new(),
             open_node_faults: HashSet::new(),
             open_primitive_faults: HashMap::new(),
+            split_face_witness: HashMap::new(),
+            establishing_topology: false,
         };
         // qymcad-io settles sketches while loading, including offset cleanup. Read the original
         // recipe through the non-solving parser so that cleanup cannot erase user Point records.
@@ -514,6 +523,10 @@ impl Session {
             sess.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             r.errors.push(sess.issue(node, message));
         }
+        // A Split faces node the app made can already be wrong in the file; the rebuild did not look at the nodes it kept.
+        let checked: HashSet<Id> = checked.into_iter().chain(r.errors.iter().map(|e| e.node)).collect();
+        let split_warnings = sess.split_face_open_check(&checked);
+        r.warnings.extend(split_warnings);
         Ok((sess, r))
     }
 
@@ -835,7 +848,7 @@ impl Session {
         self.dirty_hole_dependents();
         let projections_before = self.projection_provenance();
         let split_identities = self.split_identities();
-        let split_face_snapshots = self.split_face_snapshots();
+        let split_face_before = self.split_face_witness.clone();
         let boolean_identities = self.boolean_identities();
         let before_counts: HashMap<Id, (u32, u32)> =
             self.shapes.iter().map(|(&id, sh)| (id, (sh.shell_count(), sh.solid_count()))).collect();
@@ -917,12 +930,15 @@ impl Session {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
         }
-        for (node, message) in self.split_face_refusals(&split_face_snapshots, &rebuilt) {
+        for (node, message) in self.split_face_refusals(&split_face_before, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             if !errors.iter().any(|e| e.node == node) {
                 errors.push(self.issue(node, message));
             }
         }
+        self.split_face_hints(&mut errors);
+        let failed: HashSet<Id> = errors.iter().map(|e| e.node).collect();
+        self.accept_split_faces(&rebuilt, &failed);
         for (node, message) in self.boolean_identity_refusals(&boolean_identities, &rebuilt) {
             self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
             errors.push(self.issue(node, message));
@@ -1090,6 +1106,7 @@ impl Session {
         let before = self.p.clone();
         let before_warnings = self.advisory_warnings.clone();
         let before_detached = self.detached_projections.clone();
+        let before_split_faces = self.split_face_witness.clone();
         let copies = copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh)))
             .map_err(|id| Error::Io(format!("cannot snapshot body {id} before a feature edit")))?;
         let original_shapes = std::mem::replace(&mut self.shapes, copies);
@@ -1118,6 +1135,7 @@ impl Session {
             self.p = before;
             self.advisory_warnings = before_warnings;
             self.detached_projections = before_detached;
+            self.split_face_witness = before_split_faces;
             self.shapes = original_shapes;
         }
         result
@@ -1142,10 +1160,11 @@ impl Session {
             return Err(error);
         }
         let split_identities = self.split_identities();
-        let split_face_snapshots = self.split_face_snapshots();
+        let split_face_before = self.split_face_witness.clone();
         let boolean_identities = self.boolean_identities();
         let before_warnings = self.advisory_warnings.clone();
         let before_detached = self.detached_projections.clone();
+        let before_split_faces = self.split_face_witness.clone();
         let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
         let copies = copy_shapes(
             self.p
@@ -1196,9 +1215,7 @@ impl Session {
                     .map(|(node, message)| self.issue(node, message)),
             );
             refused.extend(
-                self.split_face_refusals(&split_face_snapshots, &identity_nodes)
-                    .into_iter()
-                    .map(|(node, message)| self.issue(node, message)),
+                self.split_face_refusals(&split_face_before, &identity_nodes).into_iter().map(|(node, message)| self.issue(node, message)),
             );
             refused.extend(
                 self.boolean_identity_refusals(&boolean_identities, &identity_nodes)
@@ -1215,6 +1232,7 @@ impl Session {
             self.p = before;
             self.advisory_warnings = before_warnings;
             self.detached_projections = before_detached;
+            self.split_face_witness = before_split_faces;
             let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
             self.shapes.retain(|id, _| live.contains(id) && before_shape_ids.contains(id));
             self.shapes.extend(saved);
