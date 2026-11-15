@@ -3,9 +3,9 @@
 use qymcad_mcp::tools::{Registry, SEL_BRIEF};
 use serde_json::json;
 
-/// Size of the serialized `tools/list` result when the budget was set (218095 bytes) plus about 5%.
+/// Size of the serialized `tools/list` result when the budget was set (209135 bytes) plus about 5%.
 /// Raising it is a decision: shorten a description or a doc comment first.
-const BUDGET_BYTES: usize = 229_000;
+const BUDGET_BYTES: usize = 219_600;
 
 #[test]
 fn tools_list_stays_within_budget() {

@@ -43,7 +43,7 @@ struct RenameArgs {
 }
 
 pub fn tools() -> Vec<Tool> {
-    vec![tool("rename", "Rename exactly one native feature, sketch, body, Part or joint label without rebuilding geometry. Part/joint references are typed and names resolve only within their kind. Returns target.kind/id, previous_name, stored name, localised display_name, changed and duplicates (other ids sharing the label). Duplicate text refs require an id. A same-name request changes nothing and adds no undo entry. Undoable and allowed in batch; later steps may use the new name. Body reporting preserves name (the existing feature/import label) and adds body_name for the native body label.", |st, a: RenameArgs| {
+    vec![tool("rename", "Rename exactly one native feature, sketch, body, Part or joint label without rebuilding geometry. Part/joint references are typed and names resolve only within their kind. Returns target.kind/id, previous_name, stored name, localised display_name, changed and duplicates (other ids sharing the label). Duplicate text refs require an id. A same-name request changes nothing. Later batch steps may use the new name. Body reporting preserves name (the existing feature/import label) and adds body_name for the native body label.", |st, a: RenameArgs| {
         let s = st.doc()?;
         let target = match a.target {
             Target::Feature {feature} => RenameTarget::Feature(feature.resolve(s)?),

@@ -18,7 +18,7 @@ fn visible<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct AppearanceArgs {
-    /// Current, unconsumed body id/name. Sketches and datums are refused: the pinned app has no persisted sketch visibility.
+    /// Current, unconsumed body id/name. Sketches and datums are refused.
     body: ObjRef,
     /// Set this body's own saved visibility flag. Omitted leaves it unchanged; null is refused.
     #[serde(default, deserialize_with = "visible", skip_serializing_if = "Option::is_none")]
@@ -30,7 +30,7 @@ struct AppearanceArgs {
 }
 
 pub fn tools() -> Vec<Tool> {
-    vec![tool("appearance", "Set a current body's saved visibility and/or lineage colour without dirtying nodes or rebuilding geometry. Requires visible or color. Visibility belongs to this body id; colour follows its lineage root. color omitted = unchanged, [r,g,b] integer bytes 0..=255 = manual, null = native reset. Returns body {id,name,body_name}, lineage_root, visible, color_rgb, color_source (manual if the root has a map entry, even for palette-equal RGB; otherwise palette), scope {visibility:body,color:lineage}, changed. A no-op adds no undo entry. Undoable and allowed in batch. Consumed bodies, sketches, datums and unresolved/ambiguous refs are refused. The pinned app has no persisted sketch visibility. Render and export include hidden current bodies by default; visible_only=true filters them and refuses explicitly selected hidden bodies. STEP/3MF/GLB export body and imported override colours; STL/OBJ and render retain their existing shading.", |st, a: AppearanceArgs| {
+    vec![tool("appearance", "Set a current body's saved visibility and/or lineage colour without dirtying nodes or rebuilding geometry. Requires visible or color. Visibility belongs to this body id; colour follows its lineage root. color omitted = unchanged, [r,g,b] integer bytes 0..=255 = manual, null = native reset. Returns body {id,name,body_name}, lineage_root, visible, color_rgb, color_source (manual if the root has a map entry, even for palette-equal RGB; otherwise palette), scope {visibility:body,color:lineage}, changed. Consumed bodies, sketches, datums and unresolved/ambiguous refs are refused. Render and export include hidden current bodies by default; visible_only=true filters them and refuses explicitly selected hidden bodies. STEP/3MF/GLB export body and imported override colours; STL/OBJ and render retain their existing shading.", |st, a: AppearanceArgs| {
         let s = st.doc()?;
         let body = a.body.resolve(s)?;
         let result = s.appearance(body, a.visible, a.color).map_err(err)?;

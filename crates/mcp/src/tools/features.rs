@@ -291,9 +291,8 @@ pub struct HoleArgs {
     #[serde(default)]
     pub depth: Option<Num>,
     /// Stored as a fixed 10000 mm depth (the app's own maximum; QymCAD holes have no through-all). Creation is
-    /// refused if the face-branch body's bbox diagonal exceeds 10000 mm, or the sketch branch's full directed span
-    /// from its marker plane over all eight source bbox corners exceeds 10000 mm. Engine sketch edits recheck this bound;
-    /// later native app stock growth can make it blind. Explicit depth edits switch to blind.
+    /// refused if the body's bbox diagonal (face) or the full directed span from the marker plane (sketch) exceeds 10000 mm.
+    /// Explicit depth edits switch to blind.
     #[serde(default)]
     pub through: bool,
     /// plain (default), counterbore (dia2 × depth2 at the face), countersink (cone from dia2 at the face down to
@@ -597,7 +596,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             "move",
-            "Translate or rotate a body using native Move. Give at least one of dx/dy/dz (parametric incremental mm; omitted axes are zero), or rotation with literal degrees, axis and optional literal pivot, exclusively. Axes and pivot use the source part's local frame. Default pivot is the current display mesh bbox centre, sampled once. Repeated simple moves reuse the native node id and report reused; formulas retain full-precision translation accumulation. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Rotation accumulation onto a Move with translation formulas is refused because native composition cannot preserve their axis dependencies. First rotation and rotation of plain numeric Moves are supported. Returns body, source_body, reused, evaluated affine transform (row-major 3x4), and rebuild. Native dx/dy/dz dimensions are total affine translation, including pivot correction; angle/pivot have no drivers. Persistent face/edge names pass through; Move creates no of_feature roles. Re-read topology on the returned body before selecting.",
+            "Translate or rotate a body using native Move. Give at least one of dx/dy/dz (parametric incremental mm; omitted axes are zero; total affine translation including rotation pivot correction), or rotation with literal degrees, axis and optional literal pivot, exclusively. Axes and pivot use the source part's local frame. Default pivot is the current display mesh bbox centre, sampled once. Repeated simple moves reuse the native node id and report reused; formulas retain full-precision translation accumulation. Rotation onto a Move with translation formulas is refused; the first rotation and rotation of plain numeric Moves are supported. Returns body, source_body, reused, evaluated affine transform (row-major 3x4), and rebuild. Angle and pivot have no drivers. Persistent face/edge names pass through; Move creates no of_feature roles. Re-read topology on the returned body before selecting.",
             |st, a: MoveArgs| {
                 let translation = match (a.dx, a.dy, a.dz) {
                     (None, None, None) => None,
@@ -616,7 +615,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "plane_offset",
-            "Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Order as in the app: offset first, then tilt about the offset origin. A base plane offsets toward +Z (XY), +Y (XZ, whose sketch normal is -Y) or +X (YZ); a datum base offsets along its current normal; this plane's own tilt never rotates its offset. Tilt X then Tilt Y use the reference plane's axes before its own Turn: a datum parent's Turn rotates only that parent's sketch axes and is not inherited; Turn is about the final normal. To offset along a tilted normal, make a tilted datum with dist 0 and offset a child from it. A sketch's world_frame.origin is the projection of world zero onto the plane, not the tilt pivot. Returns plane/rebuild; sketch on it with {\"plane\": id}. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material.",
+            "Create a datum plane offset from a base or datum plane, with optional native Tilt X, Tilt Y and Turn angles (degrees, default 0). Distance must remain within ±100000 mm and angles within ±360°, including evaluated edits; values outside are refused. Formulas and named dimensions remain editable. Order as in the app: offset first, then tilt about the offset origin. A base plane offsets toward +Z (XY), +Y (XZ, whose sketch normal is -Y) or +X (YZ); a datum base offsets along its current normal; this plane's own tilt never rotates its offset. Tilt X then Tilt Y use the reference plane's axes before its own Turn: a datum parent's Turn rotates only that parent's sketch axes and is not inherited; Turn is about the final normal. To offset along a tilted normal, make a tilted datum with dist 0 and offset a child from it. A sketch's world_frame.origin is the projection of world zero onto the plane, not the tilt pivot. Returns plane/rebuild; sketch on it with {\"plane\": id}.",
             |st, a: PlaneOffsetArgs| {
                 let s = st.doc()?;
                 let base = a.base.resolve(s)?;
@@ -626,16 +625,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "extrude",
-            concat!(
-                "Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a \
-                 new body. Atomic: if the feature does not build, nothing changes and the error is returned. Also \
-                 returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. \
-                 On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. \
-                 For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. \
-                 Optional down gives native Two sides with independent positive lengths: normal spans [-down, height], reverse [-height, down]. Both lengths stay parametric; down must remain finite and greater than 1e-9, including later edits, and cannot be combined with symmetric or through. Recreate the feature to return to one side. Two-sided cuts use their exact ends without one-sided entry clearance. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. \
-                 Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane.",
-                stale!()
-            ),
+            concat!("Extrude sketch contours: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic. Also returns the result bodies (volume, bbox). One-sided cuts extend the entry end 0.001 mm behind the sketch plane to break coplanarity. On an internal datum plane this removes an extra 0.001 mm of material; a cut entering from a stock face keeps its nominal pocket depth. For an exact pocket floor, sketch on the top face or a plane at the top and cut in reverse; the 0.001 mm entry clearance then lies outside the material. Optional down gives native Two sides with independent positive lengths: normal spans [-down, height], reverse [-height, down]. Both lengths stay parametric; down must remain finite and greater than 1e-9, including later edits, and cannot be combined with symmetric or through. Recreate the feature to return to one side. Two-sided cuts use their exact ends without one-sided entry clearance. Cuts ending at the far stock boundary also receive clearance to become through cuts; through=true goes to the end of the stock on the chosen side; with direction symmetric it spans both sides of the sketch plane.", stale!()),
             |st, a: ExtrudeArgs| {
                 let s = st.doc()?;
                 let sketch = a.sketch.resolve(s)?;
@@ -667,11 +657,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "revolve",
-            concat!(
-                "Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the \
-             part's body), cut, intersect, or a new body. Atomic. Pinned OCCT can refuse a later cone-mouth chamfer because of surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full turn draw the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep.",
-                stale!()
-            ),
+            concat!("Revolve sketch contours about an axis in the sketch plane: add material (the first add creates the part's body), cut, intersect, or a new body. Atomic. A later chamfer of a cone mouth can fail on surface parameterization, including overlapping cones; orientation alone does not predict failure. If the distance fits, for a full turn draw the axis line toward the sketch's +y with the profile at larger x than the line, or reverse the construction-axis line endpoints. For a partial turn, reversing endpoints changes the sweep.", stale!()),
             |st, a: RevolveArgs| {
                 let s = st.doc()?;
                 let sketch = a.sketch.resolve(s)?;
@@ -743,20 +729,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "fillet",
-            concat!(
-                "Round edges of a body. `edges` is a selection: ids from topology, or a description such as \
-             {\"edges_of\": {\"facing\": \"+z\"}} (top outline), {\"along\": \"z\"} (vertical edges), or \
-             {\"concave\": true} (inward corners, including boss/plate circles). For a named boss/plate junction \
-             use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}. \
-             Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement \
-             among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; \
-             0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals \
-                 can require about 20–30 degrees. Give `feature` to replace the whole edge set of an existing fillet; \
-              with `feature`, only `edges` is accepted and use `dimension_set` for values. The edges \
-              are stored by their persistent names, which QymCAD carries across upstream edits. A radius too big \
-             for the geometry is an error and nothing changes. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
-                stale!()
-            ),
+            concat!("Round edges of a body. `edges` is a selection: ids from topology, or a description such as {\"edges_of\": {\"facing\": \"+z\"}} (top outline), {\"along\": \"z\"} (vertical edges), or {\"concave\": true} (inward corners, including boss/plate circles). For a named boss/plate junction use {\"between\": [{\"of_feature\": \"X\", \"role\": \"wall\"}, {\"of_feature\": \"Y\", \"role\": \"cap_end\"}]}. Concave/convex exclude seams and G1 tangent junctions; uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees). Fallback facet normals can require about 20–30 degrees. Give `feature` to replace the whole edge set of an existing fillet; with `feature`, only `edges` is accepted and use `dimension_set` for values. The edges are stored by their persistent names. A radius too big for the geometry is an error and nothing changes. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.", stale!()),
             |st, a: FilletArgs| {
                 let s = st.doc()?;
                 let edges = a.edges.resolve(s)?;
@@ -775,10 +748,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "chamfer",
-            concat!(
-                 "Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. Give `feature` to replace the whole edge set of an existing chamfer; with `feature`, only `edges` and optional `reference_face` are accepted and use `dimension_set` for values. The native d2 dimension is mm in Two distances and degrees in Leg and angle. A formula reading a reference measurement updates in the engine; the app may need a second regeneration. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.",
-                stale!()
-            ),
+            concat!("Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `angle` gives Leg and angle, strictly between 0 and 90 degrees. d2 and angle exclude each other. Give `feature` to replace the whole edge set of an existing chamfer; with `feature`, only `edges` and optional `reference_face` are accepted and use `dimension_set` for values. The native d2 dimension is mm in Two distances and degrees in Leg and angle. Optional reference_face selects exactly one persistent face adjacent to every picked non-seam edge; losing that adjacency after an edit refuses atomically. Without it, native automatic choice/flip applies. reference_face and true flip require an asymmetric mode. Returns body/rebuild plus chamfer {mode,reference_face,flip}. Seam edges are dropped automatically and counted in rebuild.notes; a selection containing only seams is refused. During blending, the kernel extends a blend along edges tangent-continuous with a selected edge; preview with select shows only the selected edges, including seams.", stale!()),
             |st, a: ChamferArgs| {
                 let s = st.doc()?;
                 let edges = a.edges.resolve(s)?;
@@ -804,17 +774,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "hole",
-            concat!(
-                "Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or countersink; blind (`depth`) or `through`. \
-             Sketch placement supports world/fixed datum frames and stock-lineage face hosts; parameterized/named datum, projected marker or independent face support is refused. The entire transitive named-expression source graph must be free of reference (non-driving) measurements, including earlier source sketches, the marker itself, aliases and named Point formulas; refusal names the measurement. Global parameters, driving dimensions and named driving Point coordinates stay allowed; driving sources do not require sketch-array ordering. Uses every isolated point along the negative sketch normal (`flip` reverses). Optional `points` must list ALL eligible ids exactly once; native subsets are unsupported. \
-             Every requested point must retain a nonzero bore face or the call refuses atomically, naming the missing point. `at`/`offset` are face-only; `points`/`flip` are sketch-only. \
-             Persisted sketch dependency metadata bridges global and named coordinate edits in the engine and app; unnamed in-app sketch dimension edits leave holes stale until an upstream fix. Reopen/save through the engine after app structural sketch edits to refresh metadata. \
-             The face may be described ({\"facing\": \"+z\"}, {\"of_feature\": \"plate\", \"role\": \"cap_end\"}): \
-             it is stored as the app's pick: frozen to the persistent face id it matched, not re-resolved after upstream edits. `at` is a world point. \
-             `through` stores a fixed 10000 mm depth: face creation checks the body bbox diagonal; sketch creation checks the full directed span from the marker plane over all eight source bbox corners. \
-             A span over 10000 mm refuses, rechecked on engine sketch-hole edits/open/rebuild. Later native app stock growth can make the hole blind. Explicit depth edits switch to blind. Sketch holes refuse off_u/off_v dimension edits.",
-                stale!()
-            ),
+            concat!("Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or countersink; blind (`depth`) or `through`. `at`/`offset` are face-only; `points`/`flip` are sketch-only. The face may be described ({\"facing\": \"+z\"}, {\"of_feature\": \"plate\", \"role\": \"cap_end\"}): it is stored as the app's pick, frozen to the persistent face id it matched. `at` is a world point. A sketch hole uses every isolated point along the negative sketch normal (`flip` reverses); optional `points` must list ALL eligible ids exactly once, and every point must retain a nonzero bore face or the call refuses atomically, naming it. Sketch placement supports world/fixed datum frames and stock-lineage face hosts; parameterized/named datum, projected marker or independent face support is refused. The whole named-expression source graph must be free of reference (non-driving) measurements; the refusal names the measurement. Global parameters, driving dimensions and named driving Point coordinates stay allowed. Persisted sketch dependency metadata covers global and named edits; unnamed in-app sketch dimension edits leave holes stale: reopen and save through the engine to refresh. `through` stores a fixed 10000 mm depth; a span over 10000 mm is refused, and an explicit depth edit switches to blind. Sketch holes refuse off_u/off_v dimension edits.", stale!()),
             |st, a: HoleArgs| {
                 let s = st.doc()?;
                 let depth = match (a.depth, a.through) {
@@ -892,7 +852,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "draft",
-            concat!("Tilt faces by `angle` about a planar neutral face using native Draft, as the app's Draft command: e.g. faces {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}, {\"facing\": \"+y\"}, {\"facing\": \"-y\"}]}, neutral {\"facing\": \"-z\"}, angle -3 tapers a block toward its top. The pull direction is the neutral face's outward normal (reversed by `flip`); positive angles widen the solid moving against it. The app's range 0 < |angle| <= 60 holds on creation and on every later param_set/dimension_set/open rebuild. A neutral listed among the faces is removed from them, as the app does (said in `rebuild.notes`; the remaining faces are then stored as picks). Refused: a curved neutral, faces that hold only the neutral, a drafted face parallel to the neutral, and a result that lost faces (a shrinking draft that closes a face into an apex builds silently in QymCAD). Draft before filleting adjacent edges: tangent fillets along vertical edges are drafted with the walls, walls under horizontal fillets fail. Give `feature` to replace the faces (and the neutral if given) of an existing draft; the angle formula and flip stay, values via `dimension_set` key `angle`.", stale!()),
+            concat!("Tilt faces by `angle` about a planar neutral face using native Draft, as the app's Draft command: e.g. faces {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}, {\"facing\": \"+y\"}, {\"facing\": \"-y\"}]}, neutral {\"facing\": \"-z\"}, angle -3 tapers a block toward its top. The pull direction is the neutral face's outward normal (reversed by `flip`); positive angles widen the solid moving against it. The app's range 0 < |angle| <= 60 holds on creation and on every later edit. A neutral listed among the faces is removed from them, as the app does (said in `rebuild.notes`; the remaining faces are then stored as picks). Refused: a curved neutral, faces that hold only the neutral, a drafted face parallel to the neutral, and a result that lost faces. Draft before filleting adjacent edges: tangent fillets along vertical edges are drafted with the walls, walls under horizontal fillets fail. Give `feature` to replace the faces (and the neutral if given) of an existing draft; the angle formula and flip stay, values via `dimension_set` key `angle`.", stale!()),
             |st, a: DraftArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;
@@ -914,7 +874,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "thicken",
-            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness > 0 on creation and on every later param_set/dimension_set/open rebuild: QymCAD builds a negative thickness deeper than the part as material on its far side without an error. A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`.", stale!()),
+            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`.", stale!()),
             |st, a: ThickenArgs| {
                 let s = st.doc()?;
                 let face = a.face.resolve(s)?;
@@ -934,7 +894,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "remove_face",
-            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused natively and can rebuild a different shape (removing only a blind bottom makes a through hole) — check the returned volume and face count (F-125). Faces are resolved against one source body before mutation and stored as persistent ids with native witnesses; a lost or ambiguous face is an error, never a nearest-face substitution. A failed heal reports the native reason and selected ids and rolls back. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged, downstream features rebuild, and the operation is atomic. Shell and push_face also support whole-selection re-picks through `feature`, preserving node ids, formulas, downstream rebuilds and atomic rollback.", stale!()),
+            concat!("Remove a non-empty set of faces and heal the body using native RemoveFace. Select EVERY face of the detail (a blind hole: its wall and bottom; a boss: its sides and top; a hole wall can be split into two cylinder faces): a partial set is not refused and can rebuild a different shape (removing only a blind bottom makes a through hole), so check the returned volume and face count. A lost or ambiguous face is an error. Give `feature` to re-pick an existing RemoveFace node: the complete set is replaced, the node id remains unchanged and downstream features rebuild.", stale!()),
             |st, a: RemoveFaceArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;

@@ -126,7 +126,9 @@ fn the_description_says_what_the_tool_does_and_what_it_does_not() {
     let listed = r.list();
     let tool = listed.iter().find(|t| t["name"] == "split_face").expect("split_face is registered");
     let description = tool["description"].as_str().unwrap();
-    for phrase in ["ONE piece", "EVERY face", "not `split`", "local frame", "added_faces", "F-192", "F-193", "recreate the split"] {
+    for phrase in
+        ["ONE piece", "EVERY face", "not `split`", "local frame", "added_faces", "WHOLE face", "whole edge chain", "recreate the split"]
+    {
         assert!(description.contains(phrase), "the description lacks `{phrase}`");
     }
 }

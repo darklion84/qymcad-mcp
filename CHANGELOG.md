@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows
 - `remove_face` re-pick refuses, with the document unchanged, when the core cannot build the new face set, like every other re-pick (it used to commit the failed node).
 
 ### Changed
+- Tool descriptions lose the review-log material: F-xxx numbers, history, "under this pin", undo internals, rare core refusals and repeated notes; units, directions, required/exclusive arguments, limits and what is returned stay. `tools/list` is 3% smaller again (216403 to 209135 bytes) and the budget test follows.
 - Selection arguments carry a one-line digest again (`SEL_BRIEF`, at most 300 characters: ids, `facing`, `along`, `edges_of`, `largest`, then "Full grammar: tool `select`") in `fillet`, `chamfer`, `hole`, `shell`, `push_face`, `draft` and `thicken` (a required field's own doc comment had replaced the pointer there), and a selector parse error ends with the same digest. The full grammar is still sent once.
 - `tools/list` is 8% smaller (237914 to 215853 bytes): the selection grammar is sent once, in the `select` description, and every other selection argument carries a one-line pointer to it (it was embedded nine times); the `Num`, `ObjRef`, `PlaneArg` and `SplitPlaneArg` doc comments are one or two lines. A test caps the size and checks the grammar appears once.
 - `initialize` instructions open with the purpose, the QymCAD version note and the atomicity rule, and the call-log path follows them: clients cut long instructions and used to drop exactly these closing lines.

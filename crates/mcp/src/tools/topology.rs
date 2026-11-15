@@ -587,13 +587,7 @@ pub fn tools() -> Vec<Tool> {
     vec![
         tool(
             "topology",
-            "List a body's native localised body_name and its part-local faces and edges with persistent ids (coordinate_frame: part_local): faces (kind plane/cylinder/cone/sphere/other, \
-             centroid, outward normal for planes, tessellation-based area (areas can be below analytic by up to ~2% on very small curved regions, including flat faces with curved boundaries, \
-             as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind \
-             line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE \
-             body and are only valid after the latest feature: every feature makes a new body, so call topology \
-             again after each one. Rows flagged ambiguous_id share a native name; warnings explain the workaround, and face selections matching these ids are refused. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; \
-             prefer descriptive selections (see `select`) over raw ids.",
+            "List a body's native localised body_name and its part-local faces and edges with persistent ids (coordinate_frame: part_local): faces (kind plane/cylinder/cone/sphere/other, centroid, outward normal for planes, tessellation-based area (areas can be below analytic by up to ~2% on very small curved regions, including flat faces with curved boundaries, as observed, not a guaranteed bound; use analytic dimensions for exact areas), axis+radius for cylinders/cones) and edges (kind line/circle/arc/other, endpoints a/b, mid, length, centre/axis/radius for circles). Ids belong to ONE body and are only valid after the latest feature: every feature makes a new body, so call topology again after each one. Rows flagged ambiguous_id share a native name; warnings explain the workaround, and face selections matching these ids are refused. Use the filters (face_kind, edge_kind, facing, along, limit) to keep it short; prefer descriptive selections (see `select`) over raw ids.",
             |st, a: TopologyArgs| {
                 let s = st.doc()?;
                 let body = body_of(s, &a.body)?;
