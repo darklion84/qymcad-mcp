@@ -8,7 +8,7 @@ crates/mcp  (qymcad-mcp)      transport, tool registry, argument schemas (schema
    │  typed Rust calls
 crates/engine (qymcad-engine) Session: one open document; Parts/joints, params, sketches, features, topology, export, render
    │  QymCAD API
-qymcad-core / -io / -kernel / -testkit   (git dependency, pinned tag — ADR 0003)
+qymcad-core / -io / -kernel   (git dependency, pinned tag — ADR 0003; -testkit in tests only)
    │
 OpenCASCADE (dylibs, Homebrew)
 ```

@@ -10,7 +10,6 @@ license.workspace = true
 qymcad-core.workspace = true
 qymcad-io.workspace = true
 qymcad-kernel.workspace = true
-qymcad-testkit.workspace = true
 qymcad-i18n.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -24,6 +23,8 @@ ron = "0.12"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+# Upstream's headless harness: tests only (D2). Runtime regeneration is `hole_sketch::regenerate_dirty`.
+qymcad-testkit.workspace = true
 # An independent PNG decoder to check the encoder and rendered images (tests only, ADR 0004).
 png = "0.18"
 

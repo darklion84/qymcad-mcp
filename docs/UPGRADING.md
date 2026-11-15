@@ -37,6 +37,13 @@ Lessons from v0.1.1-dev.20261026 (ADR 0021):
 - A `schema_version` that does not change says nothing about compatibility: load a file written by the new
   release with the old release's loader.
 
+Runtime regeneration goes through `hole_sketch::regenerate_dirty` (D2), our copy of the four steps of
+`qymcad_testkit::regenerate_dirty_with_shapes` (gate, `OcctKernel { shapes, quality_k }`, `Project::regenerate`,
+shapes back). `qymcad-testkit` is a dev-dependency only: tests use it as the reference. On every upgrade diff
+`crates/qymcad-testkit/src/lib.rs` (`regenerate_dirty_with_shapes`, `regenerate_with_shapes`) in the new tag
+against our copy; if upstream's harness grows a step (a new `OcctKernel` field set, another gate, a post-pass),
+mirror it or the document rebuilds differently from the app.
+
 Search `rg 'upstream_|pinned upstream|pins the upstream' crates/engine` on each upgrade to catch newly added
 pinning tests. `descriptive_fillet_survives_an_upstream_edit` is a correctness regression about editing an
 ancestor, not a test that expects an upstream defect; keep it.

@@ -8,6 +8,25 @@ use qymcad_core::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Rebuild what is marked dirty with the real OCCT kernel, seeded with the live shapes, as the app does after a
+/// local edit. The same four steps as `qymcad_testkit::regenerate_dirty_with_shapes` (upstream's test harness,
+/// kept out of the runtime dependencies on purpose, D2): take the gate, give the kernel the shapes and the
+/// document's tessellation tolerance, `Project::regenerate`, take the shapes back. On upgrade compare with
+/// upstream's function (docs/UPGRADING.md).
+fn regenerate_dirty(
+    project: &mut Project,
+    shapes: HashMap<Id, qymcad_kernel::Shape>,
+) -> (qymcad_core::feature::RegenReport, HashMap<Id, qymcad_kernel::Shape>) {
+    let _gate = qymcad_kernel::kernel_gate();
+    let kernel = qymcad_kernel::OcctKernel {
+        shapes: std::cell::RefCell::new(shapes),
+        quality_k: project.geom_quality.deflection_k(),
+        ..Default::default()
+    };
+    let report = project.regenerate(&kernel);
+    (report, kernel.shapes.into_inner())
+}
+
 /// Sketch placement for the native Hole feature.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HoleSketch {
@@ -271,7 +290,7 @@ impl Session {
             let rebuilding: HashSet<_> = self.p.regen_plan().nodes.into_iter().collect();
             let points: Vec<_> = (0..self.p.sketches.len()).map(|si| self.point_records(si)).collect();
             let shapes = std::mem::take(&mut self.shapes);
-            let (again, shapes) = qymcad_testkit::regenerate_dirty_with_shapes(&mut self.p, shapes);
+            let (again, shapes) = regenerate_dirty(&mut self.p, shapes);
             self.shapes = shapes;
             report.errors.retain(|(id, _)| !rebuilding.contains(id));
             report.errors.extend(again.errors);

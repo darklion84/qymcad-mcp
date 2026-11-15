@@ -1458,7 +1458,7 @@ asserts those exact fractional halves before checking away-from-zero output.
   and source id, distinguishing retained stored geometry from unavailable exact geometry.
   `imports.rs:66-95` stages embedded bytes in exclusively created process/counter temporary files,
   reads the exact format under the native gate,
-  and removes the staged file. We use this equivalent helper although testkit is a runtime dependency:
+  and removes the staged file. We use this equivalent helper (testkit is a dev-dependency only, D2):
   it avoids the testkit helper's shared temporary names, supplies the gate, preserves scale and reports
   errors. Source warnings, structurally marked by the private `AdvisoryWarning::ImportSource` variant,
   survive retessellation while their nodes remain (`Session::rebuild_retrying`),
