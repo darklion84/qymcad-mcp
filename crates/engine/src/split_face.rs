@@ -2,6 +2,7 @@
 //! The native result is silently wrong in five ways (F-187..F-190); each is refused at creation and again on every
 //! rebuild of the node: a creation, a parameter or dimension edit, an edit upstream, a reorder.
 use crate::session::{AdvisoryWarning, NodeIssue};
+use crate::vec3::{add, dot};
 use crate::{Error, Id, Num, PlaneRef, Rebuild, Result, Session};
 use qymcad_core::{
     errors::{CoreError, Op},
@@ -79,14 +80,6 @@ pub(crate) struct Witnesses {
 
 fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
     (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
-}
-
-fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    std::array::from_fn(|i| a[i] + b[i])
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    (0..3).map(|i| a[i] * b[i]).sum()
 }
 
 type Plane = ([f64; 3], [f64; 3]);

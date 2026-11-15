@@ -131,7 +131,7 @@ fn two_ring_cone_bevel_is_rejected_even_when_another_native_face_is_spherical() 
     let tolerance = 16.0 * f32::EPSILON as f64 * scale;
     assert!(!coplanar_points(&points, tolerance));
     assert!(two_axial_levels(&points, [0.0, 0.0, 1.0], tolerance));
-    assert!(points.iter().all(|&p| (norm(sub(p, center)) - radius).abs() <= tolerance), "false fit passes radial validation");
+    assert!(points.iter().all(|&p| (length(sub(p, center)) - radius).abs() <= tolerance), "false fit passes radial validation");
 
     // The stock spans x=±7.5 mm. A radius-1 sphere centered at x=100 is disjoint;
     // its presence defeats the aggregate zero-spheres shortcut without changing

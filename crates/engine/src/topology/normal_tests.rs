@@ -136,12 +136,12 @@ fn native_cone_meridian_normals_match_formula_and_outward_winding() {
             let facet_angle = angle + 8.0_f64.to_radians();
             let facet = [facet_angle.sin() * azimuth.cos(), facet_angle.sin() * azimuth.sin(), facet_angle.cos()];
             let normal = cone_normal(origin, axis, slope, point, facet).unwrap();
-            assert!(norm(sub(normal.0, expected)) < 1e-7, "cone normal equals analytic formula at {slope_deg} degrees");
+            assert!(length(sub(normal.0, expected)) < 1e-7, "cone normal equals analytic formula at {slope_deg} degrees");
             assert_eq!(normal.1, angular_error(1.0_f64.to_radians()));
             let inward = cone_normal(origin, axis, slope, point, facet.map(|x| -x)).unwrap();
-            assert!(norm(sub(inward.0, expected.map(|x| -x))) < 1e-7, "bore winding reverses analytic cone normal");
+            assert!(length(sub(inward.0, expected.map(|x| -x))) < 1e-7, "bore winding reverses analytic cone normal");
             let reversed_axis = cone_normal(origin, axis.map(|x| -x), -slope, point, facet).unwrap();
-            assert!(norm(sub(reversed_axis.0, expected)) < 1e-7, "axis sense does not change the normal");
+            assert!(length(sub(reversed_axis.0, expected)) < 1e-7, "axis sense does not change the normal");
         }
     }
 }
@@ -154,9 +154,9 @@ fn analytic_circle_tangent_matches_formula_at_chord_points() {
         let radius = 7.0 * 0.15_f64.cos();
         let point = [2.0 + radius * theta.cos(), 3.0 + radius * theta.sin(), 4.0];
         let expected = [-theta.sin(), theta.cos(), 0.0];
-        assert!(norm(sub(circle_tangent(&edge, point).unwrap(), expected)) < 1e-12);
+        assert!(length(sub(circle_tangent(&edge, point).unwrap(), expected)) < 1e-12);
         edge.axis = [0.0, 0.0, -1.0];
-        assert!(norm(sub(circle_tangent(&edge, point).unwrap(), expected.map(|x| -x))) < 1e-12);
+        assert!(length(sub(circle_tangent(&edge, point).unwrap(), expected.map(|x| -x))) < 1e-12);
         edge.axis = [0.0, 0.0, 1.0];
     }
 }

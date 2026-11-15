@@ -59,6 +59,7 @@ mod test_support;
 mod thread;
 mod topology;
 mod value;
+mod vec3;
 
 pub use appearance::{AppearanceBody, AppearanceResult, AppearanceScope};
 pub use assembly::{

@@ -6,6 +6,7 @@
 
 use crate::error::{Error, Result};
 use crate::session::Session;
+use crate::vec3::{cross, dot, length, sub};
 use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::{MeshEdge, MeshFace};
 use qymcad_core::model::Id;
@@ -465,18 +466,6 @@ fn unit(d: [f64; 3]) -> Result<[f64; 3]> {
     Ok([d[0] / l, d[1] / l, d[2] / l])
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn norm(a: [f64; 3]) -> f64 {
-    dot(a, a).sqrt()
-}
-
 pub(crate) fn face_key(f: &MeshFace) -> FaceKey {
     FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id }
 }
@@ -639,7 +628,7 @@ impl Session {
                 let v = mesh.verts.get(vi as usize)?;
                 let point = [v.x, v.y, v.z];
                 scale = point.into_iter().chain(center).map(f64::abs).fold(scale, f64::max);
-                residual = residual.max((norm(sub(point, center)) - radius).abs());
+                residual = residual.max((length(sub(point, center)) - radius).abs());
             }
         }
         // Coordinates originate in f32 (F-063); 16 ulps allow the fitted center/radius arithmetic.
@@ -790,7 +779,7 @@ impl Session {
                         else {
                             return false;
                         };
-                        norm(sub(normal(a, point, na).0, normal(b, point, nb).0)) <= 1e-6
+                        length(sub(normal(a, point, na).0, normal(b, point, nb).0)) <= 1e-6
                     });
                     return (!g1).then_some((e.id, None));
                 }
@@ -1092,10 +1081,6 @@ pub(crate) fn mesh_body_refusal(b: Id) -> String {
     )
 }
 
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
 // F-021: use the full angular deflection for unknown surface normals, rather than assuming
 // the typical half-deflection facet error is a guaranteed maximum on arbitrary surfaces.
 const MESH_ANGLE: f64 = 0.3;
@@ -1141,7 +1126,7 @@ fn cone_slope(face: &MeshFace, mesh: &qymcad_core::geom::Mesh, origin: [f64; 3],
             coordinate_scale = coordinate_scale.max(v.x.abs()).max(v.y.abs()).max(v.z.abs());
             let offset = sub([v.x, v.y, v.z], origin);
             let z = dot(offset, axis);
-            let r = norm(sub(offset, axis.map(|x| x * z)));
+            let r = length(sub(offset, axis.map(|x| x * z)));
             meridian.push((z, r));
         }
     }
@@ -1204,12 +1189,12 @@ fn polyline_is_straight(poly: &[[f32; 3]]) -> bool {
     let (Some(start), Some(end)) = (poly.first(), poly.last()) else { return false };
     let start = start.map(f64::from);
     let chord = sub(end.map(f64::from), start);
-    let length = norm(chord);
-    if length <= 1e-12 {
+    let span = length(chord);
+    if span <= 1e-12 {
         return false;
     }
-    let direction = chord.map(|x| x / length);
-    poly.iter().all(|p| norm(cross(sub(p.map(f64::from), start), direction)) <= 1e-9 * length)
+    let direction = chord.map(|x| x / span);
+    poly.iter().all(|p| length(cross(sub(p.map(f64::from), start), direction)) <= 1e-9 * span)
 }
 
 /// Point at a fraction of native polyline arc length; missing/degenerate polylines fail closed.
@@ -1222,7 +1207,7 @@ fn polyline_point(poly: &[[f32; 3]], fraction: f64) -> Option<[f64; 3]> {
     for side in poly.windows(2) {
         let start = side[0].map(f64::from);
         let delta = sub(side[1].map(f64::from), start);
-        let length = norm(delta);
+        let length = length(delta);
         if length > 1e-12 && remaining <= length {
             return Some(std::array::from_fn(|i| start[i] + delta[i] * remaining / length));
         }
@@ -1260,7 +1245,7 @@ fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core
             }
             let t = (dot(sub(target, start), delta) / length2).clamp(0.0, 1.0);
             let point = std::array::from_fn(|j| start[j] + t * delta[j]);
-            sides.push((norm(sub(point, target)), start, end, point, normal));
+            sides.push((length(sub(point, target)), start, end, point, normal));
         }
     }
     sides.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -1268,7 +1253,9 @@ fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core
         for p in &tb {
             for i in 0..3 {
                 let (u, v) = (p[i], p[(i + 1) % 3]);
-                if (norm(sub(start, u)) <= eps && norm(sub(end, v)) <= eps) || (norm(sub(start, v)) <= eps && norm(sub(end, u)) <= eps) {
+                if (length(sub(start, u)) <= eps && length(sub(end, v)) <= eps)
+                    || (length(sub(start, v)) <= eps && length(sub(end, u)) <= eps)
+                {
                     let nb = unit(cross(sub(p[1], p[0]), sub(p[2], p[0]))).ok()?;
                     return Some((point, unit(sub(end, start)).ok()?, na, nb));
                 }
@@ -1281,8 +1268,8 @@ fn edge_face_sample(e: &MeshEdge, a: &MeshFace, b: &MeshFace, mesh: &qymcad_core
 /// A candidate plane normal from the farthest noncollinear point vectors.
 fn point_plane_normal(points: &[[f64; 3]]) -> Option<[f64; 3]> {
     let &origin = points.first()?;
-    let u = points.iter().map(|&p| sub(p, origin)).max_by(|a, b| norm(*a).total_cmp(&norm(*b)))?;
-    let normal = points.iter().map(|&p| cross(u, sub(p, origin))).max_by(|a, b| norm(*a).total_cmp(&norm(*b))).unwrap_or([0.0; 3]);
+    let u = points.iter().map(|&p| sub(p, origin)).max_by(|a, b| length(*a).total_cmp(&length(*b)))?;
+    let normal = points.iter().map(|&p| cross(u, sub(p, origin))).max_by(|a, b| length(*a).total_cmp(&length(*b))).unwrap_or([0.0; 3]);
     unit(normal).ok()
 }
 
@@ -1304,7 +1291,7 @@ fn two_circle_support(points: &[[f64; 3]], tolerance: f64) -> bool {
         let farthest = points
             .iter()
             .map(|&p| {
-                let distance = sample.iter().map(|&q| norm(sub(p, q))).fold(f64::INFINITY, f64::min);
+                let distance = sample.iter().map(|&q| length(sub(p, q))).fold(f64::INFINITY, f64::min);
                 (p, distance)
             })
             .max_by(|a, b| a.1.total_cmp(&b.1));
@@ -1351,7 +1338,7 @@ fn planar_normal(f: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3
         let p: Vec<[f64; 3]> = t.iter().map(|&i| mesh.verts.get(i as usize).map(|v| [v.x, v.y, v.z])).collect::<Option<_>>()?;
         let (u, v) = (sub(p[1], p[0]), sub(p[2], p[0]));
         let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-        let l = norm(n);
+        let l = length(n);
         if l > 1e-12 {
             ns.push(([n[0] / l, n[1] / l, n[2] / l], l));
         }
@@ -1363,7 +1350,7 @@ fn planar_normal(f: &MeshFace, mesh: &qymcad_core::geom::Mesh) -> Option<[f64; 3
 
 /// An edge's kind and true length: exact for lines and circles/arcs, the polyline length otherwise.
 fn edge_kind_length(e: &MeshEdge, polylines: &HashMap<u32, Vec<[f32; 3]>>) -> (EdgeKind, f64) {
-    let chord = norm(sub(e.b, e.a));
+    let chord = length(sub(e.b, e.a));
     if e.radius > 1e-9 {
         if chord < 1e-6 {
             (EdgeKind::Circle, 2.0 * std::f64::consts::PI * e.radius)
@@ -1382,7 +1369,7 @@ fn edge_kind_length(e: &MeshEdge, polylines: &HashMap<u32, Vec<[f32; 3]>>) -> (E
 /// The angle an arc spans, radians: from `a` to `b` through `mid` about `c`.
 fn arc_angle(a: [f64; 3], b: [f64; 3], mid: [f64; 3], c: [f64; 3]) -> f64 {
     let (ca, cb) = (sub(a, c), sub(b, c));
-    let cos = (dot(ca, cb) / (norm(ca) * norm(cb)).max(1e-300)).clamp(-1.0, 1.0);
+    let cos = (dot(ca, cb) / (length(ca) * length(cb)).max(1e-300)).clamp(-1.0, 1.0);
     let theta = cos.acos();
     // The short way round passes near the chord's midpoint side; if `mid` is on the other side, it is the long way.
     let half = [(a[0] + b[0]) / 2.0 - c[0], (a[1] + b[1]) / 2.0 - c[1], (a[2] + b[2]) / 2.0 - c[2]];
@@ -1397,7 +1384,7 @@ fn polyline_length(p: &[[f32; 3]]) -> f64 {
     p.windows(2)
         .map(|w| {
             let d = [(w[1][0] - w[0][0]) as f64, (w[1][1] - w[0][1]) as f64, (w[1][2] - w[0][2]) as f64];
-            norm(d)
+            length(d)
         })
         .sum()
 }

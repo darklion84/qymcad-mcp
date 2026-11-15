@@ -11,6 +11,7 @@
 
 use crate::error::{Error, Result};
 use crate::session::Session;
+use crate::vec3::{cross, dot, normalize, sub};
 use qymcad_core::model::Id;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -44,8 +45,8 @@ impl View {
                 // Cam3::default(): yaw −0.7, pitch 0.6; `Cam3::basis` in qymcad-ui-state
                 let (yaw, pitch) = (-0.7f64, 0.6f64);
                 let fwd = [-pitch.cos() * yaw.cos(), -pitch.cos() * yaw.sin(), -pitch.sin()];
-                let right = norm(cross(fwd, [0.0, 0.0, 1.0]));
-                (right, norm(cross(right, fwd)))
+                let right = normalize(cross(fwd, [0.0, 0.0, 1.0]));
+                (right, normalize(cross(right, fwd)))
             }
             View::Top => ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
             View::Bottom => ([1.0, 0.0, 0.0], [0.0, -1.0, 0.0]),
@@ -179,7 +180,7 @@ pub(crate) fn rasterize(items: &[Item], view: View, w: usize, h: usize) -> Vec<u
     let (uc, vc) = ((umin + umax) / 2.0, (vmin + vmax) / 2.0);
     let proj = |p: [f64; 3]| (sw as f64 / 2.0 + (dot(p, right) - uc) * scale, sh as f64 / 2.0 - (dot(p, up) - vc) * scale, dot(p, fwd));
     // a light fixed to the camera, from the upper left and in front, plus some ambient
-    let light = norm([
+    let light = normalize([
         -0.45 * right[0] + 0.55 * up[0] - 0.70 * fwd[0],
         -0.45 * right[1] + 0.55 * up[1] - 0.70 * fwd[1],
         -0.45 * right[2] + 0.55 * up[2] - 0.70 * fwd[2],
@@ -195,7 +196,7 @@ pub(crate) fn rasterize(items: &[Item], view: View, w: usize, h: usize) -> Vec<u
         next_id += faces + 1;
         for (ti, tri) in it.tris.iter().enumerate() {
             let (a, b, c) = (it.verts[tri[0] as usize], it.verts[tri[1] as usize], it.verts[tri[2] as usize]);
-            let n = norm(cross(sub(b, a), sub(c, a)));
+            let n = normalize(cross(sub(b, a), sub(c, a)));
             if dot(n, fwd) >= 0.0 {
                 continue; // bodies are oriented outwards: this one faces away
             }
@@ -269,27 +270,6 @@ pub(crate) fn rasterize(items: &[Item], view: View, w: usize, h: usize) -> Vec<u
         }
     }
     out
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
-fn norm(a: [f64; 3]) -> [f64; 3] {
-    let l = dot(a, a).sqrt();
-    if l > 0.0 {
-        [a[0] / l, a[1] / l, a[2] / l]
-    } else {
-        a
-    }
 }
 
 #[cfg(test)]
