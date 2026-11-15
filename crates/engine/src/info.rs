@@ -176,17 +176,126 @@ impl Session {
     }
 }
 
+/// The name of a node's kind as `timeline[].kind` reports it (a public field, so these words are an interface).
+///
+/// An explicit `match` with no `_` arm: a variant added by a QymCAD upgrade stops the build here until it is given a
+/// word on purpose, instead of leaking its `Debug` spelling into the API. The words are the lowercased variant names
+/// (what the `Debug` form used to give), except `Combine`, which reads by its operation.
 fn kind_name(k: &qymcad_core::feature::FeatureKind) -> String {
     use qymcad_core::feature::FeatureKind;
-    if let FeatureKind::Combine { op, .. } = k {
-        let op = match op {
-            0 => "cut",
-            1 => "add",
-            2 => "intersect",
-            _ => "unknown",
-        };
-        return format!("extrude ({op})");
+    match k {
+        FeatureKind::Combine { op, .. } => {
+            let op = match op {
+                0 => "cut",
+                1 => "add",
+                2 => "intersect",
+                _ => "unknown",
+            };
+            format!("extrude ({op})")
+        }
+        FeatureKind::Sketch { .. } => "sketch".into(),
+        FeatureKind::Plane { .. } => "plane".into(),
+        FeatureKind::DatumPoint { .. } => "datumpoint".into(),
+        FeatureKind::DatumAxis { .. } => "datumaxis".into(),
+        FeatureKind::Extrude { .. } => "extrude".into(),
+        FeatureKind::Revolve { .. } => "revolve".into(),
+        FeatureKind::Sweep { .. } => "sweep".into(),
+        FeatureKind::Loft { .. } => "loft".into(),
+        FeatureKind::Box3 { .. } => "box3".into(),
+        FeatureKind::Cylinder { .. } => "cylinder".into(),
+        FeatureKind::Sphere { .. } => "sphere".into(),
+        FeatureKind::Fillet { .. } => "fillet".into(),
+        FeatureKind::Patch { .. } => "patch".into(),
+        FeatureKind::SurfaceReplace { .. } => "surfacereplace".into(),
+        FeatureKind::Trim { .. } => "trim".into(),
+        FeatureKind::Stitch { .. } => "stitch".into(),
+        FeatureKind::MeshSolid { .. } => "meshsolid".into(),
+        FeatureKind::MeshRecognised { .. } => "meshrecognised".into(),
+        FeatureKind::FaceCopy { .. } => "facecopy".into(),
+        FeatureKind::OffsetSurface { .. } => "offsetsurface".into(),
+        FeatureKind::Chamfer { .. } => "chamfer".into(),
+        FeatureKind::Cone { .. } => "cone".into(),
+        FeatureKind::Torus { .. } => "torus".into(),
+        FeatureKind::Prism { .. } => "prism".into(),
+        FeatureKind::Shell { .. } => "shell".into(),
+        FeatureKind::Draft { .. } => "draft".into(),
+        FeatureKind::LinearArray { .. } => "lineararray".into(),
+        FeatureKind::CircularArray { .. } => "circulararray".into(),
+        FeatureKind::MirrorPart { .. } => "mirrorpart".into(),
+        FeatureKind::Thicken { .. } => "thicken".into(),
+        FeatureKind::SplitFace { .. } => "splitface".into(),
+        FeatureKind::PartInstance { .. } => "partinstance".into(),
+        FeatureKind::ComponentPattern { .. } => "componentpattern".into(),
+        FeatureKind::Mirror { .. } => "mirror".into(),
+        FeatureKind::Hole { .. } => "hole".into(),
+        FeatureKind::Thread { .. } => "thread".into(),
+        FeatureKind::Auger { .. } => "auger".into(),
+        FeatureKind::RemoveFace { .. } => "removeface".into(),
+        FeatureKind::SplitBody { .. } => "splitbody".into(),
+        FeatureKind::PushFace { .. } => "pushface".into(),
+        FeatureKind::Move { .. } => "move".into(),
+        FeatureKind::Piece { .. } => "piece".into(),
+        FeatureKind::BodyBoolean { .. } => "bodyboolean".into(),
+        FeatureKind::Import { .. } => "import".into(),
+        FeatureKind::MeshPiece { .. } => "meshpiece".into(),
     }
-    let s = format!("{k:?}");
-    s.split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::kind_name;
+    use qymcad_core::feature::FeatureKind;
+
+    /// What `kind_name` reported before it became a `match`: the first word of `Debug`, lowercased.
+    fn debug_word(k: &FeatureKind) -> String {
+        format!("{k:?}").split(|c: char| !c.is_alphanumeric()).next().unwrap_or("").to_lowercase()
+    }
+
+    #[test]
+    fn combine_reads_by_its_operation() {
+        for (op, word) in [(0u8, "extrude (cut)"), (1, "extrude (add)"), (2, "extrude (intersect)"), (9, "extrude (unknown)")] {
+            let k: FeatureKind =
+                serde_json::from_value(serde_json::json!({"Combine": {"src": 1, "sketch": 2, "height": 1.0, "op": op, "body": 3}}))
+                    .unwrap();
+            assert_eq!(kind_name(&k), word);
+        }
+    }
+
+    /// Every kind that has a plain constructor reads as the old `Debug` word did.
+    #[test]
+    fn simple_kinds_keep_their_debug_word() {
+        let kinds = [
+            FeatureKind::Sketch { sketch: 1 },
+            FeatureKind::Plane { plane: 1 },
+            FeatureKind::DatumPoint { point: 1 },
+            FeatureKind::DatumAxis { axis: 1 },
+            FeatureKind::Cylinder { r: 1.0, h: 1.0, body: 1 },
+            FeatureKind::Sphere { r: 1.0, body: 1 },
+            FeatureKind::Cone { r1: 1.0, r2: 1.0, h: 1.0, body: 1 },
+            FeatureKind::Torus { major: 2.0, minor: 1.0, body: 1 },
+            FeatureKind::Prism { r: 1.0, n: 6, h: 1.0, body: 1 },
+            FeatureKind::Trim { src: 1, tool: 2, keep: [0.0; 3], body: 3 },
+            FeatureKind::Stitch { parts: vec![1, 2], tol: 0.1, body: 3 },
+            FeatureKind::Move { src: 1, mat: [0.0; 12], body: 2 },
+            FeatureKind::Piece { src: 1, body: 2 },
+            FeatureKind::PartInstance { src_comp: 1, body: 2 },
+        ];
+        for k in &kinds {
+            assert_eq!(kind_name(k), debug_word(k), "{k:?}");
+        }
+    }
+
+    /// Every variant the pinned enum declares (read from its source) has an arm saying its lowercased name;
+    /// together with the compiler's exhaustiveness this is "no variant changed its word", also for the variants
+    /// no test can build cheaply. `Combine` has its own arm (above).
+    #[test]
+    fn every_variant_has_its_old_word() {
+        let source = include_str!("info.rs");
+        let kinds = qymcad_testkit::feature_kinds();
+        assert!(kinds.len() >= 40);
+        for v in kinds.iter().filter(|v| *v != "Combine") {
+            let arm = format!("FeatureKind::{v} {{ .. }} => \"{}\".into(),", v.to_lowercase());
+            assert!(source.contains(&arm), "no arm `{arm}`");
+        }
+    }
 }
