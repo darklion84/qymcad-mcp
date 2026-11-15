@@ -135,7 +135,7 @@ impl Session {
                 lines.join("; ")
             )));
         }
-        let results: Vec<Id> = self.result_bodies().iter().map(|b| b.id).collect();
+        let results: Vec<Id> = self.current_body_ids();
         let is_hidden = |id: Id| self.p.mesh_index(id).is_some_and(|i| !self.p.bodies[i].visible);
         let Some(asked) = bodies else {
             if results.is_empty() {
