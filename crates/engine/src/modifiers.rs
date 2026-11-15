@@ -12,7 +12,7 @@ use qymcad_core::model::{ChamferShape, ElemSnapshot, HoleTool, Id};
 use qymcad_core::refs::{Fingerprint, Ref};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Which side of the faces a shell's wall goes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
