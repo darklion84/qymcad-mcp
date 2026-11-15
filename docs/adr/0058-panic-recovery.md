@@ -33,4 +33,7 @@ editing on is not offered.
 
 - A panic costs the call, not the session: the model can save the work elsewhere and ask for a restart.
 - Read tools that panic taint too; they changed nothing, but the process is equally suspect.
+- Only Rust panics are caught: an abort or a segfault inside the native kernel still ends the process.
+- Tools other than modelling calls and `batch` have no snapshot (`topology`/`select`/`measure` can rebuild topology in place, `undo`, `doc_save`); a panic there says the document may be partly changed instead of claiming it is intact.
+- The protected file is the one the document had when the panic happened; a recovery save elsewhere does not make it writable again.
 - `panic = "abort"` must never be set for this binary; it would bypass the recovery.

@@ -965,7 +965,10 @@ impl Session {
             self.refuse_unless_reported(&mut errors, id, error.to_string());
         }
         for issue in self.check_thread_stock() {
-            self.refuse_unless_reported(&mut errors, issue.node, issue.message);
+            // A node that already failed keeps its own (native) error on the node too, unlike the checks around it.
+            if !errors.iter().any(|e| e.node == issue.node) {
+                self.refuse(&mut errors, issue.node, issue.message);
+            }
         }
         for (id, message) in self.hole_site_refusals() {
             self.refuse_unless_reported(&mut errors, id, message);

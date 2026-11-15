@@ -44,7 +44,14 @@ pub struct State {
     skip_history: bool,
     /// Set when a tool panicked (ADR 0058): the call was rolled back, but the process is suspect, so only
     /// reading and saving the work elsewhere stay available until the server restarts.
-    tainted: Option<String>,
+    tainted: Option<Taint>,
+}
+
+/// Why the server is in recovery mode, and the file it must not overwrite (taken when the panic happened, so a
+/// recovery save elsewhere does not make the original writable again).
+struct Taint {
+    cause: String,
+    original: Option<std::path::PathBuf>,
 }
 
 impl State {
@@ -123,12 +130,12 @@ const TAINTED_RULE: &str = "Until the server restarts, only doc_info, doc_save t
 
 /// After a panic the process is suspect: like a CAD app's recovery mode, it reads the model and writes it out
 /// elsewhere, but never edits it or overwrites the file it came from.
-fn tainted_allows(name: &str, args: &Value, session: Option<&Session>) -> Result<(), String> {
+fn tainted_allows(name: &str, args: &Value, original: Option<&std::path::Path>) -> Result<(), String> {
     match name {
         "doc_info" | "export" | "render" => Ok(()),
         "doc_save" => {
             let target = args.get("path").and_then(Value::as_str).map(std::path::Path::new);
-            let current = session.and_then(Session::path);
+            let current = original;
             let same = |a: &std::path::Path, b: &std::path::Path| {
                 a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
             };
@@ -342,9 +349,9 @@ impl Registry {
     /// `Err` = no such tool (a protocol error). `Ok(Err)` = the tool ran and failed (a tool error for the model).
     pub fn call(&mut self, name: &str, args: Value) -> Result<Result<Content, String>, String> {
         let t = self.tools.iter().find(|t| t.name == name).ok_or_else(|| format!("unknown tool: {name}"))?;
-        if let Some(cause) = &self.state.tainted {
-            if let Err(refusal) = tainted_allows(name, &args, self.state.session.as_ref()) {
-                return Ok(Err(format!("{cause}. {refusal}. {TAINTED_RULE}")));
+        if let Some(taint) = &self.state.tainted {
+            if let Err(refusal) = tainted_allows(name, &args, taint.original.as_deref()) {
+                return Ok(Err(format!("{}. {refusal}. {TAINTED_RULE}", taint.cause)));
             }
         }
         // All modelling mutations share one undo/rollback boundary, including multi-entity sketch_add.
@@ -368,13 +375,24 @@ impl Registry {
             Ok(result) => result,
             Err(panic) => {
                 let reason = panic_text(&*panic);
-                if let (Some(snapshot), Some(s)) = (snapshot, self.state.session.as_mut()) {
-                    s.finish_tool_edit(snapshot, false);
-                }
-                self.state.tainted = Some(format!("`{name}` hit an internal error: {reason}"));
-                return Ok(Err(format!(
-                    "internal error in `{name}`: {reason}. The document is as it was before this call. {TAINTED_RULE}"
-                )));
+                // Only a modelling call (and batch, which restores its own) has a snapshot to go back to. Other tools
+                // can still change the session (an in-place topology rebuild, undo, the saved path): say so.
+                let restored = match (snapshot, self.state.session.as_mut()) {
+                    (Some(snapshot), Some(s)) => {
+                        s.finish_tool_edit(snapshot, false);
+                        true
+                    }
+                    _ => name == "batch",
+                };
+                let state = if restored {
+                    "The document is as it was before this call."
+                } else {
+                    "This tool has no rollback, so the open document may be partly changed; check a recovery save after restarting."
+                };
+                let original = self.state.session.as_ref().and_then(Session::path).map(std::path::Path::to_path_buf);
+                let original = self.state.tainted.take().and_then(|t| t.original).or(original);
+                self.state.tainted = Some(Taint { cause: format!("`{name}` hit an internal error: {reason}"), original });
+                return Ok(Err(format!("internal error in `{name}`: {reason}. {state} {TAINTED_RULE}")));
             }
         };
         if let Some(mut snapshot) = snapshot {
@@ -521,14 +539,39 @@ mod panic_tests {
         assert_eq!(timeline_len(&registry), before);
         assert!(registry.call("doc_info", json!({})).unwrap().is_ok());
         assert!(registry.call("doc_save", json!({})).unwrap().unwrap_err().contains("needs a new path"));
+    }
 
+    #[test]
+    fn recovery_saves_elsewhere_and_never_over_the_original_file() {
         let dir = std::env::temp_dir().join(format!("qymcad-m7-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("recovered.qcad");
-        registry.call("doc_save", json!({"path": path, "allow_empty": true})).unwrap().unwrap();
-        let again = registry.call("doc_save", json!({"path": path, "allow_empty": true})).unwrap().unwrap_err();
-        assert!(again.contains("must not overwrite"), "{again}");
+        let (original, recovered) = (dir.join("original.qcad"), dir.join("recovered.qcad"));
+        let mut registry = Registry::new();
+        registry.call("doc_new", json!({})).unwrap().unwrap();
+        registry.call("doc_save", json!({"path": original, "allow_empty": true})).unwrap().unwrap();
+        registry.tools.retain(|t| t.name != "fillet");
+        registry.tools.push(panicking_fillet());
+        registry.call("fillet", json!({})).unwrap().unwrap_err();
+
+        let over = registry.call("doc_save", json!({"path": original, "allow_empty": true})).unwrap().unwrap_err();
+        assert!(over.contains("must not overwrite"), "{over}");
+        registry.call("doc_save", json!({"path": recovered, "allow_empty": true})).unwrap().unwrap();
+        let after = registry.call("doc_save", json!({"path": original, "allow_empty": true})).unwrap().unwrap_err();
+        assert!(after.contains("must not overwrite"), "a recovery save elsewhere keeps the original protected: {after}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_panic_in_a_tool_without_rollback_does_not_claim_the_document_is_intact() {
+        let mut registry = Registry::new();
+        registry.call("doc_new", json!({})).unwrap().unwrap();
+        registry.tools.retain(|t| t.name != "topology");
+        registry
+            .tools
+            .push(tool("topology", "Test read that panics", |_, _: Value| -> Result<Value, String> { panic!("tessellation exploded") }));
+        let error = registry.call("topology", json!({})).unwrap().unwrap_err();
+        assert!(error.contains("no rollback") && !error.contains("as it was before"), "{error}");
+        assert!(registry.call("sketch_create", json!({"plane":"XY"})).unwrap().is_err());
     }
 
     #[test]

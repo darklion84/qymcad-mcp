@@ -91,7 +91,9 @@ fn run(tools: &[Tool], state: &mut State, arguments: Value) -> Result<Content, S
         Ok(result) => result,
         Err(panic) => {
             // This boundary owns the snapshot: roll back here, then let `Registry::call` report and taint (ADR 0058).
-            state.doc()?.finish_tool_edit(snapshot, false);
+            if let Ok(session) = state.doc() {
+                session.finish_tool_edit(snapshot, false);
+            }
             std::panic::resume_unwind(panic);
         }
     };

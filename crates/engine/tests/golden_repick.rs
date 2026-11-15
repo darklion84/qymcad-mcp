@@ -424,3 +424,24 @@ fn repick_f074_thin_wall_matches_creation_refusal_and_restores_exact_state() {
     assert!(error.contains("does not fit these edges together"), "{error}");
     unchanged(&s, &before);
 }
+
+/// P2: a re-pick rebuilds only its own dependency closure, and a refused one leaves every body, including the
+/// ones outside that closure, with its original B-rep (F-034).
+#[test]
+fn refused_repick_among_two_bodies_keeps_every_brep() {
+    let mut s = Session::new_part();
+    let plate = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(plate, &0.0.into(), &0.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
+    let (body, _) = s.extrude(&extrusion(plate, 1.0.into(), Op::Add)).unwrap();
+    let other = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(other, &40.0.into(), &0.0.into(), &20.0.into(), &20.0.into(), false).unwrap();
+    s.extrude(&extrusion(other, 10.0.into(), Op::NewBody)).unwrap();
+    let edges = s.topology(Some(body), true).unwrap().edges;
+    let short: Vec<u32> = edges.iter().filter(|e| (e.a[2] - e.b[2]).abs() > 0.9).map(|e| e.id).collect();
+    let top: Vec<u32> = edges.iter().filter(|e| e.a[2] > 0.9 && e.b[2] > 0.9).map(|e| e.id).collect();
+    let (feature, _) = s.fillet(Some(body), &Sel::Ids(vec![short[0]]), &5.0.into(), None).unwrap();
+    let before = snapshot(&s);
+    let error = s.repick_fillet(feature, &Sel::Ids(vec![top[0]])).unwrap_err().to_string();
+    assert!(error.contains("fillet"), "{error}");
+    unchanged(&s, &before);
+}

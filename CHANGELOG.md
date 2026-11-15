@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased — review fixes
 
 ### Fixed
-- A panic inside a tool no longer kills the server (ADR 0058): the call is rolled back, returns an error with the panic message, and the server goes into recovery mode until restart (only `doc_info`, `export`, `render` and `doc_save` to a new path are allowed). `batch` rolls back every step on a panic.
+- A panic inside a tool no longer kills the server (ADR 0058): the call is rolled back, returns an error with the panic message, and the server goes into recovery mode until restart (only `doc_info`, `export`, `render` and `doc_save` to a new path are allowed; the file the document had at the panic stays protected after a recovery save). `batch` rolls back every step on a panic. A panic in a tool without a snapshot (`topology`, `select`, `measure`, `undo`, `doc_save`) says the document may be partly changed.
 - `doc_open` no longer re-parses the whole document for the QymCAD 0.1.0 spline check when the file has no spline records (ron scans the rest of the input on every skipped number, F-195): seconds to milliseconds on a large file.
 - `remove_face` re-pick refuses, with the document unchanged, when the core cannot build the new face set, like every other re-pick (it used to commit the failed node).
 
