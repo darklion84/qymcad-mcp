@@ -216,25 +216,30 @@ fn retention_name(name: &str) -> bool {
     name.starts_with("qymcad-mcp-") && name.ends_with(".jsonl")
 }
 
-fn retention_selection(files: &[(String, SystemTime)], now: SystemTime) -> Vec<String> {
-    let mut candidates: Vec<_> = files.iter().filter(|(name, _)| retention_name(name)).collect();
-    candidates.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-    let recent_count = candidates.iter().filter(|(_, mtime)| now.duration_since(*mtime).unwrap_or_default() <= MAX_AGE).count();
-    let mut excess = recent_count.saturating_sub(200);
-    candidates
+/// All logs together, the new one included, stay under this: older files go first.
+const TOTAL_LIMIT: u64 = 1024 * 1024 * 1024;
+
+/// The logs to delete before a new one starts: every log older than 30 days, then the oldest beyond 200, then the
+/// oldest until the rest plus a full new file (`FILE_LIMIT`) fit in `TOTAL_LIMIT`. `files` are (name, mtime, bytes).
+fn retention_selection(files: &[(String, SystemTime, u64)], now: SystemTime) -> Vec<String> {
+    let mut candidates: Vec<_> = files.iter().filter(|(name, _, _)| retention_name(name)).collect();
+    // Newest first: the walk keeps files until a limit is reached and deletes everything older.
+    candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.cmp(&a.0)));
+    let (mut kept, mut bytes) = (0usize, FILE_LIMIT);
+    let mut deleted: Vec<String> = candidates
         .into_iter()
-        .filter(|(_, mtime)| {
-            if now.duration_since(*mtime).unwrap_or_default() > MAX_AGE {
-                true
-            } else if excess > 0 {
-                excess -= 1;
-                true
-            } else {
-                false
+        .filter(|(_, mtime, size)| {
+            let keep = now.duration_since(*mtime).unwrap_or_default() <= MAX_AGE && kept < 200 && bytes + size <= TOTAL_LIMIT;
+            if keep {
+                kept += 1;
+                bytes += size;
             }
+            !keep
         })
-        .map(|(name, _)| name.clone())
-        .collect()
+        .map(|(name, _, _)| name.clone())
+        .collect();
+    deleted.reverse();
+    deleted
 }
 
 fn prune(directory: &Path, now: SystemTime) {
@@ -250,7 +255,8 @@ fn prune(directory: &Path, now: SystemTime) {
                     }
                     let name = entry.file_name();
                     let Some(name) = name.to_str().filter(|name| retention_name(name)) else { return Ok(()) };
-                    files.push((name.to_owned(), entry.metadata()?.modified()?));
+                    let metadata = entry.metadata()?;
+                    files.push((name.to_owned(), metadata.modified()?, metadata.len()));
                     Ok(())
                 });
                 failed |= result.is_err();
@@ -573,22 +579,33 @@ mod tests {
     fn retention_age_cap_foreign_files_and_new_file_exclusion() {
         let now = UNIX_EPOCH + Duration::from_secs(100 * 86400);
         let mut files = vec![
-            ("qymcad-mcp-old.jsonl".into(), now - MAX_AGE - Duration::from_secs(1)),
-            ("foreign.jsonl".into(), UNIX_EPOCH),
-            ("qymcad-mcp-note.txt".into(), UNIX_EPOCH),
+            ("qymcad-mcp-old.jsonl".into(), now - MAX_AGE - Duration::from_secs(1), 1),
+            ("foreign.jsonl".into(), UNIX_EPOCH, 1),
+            ("qymcad-mcp-note.txt".into(), UNIX_EPOCH, 1),
         ];
         for i in 0..202 {
-            files.push((format!("qymcad-mcp-{i:03}.jsonl"), now - MAX_AGE + Duration::from_secs(i)));
+            files.push((format!("qymcad-mcp-{i:03}.jsonl"), now - MAX_AGE + Duration::from_secs(i), 1));
         }
         let deleted = retention_selection(&files, now);
         assert_eq!(deleted, ["qymcad-mcp-old.jsonl", "qymcad-mcp-000.jsonl", "qymcad-mcp-001.jsonl"]);
-        let kept: Vec<_> = files.into_iter().filter(|(name, _)| !deleted.contains(name)).collect();
+        let kept: Vec<_> = files.into_iter().filter(|(name, _, _)| !deleted.contains(name)).collect();
         assert!(retention_selection(&kept, now).is_empty(), "200 existing files retained before new file is created");
         assert!(retention_selection(
-            &[("qymcad-mcp-boundary.jsonl".into(), now - MAX_AGE), ("qymcad-mcp-future.jsonl".into(), now + MAX_AGE)],
+            &[("qymcad-mcp-boundary.jsonl".into(), now - MAX_AGE, 1), ("qymcad-mcp-future.jsonl".into(), now + MAX_AGE, 1)],
             now
         )
         .is_empty());
+    }
+
+    #[test]
+    fn retention_keeps_all_logs_under_the_total_limit_newest_first() {
+        let now = UNIX_EPOCH + Duration::from_secs(100 * 86400);
+        // 20 full files (1.25 GiB): with room for the new one, the 15 newest fit in 1 GiB.
+        let files: Vec<_> = (0..20).map(|i| (format!("qymcad-mcp-{i:02}.jsonl"), now - Duration::from_secs(100 - i), FILE_LIMIT)).collect();
+        let deleted = retention_selection(&files, now);
+        assert_eq!(deleted, (0..5).map(|i| format!("qymcad-mcp-{i:02}.jsonl")).collect::<Vec<_>>());
+        let kept: u64 = files.iter().filter(|(name, _, _)| !deleted.contains(name)).map(|(_, _, size)| size).sum();
+        assert!(kept + FILE_LIMIT <= TOTAL_LIMIT);
     }
 
     #[test]

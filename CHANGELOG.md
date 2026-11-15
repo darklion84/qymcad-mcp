@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format follows
 - A re-pick (`fillet`, `chamfer`, ... with `feature`) and a reused `move` no longer count as creating their node: `batch` reported it under `created`, and the undo label could come from it. Only an id the core allocated during the call is a created node (review item M4).
 
 ### Changed
+- The call log has a total cap: after the 30-day and 200-file rules, startup removes the oldest logs until all of them, a full new one included, fit in 1 GiB (review item M8; before, up to 12.8 GB).
 - Engine vector helpers live in one module (`vec3`): `topology` and `render` each had a private `norm` with different meanings (length vs unit vector), now `length` and `normalize` (review item C6).
 - Integration tests are one binary per crate (`crates/*/tests/it/`, review item B1): a clean test build takes 138 s instead of 173 s and 3.6 GB of target instead of 10 GB, rebuilding the tests after an engine edit 11 s instead of 24 s, the test run 398 s instead of 524 s; the 1609 tests are unchanged.
 

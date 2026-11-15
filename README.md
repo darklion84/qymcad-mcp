@@ -154,7 +154,7 @@ MIME type and `base64_bytes` (the original base64 string's UTF-8 byte length), w
 Logs contain tool arguments and results, including file paths, parameter values and error texts. They stay on
 local disk; nothing is sent anywhere. Each record is limited to 256 KiB and each file to 64 MiB. Oversized
 strings are cut with a truncation marker; oversized structured fields can become marked JSON-text prefixes.
-Startup removes matching logs older than 30 days, then keeps at most 200 previous logs.
+Startup removes matching logs older than 30 days, then keeps at most 200 previous logs, then removes the oldest until all logs, a full new one included, fit in 1 GiB.
 See [ADR 0018](docs/adr/0018-call-log.md).
 
 ## Development
