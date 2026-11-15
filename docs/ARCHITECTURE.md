@@ -119,7 +119,7 @@ without recursively calling `Registry::call`: the enclosing batch supplies the o
 and undo entry. Every step retains its normal engine atomicity, rebuild and error checks, so later steps
 can use earlier parameters and named/id-referenced sketches and features. A failure restores the enclosing
 snapshot including unpublished provisional ids (ADR 0042), adds no undo entry and reports the 1-based step index, tool and original error. Success records
-tool `batch` and label `Batch (N steps)`; individual calls and batches interleave in the same 16-entry history.
+tool `batch` and label `Batch (N steps)`; the allowed step tools are the registry's `mutating` tools (`MODELLING_TOOLS` in `crates/mcp/src/tools/mod.rs`); individual calls and batches interleave in the same 16-entry history.
 Compact results report step/tool, created-node id/name where applicable and minimal operation details,
 followed by current bodies/warnings/errors without an extra rebuild. `verbose=true` also includes every
 step's normal result. Inspection, document replacement, disk output, undo and nested batches are excluded.

@@ -1,8 +1,10 @@
 //! Ordered modelling handlers under one document snapshot; no transport or per-step history calls.
-use super::{input_schema, modelling_tool, Content, State, Tool};
+use super::{input_schema, Content, State, Tool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
+
+const MAX_STEPS: usize = 200;
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -17,9 +19,7 @@ struct BatchArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Step {
-    /// A modelling tool: param_set, dimension_set, param_delete, sketch_create, sketch_add, sketch_project, sketch_constrain, sketch_remove, sketch_edit, sketch_pattern,
-    /// plane_offset, datum_point, datum_axis, primitive, extrude, revolve, sweep, loft, fillet, chamfer, hole, shell, push_face, draft, thicken, remove_face, linear_array, circular_array,
-    /// move, mirror, thread, body_boolean, split, split_face, import, import_mesh, recognise, rename, appearance, part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete, joint_limits, feature_reorder, feature_suppress, history_rollback or feature_delete. Reads, document/file tools, undo and nested batch are refused.
+    /// A modelling tool; the allowed names are listed here when the registry is built.
     tool: String,
     /// Exactly the named tool's standalone arguments, including its JSON-string object/array leniency.
     args: Value,
@@ -31,11 +31,40 @@ fn decode(args: Value) -> Result<BatchArgs, String> {
     serde_json::from_value(args).map_err(|e| format!("bad arguments for `batch`: {e}"))
 }
 
-pub(super) fn tool() -> Tool {
+/// The batch description. The allowed tool names are listed once, in the `tool` argument of a step; both texts
+/// come from the registry's `mutating` flag, so adding a modelling tool needs no edit here.
+fn description(modelling: &[&str]) -> String {
+    format!(
+        "Run 1..={MAX_STEPS} predictable modelling operations in order with one undo entry and all-or-nothing rollback. \
+         Use batch for known parameters, sketches, features, Parts and joints referenced by name/id; joint anchors accept \
+         descriptive selections without a topology call. Use single calls when you need topology ids, sketch_info, select or a \
+         render between operations. Only the {} modelling tools named in `steps[].tool` are allowed; reads, document/file \
+         tools, undo and nested batch are refused. Every step's args are validated with that tool's standalone argument \
+         struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify \
+         the 1-based step and tool; nothing was changed, including active Part, grounding, connectors, joints, formulas and \
+         placements. Compact results contain step/tool and created node/part/joint id/name when applicable, a step's clamped \
+         (a limit moved its request) and part_delete's native_leftovers, feature_reorder action/changed/index metadata, final \
+         bodies/warnings/errors (the final assembly report lists every clamp of the batch); verbose=true adds each step's \
+         full normal JSON result as result.",
+        modelling.len()
+    )
+}
+
+/// The argument schema with the `tool` field's description listing the allowed tools.
+fn schema(modelling: &[&str]) -> Value {
+    let mut schema = input_schema::<BatchArgs>();
+    if let Some(tool) = schema.pointer_mut("/$defs/Step/properties/tool").and_then(Value::as_object_mut) {
+        tool.insert("description".into(), json!(format!("A modelling tool: {}.", modelling.join(", "))));
+    }
+    schema
+}
+
+pub(super) fn tool(modelling: &[&'static str]) -> Tool {
     Tool {
         name: "batch",
-        description: "Run 1..=200 predictable modelling operations in order with one undo entry and all-or-nothing rollback. Use batch for known parameters, sketches, features, Parts and joints referenced by name/id; joint anchors accept descriptive selections without a topology call. Use single calls when you need topology ids, sketch_info, select or a render between operations. Only modelling tools are allowed, including part_new, part_select, part_place, ground, joint_create, joint_set, joint_delete, part_instance, part_copy, part_delete and joint_limits; reads, document/file tools, undo and nested batch are refused. Every step's args are validated with that tool's standalone argument struct and JSON-string leniency before anything runs. Each handler keeps its normal rebuild/checks. Errors identify the 1-based step and tool; nothing was changed, including active Part, grounding, connectors, joints, formulas and placements. Compact results contain step/tool and created node/part/joint id/name when applicable, a step's clamped (a limit moved its request) and part_delete's native_leftovers, feature_reorder action/changed/index metadata, final bodies/warnings/errors (the final assembly report lists every clamp of the batch); verbose=true adds each step's full normal JSON result as result. Undo reports batch and Batch (N steps); counts as one of 16 retained calls.",
-        schema: input_schema::<BatchArgs>(),
+        mutating: false,
+        description: description(modelling).into(),
+        schema: schema(modelling),
         validate: Box::new(|args| decode(args).map(|_| ())),
         handler: Box::new(run),
     }
@@ -43,16 +72,13 @@ pub(super) fn tool() -> Tool {
 
 fn run(tools: &[Tool], state: &mut State, arguments: Value) -> Result<Content, String> {
     let batch = decode(arguments.clone())?;
-    if !(1..=200).contains(&batch.steps.len()) {
-        return Err("batch requires 1..=200 steps; nothing was changed".into());
+    if !(1..=MAX_STEPS).contains(&batch.steps.len()) {
+        return Err(format!("batch requires 1..={MAX_STEPS} steps; nothing was changed"));
     }
     let mut handlers = Vec::with_capacity(batch.steps.len());
     for (index, step) in batch.steps.iter().enumerate() {
         let validate = || -> Result<&Tool, String> {
-            if !modelling_tool(&step.tool) {
-                return Err("tool is not allowed in batch".into());
-            }
-            let tool = tools.iter().find(|t| t.name == step.tool).ok_or_else(|| "tool is unavailable".to_string())?;
+            let tool = tools.iter().find(|t| t.name == step.tool && t.mutating).ok_or("tool is not allowed in batch")?;
             (tool.validate)(step.args.clone())?;
             Ok(tool)
         };

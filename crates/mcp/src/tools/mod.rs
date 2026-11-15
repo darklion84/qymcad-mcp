@@ -27,6 +27,7 @@ mod topology;
 pub use topology::SEL_BRIEF;
 
 use qymcad_engine::Session;
+use std::borrow::Cow;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -54,8 +55,10 @@ type Validator = Box<dyn Fn(Value) -> Result<(), String>>;
 
 pub struct Tool {
     pub name: &'static str,
-    pub description: &'static str,
+    pub description: Cow<'static, str>,
     pub schema: Value,
+    /// A modelling tool: runs under one tool-edit snapshot and may be a `batch` step.
+    pub mutating: bool,
     handler: Handler,
     validate: Validator,
 }
@@ -102,7 +105,7 @@ where
         let a = decode_arguments::<A>(name, &argument_schema, args)?;
         f(st, a)
     });
-    Tool { name, description, schema, handler, validate }
+    Tool { name, description: description.into(), schema, mutating: MODELLING_TOOLS.contains(&name), handler, validate }
 }
 
 /// The validator and standalone handler use precisely the same decoding and typed deserialization.
@@ -111,67 +114,66 @@ fn decode_arguments<A: DeserializeOwned>(name: &str, schema: &Value, mut args: V
     serde_json::from_value(args).map_err(|e| format!("bad arguments for `{name}`: {e}"))
 }
 
-/// Single source of truth for standalone history boundaries and the batch allowlist.
-fn modelling_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "param_set"
-            | "dimension_set"
-            | "param_delete"
-            | "sketch_create"
-            | "sketch_add"
-            | "sketch_project"
-            | "sketch_constrain"
-            | "sketch_remove"
-            | "sketch_edit"
-            | "sketch_pattern"
-            | "sketch_import"
-            | "plane_offset"
-            | "datum_point"
-            | "datum_axis"
-            | "primitive"
-            | "extrude"
-            | "revolve"
-            | "sweep"
-            | "loft"
-            | "fillet"
-            | "chamfer"
-            | "hole"
-            | "shell"
-            | "push_face"
-            | "draft"
-            | "thicken"
-            | "remove_face"
-            | "move"
-            | "linear_array"
-            | "circular_array"
-            | "mirror"
-            | "thread"
-            | "body_boolean"
-            | "split"
-            | "split_face"
-            | "import"
-            | "import_mesh"
-            | "recognise"
-            | "feature_delete"
-            | "feature_suppress"
-            | "feature_reorder"
-            | "history_rollback"
-            | "rename"
-            | "appearance"
-            | "part_new"
-            | "part_select"
-            | "part_place"
-            | "ground"
-            | "joint_create"
-            | "joint_set"
-            | "joint_delete"
-            | "part_instance"
-            | "part_copy"
-            | "part_delete"
-            | "joint_limits"
-    )
-}
+/// The one list of modelling tools: those that mutate the document. It decides the history boundary of a
+/// standalone call (`Tool::mutating`, set from here when the tool is built) and the batch allowlist; the batch
+/// description and its `tool` argument schema are generated from the registry flag, never typed out again.
+const MODELLING_TOOLS: &[&str] = &[
+    "param_set",
+    "dimension_set",
+    "param_delete",
+    "sketch_create",
+    "sketch_add",
+    "sketch_project",
+    "sketch_constrain",
+    "sketch_remove",
+    "sketch_edit",
+    "sketch_pattern",
+    "sketch_import",
+    "plane_offset",
+    "datum_point",
+    "datum_axis",
+    "primitive",
+    "extrude",
+    "revolve",
+    "sweep",
+    "loft",
+    "fillet",
+    "chamfer",
+    "hole",
+    "shell",
+    "push_face",
+    "draft",
+    "thicken",
+    "remove_face",
+    "move",
+    "linear_array",
+    "circular_array",
+    "mirror",
+    "thread",
+    "body_boolean",
+    "split",
+    "split_face",
+    "import",
+    "import_mesh",
+    "recognise",
+    "feature_delete",
+    "feature_suppress",
+    "feature_reorder",
+    "history_rollback",
+    "rename",
+    "appearance",
+    "part_new",
+    "part_select",
+    "part_place",
+    "ground",
+    "joint_create",
+    "joint_set",
+    "joint_delete",
+    "part_instance",
+    "part_copy",
+    "part_delete",
+    "joint_limits",
+];
 
 /// Resolve schema references and alternatives without losing the original `$defs` root.
 fn schema_variants<'a>(schema: &'a Value, root: &'a Value, out: &mut Vec<&'a Value>) {
@@ -287,7 +289,8 @@ impl Registry {
         tools.extend(assembly::tools());
         tools.extend(topology::tools());
         tools.extend(measure::tools());
-        tools.push(batch::tool());
+        let modelling: Vec<&'static str> = tools.iter().filter(|t| t.mutating).map(|t| t.name).collect();
+        tools.push(batch::tool(&modelling));
         Registry { tools, state: State::default() }
     }
 
@@ -304,7 +307,7 @@ impl Registry {
     pub fn call(&mut self, name: &str, args: Value) -> Result<Result<Content, String>, String> {
         let t = self.tools.iter().find(|t| t.name == name).ok_or_else(|| format!("unknown tool: {name}"))?;
         // All modelling mutations share one undo/rollback boundary, including multi-entity sketch_add.
-        let mutating = modelling_tool(name);
+        let mutating = t.mutating;
         let snapshot = if mutating {
             match self.state.doc().and_then(|s| s.begin_tool_edit().map_err(|e| e.to_string())) {
                 Ok(mut snapshot) => {
@@ -404,5 +407,26 @@ mod undo_label_tests {
         assert_eq!(call.label, "Create sketch", "empty names must not erase the action label");
         assert_eq!(call.tool, "sketch_create");
         assert_eq!(call.arguments, arguments);
+    }
+}
+
+#[cfg(test)]
+mod modelling_list_tests {
+    use super::*;
+
+    #[test]
+    fn every_listed_modelling_tool_is_registered_and_batch_names_exactly_them() {
+        let registry = Registry::new();
+        for name in MODELLING_TOOLS {
+            let tool = registry.tools.iter().find(|t| t.name == *name);
+            assert!(tool.is_some_and(|t| t.mutating), "{name} is listed as modelling but not registered");
+        }
+        let batch = registry.tools.iter().find(|t| t.name == "batch").unwrap();
+        assert!(!batch.mutating, "nested batch is refused");
+        let listed = batch.schema.pointer("/$defs/Step/properties/tool/description").and_then(Value::as_str).unwrap();
+        for t in &registry.tools {
+            assert_eq!(listed.contains(&format!(" {},", t.name)) || listed.contains(&format!(" {}.", t.name)), t.mutating, "{}", t.name);
+        }
+        assert!(batch.description.contains(&format!("{} modelling tools", MODELLING_TOOLS.len())));
     }
 }
