@@ -6683,12 +6683,38 @@ Import STL, OBJ, PLY, glTF/GLB, 3MF or AMF as native mesh pieces using the app's
 
 ```json
 {
+  "$defs": {
+    "MeshFormatArg": {
+      "description": "Mesh format of `import_mesh`; the wire values are the lower-case file extensions.",
+      "enum": [
+        "auto",
+        "stl",
+        "obj",
+        "ply",
+        "gltf",
+        "glb",
+        "3mf",
+        "amf"
+      ],
+      "type": "string"
+    },
+    "MeshUnitArg": {
+      "description": "Length unit of unitless mesh coordinates.",
+      "enum": [
+        "mm",
+        "cm",
+        "m",
+        "in",
+        "ft"
+      ],
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "format": {
-      "default": "auto",
-      "description": "Format, or `auto` to use the exact extension rule. Explicit formats must agree with the extension.",
-      "type": "string"
+      "$ref": "#/$defs/MeshFormatArg",
+      "description": "Format, or `auto` to use the exact extension rule. Explicit formats must agree with the extension."
     },
     "name": {
       "default": null,
@@ -6709,12 +6735,15 @@ Import STL, OBJ, PLY, glTF/GLB, 3MF or AMF as native mesh pieces using the app's
       "type": "number"
     },
     "unit": {
-      "default": null,
-      "description": "Unit for unitless STL, OBJ and PLY coordinates. Embedded-unit formats use their own declared convention; glTF/GLB accepts only `m`.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MeshUnitArg"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Unit for unitless STL, OBJ and PLY coordinates. Embedded-unit formats use their own declared convention; glTF/GLB accepts only `m`."
     }
   },
   "required": [

@@ -796,6 +796,44 @@ fn mesh_import_move_batch_and_undo_over_real_stdio() {
 }
 
 #[test]
+fn import_mesh_format_and_unit_are_enums_in_the_schema_and_refuse_unknown_values() {
+    let dir = std::env::temp_dir().join(format!("qymcad-mcp-mesh-enum-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("tetra.stl");
+    std::fs::write(&path, "solid tetra\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 10 0 0\n   vertex 0 10 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 10 0\n   vertex 0 0 10\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 0 10\n   vertex 10 0 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 10 0 0\n   vertex 0 0 10\n   vertex 0 10 0\n  endloop\n endfacet\nendsolid tetra\n").unwrap();
+    let p = path.to_str().unwrap();
+    let mut c = Client::start();
+    c.init();
+    // The model sees the allowed values in the schema.
+    let listed = c.request("tools/list", json!({}));
+    let tool = listed["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "import_mesh").unwrap().to_string();
+    for value in ["auto", "stl", "3mf", "amf", "glb", "mm", "cm", "ft"] {
+        assert!(tool.contains(&format!("\"{value}\"")), "{value} missing from the import_mesh schema: {tool}");
+    }
+    c.ok("doc_new", json!({}));
+    // An unknown value is refused with the allowed list, before anything is read.
+    for (key, value) in [("format", "fbx"), ("format", "STL"), ("unit", "yd")] {
+        let (is_err, msg) = c.tool("import_mesh", json!({"path": p, key: value}));
+        let msg = msg.as_str().unwrap();
+        assert!(
+            is_err
+                && msg.contains("bad arguments")
+                && msg.contains("unknown variant")
+                && msg.contains(value)
+                && msg.contains("expected one of"),
+            "{key}={value}: {msg}"
+        );
+    }
+    // The documented values pass.
+    for (format, unit) in [("auto", "mm"), ("stl", "cm"), ("stl", "in")] {
+        let r = c.ok("import_mesh", json!({"path": p, "format": format, "unit": unit}));
+        assert_eq!(r["unit"], unit, "{r}");
+        c.ok("undo", json!({}));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn mesh_import_recognise_fillet_batch_and_undo_over_real_stdio() {
     let dir = std::env::temp_dir().join(format!("qymcad-mcp-recognise-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

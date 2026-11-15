@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 - `initialize` instructions open with the purpose, the QymCAD version note and the atomicity rule, and the call-log path follows them: clients cut long instructions and used to drop exactly these closing lines.
 - The call log record (a copy of the arguments and of every image) is built only when logging is on.
 - `scripts/check.sh` runs every test binary even after one fails (`--no-fail-fast`), so one red test no longer hides the rest.
+- `import_mesh`: `format` (`auto`, `stl`, `obj`, `ply`, `gltf`, `glb`, `3mf`, `amf`) and `unit` (`mm`, `cm`, `m`, `in`, `ft`) are enums in the schema, so the model sees the allowed values; the wire values are unchanged. An unknown value is now refused as `bad arguments: unknown variant ..., expected one of ...` instead of `unknown mesh format/unit`.
 - AGENTS.md: parameter names are case-sensitive (the old lowercase rule predates ADR 0021).
 - Re-pick tools (`fillet`, `chamfer`, `shell`, `push_face`, `draft`, `thicken`, `remove_face` with `feature`) reuse the bodies measured by their own rebuild instead of measuring them again for the answer (documents with joints, mates or relations still measure again, because accepting the edit solves the mechanism once more).
 - `export`, `render` and `feature_delete` read the document warnings and the timeline directly (`Session::warnings`, `Session::timeline`) instead of a full `doc_info` snapshot, which measured every body (tessellation) for one field.
