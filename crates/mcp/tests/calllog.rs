@@ -264,8 +264,11 @@ fn logging_only_changes_initialize_instructions() {
     let off_instructions = expected_initialize["result"]["instructions"].as_str().unwrap();
     assert!(!off_instructions.contains("Call log of this server process"), "off adds no log sentence");
     let (path, _) = read_log(&dir);
+    // The log sentence follows the three opening lines (purpose, app version note, atomicity).
+    let opening = off_instructions.match_indices('\n').nth(2).map_or(off_instructions.len(), |(i, _)| i + 1);
+    let (head, rest) = off_instructions.split_at(opening);
     expected_initialize["result"]["instructions"] =
-        json!(format!("{off_instructions}\nCall log of this server process (JSONL, for diagnosing problems): {}.", path.display()));
+        json!(format!("{head}Call log of this server process (JSONL, for diagnosing problems): {}.\n{rest}", path.display()));
     assert_eq!(
         logged_initialize["result"]["instructions"], expected_initialize["result"]["instructions"],
         "initialize advertises exactly the log file found on disk"
