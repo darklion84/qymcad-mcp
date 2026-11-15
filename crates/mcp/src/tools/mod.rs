@@ -42,6 +42,9 @@ pub struct State {
     created_node: Option<qymcad_engine::Id>,
     /// A successful same-state no-op restores its snapshot instead of consuming an undo entry.
     skip_history: bool,
+    /// Set when a tool panicked (ADR 0058): the call was rolled back, but the process is suspect, so only
+    /// reading and saving the work elsewhere stay available until the server restarts.
+    tainted: Option<String>,
 }
 
 impl State {
@@ -112,6 +115,39 @@ where
 fn decode_arguments<A: DeserializeOwned>(name: &str, schema: &Value, mut args: Value) -> Result<A, String> {
     decode_structured_strings(&mut args, &[schema], schema, "arguments", 0).map_err(|e| format!("bad arguments for `{name}`: {e}"))?;
     serde_json::from_value(args).map_err(|e| format!("bad arguments for `{name}`: {e}"))
+}
+
+/// What a tainted server still does (ADR 0058), as told to the model.
+const TAINTED_RULE: &str = "Until the server restarts, only doc_info, doc_save to a new path, export and render are available; \
+    save the work under a new name and restart the server to continue modelling";
+
+/// After a panic the process is suspect: like a CAD app's recovery mode, it reads the model and writes it out
+/// elsewhere, but never edits it or overwrites the file it came from.
+fn tainted_allows(name: &str, args: &Value, session: Option<&Session>) -> Result<(), String> {
+    match name {
+        "doc_info" | "export" | "render" => Ok(()),
+        "doc_save" => {
+            let target = args.get("path").and_then(Value::as_str).map(std::path::Path::new);
+            let current = session.and_then(Session::path);
+            let same = |a: &std::path::Path, b: &std::path::Path| {
+                a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
+            };
+            match (target, current) {
+                (None, _) => Err("doc_save needs a new path".into()),
+                (Some(t), Some(c)) if same(t, c) => Err("doc_save must not overwrite the file the document came from".into()),
+                _ => Ok(()),
+            }
+        }
+        _ => Err(format!("`{name}` is refused")),
+    }
+}
+
+fn panic_text(panic: &(dyn std::any::Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a panic without a message".into())
 }
 
 /// The one list of modelling tools: those that mutate the document. It decides the history boundary of a
@@ -306,6 +342,11 @@ impl Registry {
     /// `Err` = no such tool (a protocol error). `Ok(Err)` = the tool ran and failed (a tool error for the model).
     pub fn call(&mut self, name: &str, args: Value) -> Result<Result<Content, String>, String> {
         let t = self.tools.iter().find(|t| t.name == name).ok_or_else(|| format!("unknown tool: {name}"))?;
+        if let Some(cause) = &self.state.tainted {
+            if let Err(refusal) = tainted_allows(name, &args, self.state.session.as_ref()) {
+                return Ok(Err(format!("{cause}. {refusal}. {TAINTED_RULE}")));
+            }
+        }
         // All modelling mutations share one undo/rollback boundary, including multi-entity sketch_add.
         let mutating = t.mutating;
         let snapshot = if mutating {
@@ -321,7 +362,21 @@ impl Registry {
         };
         self.state.created_node = None;
         self.state.skip_history = false;
-        let result = (t.handler)(&self.tools, &mut self.state, args);
+        let handler = &t.handler;
+        let (tools, state) = (&self.tools, &mut self.state);
+        let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(tools, state, args))) {
+            Ok(result) => result,
+            Err(panic) => {
+                let reason = panic_text(&*panic);
+                if let (Some(snapshot), Some(s)) = (snapshot, self.state.session.as_mut()) {
+                    s.finish_tool_edit(snapshot, false);
+                }
+                self.state.tainted = Some(format!("`{name}` hit an internal error: {reason}"));
+                return Ok(Err(format!(
+                    "internal error in `{name}`: {reason}. The document is as it was before this call. {TAINTED_RULE}"
+                )));
+            }
+        };
         if let Some(mut snapshot) = snapshot {
             if let Some(id) = self.state.created_node {
                 snapshot.record_created_node(id);
@@ -428,5 +483,71 @@ mod modelling_list_tests {
             assert_eq!(listed.contains(&format!(" {},", t.name)) || listed.contains(&format!(" {}.", t.name)), t.mutating, "{}", t.name);
         }
         assert!(batch.description.contains(&format!("{} modelling tools", MODELLING_TOOLS.len())));
+    }
+}
+
+#[cfg(test)]
+mod panic_tests {
+    use super::*;
+    use qymcad_engine::{BaseName, PlaneRef};
+
+    fn panicking_fillet() -> Tool {
+        tool("fillet", "Test feature that panics after editing", |state, _: Value| {
+            state.doc()?.sketch_create(&PlaneRef::Base(BaseName::XY), Some("Half-made")).unwrap();
+            panic!("kernel exploded");
+        })
+    }
+
+    fn timeline_len(registry: &Registry) -> usize {
+        registry.state.session.as_ref().unwrap().project().timeline.len()
+    }
+
+    #[test]
+    fn a_panicking_tool_is_rolled_back_reported_and_taints_the_server() {
+        let mut registry = Registry::new();
+        registry.call("doc_new", json!({})).unwrap().unwrap();
+        let before = timeline_len(&registry);
+        registry.tools.retain(|t| t.name != "fillet");
+        registry.tools.push(panicking_fillet());
+
+        let error = registry.call("fillet", json!({})).unwrap().unwrap_err();
+        assert!(error.contains("internal error in `fillet`: kernel exploded"), "{error}");
+        assert!(error.contains("as it was before this call"), "{error}");
+        assert_eq!(timeline_len(&registry), before, "the half-made edit is rolled back");
+        assert!(registry.state.session.as_mut().unwrap().undo().is_err(), "a failed call leaves no undo entry");
+
+        let refused = registry.call("sketch_create", json!({"plane":"XY"})).unwrap().unwrap_err();
+        assert!(refused.contains("`sketch_create` is refused") && refused.contains("restart"), "{refused}");
+        assert_eq!(timeline_len(&registry), before);
+        assert!(registry.call("doc_info", json!({})).unwrap().is_ok());
+        assert!(registry.call("doc_save", json!({})).unwrap().unwrap_err().contains("needs a new path"));
+
+        let dir = std::env::temp_dir().join(format!("qymcad-m7-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("recovered.qcad");
+        registry.call("doc_save", json!({"path": path, "allow_empty": true})).unwrap().unwrap();
+        let again = registry.call("doc_save", json!({"path": path, "allow_empty": true})).unwrap().unwrap_err();
+        assert!(again.contains("must not overwrite"), "{again}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_panic_inside_batch_rolls_back_every_step_before_it() {
+        let mut registry = Registry::new();
+        registry.call("doc_new", json!({})).unwrap().unwrap();
+        let before = timeline_len(&registry);
+        registry.tools.retain(|t| t.name != "fillet" && t.name != "batch");
+        registry.tools.push(panicking_fillet());
+        let modelling: Vec<&'static str> = registry.tools.iter().filter(|t| t.mutating).map(|t| t.name).collect();
+        registry.tools.push(batch::tool(&modelling));
+
+        let steps = json!({"steps": [
+            {"tool": "sketch_create", "args": {"plane": "XY", "name": "First"}},
+            {"tool": "fillet", "args": {}}
+        ]});
+        let error = registry.call("batch", steps).unwrap().unwrap_err();
+        assert!(error.contains("internal error in `batch`: kernel exploded"), "{error}");
+        assert_eq!(timeline_len(&registry), before, "the completed first step is rolled back too");
+        assert!(registry.call("param_set", json!({"name":"w","value":"5"})).unwrap().is_err());
     }
 }

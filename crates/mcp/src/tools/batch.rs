@@ -86,7 +86,15 @@ fn run(tools: &[Tool], state: &mut State, arguments: Value) -> Result<Content, S
     }
     let mut snapshot = state.doc()?.begin_tool_edit().map_err(|e| e.to_string())?;
     snapshot.record_call("batch", arguments);
-    let result = execute(tools, state, &batch, &handlers);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute(tools, state, &batch, &handlers)));
+    let result = match result {
+        Ok(result) => result,
+        Err(panic) => {
+            // This boundary owns the snapshot: roll back here, then let `Registry::call` report and taint (ADR 0058).
+            state.doc()?.finish_tool_edit(snapshot, false);
+            std::panic::resume_unwind(panic);
+        }
+    };
     // No allowed handler replaces the Session; both success and failure close the same boundary.
     state.doc()?.finish_tool_edit(snapshot, result.is_ok());
     state.created_node = None;
