@@ -280,16 +280,7 @@ impl Session {
         let result = self.with_rebuild_copies(before, &nodes, "history rollback", |s| {
             s.p.set_rollback(target);
             let report = s.rebuild_for_edit(Some(&nodes))?;
-            if !report.errors.is_empty() || !s.p.regen_errors.is_empty() {
-                let mut errors: Vec<String> = report.errors.iter().map(|e| e.to_string()).collect();
-                errors.extend(
-                    s.p.regen_errors
-                        .iter()
-                        .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
-                        .map(|(id, e)| s.node_text(*id, crate::localization::error(e))),
-                );
-                return Err(Error::Rebuild(errors));
-            }
+            s.require_no_native_errors(&report)?;
             Ok(RollbackResult {
                 marker: s.rollback_info(),
                 changed: true,
@@ -341,16 +332,7 @@ impl Session {
         let result = self.with_rebuild_copies(before, &nodes, "feature suppression", |s| {
             s.p.set_feature_suppressed(ti, suppressed);
             let report = s.rebuild_for_edit(Some(&nodes))?;
-            if !report.errors.is_empty() || !s.p.regen_errors.is_empty() {
-                let mut errors: Vec<String> = report.errors.iter().map(|e| e.to_string()).collect();
-                errors.extend(
-                    s.p.regen_errors
-                        .iter()
-                        .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
-                        .map(|(id, e)| s.node_text(*id, crate::localization::error(e))),
-                );
-                return Err(Error::Rebuild(errors));
-            }
+            s.require_no_native_errors(&report)?;
             let mut result = s.suppression_result(feature, suppressed, true);
             result.lost_body_metadata = s.removed_body_metadata(metadata);
             if suppressed && matches!(s.p.timeline[ti].kind, FeatureKind::SplitFace { .. }) {
@@ -364,6 +346,23 @@ impl Session {
             self.finish_tool_edit(snapshot, result.is_ok());
         }
         result
+    }
+
+    /// A rebuild that moves the rollback bar or a suppression flag must leave no native error anywhere in the document,
+    /// not only on the nodes it reports: a failure kept on a node (`regen_errors`) refuses the edit too.
+    fn require_no_native_errors(&self, report: &Rebuild) -> Result<()> {
+        if report.errors.is_empty() && self.p.regen_errors.is_empty() {
+            return Ok(());
+        }
+        let mut errors: Vec<String> = report.errors.iter().map(|e| e.to_string()).collect();
+        errors.extend(
+            self.p
+                .regen_errors
+                .iter()
+                .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
+                .map(|(id, e)| self.node_text(*id, crate::localization::error(e))),
+        );
+        Err(Error::Rebuild(errors))
     }
 
     fn suppression_result(&self, feature: Id, suppressed: bool, changed: bool) -> SuppressResult {
@@ -624,27 +623,20 @@ impl Session {
         let live: HashSet<Id> = self.p.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
         self.shapes.retain(|id, _| live.contains(id));
         let report = self.rebuild();
-        if !report.errors.is_empty() {
+        let outcome = if report.errors.is_empty() {
+            self.assembly_accept_edit(&assembly_before).map(|()| report)
+        } else {
+            Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()))
+        };
+        // One way out of the local boundary, refused or not: the snapshot goes back only for a refusal.
+        if outcome.is_err() {
             self.restore_snapshot(snapshot);
-            self.tool_edit_active = enclosing_edit;
-            if !enclosing_edit {
-                self.prune_retired_sources();
-            }
-            return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-        }
-        if let Err(error) = self.assembly_accept_edit(&assembly_before) {
-            self.restore_snapshot(snapshot);
-            self.tool_edit_active = enclosing_edit;
-            if !enclosing_edit {
-                self.prune_retired_sources();
-            }
-            return Err(error);
         }
         self.tool_edit_active = enclosing_edit;
         if !enclosing_edit {
             self.prune_retired_sources();
         }
-        Ok(report)
+        outcome
     }
 }
 
