@@ -1424,11 +1424,26 @@ impl Session {
     /// Current bodies and regeneration diagnostics, including live topology naming warnings, without
     /// another rebuild. The current thread must not hold the native kernel gate (metrics acquire it).
     pub fn current_rebuild(&self) -> Rebuild {
+        self.rebuild_with_bodies(self.result_bodies())
+    }
+
+    /// `current_rebuild` after an edit whose closure already measured the bodies (its own rebuild report): they are
+    /// reused instead of tessellated again. A mechanism is solved once more when the edit is accepted
+    /// (`assembly_accept_edit`), which can move placements after that report, so with joints, mates or relations
+    /// the bodies are measured again.
+    pub(crate) fn current_rebuild_after_edit(&self, bodies: Vec<BodyInfo>) -> Rebuild {
+        if self.p.joints.is_empty() && self.p.mate_constraints.is_empty() && self.p.relations.is_empty() {
+            self.rebuild_with_bodies(bodies)
+        } else {
+            self.current_rebuild()
+        }
+    }
+
+    fn rebuild_with_bodies(&self, bodies: Vec<BodyInfo>) -> Rebuild {
         let errors = self.p.regen_errors.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         let mut warnings: Vec<_> = self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
         warnings.extend(self.cross_part_projection_warnings());
-        let bodies = self.result_bodies();
         warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
         Rebuild { errors, warnings, bodies, assembly: self.rebuild_assembly(), ..Default::default() }
     }

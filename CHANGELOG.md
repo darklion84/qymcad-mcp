@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - `initialize` instructions open with the purpose, the QymCAD version note and the atomicity rule, and the call-log path follows them: clients cut long instructions and used to drop exactly these closing lines.
 - AGENTS.md: parameter names are case-sensitive (the old lowercase rule predates ADR 0021).
+- Re-pick tools (`fillet`, `chamfer`, `shell`, `push_face`, `draft`, `thicken`, `remove_face` with `feature`) reuse the bodies measured by their own rebuild instead of measuring them again for the answer (documents with joints, mates or relations still measure again, because accepting the edit solves the mechanism once more).
 - `export`, `render` and `feature_delete` read the document warnings and the timeline directly (`Session::warnings`, `Session::timeline`) instead of a full `doc_info` snapshot, which measured every body (tessellation) for one field.
 - A rebuild no longer measures the bodies twice: the internal pass used to build the body report only to have it replaced right after, and only the ids were needed for the ambiguous-face warnings.
 - `export` takes the current body ids straight from the recipe instead of building the whole body report (a tessellation per body) just to read the ids; output unchanged.

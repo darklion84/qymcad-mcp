@@ -446,7 +446,7 @@ impl Session {
         let (ids, dropped_seams) = self.edges_now(src, edges)?;
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "fillet re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "fillet re-pick", |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::Fillet { edges, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a fillet feature")));
@@ -457,9 +457,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        let (_, rebuild) = seam_note((body, self.current_rebuild()), dropped_seams);
+        let (_, rebuild) = seam_note((body, self.current_rebuild_after_edit(bodies)), dropped_seams);
         Ok((body, ids, rebuild))
     }
 
@@ -483,7 +483,7 @@ impl Session {
         self.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "chamfer re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "chamfer re-pick", |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::Chamfer { edges, ref_face, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a chamfer feature")));
@@ -495,9 +495,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        let (_, rebuild) = seam_note((body, self.current_rebuild()), dropped_seams);
+        let (_, rebuild) = seam_note((body, self.current_rebuild_after_edit(bodies)), dropped_seams);
         Ok((body, ids, rebuild))
     }
 
@@ -514,7 +514,7 @@ impl Session {
         let (ids, faces_ref) = self.shell_face_ref(src, open_faces)?;
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "shell re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "shell re-pick", |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::Shell { faces: stored, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a shell feature")));
@@ -525,9 +525,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        Ok((body, ids, self.current_rebuild()))
+        Ok((body, ids, self.current_rebuild_after_edit(bodies)))
     }
 
     /// Hollow a body leaving walls of `thickness`, removing `open_faces` (at least one: QymCAD has no closed
@@ -564,7 +564,7 @@ impl Session {
         let ids = vec![key.id];
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "push_face re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "push_face re-pick", |s| {
             let stored_ref = push_face_ref(&key);
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::PushFace { face: stored, .. } = &mut node.kind else {
@@ -576,9 +576,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        Ok((body, ids, self.current_rebuild()))
+        Ok((body, ids, self.current_rebuild_after_edit(bodies)))
     }
 
     /// Move one planar face along its outward normal by `dist` (negative pushes it in).
@@ -655,7 +655,7 @@ impl Session {
         self.check_draft_pair(src, neutral_id, &ids)?;
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "draft re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "draft re-pick", |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::Draft { faces: stored, neutral: stored_neutral, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a draft feature")));
@@ -667,9 +667,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        let (_, rebuild) = neutral_note((body, self.current_rebuild()), was_dropped.then_some(neutral_id));
+        let (_, rebuild) = neutral_note((body, self.current_rebuild_after_edit(bodies)), was_dropped.then_some(neutral_id));
         Ok((body, ids, neutral_id, rebuild))
     }
 
@@ -702,7 +702,7 @@ impl Session {
         let key = self.one_face(src, face)?;
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "thicken re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "thicken re-pick", |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::Thicken { face: stored, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a thicken feature")));
@@ -714,9 +714,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        Ok((body, key.id, self.current_rebuild()))
+        Ok((body, key.id, self.current_rebuild_after_edit(bodies)))
     }
 
     /// Remove selected faces and heal the source body. Face witnesses are captured from the current topology before mutation.
@@ -765,7 +765,7 @@ impl Session {
         }
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        self.with_rebuild_copies(before, &nodes, "remove_face re-pick", |s| {
+        let bodies = self.with_rebuild_copies(before, &nodes, "remove_face re-pick", |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
             let FeatureKind::RemoveFace { faces, .. } = &mut node.kind else {
                 return Err(Error::Invalid(format!("feature {feature} is not a remove_face feature")));
@@ -776,9 +776,9 @@ impl Session {
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
             }
-            Ok(())
+            Ok(report.bodies)
         })?;
-        let rebuild = self.current_rebuild();
+        let rebuild = self.current_rebuild_after_edit(bodies);
         Ok((body, ids, rebuild))
     }
 
