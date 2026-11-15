@@ -22,7 +22,7 @@ parts (`.qcad`) headlessly, so an agent can model and a person can then edit the
   source path). A guess is not a finding.
 - **Every modelling feature has a golden test** (`crates/engine/tests/golden_*.rs`) that builds a part and
   checks volume/bbox against a hand-computed or reference value. These are what catch QymCAD regressions.
-- **Parameter names and expressions are lowercased** by the engine (FINDINGS F-001). Do not bypass it.
+- **Parameter names and expressions are case-sensitive** and match exactly, as in the app since v0.1.1-dev.20261026; a new name that differs from an existing one only by case is refused (ADR 0021, FINDINGS F-001). Do not lowercase.
 - **Never trust "a shape exists"** — check `RegenReport.errors` (F-008).
 - Significant decisions get an ADR in `docs/adr/` (copy the format of the existing ones).
 - Tool schemas are generated from Rust types; after changing a tool run `cargo run -p qymcad-mcp -- --dump-tools

@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased — review fixes
+
+### Fixed
+- `doc_open` no longer re-parses the whole document for the QymCAD 0.1.0 spline check when the file has no spline records (ron scans the rest of the input on every skipped number, F-195): seconds to milliseconds on a large file.
+- `remove_face` re-pick refuses, with the document unchanged, when the core cannot build the new face set, like every other re-pick (it used to commit the failed node).
+
+### Changed
+- AGENTS.md: parameter names are case-sensitive (the old lowercase rule predates ADR 0021).
+
 ## 0.1.1-dev.20261026.17 — split faces (ADR 0057)
 
 ### Added

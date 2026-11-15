@@ -3238,3 +3238,10 @@ The same gap applies to a pattern whose source is a projection: the source moves
 - **Source:** `apply_split_face_cmd` converts the plane from world to the body's local frame for `ask::splits_faces` (`apply/faces.rs:134-148`), while `prep_splitface` takes the stored plane as it is (`prep_ops.rs:272-289`, no transform). [read in source]
 - **Emulated (`k0_probes::p10`; the GUI was not run):** a Part placed +100 in z with a base XY plane at offset 5 cuts at the LOCAL z = 5 (edges at z 0 / 5 / 10, 10 faces); an emulated pre-check in world coordinates says "splits nothing" for world z = 5 and "divides" for world z = 105, where the build with offset 105 cuts beside the body (red).
 - **Server policy:** the pre-check is asked of the same shape in the same local frame the build uses; for a face plane the offset runs along the face's outward normal (said in the description and in the refusal); the tool description says that base planes and offsets are local to the body's Part (read the bounds in `doc_info`). What the app's own pre-check says on a placed Part is inferred, not run.
+## F-195 ron 0.12.2 scans the rest of the input for ".." on every number it skips
+
+- **Version:** ron 0.12.2 (dependency of the server, not of the app).
+- **Upstream:** not filed.
+- **Source:** `Parser::next_bytes_is_float` runs `self.src()[skip..].find("..")` over the whole remaining input for every number (`ron-0.12.2/src/parse.rs:1040`). A deserialize that skips most of a large document through `IgnoredAny` is quadratic in its size. [read in source]
+- **Observed (external review, 2026-11-15, `sample` profile of `doc_open`):** a 1.96 MB `document.ron` with 44 884 numbers spent 5618 of 6150 ms in this search, inside the server's check for QymCAD 0.1.0 spline records (F-075); the app's own typed load of the same file took 43 ms.
+- **Server policy:** the F-075 check reads the document only when the text holds the word `splines`; a document without such records is not parsed again. Files that do hold them keep the old, slow but correct path.

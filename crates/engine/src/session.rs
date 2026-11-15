@@ -228,6 +228,11 @@ fn legacy_splines(path: &Path) -> Vec<(usize, usize)> {
         let mut zip = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
         let mut text = String::new();
         std::io::Read::read_to_string(&mut zip.by_name("document.ron").ok()?, &mut text).ok()?;
+        // No legacy records, nothing to report. Skipping the parse matters: ron looks for ".." through the
+        // rest of the input on every number it skips, so a large document took seconds here (F-195).
+        if !text.contains("splines") {
+            return None;
+        }
         ron::Options::default().without_recursion_limit().from_str(&text).ok()
     };
     read()

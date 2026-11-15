@@ -772,7 +772,11 @@ impl Session {
             };
             *faces = Ref::picks(&ids);
             node.dirty = true;
-            s.rebuild_for_edit(None).map(|_| ())
+            let report = s.rebuild_for_edit(None)?;
+            if !report.errors.is_empty() {
+                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            }
+            Ok(())
         })?;
         let rebuild = self.current_rebuild();
         Ok((body, ids, rebuild))

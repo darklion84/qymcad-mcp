@@ -303,3 +303,19 @@ fn remove_face_app_path_height_edit_is_the_full_box_volume() {
     assert_close(s.result_bodies()[0].volume, 40.0 * 40.0 * 25.0, 1e-6, "40*40*25 engine path");
     assert_eq!(PI * 5.0 * 5.0 * 8.0, 200.0 * PI);
 }
+
+#[test]
+fn remove_face_repick_that_the_core_cannot_build_is_refused_with_exact_rollback() {
+    let (s, body) = stock(20.0.into());
+    let mut s = blind_hole(s, body);
+    let (wall, bottom) = hole_faces(&mut s);
+    let (feature, _, report) = s.remove_face(None, &Sel::Ids(vec![wall, bottom]), Some("healed")).unwrap();
+    assert!(report.errors.is_empty(), "{report:?}");
+    let before = serde_json::to_vec(s.project()).unwrap();
+    let volume = s.result_bodies()[0].volume;
+    // The wall alone cannot be healed: the core reports a node error, which a re-pick must not commit.
+    let error = s.repick_remove_face(feature, &Sel::Ids(vec![wall])).unwrap_err().to_string();
+    assert!(error.contains("cad-neighbours-not-extendable"), "{error}");
+    assert_eq!(serde_json::to_vec(s.project()).unwrap(), before);
+    assert_close(s.result_bodies()[0].volume, volume, 1e-9, "rollback volume");
+}
