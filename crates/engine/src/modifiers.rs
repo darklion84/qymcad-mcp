@@ -447,13 +447,16 @@ impl Session {
         mutate: impl FnOnce(&mut FeatureKind, &mut HashMap<Id, Vec<ElemSnapshot>>) -> Option<()>,
     ) -> Result<Vec<BodyInfo>> {
         let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
+        let node = self.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+        if mutate(&mut node.kind, &mut self.p.face_refs).is_none() {
+            self.p = before;
+            return Err(Error::Invalid(format!("feature {feature} is not a {word} feature")));
+        }
+        node.dirty = true;
+        // Only the re-picked node and what depends on it are copied and rebuilt, as in `dimension_set`.
+        let nodes = crate::dependencies::rebuild_nodes(&self.p);
         self.with_rebuild_copies(before, &nodes, &format!("{word} re-pick"), |s| {
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            mutate(&mut node.kind, &mut s.p.face_refs)
-                .ok_or_else(|| Error::Invalid(format!("feature {feature} is not a {word} feature")))?;
-            node.dirty = true;
-            let report = s.rebuild_for_edit(None)?;
+            let report = s.rebuild_for_edit(Some(&nodes))?;
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
