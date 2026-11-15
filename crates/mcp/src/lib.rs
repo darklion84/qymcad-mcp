@@ -10,6 +10,9 @@ use std::path::PathBuf;
 pub fn instructions(app_note: &str) -> String {
     format!(
         "qymcad-mcp builds native, parametric QymCAD parts (.qcad) headlessly. Units: mm, degrees.\n\
+         The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}\n\
+         Every feature is atomic: on error nothing changes and the message says why. Objects can be referred to \
+         by id or by the name given at creation.\n\
          Objects and arrays may also be sent as JSON strings where the argument schema expects structured values; keep strings inside opaque selection/axis objects literal.\n\
          Workflow: doc_new -> param_set for every dimension the user may change (names are case-sensitive) -> \
          sketch_create on \"XY\"/\"XZ\"/\"YZ\", a datum plane or a face -> sketch_add rect/circle/circle_tangent/line/polyline/spline/arc/ellipse/ellipse_arc/\
@@ -35,21 +38,23 @@ pub fn instructions(app_note: &str) -> String {
          select. revolve turns sketch contours about an axis; linear_array/circular_array/mirror copy the whole body.\n\
          A sketch coordinate keeps the sign it was created with: choose the origin so that a parametric coordinate \
          (e.g. \"t-20\") stays on one side of the axis for every value the user may set; an edit that would cross \
-         zero is refused.\n\
-         Every feature is atomic: on error nothing changes and the message says why. Objects can be referred to \
-         by id or by the name given at creation.\n\
-         The user opens the file in the QymCAD app with File > Open (QymCAD {ver}; other releases may not read it). {app_note}",
+         zero is refused.",
         ver = qymcad_engine::QYMCAD_VERSION,
     )
 }
 
 /// Guidance with an optional local call-log path, leaving the original helper usable without logging.
 pub fn instructions_with_log(app_note: &str, log_path: Option<&std::path::Path>) -> String {
-    let mut text = instructions(app_note);
-    if let Some(path) = log_path {
-        text.push_str(&format!("\nCall log of this server process (JSONL, for diagnosing problems): {}.", path.display()));
-    }
-    text
+    let text = instructions(app_note);
+    let Some(path) = log_path else { return text };
+    // Right after the opening lines: clients cut long instructions, and the end is what they drop.
+    let (head, rest) = text.split_at(opening_len(&text));
+    format!("{head}Call log of this server process (JSONL, for diagnosing problems): {}.\n{rest}", path.display())
+}
+
+/// Length of the first three lines (purpose, app version note, atomicity), newline included.
+fn opening_len(text: &str) -> usize {
+    text.match_indices('\n').nth(2).map_or(text.len(), |(i, _)| i + 1)
 }
 
 /// Compare the installed QymCAD.app with the pinned release (ADR 0003). Returns a note for the agent.
@@ -127,6 +132,16 @@ mod tests {
         assert_eq!(super::instructions_with_log(note, None), super::instructions(note));
         let path = std::path::Path::new("/tmp/test.jsonl");
         let sentence = "Call log of this server process (JSONL, for diagnosing problems): /tmp/test.jsonl.";
-        assert_eq!(super::instructions_with_log(note, Some(path)), format!("{}\n{sentence}", super::instructions(note)));
+        let with_log = super::instructions_with_log(note, Some(path));
+        assert_eq!(with_log.replacen(&format!("{sentence}\n"), "", 1), super::instructions(note));
+        assert!(with_log.find(sentence).unwrap() < 1000, "the log path stays near the top");
+    }
+
+    /// Clients cut long instructions at about 2 KB: the app version warning must come first, not last.
+    #[test]
+    fn the_app_note_and_atomicity_lead_the_instructions() {
+        let text = super::instructions("APP-NOTE");
+        assert!(text.find("APP-NOTE").unwrap() < 500, "{}", &text[..600]);
+        assert!(text.find("Every feature is atomic").unwrap() < 700);
     }
 }

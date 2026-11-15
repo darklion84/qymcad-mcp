@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows
 - `remove_face` re-pick refuses, with the document unchanged, when the core cannot build the new face set, like every other re-pick (it used to commit the failed node).
 
 ### Changed
+- `initialize` instructions open with the purpose, the QymCAD version note and the atomicity rule, and the call-log path follows them: clients cut long instructions and used to drop exactly these closing lines.
 - AGENTS.md: parameter names are case-sensitive (the old lowercase rule predates ADR 0021).
 
 ## 0.1.1-dev.20261026.17 — split faces (ADR 0057)
