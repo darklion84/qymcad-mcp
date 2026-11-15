@@ -822,6 +822,7 @@ impl Session {
         }
     }
 
+    /// The returned `Rebuild` has no `bodies`: the only caller (`try_rebuild_retrying`) fills them after the shapes settle.
     fn rebuild_passes(&mut self, only: Option<&HashSet<Id>>) -> std::result::Result<(Rebuild, HashSet<Id>), NodeIssue> {
         // A safe first pass may fail on an unrelated node, expanding the retry into a blocked query.
         // Preserve original handles only in that case, so refusing the retry also undoes the first pass.
@@ -838,7 +839,6 @@ impl Session {
                         return Ok((
                             Rebuild {
                                 errors: vec![self.issue(body, format!("cannot snapshot body {body} before a guarded rebuild"))],
-                                bodies: self.result_bodies(),
                                 ..Default::default()
                             },
                             HashSet::new(),
@@ -881,7 +881,7 @@ impl Session {
                 if let Some((project, shapes)) = saved {
                     self.p = project;
                     self.shapes = shapes;
-                    return Ok((Rebuild { errors, bodies: self.result_bodies(), ..Default::default() }, HashSet::new()));
+                    return Ok((Rebuild { errors, ..Default::default() }, HashSet::new()));
                 }
             }
         }
@@ -972,11 +972,12 @@ impl Session {
             self.p.regen_warnings.iter().map(|(id, e)| self.issue(*id, crate::localization::error(e))).collect();
         warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().clone()));
         warnings.extend(self.cross_part_projection_warnings());
-        let bodies = self.result_bodies();
-        warnings.extend(bodies.iter().filter_map(|b| self.ambiguous_face_warning(b.id).map(|message| self.issue(b.id, message))));
+        warnings.extend(
+            self.current_body_ids().into_iter().filter_map(|b| self.ambiguous_face_warning(b).map(|message| self.issue(b, message))),
+        );
         // The native solve inside the regeneration clamped these drives, and said nothing.
         self.note_drive_clamps(&drives_before);
-        Ok((Rebuild { errors, warnings, bodies, assembly: self.rebuild_assembly(), ..Default::default() }, rebuilt))
+        Ok((Rebuild { errors, warnings, assembly: self.rebuild_assembly(), ..Default::default() }, rebuilt))
     }
 
     /// Fillet nodes picked by `check` whose built result fails `modifiers::fillet_acceptance` (F-074), with the reason.

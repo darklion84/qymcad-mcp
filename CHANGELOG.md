@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - `initialize` instructions open with the purpose, the QymCAD version note and the atomicity rule, and the call-log path follows them: clients cut long instructions and used to drop exactly these closing lines.
 - AGENTS.md: parameter names are case-sensitive (the old lowercase rule predates ADR 0021).
+- A rebuild no longer measures the bodies twice: the internal pass used to build the body report only to have it replaced right after, and only the ids were needed for the ambiguous-face warnings.
 - `export` takes the current body ids straight from the recipe instead of building the whole body report (a tessellation per body) just to read the ids; output unchanged.
 
 ## 0.1.1-dev.20261026.17 — split faces (ADR 0057)
