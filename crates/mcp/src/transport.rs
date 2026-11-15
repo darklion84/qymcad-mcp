@@ -131,7 +131,9 @@ impl Server {
         let args = params.get("arguments").cloned().unwrap_or(json!({}));
         self.seq += 1;
         let seq = self.seq;
-        self.record(json!({"kind":"call", "seq":seq, "tool":name, "args":args}));
+        if self.log.is_some() {
+            self.record(json!({"kind":"call", "seq":seq, "tool":name, "args":args}));
+        }
         let began = Instant::now();
         let out = self.registry.call(name, args)?;
         let ms = began.elapsed().as_millis();
@@ -139,10 +141,13 @@ impl Server {
             Ok(content) => json!({ "content": content, "isError": false }),
             Err(message) => json!({ "content": [{ "type": "text", "text": message }], "isError": true }),
         };
-        self.record(json!({
-            "kind":"result", "seq":seq, "tool":name, "ms":ms,
-            "is_error":result["isError"], "content":redact_images(&result["content"]),
-        }));
+        // Building the record copies the arguments and every image: skip it when nothing is logged.
+        if self.log.is_some() {
+            self.record(json!({
+                "kind":"result", "seq":seq, "tool":name, "ms":ms,
+                "is_error":result["isError"], "content":redact_images(&result["content"]),
+            }));
+        }
         Ok(result)
     }
 }
