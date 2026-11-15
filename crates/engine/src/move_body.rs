@@ -119,7 +119,7 @@ impl Session {
             let report = s.rebuild_for_edit(Some(&nodes))?;
             // Accumulation edits an old node; checking only new node ids would miss its errors.
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|i| i.to_string()).collect()));
             }
             result.transform = s.move_transform(result.body)?;
             Ok((result, report))

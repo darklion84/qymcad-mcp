@@ -67,8 +67,7 @@ impl Session {
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         self.with_rebuild_copies(before, &nodes, "parameter rebuild", |s| {
             let r = s.rebuild_for_edit(Some(&nodes))?;
-            let broken: Vec<String> =
-                r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+            let broken: Vec<String> = r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| i.to_string()).collect();
             if !broken.is_empty() {
                 return Err(Error::Rebuild(broken));
             }
@@ -93,7 +92,7 @@ impl Session {
         // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
         self.check_array_limits()?;
         if let Err((id, error)) = self.check_point_coordinates() {
-            let message = format!("{} ({id}): {error}", self.node_name(id));
+            let message = self.node_text(id, error);
             return Err(Error::Invalid(message));
         }
         let propagated = self.propagate_params(&before.param_map())?;

@@ -589,7 +589,7 @@ impl Session {
             session.settle_patterns_of_solved_sketches([sketch])?;
             let report = session.rebuild_for_edit(Some(&nodes))?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             let mut created_entities = std::collections::BTreeSet::new();
             let mut created_points = std::collections::BTreeSet::new();
@@ -844,8 +844,7 @@ impl Session {
             // projection refreshes and the hole sketches do not.
             s.refuse_dropped_profiles(sketch, &contours_before)?;
             let r = s.rebuild_for_edit(Some(&nodes))?;
-            let broken: Vec<String> =
-                r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect();
+            let broken: Vec<String> = r.errors.iter().filter(|i| !had.contains(&i.node)).map(|i| i.to_string()).collect();
             if !broken.is_empty() {
                 return Err(Error::Rebuild(broken));
             }

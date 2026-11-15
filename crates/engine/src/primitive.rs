@@ -410,7 +410,7 @@ impl Session {
             Error::Invalid(message) => message.clone(),
             other => other.to_string(),
         };
-        format!("{} ({node}): {reason}", self.node_name(node))
+        self.node_text(node, reason)
     }
 
     /// Record the faults of a file as it was opened: each size involved with the value it had. The exemption is per size (a fault

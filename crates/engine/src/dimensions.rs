@@ -331,7 +331,7 @@ impl Session {
                 }
             }
             s.check_array_limits()?;
-            s.check_evaluated_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", s.node_name(id))))?;
+            s.check_evaluated_features().map_err(|(id, error)| Error::Invalid(s.node_text(id, error)))?;
             if let DimTarget::Feature { node, key } = &native {
                 let item = !s.p.timeline.iter().any(|n| n.id == *node);
                 if item && value.is_some() {
@@ -368,12 +368,7 @@ impl Session {
         let had: HashSet<Id> = before.regen_errors.keys().copied().collect();
         self.with_rebuild_copies(before, &nodes, "dimension edit", |s| {
             let rebuild = s.rebuild_for_edit(Some(&nodes))?;
-            let broken = rebuild
-                .errors
-                .iter()
-                .filter(|e| !had.contains(&e.node))
-                .map(|e| format!("{} ({}): {}", e.name, e.node, e.message))
-                .collect::<Vec<_>>();
+            let broken = rebuild.errors.iter().filter(|e| !had.contains(&e.node)).map(|e| e.to_string()).collect::<Vec<_>>();
             if !broken.is_empty() {
                 return Err(Error::Rebuild(broken));
             }

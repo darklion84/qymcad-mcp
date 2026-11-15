@@ -15,6 +15,13 @@ pub struct NodeIssue {
     pub message: String,
 }
 
+/// `name (id): message`, the one way a node's problem reads in an error or a warning list.
+impl std::fmt::Display for NodeIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({}): {}", self.name, self.node, self.message)
+    }
+}
+
 /// Source availability cannot be repaired by retessellating an import's live shape, nor can geometry QymCAD
 /// dropped when it read the file; both last for the session.
 #[derive(Clone, Debug, PartialEq)]
@@ -441,9 +448,9 @@ impl Session {
         }
         let before_evaluation = sess.p.clone_without_source_data();
         sess.eval_parameters_capped()?;
-        sess.check_hole_supports().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        sess.check_hole_supports().map_err(|(id, error)| Error::Invalid(sess.node_text(id, error)))?;
         // Array counts are known before regeneration; the settled-scope guard alone would build every copy first.
-        sess.check_array_values().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        sess.check_array_values().map_err(|(id, error)| Error::Invalid(sess.node_text(id, error)))?;
         sess.reconcile_datum_dependencies();
         sess.reconcile_hole_dependencies();
         // Native app edits can save stale reference-consuming features despite a clean timeline (F-120).
@@ -463,9 +470,9 @@ impl Session {
         let stored: HashMap<Id, BodyMetrics> = sess.shapes.iter().map(|(&id, sh)| (id, BodyMetrics::of(sh))).collect();
         // Planned nodes are checked by the rebuild itself; the rest are checked below (F-074).
         let planned: HashSet<Id> = sess.p.regen_plan().nodes.into_iter().collect();
-        let mut r = sess.try_rebuild_retrying(None).map_err(|i| Error::Invalid(format!("{} ({}): {}", i.name, i.node, i.message)))?;
+        let mut r = sess.try_rebuild_retrying(None).map_err(|i| Error::Invalid(i.to_string()))?;
         sess.check_fixed_text_geometry(&before_evaluation)?;
-        sess.check_file_features().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        sess.check_file_features().map_err(|(id, error)| Error::Invalid(sess.node_text(id, error)))?;
         for (id, error) in sess.datum_faults() {
             let warning = sess.issue(id, format!("datum fault in the file (edits of other things stay possible): {error}"));
             sess.open_node_faults.insert(id);
@@ -481,7 +488,7 @@ impl Session {
             sess.advisory_warnings.push(AdvisoryWarning::Geometry(warning.clone()));
             r.warnings.push(warning);
         }
-        sess.check_chamfer_references().map_err(|(id, error)| Error::Invalid(format!("{} ({id}): {error}", sess.node_name(id))))?;
+        sess.check_chamfer_references().map_err(|(id, error)| Error::Invalid(sess.node_text(id, error)))?;
         for (&id, old) in &stored {
             let Some(sh) = sess.shapes.get(&id) else { continue };
             let new = BodyMetrics::of(sh);
@@ -533,8 +540,7 @@ impl Session {
         // can hold overlapping blends (F-074).
         let checked: HashSet<Id> = r.errors.iter().map(|e| e.node).chain(sess.p.regen_errors.keys().copied()).chain(planned).collect();
         for (node, message) in sess.fillet_refusals(|n| !checked.contains(&n)) {
-            sess.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            r.errors.push(sess.issue(node, message));
+            sess.refuse(&mut r.errors, node, message);
         }
         // A Split faces node the app made can already be wrong in the file; the rebuild did not look at the nodes it kept.
         let checked: HashSet<Id> = checked.into_iter().chain(r.errors.iter().map(|e| e.node)).collect();
@@ -699,8 +705,7 @@ impl Session {
         let mut notes = Vec::new();
         for _ in 0..=self.p.sketches.len() {
             let sources = self.projected_pattern_sources();
-            let mut report =
-                self.try_rebuild_retrying(only).map_err(|i| Error::Rebuild(vec![format!("{} ({}): {}", i.name, i.node, i.message)]))?;
+            let mut report = self.try_rebuild_retrying(only).map_err(|i| Error::Rebuild(vec![i.to_string()]))?;
             let moved: Vec<Id> = self
                 .projected_pattern_sources()
                 .iter()
@@ -712,7 +717,7 @@ impl Session {
             notes.append(&mut report.notes);
             if moved.is_empty() {
                 if let Some((node, error)) = self.projection_released_by_pattern(&projections_before) {
-                    return Err(if reorder { Error::Rebuild(vec![format!("{} ({node}): {error}", self.node_name(node))]) } else { error });
+                    return Err(if reorder { Error::Rebuild(vec![self.node_text(node, error)]) } else { error });
                 }
                 report.notes = notes;
                 return Ok(report);
@@ -939,48 +944,31 @@ impl Session {
         for (node, message) in refused {
             // Kept like a native failure (F-074), in the check's own words: doc_info and export see it, and the
             // node rebuilds next time.
-            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            errors.push(self.issue(node, message));
+            self.refuse(&mut errors, node, message);
         }
         for (node, message) in self.draft_refusals(|n| rebuilt.contains(&n) && !errors.iter().any(|e| e.node == n)) {
-            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            errors.push(self.issue(node, message));
+            self.refuse(&mut errors, node, message);
         }
         for (node, message) in self.split_identity_refusals(&split_identities, &rebuilt) {
-            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            errors.push(self.issue(node, message));
+            self.refuse(&mut errors, node, message);
         }
         for (node, message) in self.split_face_refusals(&split_face_before, &rebuilt) {
-            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            if !errors.iter().any(|e| e.node == node) {
-                errors.push(self.issue(node, message));
-            }
+            self.refuse_unless_reported(&mut errors, node, message);
         }
         self.split_face_hints(&mut errors);
         let failed: HashSet<Id> = errors.iter().map(|e| e.node).collect();
         self.accept_split_faces(&rebuilt, &failed);
         for (node, message) in self.boolean_identity_refusals(&boolean_identities, &rebuilt) {
-            self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            errors.push(self.issue(node, message));
+            self.refuse(&mut errors, node, message);
         }
         if let Err((id, error)) = self.check_chamfer_references() {
-            let message = error.to_string();
-            self.p.regen_errors.insert(id, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            if !errors.iter().any(|e| e.node == id) {
-                errors.push(self.issue(id, message));
-            }
+            self.refuse_unless_reported(&mut errors, id, error.to_string());
         }
         for issue in self.check_thread_stock() {
-            if !errors.iter().any(|e| e.node == issue.node) {
-                self.p.regen_errors.insert(issue.node, qymcad_core::errors::CoreError::Kernel(issue.message.clone()));
-                errors.push(issue);
-            }
+            self.refuse_unless_reported(&mut errors, issue.node, issue.message);
         }
         for (id, message) in self.hole_site_refusals() {
-            self.p.regen_errors.insert(id, qymcad_core::errors::CoreError::Kernel(message.clone()));
-            if !errors.iter().any(|e| e.node == id) {
-                errors.push(self.issue(id, message));
-            }
+            self.refuse_unless_reported(&mut errors, id, message);
         }
         self.remember_detached_projections(projections_before);
         let mut warnings: Vec<NodeIssue> =
@@ -1138,12 +1126,7 @@ impl Session {
             Self::check_instance_policy(&before, &self.p, false)?;
             let new_nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).filter(|id| !old_nodes.contains(id)).collect();
             let mut rebuild = self.rebuild_for_edit(Some(&new_nodes))?;
-            let new_errors: Vec<String> = rebuild
-                .errors
-                .iter()
-                .filter(|i| !old_nodes.contains(&i.node))
-                .map(|i| format!("{} ({}): {}", i.name, i.node, i.message))
-                .collect();
+            let new_errors: Vec<String> = rebuild.errors.iter().filter(|i| !old_nodes.contains(&i.node)).map(|i| i.to_string()).collect();
             if !new_errors.is_empty() {
                 return Err(Error::Rebuild(new_errors));
             }
@@ -1212,10 +1195,10 @@ impl Session {
             // Callers allow unrelated native errors that existed before an edit. That exemption must
             // never hide a new safety refusal on the same node (e.g. a previously overlong thread).
             if let Err((id, error)) = self.check_evaluated_features() {
-                return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
+                return Err(Error::Rebuild(vec![self.node_text(id, error)]));
             }
             if let Err((id, error)) = self.check_chamfer_references() {
-                return Err(Error::Rebuild(vec![format!("{} ({id}): {error}", self.node_name(id))]));
+                return Err(Error::Rebuild(vec![self.node_text(id, error)]));
             }
             let mut refused = self.check_thread_stock();
             refused.extend(self.hole_site_refusals().into_iter().map(|(id, message)| self.issue(id, message)));
@@ -1243,7 +1226,7 @@ impl Session {
                     .map(|(node, message)| self.issue(node, message)),
             );
             if !refused.is_empty() {
-                return Err(Error::Rebuild(refused.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)).collect()));
+                return Err(Error::Rebuild(refused.iter().map(|i| i.to_string()).collect()));
             }
             self.assembly_accept_edit(&before)?;
             Ok(value)
@@ -1671,6 +1654,26 @@ impl Session {
     fn issue(&self, node: Id, message: String) -> NodeIssue {
         NodeIssue { node, name: self.node_name(node), message }
     }
+
+    /// `name (id): what` for a node that has a refusal text but no `NodeIssue` (the same line `NodeIssue` displays).
+    pub(crate) fn node_text(&self, node: Id, what: impl std::fmt::Display) -> String {
+        format!("{} ({node}): {what}", self.node_name(node))
+    }
+
+    /// A check refused `node` after the rebuild: kept like a native failure (F-074), in the check's own words, so that
+    /// `doc_info` and export see it and the node rebuilds next time; and reported in `errors`.
+    fn refuse(&mut self, errors: &mut Vec<NodeIssue>, node: Id, message: String) {
+        self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+        errors.push(self.issue(node, message));
+    }
+
+    /// `refuse`, but a node already in `errors` keeps its first report (the failure is still kept on the node).
+    fn refuse_unless_reported(&mut self, errors: &mut Vec<NodeIssue>, node: Id, message: String) {
+        self.p.regen_errors.insert(node, qymcad_core::errors::CoreError::Kernel(message.clone()));
+        if !errors.iter().any(|e| e.node == node) {
+            errors.push(self.issue(node, message));
+        }
+    }
 }
 
 /// Like QymCAD.app's `finish_project_load`: the B-rep faces stored in the bodies go back into `regen_faces`, so
@@ -1761,6 +1764,15 @@ pub(crate) fn restore_faces(p: &mut Project) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_node_issue_reads_name_id_message_and_node_text_agrees() {
+        let s = Session::new_part();
+        let issue = NodeIssue { node: 7, name: "Fillet 1".into(), message: "radius too large".into() };
+        assert_eq!(issue.to_string(), "Fillet 1 (7): radius too large");
+        let node = s.p.timeline.first().map(|n| n.id).unwrap_or(u64::MAX);
+        assert_eq!(s.node_text(node, "radius too large"), s.issue(node, "radius too large".into()).to_string());
+    }
     use crate::test_support as native;
 
     #[test]

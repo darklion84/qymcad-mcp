@@ -1021,7 +1021,7 @@ impl Session {
         self.split_face_witness = before_split_faces;
         self.shapes = crate::session::restore_shapes(saved);
         let mut lines = vec!["the document has no stored faces and needs a full rebuild to read its topology; it failed".to_string()];
-        lines.extend(r.errors.iter().map(|i| format!("{} ({}): {}", i.name, i.node, i.message)));
+        lines.extend(r.errors.iter().map(|i| i.to_string()));
         Err(Error::Rebuild(lines))
     }
 

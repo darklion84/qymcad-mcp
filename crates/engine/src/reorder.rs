@@ -159,9 +159,7 @@ impl Session {
                 return Err(Error::Rebuild(
                     s.p.timeline
                         .iter()
-                        .flat_map(|n| {
-                            errors.remove(&n.id).unwrap_or_default().into_iter().map(|e| format!("{} ({}): {e}", s.node_name(n.id), n.id))
-                        })
+                        .flat_map(|n| errors.remove(&n.id).unwrap_or_default().into_iter().map(|e| s.node_text(n.id, e)))
                         .collect(),
                 ));
             }

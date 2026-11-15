@@ -137,13 +137,9 @@ impl Session {
     /// The document warnings `info()` reports, without the body report (no tessellation).
     pub fn warnings(&self) -> Vec<String> {
         let p = self.project();
-        let mut warnings: Vec<String> =
-            p.regen_warnings.iter().map(|(id, e)| format!("{} ({id}): {}", self.node_name(*id), crate::localization::error(e))).collect();
-        warnings.extend(self.advisory_warnings.iter().map(|w| {
-            let w = w.issue();
-            format!("{} ({}): {}", w.name, w.node, w.message)
-        }));
-        warnings.extend(self.cross_part_projection_warnings().iter().map(|w| format!("{} ({}): {}", w.name, w.node, w.message)));
+        let mut warnings: Vec<String> = p.regen_warnings.iter().map(|(id, e)| self.node_text(*id, crate::localization::error(e))).collect();
+        warnings.extend(self.advisory_warnings.iter().map(|w| w.issue().to_string()));
+        warnings.extend(self.cross_part_projection_warnings().iter().map(|w| w.to_string()));
         warnings.extend(
             self.current_body_ids()
                 .into_iter()

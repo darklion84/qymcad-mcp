@@ -281,12 +281,12 @@ impl Session {
             s.p.set_rollback(target);
             let report = s.rebuild_for_edit(Some(&nodes))?;
             if !report.errors.is_empty() || !s.p.regen_errors.is_empty() {
-                let mut errors: Vec<String> = report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect();
+                let mut errors: Vec<String> = report.errors.iter().map(|e| e.to_string()).collect();
                 errors.extend(
                     s.p.regen_errors
                         .iter()
                         .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
-                        .map(|(id, e)| format!("{} ({id}): {}", s.node_name(*id), crate::localization::error(e))),
+                        .map(|(id, e)| s.node_text(*id, crate::localization::error(e))),
                 );
                 return Err(Error::Rebuild(errors));
             }
@@ -342,12 +342,12 @@ impl Session {
             s.p.set_feature_suppressed(ti, suppressed);
             let report = s.rebuild_for_edit(Some(&nodes))?;
             if !report.errors.is_empty() || !s.p.regen_errors.is_empty() {
-                let mut errors: Vec<String> = report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect();
+                let mut errors: Vec<String> = report.errors.iter().map(|e| e.to_string()).collect();
                 errors.extend(
                     s.p.regen_errors
                         .iter()
                         .filter(|(id, _)| !report.errors.iter().any(|e| e.node == **id))
-                        .map(|(id, e)| format!("{} ({id}): {}", s.node_name(*id), crate::localization::error(e))),
+                        .map(|(id, e)| s.node_text(*id, crate::localization::error(e))),
                 );
                 return Err(Error::Rebuild(errors));
             }
@@ -630,7 +630,7 @@ impl Session {
             if !enclosing_edit {
                 self.prune_retired_sources();
             }
-            return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+            return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
         }
         if let Err(error) = self.assembly_accept_edit(&assembly_before) {
             self.restore_snapshot(snapshot);

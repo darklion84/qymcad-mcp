@@ -455,7 +455,7 @@ impl Session {
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
@@ -493,7 +493,7 @@ impl Session {
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
@@ -523,7 +523,7 @@ impl Session {
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
@@ -574,7 +574,7 @@ impl Session {
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
@@ -665,7 +665,7 @@ impl Session {
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
@@ -712,7 +712,7 @@ impl Session {
             s.p.face_refs.insert(feature, vec![ElemSnapshot { id: key.id, at: key.centroid, dir: key.normal }]);
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
@@ -774,7 +774,7 @@ impl Session {
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| format!("{} ({}): {}", e.name, e.node, e.message)).collect()));
+                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
         })?;
