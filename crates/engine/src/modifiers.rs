@@ -4,7 +4,7 @@
 //! `param_set` keep the feature parametric.
 
 use crate::error::{Error, Result};
-use crate::session::{Rebuild, Session};
+use crate::session::{BodyInfo, Rebuild, Session};
 use crate::topology::{Element, Sel};
 use crate::value::Num;
 use qymcad_core::feature::{ChamferMode, FeatureKind, ShellSide};
@@ -12,7 +12,7 @@ use qymcad_core::model::{ChamferShape, ElemSnapshot, HoleTool, Id};
 use qymcad_core::refs::{Fingerprint, Ref};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Which side of the faces a shell's wall goes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -429,35 +429,56 @@ impl Session {
         })
     }
 
-    pub fn repick_fillet(&mut self, feature: Id, edges: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
-        self.ensure_topology()?;
-        let (src, body, at_vertices) = match self.p.timeline.iter().find(|n| n.id == feature) {
-            Some(node) => match &node.kind {
-                FeatureKind::Fillet { src, body, at_vertices, .. } => (*src, *body, !at_vertices.is_empty()),
-                _ => return Err(Error::Invalid(format!("feature {feature} is not a fillet feature"))),
-            },
-            None => return Err(Error::NotFound(format!("feature {feature}"))),
-        };
-        if at_vertices {
-            return Err(Error::Invalid(format!(
-                "fillet {feature} has a per-vertex radius table made in the app; re-pick is not supported"
-            )));
-        }
-        let (ids, dropped_seams) = self.edges_now(src, edges)?;
+    /// The node `feature` as seen by `pick` (which returns `None` for the wrong kind of node): `NotFound` when
+    /// there is no such node, `Invalid` when it is not a `word` feature. First step of every `repick_*`.
+    fn feature_as<T>(&self, feature: Id, word: &str, pick: impl FnOnce(&FeatureKind) -> Option<T>) -> Result<T> {
+        let node = self.p.timeline.iter().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
+        pick(&node.kind).ok_or_else(|| Error::Invalid(format!("feature {feature} is not a {word} feature")))
+    }
+
+    /// What every `repick_*` shares: atomically reassign the selection of node `feature` through `mutate`
+    /// (`None` = not a `word` feature), mark it dirty, rebuild, refuse if any node reports an error, and
+    /// restore the document on any failure. The caller resolves the new selection first and adds what is its
+    /// own (adjacency checks, notes) before and after. Returns the bodies of the successful rebuild.
+    fn repick_rebuild(
+        &mut self,
+        feature: Id,
+        word: &str,
+        mutate: impl FnOnce(&mut FeatureKind, &mut HashMap<Id, Vec<ElemSnapshot>>) -> Option<()>,
+    ) -> Result<Vec<BodyInfo>> {
         let before = self.p.clone();
         let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "fillet re-pick", |s| {
+        self.with_rebuild_copies(before, &nodes, &format!("{word} re-pick"), |s| {
             let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::Fillet { edges, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a fillet feature")));
-            };
-            *edges = Ref::picks(&ids);
+            mutate(&mut node.kind, &mut s.p.face_refs)
+                .ok_or_else(|| Error::Invalid(format!("feature {feature} is not a {word} feature")))?;
             node.dirty = true;
             let report = s.rebuild_for_edit(None)?;
             if !report.errors.is_empty() {
                 return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
             }
             Ok(report.bodies)
+        })
+    }
+
+    pub fn repick_fillet(&mut self, feature: Id, edges: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body, at_vertices) = self.feature_as(feature, "fillet", |kind| match kind {
+            FeatureKind::Fillet { src, body, at_vertices, .. } => Some((*src, *body, !at_vertices.is_empty())),
+            _ => None,
+        })?;
+        if at_vertices {
+            return Err(Error::Invalid(format!(
+                "fillet {feature} has a per-vertex radius table made in the app; re-pick is not supported"
+            )));
+        }
+        let (ids, dropped_seams) = self.edges_now(src, edges)?;
+        let bodies = self.repick_rebuild(feature, "fillet", |kind, _| {
+            let FeatureKind::Fillet { edges, .. } = kind else {
+                return None;
+            };
+            *edges = Ref::picks(&ids);
+            Some(())
         })?;
         let (_, rebuild) = seam_note((body, self.current_rebuild_after_edit(bodies)), dropped_seams);
         Ok((body, ids, rebuild))
@@ -465,13 +486,10 @@ impl Session {
 
     pub fn repick_chamfer(&mut self, feature: Id, edges: &Sel, reference_face: Option<&Sel>) -> Result<(Id, Vec<u32>, Rebuild)> {
         self.ensure_topology()?;
-        let (src, body, mode, old_reference) = match self.p.timeline.iter().find(|n| n.id == feature) {
-            Some(node) => match node.kind {
-                FeatureKind::Chamfer { src, body, mode, ref_face, .. } => (src, body, mode, ref_face),
-                _ => return Err(Error::Invalid(format!("feature {feature} is not a chamfer feature"))),
-            },
-            None => return Err(Error::NotFound(format!("feature {feature}"))),
-        };
+        let (src, body, mode, old_reference) = self.feature_as(feature, "chamfer", |kind| match kind {
+            FeatureKind::Chamfer { src, body, mode, ref_face, .. } => Some((*src, *body, *mode, *ref_face)),
+            _ => None,
+        })?;
         if mode == ChamferMode::Symmetric && reference_face.is_some() {
             return Err(Error::Invalid("symmetric chamfer does not accept reference_face or flip".into()));
         }
@@ -481,21 +499,13 @@ impl Session {
             None => old_reference,
         };
         self.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
-        let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "chamfer re-pick", |s| {
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::Chamfer { edges, ref_face, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a chamfer feature")));
+        let bodies = self.repick_rebuild(feature, "chamfer", |kind, _| {
+            let FeatureKind::Chamfer { edges, ref_face, .. } = kind else {
+                return None;
             };
             *edges = Ref::picks(&ids);
             *ref_face = reference;
-            node.dirty = true;
-            let report = s.rebuild_for_edit(None)?;
-            if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-            }
-            Ok(report.bodies)
+            Some(())
         })?;
         let (_, rebuild) = seam_note((body, self.current_rebuild_after_edit(bodies)), dropped_seams);
         Ok((body, ids, rebuild))
@@ -504,28 +514,17 @@ impl Session {
     /// Replace the opening faces of an existing shell, preserving its dimensions and rebuilding dependents.
     pub fn repick_shell(&mut self, feature: Id, open_faces: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
         self.ensure_topology()?;
-        let (src, body) = match self.p.timeline.iter().find(|n| n.id == feature) {
-            Some(node) => match &node.kind {
-                FeatureKind::Shell { src, body, .. } => (*src, *body),
-                _ => return Err(Error::Invalid(format!("feature {feature} is not a shell feature"))),
-            },
-            None => return Err(Error::NotFound(format!("feature {feature}"))),
-        };
+        let (src, body) = self.feature_as(feature, "shell", |kind| match kind {
+            FeatureKind::Shell { src, body, .. } => Some((*src, *body)),
+            _ => None,
+        })?;
         let (ids, faces_ref) = self.shell_face_ref(src, open_faces)?;
-        let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "shell re-pick", |s| {
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::Shell { faces: stored, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a shell feature")));
+        let bodies = self.repick_rebuild(feature, "shell", |kind, _| {
+            let FeatureKind::Shell { faces: stored, .. } = kind else {
+                return None;
             };
             *stored = faces_ref;
-            node.dirty = true;
-            let report = s.rebuild_for_edit(None)?;
-            if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-            }
-            Ok(report.bodies)
+            Some(())
         })?;
         Ok((body, ids, self.current_rebuild_after_edit(bodies)))
     }
@@ -553,30 +552,19 @@ impl Session {
     /// Replace the face of an existing PushFace node, preserving its distance formula and rebuilding dependents.
     pub fn repick_push_face(&mut self, feature: Id, face: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
         self.ensure_topology()?;
-        let (src, body) = match self.p.timeline.iter().find(|n| n.id == feature) {
-            Some(node) => match &node.kind {
-                FeatureKind::PushFace { src, body, .. } => (*src, *body),
-                _ => return Err(Error::Invalid(format!("feature {feature} is not a push_face feature"))),
-            },
-            None => return Err(Error::NotFound(format!("feature {feature}"))),
-        };
+        let (src, body) = self.feature_as(feature, "push_face", |kind| match kind {
+            FeatureKind::PushFace { src, body, .. } => Some((*src, *body)),
+            _ => None,
+        })?;
         let key = self.planar_face(src, face)?;
         let ids = vec![key.id];
-        let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "push_face re-pick", |s| {
-            let stored_ref = push_face_ref(&key);
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::PushFace { face: stored, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a push_face feature")));
+        let stored_ref = push_face_ref(&key);
+        let bodies = self.repick_rebuild(feature, "push_face", |kind, _| {
+            let FeatureKind::PushFace { face: stored, .. } = kind else {
+                return None;
             };
             *stored = stored_ref;
-            node.dirty = true;
-            let report = s.rebuild_for_edit(None)?;
-            if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-            }
-            Ok(report.bodies)
+            Some(())
         })?;
         Ok((body, ids, self.current_rebuild_after_edit(bodies)))
     }
@@ -630,13 +618,10 @@ impl Session {
     /// angle formula and flip and rebuilding dependents. Returns the body, the face ids and the neutral face id.
     pub fn repick_draft(&mut self, feature: Id, faces: &Sel, neutral: Option<&Sel>) -> Result<(Id, Vec<u32>, u32, Rebuild)> {
         self.ensure_topology()?;
-        let (src, body, old_neutral) = match self.p.timeline.iter().find(|n| n.id == feature) {
-            Some(node) => match &node.kind {
-                FeatureKind::Draft { src, body, neutral, .. } => (*src, *body, neutral.clone()),
-                _ => return Err(Error::Invalid(format!("feature {feature} is not a draft feature"))),
-            },
-            None => return Err(Error::NotFound(format!("feature {feature}"))),
-        };
+        let (src, body, old_neutral) = self.feature_as(feature, "draft", |kind| match kind {
+            FeatureKind::Draft { src, body, neutral, .. } => Some((*src, *body, neutral.clone())),
+            _ => None,
+        })?;
         let (ids, faces_ref) = self.draft_face_ref(src, faces)?;
         let (neutral_id, neutral_ref) = match neutral {
             Some(sel) => self.draft_neutral(src, sel)?,
@@ -653,21 +638,13 @@ impl Session {
         };
         let (ids, faces_ref, was_dropped) = drop_neutral(ids, faces_ref, neutral_id)?;
         self.check_draft_pair(src, neutral_id, &ids)?;
-        let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "draft re-pick", |s| {
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::Draft { faces: stored, neutral: stored_neutral, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a draft feature")));
+        let bodies = self.repick_rebuild(feature, "draft", |kind, _| {
+            let FeatureKind::Draft { faces: stored, neutral: stored_neutral, .. } = kind else {
+                return None;
             };
             *stored = faces_ref;
             *stored_neutral = neutral_ref;
-            node.dirty = true;
-            let report = s.rebuild_for_edit(None)?;
-            if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-            }
-            Ok(report.bodies)
+            Some(())
         })?;
         let (_, rebuild) = neutral_note((body, self.current_rebuild_after_edit(bodies)), was_dropped.then_some(neutral_id));
         Ok((body, ids, neutral_id, rebuild))
@@ -692,29 +669,18 @@ impl Session {
     /// keeps the old witness), preserving the thickness formula and rebuilding dependents.
     pub fn repick_thicken(&mut self, feature: Id, face: &Sel) -> Result<(Id, u32, Rebuild)> {
         self.ensure_topology()?;
-        let (src, body) = match self.p.timeline.iter().find(|n| n.id == feature) {
-            Some(node) => match &node.kind {
-                FeatureKind::Thicken { src, body, .. } => (*src, *body),
-                _ => return Err(Error::Invalid(format!("feature {feature} is not a thicken feature"))),
-            },
-            None => return Err(Error::NotFound(format!("feature {feature}"))),
-        };
+        let (src, body) = self.feature_as(feature, "thicken", |kind| match kind {
+            FeatureKind::Thicken { src, body, .. } => Some((*src, *body)),
+            _ => None,
+        })?;
         let key = self.one_face(src, face)?;
-        let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "thicken re-pick", |s| {
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::Thicken { face: stored, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a thicken feature")));
+        let bodies = self.repick_rebuild(feature, "thicken", |kind, face_refs| {
+            let FeatureKind::Thicken { face: stored, .. } = kind else {
+                return None;
             };
             *stored = key.id;
-            node.dirty = true;
-            s.p.face_refs.insert(feature, vec![ElemSnapshot { id: key.id, at: key.centroid, dir: key.normal }]);
-            let report = s.rebuild_for_edit(None)?;
-            if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-            }
-            Ok(report.bodies)
+            face_refs.insert(feature, vec![ElemSnapshot { id: key.id, at: key.centroid, dir: key.normal }]);
+            Some(())
         })?;
         Ok((body, key.id, self.current_rebuild_after_edit(bodies)))
     }
@@ -754,29 +720,20 @@ impl Session {
     /// Replace the complete face set of an existing RemoveFace node, preserving its id and rebuilding dependents.
     pub fn repick_remove_face(&mut self, feature: Id, faces: &Sel) -> Result<(Id, Vec<u32>, Rebuild)> {
         self.ensure_topology()?;
-        let node = self.p.timeline.iter().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-        let (src, body) = match &node.kind {
-            FeatureKind::RemoveFace { src, body, .. } => (*src, *body),
-            _ => return Err(Error::Invalid(format!("feature {feature} is not a remove_face feature"))),
-        };
+        let (src, body) = self.feature_as(feature, "remove_face", |kind| match kind {
+            FeatureKind::RemoveFace { src, body, .. } => Some((*src, *body)),
+            _ => None,
+        })?;
         let ids = self.resolve_sel(src, Element::Faces, faces)?;
         if ids.is_empty() {
             return Err(Error::Invalid(format!("the face selection matched no face of source body {src}")));
         }
-        let before = self.p.clone();
-        let nodes: HashSet<Id> = self.p.timeline.iter().map(|n| n.id).collect();
-        let bodies = self.with_rebuild_copies(before, &nodes, "remove_face re-pick", |s| {
-            let node = s.p.timeline.iter_mut().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
-            let FeatureKind::RemoveFace { faces, .. } = &mut node.kind else {
-                return Err(Error::Invalid(format!("feature {feature} is not a remove_face feature")));
+        let bodies = self.repick_rebuild(feature, "remove_face", |kind, _| {
+            let FeatureKind::RemoveFace { faces, .. } = kind else {
+                return None;
             };
             *faces = Ref::picks(&ids);
-            node.dirty = true;
-            let report = s.rebuild_for_edit(None)?;
-            if !report.errors.is_empty() {
-                return Err(Error::Rebuild(report.errors.iter().map(|e| e.to_string()).collect()));
-            }
-            Ok(report.bodies)
+            Some(())
         })?;
         let rebuild = self.current_rebuild_after_edit(bodies);
         Ok((body, ids, rebuild))
