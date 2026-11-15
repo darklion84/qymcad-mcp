@@ -181,6 +181,14 @@ pub(crate) fn restore_shapes(saved: Vec<(Id, Vec<u8>)>) -> HashMap<Id, Shape> {
         .collect()
 }
 
+/// Why one guarded rebuild attempt did not succeed (see `Session::try_rebuild_retrying`, which rolls it back).
+enum Attempt {
+    /// A node refused the rebuild: the caller gets the issue.
+    Refused(NodeIssue),
+    /// An edge query on a node stops the rebuild before it starts: the caller gets a report holding these errors.
+    Blocked(Vec<NodeIssue>),
+}
+
 /// Independent copies for rollback. Serialization holds the gate, restoration takes it itself.
 /// Refuse a missing copy rather than silently losing a rollback body.
 pub(crate) fn copy_shapes<'a>(shapes: impl IntoIterator<Item = (Id, &'a Shape)>) -> std::result::Result<HashMap<Id, Shape>, Id> {
@@ -766,60 +774,67 @@ impl Session {
 
     fn try_rebuild_retrying(&mut self, only: Option<&HashSet<Id>>) -> std::result::Result<Rebuild, NodeIssue> {
         let before = self.p.clone();
+        // Taken from `self.shapes` only once the attempt owns them; put back with `before` when it does not succeed.
+        let mut originals = None;
+        match self.rebuild_attempt(only, &mut originals) {
+            Ok(report) => Ok(report),
+            Err(failure) => {
+                // The one place a refused or blocked attempt puts the document back.
+                self.p = before;
+                if let Some(originals) = originals {
+                    self.shapes = originals;
+                }
+                match failure {
+                    Attempt::Refused(issue) => Err(issue),
+                    Attempt::Blocked(errors) => Ok(Rebuild { errors, bodies: self.result_bodies(), ..Default::default() }),
+                }
+            }
+        }
+    }
+
+    /// `try_rebuild_retrying` without the rollback: on `Err` the caller restores the project and, if `originals`
+    /// was filled, the shapes.
+    fn rebuild_attempt(
+        &mut self,
+        only: Option<&HashSet<Id>>,
+        originals: &mut Option<HashMap<Id, Shape>>,
+    ) -> std::result::Result<Rebuild, Attempt> {
         self.reconcile_datum_dependencies();
         self.reconcile_hole_dependencies();
         if let Err((id, error)) =
             self.check_hole_supports().and_then(|()| self.check_array_values()).and_then(|()| self.check_mesh_recognise_values())
         {
-            let issue = self.issue(id, error.to_string());
-            self.p = before;
-            return Err(issue);
+            return Err(Attempt::Refused(self.issue(id, error.to_string())));
         }
         for si in 0..self.p.sketches.len() {
             self.retain_native_points(si);
         }
         let blocked = self.edge_query_rebuild_errors(&self.p);
         if !blocked.is_empty() {
-            self.p = before;
-            return Ok(Rebuild { errors: blocked, bodies: self.result_bodies(), ..Default::default() });
+            return Err(Attempt::Blocked(blocked));
         }
         // Standalone/open rebuilds own their rollback handles. Scoped edits already retain originals
         // in with_rebuild_copies or atomic_with_post; leave unrelated handles untouched (F-034).
-        let originals = if only.is_none() {
+        if only.is_none() {
             let copies = match copy_shapes(self.shapes.iter().map(|(&id, sh)| (id, sh))) {
                 Ok(copies) => copies,
-                Err(id) => {
-                    self.p = before;
-                    return Err(self.issue(id, format!("cannot snapshot body {id} before a guarded rebuild")));
-                }
+                Err(id) => return Err(Attempt::Refused(self.issue(id, format!("cannot snapshot body {id} before a guarded rebuild")))),
             };
-            Some(std::mem::replace(&mut self.shapes, copies))
-        } else {
-            None
-        };
-        match self.rebuild_passes(only) {
-            Ok((mut report, rebuilt)) => {
-                if let Some(originals) = originals {
-                    // A B-rep round-trip need not preserve bytes. Successful no-op/partial rebuilds
-                    // must keep originals of bodies that were never built, too (F-034).
-                    for (id, shape) in originals {
-                        if !rebuilt.contains(&id) {
-                            self.shapes.insert(id, shape);
-                        }
-                    }
+            *originals = Some(std::mem::replace(&mut self.shapes, copies));
+        }
+        let (mut report, rebuilt) = self.rebuild_passes(only).map_err(Attempt::Refused)?;
+        if let Some(originals) = originals.take() {
+            // A B-rep round-trip need not preserve bytes. Successful no-op/partial rebuilds
+            // must keep originals of bodies that were never built, too (F-034).
+            for (id, shape) in originals {
+                if !rebuilt.contains(&id) {
+                    self.shapes.insert(id, shape);
                 }
-                self.prune_inactive_shapes();
-                report.bodies = self.result_bodies();
-                Ok(report)
-            }
-            Err(issue) => {
-                self.p = before;
-                if let Some(originals) = originals {
-                    self.shapes = originals;
-                }
-                Err(issue)
             }
         }
+        self.prune_inactive_shapes();
+        report.bodies = self.result_bodies();
+        Ok(report)
     }
 
     /// The returned `Rebuild` has no `bodies`: the only caller (`try_rebuild_retrying`) fills them after the shapes settle.
@@ -1161,10 +1176,6 @@ impl Session {
         context: &str,
         edit: impl FnOnce(&mut Session) -> Result<T>,
     ) -> Result<T> {
-        if let Err(error) = self.check_fixed_text_geometry(&before) {
-            self.p = before;
-            return Err(error);
-        }
         let split_identities = self.split_identities();
         let split_face_before = self.split_face_witness.clone();
         let boolean_identities = self.boolean_identities();
@@ -1172,15 +1183,18 @@ impl Session {
         let before_detached = self.detached_projections.clone();
         let before_split_faces = self.split_face_witness.clone();
         let before_shape_ids: HashSet<Id> = self.shapes.keys().copied().collect();
-        let copies = copy_shapes(
-            self.p
-                .timeline
-                .iter()
-                .filter(|n| nodes.contains(&n.id))
-                .flat_map(|n| n.kind.bodies())
-                .filter_map(|id| self.shapes.get(&id).map(|sh| (id, sh))),
-        )
-        .map_err(|id| Error::Io(format!("cannot snapshot body {id} before {context}")));
+        // Both refusals before the edit starts leave only `self.p` to put back.
+        let copies = self.check_fixed_text_geometry(&before).and_then(|()| {
+            copy_shapes(
+                self.p
+                    .timeline
+                    .iter()
+                    .filter(|n| nodes.contains(&n.id))
+                    .flat_map(|n| n.kind.bodies())
+                    .filter_map(|id| self.shapes.get(&id).map(|sh| (id, sh))),
+            )
+            .map_err(|id| Error::Io(format!("cannot snapshot body {id} before {context}")))
+        });
         let mut saved = match copies {
             Ok(copies) => copies,
             Err(e) => {

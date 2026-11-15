@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::session::{Rebuild, Session};
 use crate::value::Num;
-use qymcad_core::model::{Id, Param};
+use qymcad_core::model::{Id, Param, Project};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -54,69 +54,10 @@ impl Session {
             }
         }
         let before = self.p.clone();
-        let broken_before = self.unsolved_sketches();
-        match self.p.parameters.iter_mut().find(|q| q.name == name) {
-            Some(q) => q.expr = expr.clone(),
-            None => self.p.parameters.push(Param { name: name.clone(), expr: expr.clone(), value: 0.0 }),
-        }
-        if let Err(e) = self.check_polygon_sides() {
+        // One place puts the document back: every refusal of the staged edit comes out as an `Err` here.
+        if let Err(e) = self.stage_param_edit(&name, &expr, &before) {
             self.p = before;
             return Err(e);
-        }
-        let evaluated = match self.eval_parameters_capped() {
-            Ok(errors) => errors,
-            Err(e) => {
-                self.p = before;
-                return Err(e);
-            }
-        };
-        if let Some((what, err)) = evaluated.into_iter().next() {
-            let message = crate::value::formula_failed(&what, &err, self.p.param_map().keys());
-            self.p = before;
-            return Err(Error::Expr(message));
-        }
-        // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
-        if let Err(e) = self.check_array_limits() {
-            self.p = before;
-            return Err(e);
-        }
-        if let Err((id, error)) = self.check_point_coordinates() {
-            let message = format!("{} ({id}): {error}", self.node_name(id));
-            self.p = before;
-            return Err(Error::Invalid(message));
-        }
-        let propagated = match self.propagate_params(&before.param_map()) {
-            Ok(unsolved) => unsolved,
-            Err(e) => {
-                self.p = before;
-                return Err(e);
-            }
-        };
-        // Named reference measurements can change count expressions after the initial limit check.
-        if let Err(e) = self.check_array_limits() {
-            self.p = before;
-            return Err(e);
-        }
-        let unsolved: Vec<String> = propagated
-            .into_iter()
-            .filter(|(sid, _)| !broken_before.contains(sid))
-            .map(|(sid, res)| format!("sketch {sid} `{}` (residual {res:.3e})", self.node_name(sid)))
-            .collect();
-        if !unsolved.is_empty() {
-            self.p = before;
-            return Err(Error::Invalid(format!(
-                "with `{name}` = {expr} {} does not solve, so the change was rolled back. A dimension cannot take this value \
-                 (e.g. an angle outside 0..180, or a coordinate/offset expression that would change sign: QymCAD dimensions \
-                 keep the side they were created on, FINDINGS F-045).",
-                unsolved.join(", ")
-            )));
-        }
-        // A primitive's sizes and side count follow parameters and named reference dimensions: judge them on the settled scope (after
-        // propagation, as `dimension_set` does) and before the rebuild would build a million-sided prism.
-        if let Err((id, error)) = self.check_primitive_nodes() {
-            let message = self.node_refusal(id, &error);
-            self.p = before;
-            return Err(Error::Invalid(message));
         }
         // Propagation has dirtied every affected node. Preserve their original handles and rebuild on
         // independent B-rep copies, like sketch_edit: rollback must retain the original representation (F-034).
@@ -133,6 +74,51 @@ impl Session {
             }
             Ok(r)
         })
+    }
+
+    /// The part of `param_set` that changes the document and judges the result before any rebuild: the new value, the
+    /// sketches, array counts, primitives. It may leave `self.p` half-changed on `Err`; `param_set` restores `before`.
+    fn stage_param_edit(&mut self, name: &str, expr: &str, before: &Project) -> Result<()> {
+        let broken_before = self.unsolved_sketches();
+        match self.p.parameters.iter_mut().find(|q| q.name == name) {
+            Some(q) => q.expr = expr.to_string(),
+            None => self.p.parameters.push(Param { name: name.to_string(), expr: expr.to_string(), value: 0.0 }),
+        }
+        self.check_polygon_sides()?;
+        let evaluated = self.eval_parameters_capped()?;
+        if let Some((what, err)) = evaluated.into_iter().next() {
+            let message = crate::value::formula_failed(&what, &err, self.p.param_map().keys());
+            return Err(Error::Expr(message));
+        }
+        // Array counts may follow parameters; refuse an edit that would make an array too large (F-033).
+        self.check_array_limits()?;
+        if let Err((id, error)) = self.check_point_coordinates() {
+            let message = format!("{} ({id}): {error}", self.node_name(id));
+            return Err(Error::Invalid(message));
+        }
+        let propagated = self.propagate_params(&before.param_map())?;
+        // Named reference measurements can change count expressions after the initial limit check.
+        self.check_array_limits()?;
+        let unsolved: Vec<String> = propagated
+            .into_iter()
+            .filter(|(sid, _)| !broken_before.contains(sid))
+            .map(|(sid, res)| format!("sketch {sid} `{}` (residual {res:.3e})", self.node_name(sid)))
+            .collect();
+        if !unsolved.is_empty() {
+            return Err(Error::Invalid(format!(
+                "with `{name}` = {expr} {} does not solve, so the change was rolled back. A dimension cannot take this value \
+                 (e.g. an angle outside 0..180, or a coordinate/offset expression that would change sign: QymCAD dimensions \
+                 keep the side they were created on, FINDINGS F-045).",
+                unsolved.join(", ")
+            )));
+        }
+        // A primitive's sizes and side count follow parameters and named reference dimensions: judge them on the settled scope (after
+        // propagation, as `dimension_set` does) and before the rebuild would build a million-sided prism.
+        if let Err((id, error)) = self.check_primitive_nodes() {
+            let message = self.node_refusal(id, &error);
+            return Err(Error::Invalid(message));
+        }
+        Ok(())
     }
 
     /// Delete a parameter. Refused while an expression still uses it.
