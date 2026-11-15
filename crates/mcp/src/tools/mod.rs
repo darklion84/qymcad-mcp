@@ -27,10 +27,10 @@ mod topology;
 pub use topology::SEL_BRIEF;
 
 use qymcad_engine::Session;
-use std::borrow::Cow;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+use std::borrow::Cow;
 
 /// MCP content items (`[{ "type": "text", "text": ... }, { "type": "image", ... }]`).
 pub type Content = Vec<Value>;
