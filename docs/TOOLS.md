@@ -1835,7 +1835,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"
@@ -1868,7 +1868,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"
@@ -4045,7 +4045,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "object"
         }
       ],
-      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seam edges are\nautomatically dropped with a result note; a selection containing only seams is refused. With `feature`,\nresolved against that fillet's source body and replaces its whole edge set."
+      "description": "The edges to round: ids from `topology` (current body only) or a description, e.g.\n{\"edges_of\": {\"facing\": \"+z\"}}. Resolved now and stored by persistent edge names. Seam edges are\nautomatically dropped with a result note; a selection containing only seams is refused. With `feature`,\nresolved against that fillet's source body and replaces its whole edge set. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
     },
     "feature": {
       "anyOf": [
@@ -4191,7 +4191,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "object"
         }
       ],
-      "description": "The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.\nSeam edges are automatically dropped with a result note; a selection containing only seams is refused.\nWith `feature`, resolved against that chamfer's source body and replaces its whole edge set."
+      "description": "The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.\nSeam edges are automatically dropped with a result note; a selection containing only seams is refused.\nWith `feature`, resolved against that chamfer's source body and replaces its whole edge set. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
     },
     "feature": {
       "anyOf": [
@@ -4242,7 +4242,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"
@@ -4403,7 +4403,7 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"
@@ -4590,7 +4590,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
           "type": "object"
         }
       ],
-      "description": "Faces to remove (the openings), at least one, e.g. {\"facing\": \"+z\"} for an open box. QymCAD has no closed\nhollow shell. With `feature`, replaces the complete opening-face selection on that shell."
+      "description": "Faces to remove (the openings), at least one, e.g. {\"facing\": \"+z\"} for an open box. QymCAD has no closed\nhollow shell. With `feature`, replaces the complete opening-face selection on that shell. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
     },
     "side": {
       "anyOf": [
@@ -4705,7 +4705,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
           "type": "object"
         }
       ],
-      "description": "One planar face, e.g. {\"facing\": \"+z\"}. With `feature`, replaces that node's selected face."
+      "description": "One planar face, e.g. {\"facing\": \"+z\"}. With `feature`, replaces that node's selected face. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
     },
     "feature": {
       "anyOf": [
@@ -4815,7 +4815,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
           "type": "object"
         }
       ],
-      "description": "Faces to tilt, at least one, e.g. {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}]}. Stored as the app's picks:\na description is frozen to the face ids it matched. With `feature`, replaces the complete drafted-face selection."
+      "description": "Faces to tilt, at least one, e.g. {\"union\": [{\"facing\": \"+x\"}, {\"facing\": \"-x\"}]}. Stored as the app's picks:\na description is frozen to the face ids it matched. With `feature`, replaces the complete drafted-face selection. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
     },
     "feature": {
       "anyOf": [
@@ -4869,7 +4869,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"
@@ -4954,7 +4954,7 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
           "type": "object"
         }
       ],
-      "description": "Exactly one face, planar or curved, e.g. {\"facing\": \"+z\"}. Frozen to its persistent id (native Thicken stores\nan id, not a query). With `feature`, replaces that node's face."
+      "description": "Exactly one face, planar or curved, e.g. {\"facing\": \"+z\"}. Frozen to its persistent id (native Thicken stores\nan id, not a query). With `feature`, replaces that node's face. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
     },
     "feature": {
       "anyOf": [
@@ -7698,7 +7698,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
                   "type": "object"
                 }
               ],
-              "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+              "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
             },
             {
               "type": "null"
@@ -7731,7 +7731,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
                   "type": "object"
                 }
               ],
-              "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+              "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
             },
             {
               "type": "null"
@@ -8619,7 +8619,7 @@ Preview what a part-local face or edge selection resolves to on a body right now
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"
@@ -8652,7 +8652,7 @@ Preview what a part-local face or edge selection resolves to on a body right now
               "type": "object"
             }
           ],
-          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`."
+          "description": "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
         },
         {
           "type": "null"

@@ -24,6 +24,8 @@ mod sketch_import;
 mod sketch_pattern;
 mod topology;
 
+pub use topology::SEL_BRIEF;
+
 use qymcad_engine::Session;
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;

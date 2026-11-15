@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 use std::borrow::Cow;
 
 /// The full selection grammar. It is sent once, in the description of `select`; every other schema carries
-/// only `SEL_REF` (tools/list budget: this text used to be repeated in nine schemas).
+/// only `SEL_BRIEF` (tools/list budget: this text used to be repeated in nine schemas).
 macro_rules! sel_help {
     () => {
         "Selection grammar (faces or edges). Explicit ids from `topology`: [id, ...] or a single id \
@@ -40,9 +40,20 @@ macro_rules! sel_help {
     };
 }
 
-/// The short pointer every selection argument carries instead of the grammar.
-const SEL_REF: &str = "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as \
-    {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`.";
+/// The one-line digest every selection argument and every selector parse error carries instead of the grammar
+/// (at most 300 characters; the test in `tools_list_budget.rs` holds it to that).
+pub const SEL_BRIEF: &str = "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: \
+    {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary \
+    edges. Full grammar: tool `select`.";
+
+/// Schema transform for a required selection field: its own doc comment replaces the description of `SelArg`'s
+/// schema, so the digest is appended to it.
+pub(super) fn with_sel_brief(schema: &mut Schema) {
+    let doc = schema.get("description").and_then(Value::as_str).unwrap_or_default().to_owned();
+    if !doc.contains(SEL_BRIEF) {
+        schema.insert("description".into(), Value::String(if doc.is_empty() { SEL_BRIEF.into() } else { format!("{doc} {SEL_BRIEF}") }));
+    }
+}
 
 /// A selection as the agent writes it (names still unresolved).
 #[derive(Clone, Debug)]
@@ -241,7 +252,7 @@ fn balanced_and(mut items: Vec<SelArg>) -> Result<SelArg, String> {
 impl<'de> Deserialize<'de> for SelArg {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let v = Value::deserialize(d)?;
-        SelArg::parse(&v).map_err(serde::de::Error::custom)
+        SelArg::parse(&v).map_err(|e| serde::de::Error::custom(format!("{e}. {SEL_BRIEF}")))
     }
 }
 
@@ -254,7 +265,7 @@ impl JsonSchema for SelArg {
     }
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
-            "description": SEL_REF,
+            "description": SEL_BRIEF,
             "anyOf": [
                 { "type": "array", "items": { "type": "integer", "minimum": 0 } },
                 { "type": "integer", "minimum": 0 },

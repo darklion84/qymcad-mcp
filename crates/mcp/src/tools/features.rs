@@ -205,6 +205,7 @@ pub struct FilletArgs {
     /// {"edges_of": {"facing": "+z"}}. Resolved now and stored by persistent edge names. Seam edges are
     /// automatically dropped with a result note; a selection containing only seams is refused. With `feature`,
     /// resolved against that fillet's source body and replaces its whole edge set.
+    #[schemars(transform = super::topology::with_sel_brief)]
     pub edges: SelArg,
     /// Radius, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values.
     #[serde(default)]
@@ -226,6 +227,7 @@ pub struct ChamferArgs {
     /// The edges to bevel: ids from `topology` (current body only) or a description, as for fillet.
     /// Seam edges are automatically dropped with a result note; a selection containing only seams is refused.
     /// With `feature`, resolved against that chamfer's source body and replaces its whole edge set.
+    #[schemars(transform = super::topology::with_sel_brief)]
     pub edges: SelArg,
     /// Setback, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values.
     #[serde(default)]
@@ -318,6 +320,7 @@ pub struct ShellArgs {
     pub body: Option<ObjRef>,
     /// Faces to remove (the openings), at least one, e.g. {"facing": "+z"} for an open box. QymCAD has no closed
     /// hollow shell. With `feature`, replaces the complete opening-face selection on that shell.
+    #[schemars(transform = super::topology::with_sel_brief)]
     pub open_faces: SelArg,
     /// Wall thickness, mm (number or expression); required without `feature`, otherwise use `dimension_set`.
     #[serde(default)]
@@ -340,6 +343,7 @@ pub struct PushFaceArgs {
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// One planar face, e.g. {"facing": "+z"}. With `feature`, replaces that node's selected face.
+    #[schemars(transform = super::topology::with_sel_brief)]
     pub face: SelArg,
     /// Distance along the outward normal, mm (number or expression); negative pulls the face in; required without `feature`.
     #[serde(default)]
@@ -360,6 +364,7 @@ pub struct DraftArgs {
     pub body: Option<ObjRef>,
     /// Faces to tilt, at least one, e.g. {"union": [{"facing": "+x"}, {"facing": "-x"}]}. Stored as the app's picks:
     /// a description is frozen to the face ids it matched. With `feature`, replaces the complete drafted-face selection.
+    #[schemars(transform = super::topology::with_sel_brief)]
     pub faces: SelArg,
     /// Exactly one planar face of the same body (removed from `faces` if listed there), e.g. {"facing": "-z"} for the base. Its outward
     /// normal is the pull direction; the plane through its centroid stays fixed. Required without `feature`;
@@ -390,6 +395,7 @@ pub struct ThickenArgs {
     pub body: Option<ObjRef>,
     /// Exactly one face, planar or curved, e.g. {"facing": "+z"}. Frozen to its persistent id (native Thicken stores
     /// an id, not a query). With `feature`, replaces that node's face.
+    #[schemars(transform = super::topology::with_sel_brief)]
     pub face: SelArg,
     /// Plate thickness, mm (number or expression), > 0, outward along the face normal; also checked on later
     /// evaluated edits. Required without `feature`.
