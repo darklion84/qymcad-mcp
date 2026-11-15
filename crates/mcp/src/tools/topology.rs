@@ -10,7 +10,11 @@ use serde::{Deserialize, Deserializer};
 use serde_json::{json, Map, Value};
 use std::borrow::Cow;
 
-const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topology`: [id, ...] or a single id \
+/// The full selection grammar. It is sent once, in the description of `select`; every other schema carries
+/// only `SEL_REF` (tools/list budget: this text used to be repeated in nine schemas).
+macro_rules! sel_help {
+    () => {
+        "Selection grammar (faces or edges). Explicit ids from `topology`: [id, ...] or a single id \
     (valid only for the body they were read from, after the latest feature). Or a description, re-evaluated by \
     QymCAD: {\"facing\": \"+z\"} faces whose outward normal points that way (\"+x\" ... \"-z\" or [x,y,z]; \
     optional \"tol_deg\", default 5); {\"along\": \"z\"} edges running along a direction (either sense); \
@@ -18,10 +22,10 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     junctions (e.g. boss/plate and hole rims); seams and G1 tangent junctions are excluded; \
     uncertain shallow signs or disagreement among five arc-length samples are omitted. Analytic cone rims \
     at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness threshold about 1.5 degrees), \
-    and fallback facet normals can require \
-    about 20–30 degrees. Bare corner and positive `and` previews count omitted uncertain candidates; \
-    an `and` requiring both signs matches no edge and reports no omission. Other compositions report the \
-    uncertain body total: corner filters treat those edges as neither concave nor convex; \
+    and fallback facet normals can require about 20–30 degrees. Bare corner filters and positive `and` \
+    selections count only uncertain edges matching the other conditions; an `and` requiring both concave and \
+    convex matches no edge and reports no omission. Other compositions report the uncertain body total: corner \
+    filters treat those edges as neither concave nor convex, without claiming omission or result membership. \
     {\"extreme\": \"+z\"} the topmost faces/edges (\"-x\" = leftmost ...); \"largest\" the largest face / longest \
     edge; {\"of_feature\": <feature id or name>, \"role\": \"cap_end\"} faces made by a feature (roles: cap_start, \
     cap_end = far cap of an extrude, wall, revolved, hole, blend, shell_wall); {\"edges_of\": <face selection>} \
@@ -32,7 +36,13 @@ const SEL_HELP: &str = "A selection of faces or edges. Explicit ids from `topolo
     full circles. {\"kind\": \"plane\"|\"cylinder\"|\"cone\"|\"sphere\"|\"other\"} faces. Kinds use topology's \
     classification. In hole/shell/push_face/draft, any selection containing a kind freezes its whole resolved face set \
     as persistent picks at creation; it does not rediscover faces after edits. Selections without kinds stay dynamic. Example, the top outline of a block: \
-    {\"edges_of\": {\"facing\": \"+z\"}}.";
+    {\"edges_of\": {\"facing\": \"+z\"}}."
+    };
+}
+
+/// The short pointer every selection argument carries instead of the grammar.
+const SEL_REF: &str = "Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or a description such as \
+    {\"facing\": \"+z\"}, {\"along\": \"z\"}, {\"concave\": true}, {\"edges_of\": {...}}. Full grammar: tool `select`.";
 
 /// A selection as the agent writes it (names still unresolved).
 #[derive(Clone, Debug)]
@@ -244,7 +254,7 @@ impl JsonSchema for SelArg {
     }
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
-            "description": SEL_HELP,
+            "description": SEL_REF,
             "anyOf": [
                 { "type": "array", "items": { "type": "integer", "minimum": 0 } },
                 { "type": "integer", "minimum": 0 },
@@ -582,14 +592,13 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "select",
-            "Preview what a part-local face or edge selection resolves to on a body right now (the same rows as `topology`; coordinate_frame: part_local). \
-             Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
-             a boss/plate curved junction, \
-             pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. \
-             Uncertain shallow signs or disagreement among five arc-length samples are omitted. Bare corner filters and positive `and` selections count only uncertain edges matching the other conditions; an `and` requiring both concave and convex matches no edge and reports no omission. Other compositions report the uncertain body total: corner filters treat those edges as neither concave nor convex, without claiming omission or result membership. \
-             Analytic cone rims at slopes >=3 degrees are tested; 0.9 degrees may be omitted (native smoothness \
-             threshold about 1.5 degrees). Fallback facet \
-             normals can require about 20–30 degrees.",
+            concat!(
+                "Preview what a part-local face or edge selection resolves to on a body right now (the same rows as `topology`; coordinate_frame: part_local). \
+                 Use it to check a selection before fillet/chamfer/hole/shell/push_face. For inward corners, including \
+                 a boss/plate curved junction, \
+                 pass edges: {\"concave\": true}; combine with {\"and\": [{\"concave\": true}, {\"along\": \"y\"}]}. ",
+                sel_help!()
+            ),
             |st, a: SelectArgs| {
                 let s = st.doc()?;
                 let body = body_of(s, &a.body)?;
