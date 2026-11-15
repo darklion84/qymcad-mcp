@@ -77,7 +77,7 @@ pub fn tools() -> Vec<Tool> {
                 let ids = resolve_bodies(s, &a.bodies)?;
                 let r = s.export_visible(a.format, &path, a.quality, ids.as_deref(), a.visible_only).map_err(err)?;
                 let mut v = serde_json::to_value(&r).unwrap_or(Value::Null);
-                v["warnings"] = json!(s.info().warnings);
+                v["warnings"] = json!(s.warnings());
                 if let Some(bodies) = v["bodies"].as_array_mut() {
                     for b in bodies {
                         if let Some(mv) = b["mesh_volume_mm3"].as_f64() {
@@ -113,7 +113,7 @@ pub fn tools() -> Vec<Tool> {
                     b[5]
                 );
                 text.push_str(&format!("\nskipped_hidden: {:?}", r.skipped_hidden));
-                for warning in s.info().warnings {
+                for warning in s.warnings() {
                     text.push_str(&format!("\nWarning: {warning}"));
                 }
                 Ok(vec![

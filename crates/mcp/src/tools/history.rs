@@ -100,9 +100,9 @@ pub fn tools() -> Vec<Tool> {
         tool("feature_delete", "Delete a timeline feature, sketch or datum atomically and return deleted node ids, names and kinds. A node with dependents is refused (unlike the app, it is not relinked); use cascade=true to remove all transitive dependents, or delete the leaf. Deleting the final modifier restores its consumed source as the result. Undo can restore the deletion.", |st, a: DeleteArgs| {
             let s = st.doc()?;
             let id = a.feature.resolve(s)?;
-            let before = s.info().timeline;
+            let before = s.timeline();
             let mut result = rebuild_json(&s.feature_delete(id, a.cascade).map_err(err)?);
-            let surviving: std::collections::HashSet<_> = s.info().timeline.iter().map(|n| n.id).collect();
+            let surviving: std::collections::HashSet<_> = s.timeline().iter().map(|n| n.id).collect();
             let deleted: Vec<_> = before.into_iter().filter(|n| !surviving.contains(&n.id)).collect();
             result["deleted"] = json!(deleted);
             Ok(result)
