@@ -18,4 +18,4 @@ Pinned QymCAD distinguishes Symmetric from Two sides. Its public Extrude and Com
 
 Two independently editable sides survive save/load and native app parameter scheduling. Native app inputs themselves still have native abs/ignore behavior; server refusal is a boundary policy, not an upstream change. Independent tests use a 10×6 profile, h=7 and d=3: V=600 mm³ with forward z=[-3,7] or reverse z=[-7,3]. A centered cut inside 20×16×20 stock removes 600 mm³, leaving 5800 mm³; cut cap positions distinguish direction even when volumes match.
 
-Evidence: stage-0 probes in `tasks/research-medA.md` section 1; implementation tests `crates/engine/tests/golden_extrude_two_sides.rs`; failing-first and mutation results in `tasks/A1-report.md`.
+Evidence: stage-0 probes in `tasks/research-medA.md` section 1; implementation tests `crates/engine/tests/it/golden_extrude_two_sides.rs`; failing-first and mutation results in `tasks/A1-report.md`.

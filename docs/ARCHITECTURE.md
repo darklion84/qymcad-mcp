@@ -299,9 +299,9 @@ argument path; the normal deserializer still rejects unknown fields and invalid 
 - `tests/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
 - `tests/golden_assembly_frames.rs` — local/world owner reporting, anchored 10×20×30 box placement, translated/rotated B-rep and mesh render bounds, STEP/3MF geometry readback and legacy bbox compatibility.
 - `tests/golden_assembly_app.rs` — saved native cached/forced open, parameter-window formula0→300→0 with no B-rep rebuild, released/numeric drag persistence, and three Parts/twenty plates/two Sliders with exactly six moving drawer bodies. `common::native_assembly_*` uses only native Project/kernel operations, with no Session repairs; this is not visible-app acceptance.
-- `crates/mcp/tests/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
+- `crates/mcp/tests/it/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
   edits the golden plate purely through tool calls.
-- `crates/mcp/tests/docs_fresh.rs` — docs/TOOLS.md equals the generated registry docs.
+- `crates/mcp/tests/it/docs_fresh.rs` — docs/TOOLS.md equals the generated registry docs.
 - Call-log unit tests cover UTC conversion, truncation, image redaction, retention and write/file-limit behavior;
   real-binary protocol tests use isolated temporary log directories. Other binary-spawning tests set
   `QYMCAD_MCP_LOG=off` so tests do not write to the developer's default log directory.

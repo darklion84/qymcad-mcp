@@ -24,7 +24,7 @@ Saved `.qcad` files retain both the mesh and original source bytes, so reopening
 
 I2 is complete for mesh import; C3 recognition is specified separately in [ADR 0040](0040-mesh-recognition.md). No B-rep is created by this tool, and every B-rep tool refuses a raw mesh body until `recognise` is called (see below).
 
-Evidence: `tasks/research-medC.md` I2, `tasks/research-medC-probes.md` sections 2–3, `crates/engine/tests/mesh_import.rs`, and the generated `import_mesh` schema in `docs/TOOLS.md`.
+Evidence: `tasks/research-medC.md` I2, `tasks/research-medC-probes.md` sections 2–3, `crates/engine/tests/it/mesh_import.rs`, and the generated `import_mesh` schema in `docs/TOOLS.md`.
 
 Every B-rep operation on a mesh body (topology, select, modifiers, arrays, mirror, split, boolean, sketch targets)
 is refused at one point, `Session::source_body`/`topo_body`, with one text naming the body as an imported mesh.

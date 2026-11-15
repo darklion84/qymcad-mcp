@@ -21,11 +21,11 @@ The app's `Project::add_hole_from_sketch` drills every isolated point in a sketc
 
 Agents can create native editable hole features at isolated sketch markers while retaining verified global/named coordinate edits after save/load. The engine owns broader transaction/deletion closure than the pinned native app. Refusals expose the pin's operand and scheduling limits rather than claiming full P8 support. Assemblies and native clone/remap repair remain outside this stage's scope. Global parameters remain outside timeline cascade: an alias explicitly reading a deleted named driver must be deleted separately before reevaluation; structural feature/sketch/hole consumers are removed.
 
-Evidence: `tasks/research-medA.md` section 3 and recommended contract item 6; retained stage-0 `research-medA/point-hole` probes; raw native characterizations in `crates/engine/tests/native_hole_sketch.rs` and `tasks/A4-logs/native-probe.log`. Implementation validation, failing-first and mutation results belong to `tasks/A4-report.md`.
+Evidence: `tasks/research-medA.md` section 3 and recommended contract item 6; retained stage-0 `research-medA/point-hole` probes; raw native characterizations in `crates/engine/tests/it/native_hole_sketch.rs` and `tasks/A4-logs/native-probe.log`. Implementation validation, failing-first and mutation results belong to `tasks/A4-report.md`.
 
-R1 evidence: `crates/engine/tests/golden_medium_r1.rs`, `dependencies::hole_tests::persisted_coordinate_reads_resolve_aliases_and_native_dimension_owners`, immediate archive assertions in `golden_hole_sketch.rs`, and `tasks/R1-report.md`.
+R1 evidence: `crates/engine/tests/it/golden_medium_r1.rs`, `dependencies::hole_tests::persisted_coordinate_reads_resolve_aliases_and_native_dimension_owners`, immediate archive assertions in `golden_hole_sketch.rs`, and `tasks/R1-report.md`.
 
-R2 evidence: `crates/engine/tests/golden_medium_r2.rs`, `hole_sketch::r2_tests::evaluated_rebuild_refuses_transitive_projected_named_source`, and `tasks/R2-report.md` (ported reviewer fixtures, creation/edit/open/rebuild refusals, immediate archives and production mutations).
+R2 evidence: `crates/engine/tests/it/golden_medium_r2.rs`, `hole_sketch::r2_tests::evaluated_rebuild_refuses_transitive_projected_named_source`, and `tasks/R2-report.md` (ported reviewer fixtures, creation/edit/open/rebuild refusals, immediate archives and production mutations).
 
 R3 evidence: `tasks/R3-report.md` records the later world-plane reference-source refusal and earlier-source control, checking bore X=15 in both engine and saved native paths, exact archive rollback and production mutations.
 

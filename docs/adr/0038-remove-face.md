@@ -19,4 +19,4 @@ QymCAD's RemoveFace operation heals an existing body after deleting a selected s
 
 Native persistent face names and witnesses survive the tested save/reopen and app-style parameter edit path. A blind-hole wall-only heal remains an error with the native reason `cad-neighbours-not-extendable`, even though QymCAD supplied a pass-through shape. The implementation is batchable and undoable through the existing registry boundary. P12 is covered; T2 remains partial because only RemoveFace re-pick is implemented.
 
-Evidence: `crates/engine/tests/golden_remove_face.rs`, the real-kernel probe in `tasks/research-medC-probes.md`, and the generated `remove_face` schema in `docs/TOOLS.md`.
+Evidence: `crates/engine/tests/it/golden_remove_face.rs`, the real-kernel probe in `tasks/research-medC-probes.md`, and the generated `remove_face` schema in `docs/TOOLS.md`.

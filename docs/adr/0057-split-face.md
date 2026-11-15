@@ -2,7 +2,7 @@
 
 - Status: accepted (2026-11-14).
 - Related: ADR 0056 (style: one tool = one app action, refuse only silent wrong results), 0024 (`split`), 0053 (clones), 0050 (`feature_reorder`), 0047 (rollback); F-100 (`split` piece identity), F-185; F-187-F-194.
-- Probes (`crates/engine/tests/k0_probes.rs`, native pin f25f27d) and their decisions are in the section "Probes" below.
+- Probes (`crates/engine/tests/it/k0_probes.rs`, native pin f25f27d) and their decisions are in the section "Probes" below.
 - Principle: the tool is the app's action with its limits. Where the native result is silently wrong, only that case is refused and recorded in FINDINGS; no workaround is written.
 
 ## 1. `split_face`: the app's Split faces command
@@ -67,7 +67,7 @@ At creation, and on every later rebuild of an existing node (`param_set`, `dimen
 
 ## Probes
 
-Executable in `crates/engine/tests/k0_probes.rs` (the app's data path: `Project`, `add_split_face` and its regeneration through the testkit, no `Session`); the server's behaviour is in `golden_split_face`. Observed = executed; inferred = read in source only. The block is 40 x 30 x 10 (x -20..20, y -15..15, z 0..10); the U body is a 40 x 30 x 20 block less a slot 20 wide and 10 deep from the top; the L body is the block less the upper half of its x > 0 side.
+Executable in `crates/engine/tests/it/k0_probes.rs` (the app's data path: `Project`, `add_split_face` and its regeneration through the testkit, no `Session`); the server's behaviour is in `golden_split_face`. Observed = executed; inferred = read in source only. The block is 40 x 30 x 10 (x -20..20, y -15..15, z 0..10); the U body is a 40 x 30 x 20 block less a slot 20 wide and 10 deep from the top; the L body is the block less the upper half of its x > 0 side.
 
 | # | Question | Observation | Decision |
 |---|---|---|---|

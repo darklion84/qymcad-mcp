@@ -54,7 +54,7 @@ data survives save. Documents with valid stored B-reps retain their exact geomet
 their originals fails. Validating sources introduces one native parse per embedded import source on open;
 this cost supplies the required unavailable-original warning even when a stored B-rep remains usable.
 Source parsing uses temporary files because the pinned exact-reader API accepts paths; these files are
-isolated between sessions and removed after each read. F-072 and `crates/engine/tests/imports.rs` record
+isolated between sessions and removed after each read. F-072 and `crates/engine/tests/it/imports.rs` record
 the failing-before/passing-after cases and stored-geometry controls. Mutation and full-workspace check
 results are recorded in `tasks/review-imports.md`: all 11 import tests pass, five independent mutations
 fail their regression assertions, and `scripts/check.sh` is green.

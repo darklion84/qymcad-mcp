@@ -19,4 +19,4 @@ The app's datum bar exposes distance, Tilt X, Tilt Y and Turn on the same native
 
 Direct planes and a two-deep chain are tested with independent transformed prism corners, volume and saved native app global/named edits. GUI structural edits to placement formulas/driver names or sketch hosts still require reopen/save through the server to reconcile persisted barriers, as in ADR 0007. This is a saved recipe fix for the tested parameter paths, not an upstream scheduler patch.
 
-Evidence: stage-0 `tasks/research-medA.md` section 4 and `research-medA/plane/{probe.rs,output.txt}`; `crates/engine/tests/golden_datum_tilt.rs`; failing-first and restored mutation logs in `tasks/A2-report.md`.
+Evidence: stage-0 `tasks/research-medA.md` section 4 and `research-medA/plane/{probe.rs,output.txt}`; `crates/engine/tests/it/golden_datum_tilt.rs`; failing-first and restored mutation logs in `tasks/A2-report.md`.

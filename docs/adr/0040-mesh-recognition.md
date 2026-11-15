@@ -18,4 +18,4 @@
 
 ## Evidence
 
-`crates/engine/tests/mesh_import.rs` asserts the cube `S^3` volume and six faces, cylinder exact `pi*r^2*h` and polyhedron `(n/2)*r^2*sin(2*pi/n)*h`, generated fixtures, persistence and existing import cap behavior. `tasks/research-medC-probes.md` section 2 records the pinned app-path native outputs and cost. `docs/TOOLS.md` is generated from the registry.
+`crates/engine/tests/it/mesh_import.rs` asserts the cube `S^3` volume and six faces, cylinder exact `pi*r^2*h` and polyhedron `(n/2)*r^2*sin(2*pi/n)*h`, generated fixtures, persistence and existing import cap behavior. `tasks/research-medC-probes.md` section 2 records the pinned app-path native outputs and cost. `docs/TOOLS.md` is generated from the registry.

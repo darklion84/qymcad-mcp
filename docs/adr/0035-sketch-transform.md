@@ -19,4 +19,4 @@ QymCAD exposes native move, copy and rotate operations for selected sketch curve
 
 Move, copy and rotate match the app's public core path and are batchable and undoable through the existing modelling history. Transforms are intentionally not drivers; users who need later parameter edits must use named dimensions or constraints after the edit.
 
-Evidence: native API source and probe in `tasks/research-medB.md` S8; engine and MCP tests in `crates/mcp/tests/sketch_edits_2.rs`; final verification in `tasks/B1-report.md`.
+Evidence: native API source and probe in `tasks/research-medB.md` S8; engine and MCP tests in `crates/mcp/tests/it/sketch_edits_2.rs`; final verification in `tasks/B1-report.md`.

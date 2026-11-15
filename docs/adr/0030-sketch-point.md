@@ -21,6 +21,6 @@ The app creates a sketch Point through `Project::sketch_point_at(si, x, y, 1e-6)
 
 Agents can place persistent dimensioned markers, edit both named coordinates in the app, inspect eligibility and remove markers safely. Existing curves that reuse a marker make it ineligible for isolated removal. Literal-zero PointOnLine rows are geometric constraints rather than nameable numeric dimensions, matching existing sketch pinning.
 
-Evidence: `tasks/research-medA.md` section 3 and `research-medA/point-hole` probes; `crates/engine/tests/golden_sketch_point.rs`; failing-first, app-path and mutation results in `tasks/A1-report.md`.
+Evidence: `tasks/research-medA.md` section 3 and `research-medA/point-hole` probes; `crates/engine/tests/it/golden_sketch_point.rs`; failing-first, app-path and mutation results in `tasks/A1-report.md`.
 
-R1 evidence: `crates/engine/tests/golden_medium_r1.rs`, `sketch::r1_point_guards`, and `tasks/R1-report.md` (failing-first and production mutation logs).
+R1 evidence: `crates/engine/tests/it/golden_medium_r1.rs`, `sketch::r1_point_guards`, and `tasks/R1-report.md` (failing-first and production mutation logs).

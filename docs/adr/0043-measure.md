@@ -43,7 +43,7 @@ Resolve references and selections outside any caller-held kernel gate. Use one s
 
 T8 covers native primitive distances, acute unsigned angles, edge lengths and analytic radii/diameters. Exclusions are general trimmed B-rep minimum distance, area, volume, mass, signed angles, persistent vertex names, spline pairs and nonplanar/noncylindrical face pairs. Existing `doc_info` and `topology` remain the sources for volume and tessellated area.
 
-Native evidence is retained in `tasks/research-medE/measure/main.rs` and `run.log` (`MEASURE PROBE PASSED`), with source citations and independent formulas in `tasks/research-medE.md`, T8 §1–3. Stage acceptance belongs to `crates/engine/tests/golden_measure.rs`, `crates/mcp/tests/e2_measure.rs` and `tasks/E2-report.md`; those tests and production mutations must establish the implemented contract separately from the earlier native probe.
+Native evidence is retained in `tasks/research-medE/measure/main.rs` and `run.log` (`MEASURE PROBE PASSED`), with source citations and independent formulas in `tasks/research-medE.md`, T8 §1–3. Stage acceptance belongs to `crates/engine/tests/it/golden_measure.rs`, `crates/mcp/tests/it/e2_measure.rs` and `tasks/E2-report.md`; those tests and production mutations must establish the implemented contract separately from the earlier native probe.
 
 ## 2026-11-03 addendum — E-R1
 

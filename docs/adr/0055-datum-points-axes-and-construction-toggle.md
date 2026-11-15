@@ -2,7 +2,7 @@
 
 - Status: accepted (2026-11-12).
 - Related: ADR 0031 (datum planes), 0042 (names), 0052-0054 (style: one tool = one app action, refuse only silent wrong results); F-168-F-177.
-- Probes (`crates/engine/tests/i0_probes.rs`, native pin f25f27d) and their decisions are in the section "Probes" below.
+- Probes (`crates/engine/tests/it/i0_probes.rs`, native pin f25f27d) and their decisions are in the section "Probes" below.
 - Principle: each tool is one existing QymCAD app action with the GUI's limits. Where the native result is silently wrong,
   only that case is refused and recorded in FINDINGS; no workaround is written.
 
@@ -140,7 +140,7 @@ batch rollback, undo, Part ownership).
 
 ## Probes
 
-Executable in `crates/engine/tests/i0_probes.rs` (native app data path through `common::native_*` where the question is about the app;
+Executable in `crates/engine/tests/it/i0_probes.rs` (native app data path through `common::native_*` where the question is about the app;
 the server's `Session` where it is about the server). Observed = executed, inferred = read in source only.
 
 | # | Question | Observation | Decision |

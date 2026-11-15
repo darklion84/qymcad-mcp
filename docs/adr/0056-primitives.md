@@ -2,7 +2,7 @@
 
 - Status: accepted (2026-11-13).
 - Related: ADR 0055 (style: one tool = one app action, refuse only silent wrong results), 0052-0054, 0026 (`body_boolean`), 0050 (`feature_reorder`), 0047 (rollback); F-180-F-185.
-- Probes (`crates/engine/tests/j0_probes.rs`, native pin f25f27d) and their decisions are in the section "Probes" below.
+- Probes (`crates/engine/tests/it/j0_probes.rs`, native pin f25f27d) and their decisions are in the section "Probes" below.
 - Principle: the tool is the app's action with the app's field limits. Where the native result is silently wrong, only that case is refused and recorded in FINDINGS; no workaround is written.
 
 ## 1. `primitive`: the app's Box, Cylinder, Sphere, Cone, Torus and Prism commands
@@ -60,7 +60,7 @@ Two primitives united, apart or touching at a point, are one body of two pieces 
 
 ## Probes
 
-Executable in `crates/engine/tests/j0_probes.rs` (the app's data path: `Project` and its regeneration through the testkit, no `Session`) and `golden_primitives` (the server path). Observed = executed; inferred = read in source only.
+Executable in `crates/engine/tests/it/j0_probes.rs` (the app's data path: `Project` and its regeneration through the testkit, no `Session`) and `golden_primitives` (the server path). Observed = executed; inferred = read in source only.
 
 | # | Question | Observation | Decision |
 |---|---|---|---|

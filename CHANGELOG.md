@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Changed
+- Integration tests are one binary per crate (`crates/*/tests/it/`, review item B1): a clean test build takes 138 s instead of 173 s and 3.6 GB of target instead of 10 GB, rebuilding the tests after an engine edit 11 s instead of 24 s, the test run 398 s instead of 524 s; the 1609 tests are unchanged.
+
 ## 0.1.1-dev.20261026.18 — review fixes (ADR 0058)
 
 ### Fixed

@@ -30,7 +30,7 @@ points already use, F-112) and a migration; separate scope.
 
 ## Evidence
 
-`crates/engine/tests/golden_dimension_index.rs`: both circle-centre rows edit only their own axis; triangle
+`crates/engine/tests/it/golden_dimension_index.rs`: both circle-centre rows edit only their own axis; triangle
 (3,4),(13,4),(13,14) × 2 goes from 100 to 70 mm³ when the second vertex's y row becomes 7, also after save/reopen;
 formulas on either row follow their parameter; naming refused with the project unchanged; undo restores the row
 and solid. All fail on the previous code. `golden_dimensions_1` keeps the naming refusal with the new message.

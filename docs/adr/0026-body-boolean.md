@@ -20,4 +20,4 @@ QymCAD v0.1.1-dev.20261026 exposes `Project::add_body_boolean(a, b, op)`: cut, u
 
 Stable-topology parameter edits work through save/open and the app-path emulation. Topology-changing edits are deliberately conservative because native piece ids can disappear or be reassigned. A future identity policy may relax the guard after evidence for downstream references and app behavior exists.
 
-Evidence: `tasks/cover-2-evidence.md`; tests `crates/engine/tests/golden_body_boolean.rs` and `crates/mcp/tests/body_boolean.rs`.
+Evidence: `tasks/cover-2-evidence.md`; tests `crates/engine/tests/it/golden_body_boolean.rs` and `crates/mcp/tests/it/body_boolean.rs`.

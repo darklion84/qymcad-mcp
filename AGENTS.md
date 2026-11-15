@@ -13,6 +13,7 @@ parts (`.qcad`) headlessly, so an agent can model and a person can then edit the
 - Prerequisites (macOS): `brew install opencascade` (7.8+, 7.9.3 tested), Rust stable via rustup.
   OCCT paths are set in `.cargo/config.toml`; override `OCCT_INCLUDE_DIR` / `OCCT_LIB_DIR` for other layouts.
 - `scripts/check.sh` — fmt, clippy (`-D warnings`), all tests. It must be green before every commit.
+- Integration tests live in one binary per crate (`crates/*/tests/it/`, each file a module listed in `it/main.rs`); a new test file must be added there. Run one file with `cargo test -p qymcad-engine --test it golden_repick::`.
 - The first build compiles the OCCT bridge (~1-2 min); later builds are incremental.
 
 ## Rules
@@ -20,13 +21,13 @@ parts (`.qcad`) headlessly, so an agent can model and a person can then edit the
   upgrade of QymCAD must touch only the engine (and tests/docs).
 - **Every behaviour of QymCAD you rely on goes into docs/FINDINGS.md** with evidence (test, observation or
   source path). A guess is not a finding.
-- **Every modelling feature has a golden test** (`crates/engine/tests/golden_*.rs`) that builds a part and
+- **Every modelling feature has a golden test** (`crates/engine/tests/it/golden_*.rs`) that builds a part and
   checks volume/bbox against a hand-computed or reference value. These are what catch QymCAD regressions.
 - **Parameter names and expressions are case-sensitive** and match exactly, as in the app since v0.1.1-dev.20261026; a new name that differs from an existing one only by case is refused (ADR 0021, FINDINGS F-001). Do not lowercase.
 - **Never trust "a shape exists"** — check `RegenReport.errors` (F-008).
 - Significant decisions get an ADR in `docs/adr/` (copy the format of the existing ones).
 - Tool schemas are generated from Rust types; after changing a tool run `cargo run -p qymcad-mcp -- --dump-tools
-  > docs/TOOLS.md` (`crates/mcp/tests/docs_fresh.rs` fails when it is stale).
+  > docs/TOOLS.md` (`crates/mcp/tests/it/docs_fresh.rs` fails when it is stale).
 - MCP layer rules: argument structs `deny_unknown_fields`; doc comments on every field (they become the schema
   descriptions the model reads); a tool failure is `Err(String)` (→ `isError: true`), never a panic.
 - Keep CHANGELOG.md updated under `Unreleased`.

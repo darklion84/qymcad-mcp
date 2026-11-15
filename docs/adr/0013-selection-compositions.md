@@ -60,7 +60,7 @@ stored as the app's adder and edit store it (`Ref::picks` for shell, `Ref::one(i
 push_face). QymCAD's edit mode (qymcad-part `reopen.rs` → `params.rs::live_picks`) reopens only picked ids, so a
 stored query opened «Править» with nothing selected and OK would destroy the feature. Re-resolving a description
 after upstream edits was our extension beyond the app and is dropped. `hole` is unchanged by this addendum.
-Evidence: `crates/engine/tests/golden_app_face_picks.rs`.
+Evidence: `crates/engine/tests/it/golden_app_face_picks.rs`.
 
 ## 2026-11-09 addendum (2) — hole too
 

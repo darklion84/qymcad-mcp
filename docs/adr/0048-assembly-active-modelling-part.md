@@ -30,7 +30,7 @@ owning part first, and creating a sketch from an assembly calls native `part_to_
 
 ## Consequences and evidence
 
-`crates/engine/tests/golden_assembly_active.rs`: the user's GUI file (`tests/data/f1-gui-assembly-active.qcad`)
+`crates/engine/tests/it/golden_assembly_active.rs`: the user's GUI file (`tests/data/f1-gui-assembly-active.qcad`)
 cuts with an existing sketch implicitly and equals the explicit-target control; a new sketch goes to the sole part;
 a minimal 10x20x5 stock with the assembly active loses exactly a 2x2x5 pocket (980 mm³), keeps its bbox and
 reopens with the assembly still active; two parts refuse with an unchanged archive; a cross-part target is refused.

@@ -27,7 +27,7 @@ This membership drives `doc_info` bodies, current-body choice, topology/select d
 
 T6 is partial: body-feature suppression is exposed; rollback remains pending E7. Native source and retained executed probes are recorded in F-134 and `tasks/research-medE/history/`. These probes ran the pinned native kernel and saved-file app parameter scheduling; they do not claim manual GUI acceptance.
 
-Acceptance lives in `crates/engine/tests/golden_suppress.rs` and `crates/mcp/tests/e56_suppress.rs`. Independent formulas include a centered 10 × 20 × 20 prism of volume 4000 mm³; 20 × 20 × 10 stock with a 5 × 5 × 10 cut gives 3750 mm³, or 4000 when bypassed, and an independent 2 × 2 × 10 cut gives 3710 or 3960 mm³ respectively. Stage execution and production mutations are recorded in `tasks/E56-report.md` and `tasks/E56-logs/`.
+Acceptance lives in `crates/engine/tests/it/golden_suppress.rs` and `crates/mcp/tests/it/e56_suppress.rs`. Independent formulas include a centered 10 × 20 × 20 prism of volume 4000 mm³; 20 × 20 × 10 stock with a 5 × 5 × 10 cut gives 3750 mm³, or 4000 when bypassed, and an independent 2 × 2 × 10 cut gives 3710 or 3960 mm³ respectively. Stage execution and production mutations are recorded in `tasks/E56-report.md` and `tasks/E56-logs/`.
 
 ## 2026-11-03 addendum — E-R2, E-R3, E-R4, E-R5
 
