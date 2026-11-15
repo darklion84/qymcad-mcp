@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased — split faces (ADR 0057)
+## 0.1.1-dev.20261026.17 — split faces (ADR 0057)
 
 ### Added
 - `split_face`: the app's Split faces command — cut every face a plane crosses and keep the body in one piece (nothing removed, volume unchanged; not `split`). The plane is a base plane, a datum plane or one planar face, `offset` a number or a formula (stays on the node, `dimension_set` key `offset`), `name` optional; atomic, batch-allowed, one undo step. Returns `feature` (also the body's id), `body`, `name`, `offset`, `faces` {before, after}, `added_faces` and the rebuild. Base planes and offsets are in the local frame of the body's Part (F-194).
