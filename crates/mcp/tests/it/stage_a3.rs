@@ -148,7 +148,9 @@ fn a3_real_stdio_batch_compact_reuse_literal_rotation_and_undo() {
     assert_eq!(batch["steps"][3]["reused"], false);
     assert_eq!(batch["steps"][4]["reused"], true);
     assert_eq!(batch["steps"][5]["reused"], true);
-    assert_eq!(batch["steps"][3]["created"]["id"], batch["steps"][4]["created"]["id"]);
+    assert!(batch["steps"][3]["created"]["id"].is_u64());
+    // A reused Move changes the node step 4 made; it creates nothing (M4).
+    assert_eq!(batch["steps"][4].get("created"), None, "{}", batch["steps"][4]);
     // Z90 around its centre, +12X, then Z90 around zero: x[-5,5], y[2,22].
     let body = &batch["bodies"][0];
     assert!((body["volume_mm3"].as_f64().unwrap() - 6000.).abs() < 1e-6);

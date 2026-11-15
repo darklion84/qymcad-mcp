@@ -80,10 +80,13 @@ where
     F: Fn(&mut State, A) -> Result<Value, String> + 'static,
 {
     tool_content(name, description, move |st, a: A| {
+        // The core allocates `next_id += 1`: an id up to the current `next_id` existed before the call (a re-pick returns its
+        // own node under `body`), so it is never reported as created, whatever key it comes under.
+        let last_old = st.session.as_ref().map(|s| s.project().next_id);
         f(st, a).map(|v| {
             // Creation responses return their node id under body, plane or sketch. Capture it before
             // serialization so undo labels follow the returned feature rather than auxiliary nodes.
-            st.created_node = if name == "sketch_project" {
+            let returned = if name == "sketch_project" {
                 None // Projection returns its source body and target sketch; neither node was created.
             } else if name == "primitive" {
                 v["feature"].as_u64() // `body` is the union node there, not the node the call created.
@@ -96,6 +99,7 @@ where
                     _ => None,
                 })
             };
+            st.created_node = returned.filter(|id| last_old.is_some_and(|last| *id > last));
             vec![json!({ "type": "text", "text": v.to_string() })]
         })
     })

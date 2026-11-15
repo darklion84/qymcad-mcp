@@ -119,6 +119,9 @@ fn fillet_repick_with_feature_runs_inside_batch() {
     assert_eq!(batch["steps"][1]["result"]["name"], "round");
     assert!(!batch["steps"][1]["result"]["selected_edges"].as_array().unwrap().is_empty());
     assert_eq!(batch["steps"][1]["result"]["rebuild"]["errors"], Value::Null);
+    // M4: the first step created the node, the re-pick only changed it.
+    assert_eq!(batch["steps"][0]["created"]["id"], feature);
+    assert_eq!(batch["steps"][1].get("created"), None, "a re-pick creates no node: {}", batch["steps"][1]);
 }
 
 #[test]
