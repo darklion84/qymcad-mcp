@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-/// An object reference: its numeric id, or the name given when it was created.
+/// An object id or the name it was given.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum ObjRef {
@@ -24,8 +24,8 @@ impl ObjRef {
     }
 }
 
-/// A plane: `"XY"` (normal +Z), `"XZ"` (normal −Y), `"YZ"` (normal +X); `{"plane": <datum plane>}`; or
-/// `{"body": <body>, "face": <face id>}` for a planar face (face ids come from `topology`).
+/// A plane: `"XY"` (normal +Z), `"XZ"` (−Y), `"YZ"` (+X); `{"plane": <datum>}`; or `{"body": <body>, "face": <face id>}`
+/// for a planar face (ids from `topology`).
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum PlaneArg {
@@ -35,7 +35,7 @@ pub enum PlaneArg {
         plane: ObjRef,
     },
     Face {
-        /// Body id or name containing the face.
+        /// Body id or name.
         body: ObjRef,
         /// Planar face id from the body's current topology.
         face: u32,

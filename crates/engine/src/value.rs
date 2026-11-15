@@ -5,8 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `"w/2"`,
-/// `"t+1"`, `"2*pi*r"`. Expressions keep the model parametric: changing the parameter later rebuilds the part.
+/// A number (mm or degrees) or an expression over parameters, e.g. `"w/2"`; an expression keeps the part parametric.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Num {

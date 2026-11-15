@@ -92,8 +92,7 @@ fn default_boolean_op() -> String {
     "cut".into()
 }
 
-/// Split operation plane: its XZ offset direction follows the native operation's +Y normal. The three forms are read by hand so a
-/// wrong value names them (serde's untagged enum says only "did not match any variant").
+/// Split operation plane; its XZ offset direction follows the native operation's +Y normal.
 #[derive(JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 enum SplitPlaneArg {

@@ -206,7 +206,7 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -219,7 +219,7 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -272,7 +272,7 @@ Create or change a named parameter and rebuild everything that depends on it. Us
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     }
   },
   "additionalProperties": false,
@@ -340,7 +340,7 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PlaneArg": {
       "anyOf": [
@@ -363,7 +363,7 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
           "properties": {
             "body": {
               "$ref": "#/$defs/ObjRef",
-              "description": "Body id or name containing the face."
+              "description": "Body id or name."
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
@@ -379,7 +379,7 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
           "type": "object"
         }
       ],
-      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (normal −Y), `\"YZ\"` (normal +X); `{\"plane\": <datum plane>}`; or\n`{\"body\": <body>, \"face\": <face id>}` for a planar face (face ids come from `topology`)."
+      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (−Y), `\"YZ\"` (+X); `{\"plane\": <datum>}`; or `{\"body\": <body>, \"face\": <face id>}`\nfor a planar face (ids from `topology`)."
     }
   },
   "additionalProperties": false,
@@ -1144,7 +1144,7 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -1157,7 +1157,7 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "RectAnchor": {
       "description": "The anchor retained by the native rectangle figure.",
@@ -1500,7 +1500,7 @@ Add a geometric constraint or a driving dimension between existing points/entiti
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -1513,7 +1513,7 @@ Add a geometric constraint or a driving dimension between existing points/entiti
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PointRole": {
       "description": "Which owned point of a curve is requested.",
@@ -1729,7 +1729,7 @@ Delete one entity (with the points only it used and the constraints on them), on
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -1794,7 +1794,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -1906,7 +1906,7 @@ A sketch's plane (named datums show name and plane id) and world_frame (origin m
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -2121,7 +2121,7 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -2134,7 +2134,7 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "OriginRef": {
       "description": "The named sketch origin.",
@@ -2711,7 +2711,7 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -2724,7 +2724,7 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PatternKindArg": {
       "enum": [
@@ -2900,7 +2900,7 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -2913,7 +2913,7 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PlaneArg": {
       "anyOf": [
@@ -2936,7 +2936,7 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
           "properties": {
             "body": {
               "$ref": "#/$defs/ObjRef",
-              "description": "Body id or name containing the face."
+              "description": "Body id or name."
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
@@ -2952,7 +2952,7 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
           "type": "object"
         }
       ],
-      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (normal −Y), `\"YZ\"` (normal +X); `{\"plane\": <datum plane>}`; or\n`{\"body\": <body>, \"face\": <face id>}` for a planar face (face ids come from `topology`)."
+      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (−Y), `\"YZ\"` (+X); `{\"plane\": <datum>}`; or `{\"body\": <body>, \"face\": <face id>}`\nfor a planar face (ids from `topology`)."
     }
   },
   "additionalProperties": false,
@@ -3016,7 +3016,7 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -3029,7 +3029,7 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "RotationArgs": {
       "additionalProperties": false,
@@ -3163,7 +3163,7 @@ Create a datum plane offset from a base or datum plane, with optional native Til
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -3176,7 +3176,7 @@ Create a datum plane offset from a base or datum plane, with optional native Til
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PlaneArg": {
       "anyOf": [
@@ -3199,7 +3199,7 @@ Create a datum plane offset from a base or datum plane, with optional native Til
           "properties": {
             "body": {
               "$ref": "#/$defs/ObjRef",
-              "description": "Body id or name containing the face."
+              "description": "Body id or name."
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
@@ -3215,7 +3215,7 @@ Create a datum plane offset from a base or datum plane, with optional native Til
           "type": "object"
         }
       ],
-      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (normal −Y), `\"YZ\"` (normal +X); `{\"plane\": <datum plane>}`; or\n`{\"body\": <body>, \"face\": <face id>}` for a planar face (face ids come from `topology`)."
+      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (−Y), `\"YZ\"` (+X); `{\"plane\": <datum>}`; or `{\"body\": <body>, \"face\": <face id>}`\nfor a planar face (ids from `topology`)."
     }
   },
   "additionalProperties": false,
@@ -3297,7 +3297,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -3310,7 +3310,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3476,7 +3476,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -3489,7 +3489,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3682,7 +3682,7 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -3695,7 +3695,7 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3848,7 +3848,7 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -3861,7 +3861,7 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3993,7 +3993,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4006,7 +4006,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -4103,7 +4103,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4116,7 +4116,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -4295,7 +4295,7 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4308,7 +4308,7 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -4499,7 +4499,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4512,7 +4512,7 @@ Hollow a body with walls of `thickness`, removing `open_faces` (at least one; e.
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Side": {
       "description": "Which side of the faces a shell's wall goes.",
@@ -4641,7 +4641,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4654,7 +4654,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -4751,7 +4751,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4764,7 +4764,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -4902,7 +4902,7 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -4915,7 +4915,7 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -5013,7 +5013,7 @@ Remove a non-empty set of faces and heal the body using native RemoveFace. Selec
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -5127,7 +5127,7 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -5140,7 +5140,7 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -5219,7 +5219,7 @@ Copy the WHOLE body `count` times about an axis (default world Z), including all
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -5232,7 +5232,7 @@ Copy the WHOLE body `count` times about an axis (default world Z), including all
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -5325,7 +5325,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PlaneArg": {
       "anyOf": [
@@ -5348,7 +5348,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
           "properties": {
             "body": {
               "$ref": "#/$defs/ObjRef",
-              "description": "Body id or name containing the face."
+              "description": "Body id or name."
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
@@ -5364,7 +5364,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
           "type": "object"
         }
       ],
-      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (normal −Y), `\"YZ\"` (normal +X); `{\"plane\": <datum plane>}`; or\n`{\"body\": <body>, \"face\": <face id>}` for a planar face (face ids come from `topology`)."
+      "description": "A plane: `\"XY\"` (normal +Z), `\"XZ\"` (−Y), `\"YZ\"` (+X); `{\"plane\": <datum>}`; or `{\"body\": <body>, \"face\": <face id>}`\nfor a planar face (ids from `topology`)."
     }
   },
   "additionalProperties": false,
@@ -5422,7 +5422,7 @@ Create a datum point, as the app's Datum point command does: by coordinates `at`
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -5435,7 +5435,7 @@ Create a datum point, as the app's Datum point command does: by coordinates `at`
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "VertexArgs": {
       "additionalProperties": false,
@@ -5585,7 +5585,7 @@ Create a datum axis, as the app's Datum axis command does. Exactly one of: `edge
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -5682,7 +5682,7 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -5695,7 +5695,7 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PlaceArgs": {
       "additionalProperties": false,
@@ -6056,7 +6056,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -6069,7 +6069,7 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -6295,7 +6295,7 @@ Apply a native parametric boolean between two distinct current bodies in the sam
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -6366,7 +6366,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -6379,7 +6379,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "SplitPlaneArg": {
       "anyOf": [
@@ -6439,7 +6439,7 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
           "type": "object"
         }
       ],
-      "description": "Split operation plane: its XZ offset direction follows the native operation's +Y normal. The three forms are read by hand so a\nwrong value names them (serde's untagged enum says only \"did not match any variant\")."
+      "description": "Split operation plane; its XZ offset direction follows the native operation's +Y normal."
     }
   },
   "additionalProperties": false,
@@ -6516,7 +6516,7 @@ Split faces, as the app's Split faces command: cut the faces of a body along a p
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -6529,7 +6529,7 @@ Split faces, as the app's Split faces command: cut the faces of a body along a p
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "SplitPlaneArg": {
       "anyOf": [
@@ -6589,7 +6589,7 @@ Split faces, as the app's Split faces command: cut the faces of a body along a p
           "type": "object"
         }
       ],
-      "description": "Split operation plane: its XZ offset direction follows the native operation's +Y normal. The three forms are read by hand so a\nwrong value names them (serde's untagged enum says only \"did not match any variant\")."
+      "description": "Split operation plane; its XZ offset direction follows the native operation's +Y normal."
     }
   },
   "additionalProperties": false,
@@ -6755,7 +6755,7 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -6768,7 +6768,7 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -6878,7 +6878,7 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Quality": {
       "description": "Mesh detail: the chordal deflection used to tessellate curved faces. The presets of QymCAD.app's mesh export\ndialog (`crates/qymcad/src/gui/panels_windows.rs` `mesh_quality_dialog`).",
@@ -6963,7 +6963,7 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "View": {
       "description": "A view direction. Orthographic; +Z is up in every side view.",
@@ -7067,7 +7067,7 @@ Move a single-output B-rep timeline feature up or down across its same-parent bo
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -7107,7 +7107,7 @@ Move the native history rollback marker with exactly one selector: after keeps t
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -7144,7 +7144,7 @@ Suppress or enable a body-producing timeline feature through native checked rege
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -7184,7 +7184,7 @@ Delete a timeline feature, sketch or datum atomically and return deleted node id
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -7247,7 +7247,7 @@ Rename exactly one native feature, sketch, body, Part or joint label without reb
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "PartRef": {
       "anyOf": [
@@ -7381,7 +7381,7 @@ Set a current body's saved visibility and/or lineage colour without dirtying nod
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -7790,7 +7790,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "ObjRef": {
       "anyOf": [
@@ -7803,7 +7803,7 @@ Create a native Rigid or Slider between exactly one current planar face on each 
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -7915,7 +7915,7 @@ Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     },
     "Release": {
       "enum": [
@@ -8009,7 +8009,7 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
           "type": "string"
         }
       ],
-      "description": "A dimension: either a plain number (millimetres or degrees) or an expression over parameters, e.g. `\"w/2\"`,\n`\"t+1\"`, `\"2*pi*r\"`. Expressions keep the model parametric: changing the parameter later rebuilds the part."
+      "description": "A number (mm or degrees) or an expression over parameters, e.g. `\"w/2\"`; an expression keeps the part parametric."
     }
   },
   "additionalProperties": false,
@@ -8406,7 +8406,7 @@ List a body's native localised body_name and its part-local faces and edges with
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -8549,7 +8549,7 @@ Preview what a part-local face or edge selection resolves to on a body right now
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     }
   },
   "additionalProperties": false,
@@ -8663,7 +8663,7 @@ Read-only native QymCAD measurement of one or two operands. Uses infinite suppor
           "type": "string"
         }
       ],
-      "description": "An object reference: its numeric id, or the name given when it was created."
+      "description": "An object id or the name it was given."
     },
     "Operand": {
       "anyOf": [
