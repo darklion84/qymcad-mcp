@@ -66,7 +66,7 @@ pub struct ExtrudeArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -101,7 +101,7 @@ pub struct RevolveArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -155,7 +155,7 @@ pub struct SweepArgs {
     /// Body to modify (id or name). Default: the part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -190,7 +190,7 @@ pub struct LoftArgs {
     /// A sheet through the sections instead of a solid; only with op new_body.
     #[serde(default)]
     pub surface: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -213,7 +213,7 @@ pub struct FilletArgs {
     /// Existing Fillet feature id/name to re-pick. With this set, `edges` is required and all other value fields are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused. Not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -247,7 +247,7 @@ pub struct ChamferArgs {
     /// Existing Chamfer feature id/name to re-pick. With this set, value fields are refused; use `dimension_set`.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused. Not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -306,7 +306,7 @@ pub struct HoleArgs {
     /// the wide cylinder, countersink = depth of the cone. Must be less than the hole depth.
     #[serde(default)]
     pub depth2: Option<Num>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -330,7 +330,7 @@ pub struct ShellArgs {
     /// Existing Shell feature id/name to re-pick. With this set, `body`, `thickness`, `side` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -350,7 +350,7 @@ pub struct PushFaceArgs {
     /// Existing PushFace feature id/name to re-pick. With this set, `body`, `dist` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -381,7 +381,7 @@ pub struct DraftArgs {
     /// Existing Draft feature id/name to re-pick. With this set, `body`, `angle`, `flip` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -403,7 +403,7 @@ pub struct ThickenArgs {
     /// Existing Thicken feature id/name to re-pick. With this set, `body`, `thickness` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -436,7 +436,7 @@ pub struct FaceCopyArgs {
     /// Existing Copy faces feature id/name to re-pick. With this set, `body` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -456,7 +456,7 @@ pub struct OffsetSurfaceArgs {
     /// Existing Offset surface feature id/name to re-pick. With this set, `body`, `distance` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -476,7 +476,7 @@ pub struct SurfaceReplaceArgs {
     /// Existing Replace face feature id/name to re-pick: give `faces` and/or `surface`. With this set, `body` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -493,7 +493,7 @@ pub struct StitchArgs {
     /// Existing Stitch feature id/name to re-pick. With this set, `tolerance` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -513,7 +513,7 @@ pub struct TrimArgs {
     /// Existing Trim feature id/name to re-pick `body`, `tool` and/or `keep`. `name` is refused with it.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -541,7 +541,7 @@ pub struct PatchArgs {
     /// Existing Patch feature to re-pick `edges` and/or `mode`; `body` and `name` are refused with it.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature. Not with `feature`.
+    /// Name for the new feature, usable as its id; numeric names are refused. Not with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -595,7 +595,7 @@ pub struct LinearArrayArgs {
     /// A second direction, for a grid.
     #[serde(default)]
     pub second: Option<ArrayDirArg>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -620,7 +620,7 @@ pub struct CircularArrayArgs {
     /// Default: world Z through the origin.
     #[serde(default)]
     pub axis: Option<AxisArg>,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -640,7 +640,7 @@ pub struct MirrorArgs {
     /// Keep the original as well (default true): one body with both halves. false: only the image.
     #[serde(default = "yes")]
     pub keep: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
+    /// Name for the new feature, usable as its id; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -995,7 +995,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "thicken",
-            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (sheet:true) is thickened whole into a solid from one face, as the app does, and takes either sign: positive grows along the face normal, negative against it (0 and |t| > 100000 are refused). A plate into a cavity is not clipped. Give `feature` to replace the face; its thickness formula stays (edit via `dimension_set` key `thickness`).", stale!()),
+            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (sheet:true) is thickened whole into a solid, consumed and joined to the part it came from if they touch; either sign (+ along the face normal, - against; 0 and |t| > 100000 refused). A plate into a cavity is not clipped. Give `feature` to replace the face; its thickness formula stays (edit via `dimension_set` key `thickness`).", stale!()),
             |st, a: ThickenArgs| {
                 let s = st.doc()?;
                 let face = a.face.resolve(s)?;
@@ -1099,7 +1099,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "stitch",
-            "Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. Sheets that close a shell give a SOLID (six face copies of a plate), otherwise a sheet (`sheet` in the result). Sheets sharing no edge within `tolerance` fail natively; a tolerance wider than the gap between edges is refused. Give `feature` to replace the parts; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.",
+            "Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. Sheets that close a shell give a SOLID (six face copies of a plate), otherwise a sheet (`sheet` in the result). Sheets sharing no edge within `tolerance` fail natively; a tolerance wider than the gap between edges would glue sheets that do not meet and is refused. Give `feature` to replace the parts; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.",
             |st, a: StitchArgs| {
                 let s = st.doc()?;
                 let parts = a.parts.ok_or("`parts` is required")?.iter().map(|p| p.resolve(s)).collect::<Result<Vec<_>, _>>()?;
@@ -1143,7 +1143,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "patch",
-            "Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch; the source stays. Edges must close (a chain meeting end to end, or one ring, else refused). A hole rim gives a disc; on a shelled opening pick the OUTER outline for the lid, the inner one for a smaller patch, never both (refused). `thicken` of the sheet makes a lid. Give `feature` to re-pick. Returns `feature` (= sheet id), `selected_edges`, `sheet`, `rebuild`.",
+            "Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch; the source stays. Edges must close (a chain meeting end to end, or one ring, else refused). A hole rim gives a disc; on a shelled opening pick the OUTER outline for the lid, the inner one for a smaller patch, never both (refused). `thicken` of the sheet (it is consumed) makes a lid. Give `feature` to re-pick. Returns `feature` (= sheet id), `selected_edges`, `sheet`, `rebuild`.",
             |st, a: PatchArgs| {
                 let s = st.doc()?;
                 let edges = a.edges.map(|e| e.resolve(s)).transpose()?;

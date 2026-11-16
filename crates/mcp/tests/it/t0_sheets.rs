@@ -147,3 +147,23 @@ fn thicken_of_a_sheet_takes_either_sign_and_a_solid_stays_positive() {
     let e = refused(&mut r, "thicken", json!({"body": "block", "face": {"facing": "+z"}, "thickness": -1}));
     assert!(e.contains("F-150"), "{e}");
 }
+
+/// TR 5, 7, 10: what the tool texts say about sheets (they are all the model has): the exact default-body rule, back-face culling in
+/// `render`, what `thicken` and `patch` do to a sheet, the stitch refusal's reason, the export `note`, and that the six surface tools'
+/// `name` says it can stand for the id.
+#[test]
+fn the_tool_texts_say_what_a_sheet_does() {
+    let list = Registry::new().list();
+    let text = |name: &str| list.iter().find(|t| t["name"] == name).unwrap().to_string();
+    assert!(text("render").contains("seen from behind is not drawn"));
+    assert!(text("thicken").contains("consumed and joined"));
+    assert!(text("patch").contains("(it is consumed)") && text("patch").contains("the source stays"));
+    assert!(text("stitch").contains("glue sheets that do not meet"));
+    assert!(text("export").contains("`note`"));
+    for tool in ["face_copy", "offset_surface", "surface_replace", "stitch", "trim", "patch"] {
+        assert!(text(tool).contains("usable as its id; numeric names are refused"), "{tool}: name doc");
+    }
+    let all = serde_json::to_string(&list).unwrap();
+    assert!(all.contains("only if it is the document's only body"), "the arg docs");
+    assert!(!all.contains("never default to a sheet") && !all.contains("a sheet is never the default)"), "the false claim is gone");
+}

@@ -3377,7 +3377,7 @@ Extrude sketch contours: add material (the first add creates the part's body), c
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -3562,7 +3562,7 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -3769,7 +3769,7 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
   "properties": {
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -3935,7 +3935,7 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
   "properties": {
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -4066,7 +4066,7 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused. Not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4217,7 +4217,7 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused. Not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4432,7 +4432,7 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -4567,7 +4567,7 @@ Hollow a solid with walls of `thickness`, removing `open_faces` (a sheet is refu
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4726,7 +4726,7 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4844,7 +4844,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -4893,7 +4893,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
 
 ## thicken
 
-Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (sheet:true) is thickened whole into a solid from one face, as the app does, and takes either sign: positive grows along the face normal, negative against it (0 and |t| > 100000 are refused). A plate into a cavity is not clipped. Give `feature` to replace the face; its thickness formula stays (edit via `dimension_set` key `thickness`). Returns the new body id (now the part's current body); earlier face/edge ids are stale: call topology again.
+Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (sheet:true) is thickened whole into a solid, consumed and joined to the part it came from if they touch; either sign (+ along the face normal, - against; 0 and |t| > 100000 refused). A plate into a cavity is not clipped. Give `feature` to replace the face; its thickness formula stays (edit via `dimension_set` key `thickness`). Returns the new body id (now the part's current body); earlier face/edge ids are stale: call topology again.
 
 ```json
 {
@@ -4975,7 +4975,7 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -5159,7 +5159,7 @@ Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node). Not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -5269,7 +5269,7 @@ Move faces of a body (solid or sheet) along their normals into a NEW SHEET body,
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node). Not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -5363,7 +5363,7 @@ Replace faces of a solid with a sheet that closes them, as the app's Replace fac
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node). Not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -5387,7 +5387,7 @@ Replace faces of a solid with a sheet that closes them, as the app's Replace fac
 
 ## stitch
 
-Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. Sheets that close a shell give a SOLID (six face copies of a plate), otherwise a sheet (`sheet` in the result). Sheets sharing no edge within `tolerance` fail natively; a tolerance wider than the gap between edges is refused. Give `feature` to replace the parts; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.
+Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. Sheets that close a shell give a SOLID (six face copies of a plate), otherwise a sheet (`sheet` in the result). Sheets sharing no edge within `tolerance` fail natively; a tolerance wider than the gap between edges would glue sheets that do not meet and is refused. Give `feature` to replace the parts; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.
 
 ```json
 {
@@ -5433,7 +5433,7 @@ Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is 
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node). Not accepted with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
         "null"
@@ -5527,7 +5527,7 @@ Cut a SHEET by a body and keep one piece, as the app's Trim: the piece nearest `
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -5551,7 +5551,7 @@ Cut a SHEET by a body and keep one piece, as the app's Trim: the piece nearest `
 
 ## patch
 
-Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch; the source stays. Edges must close (a chain meeting end to end, or one ring, else refused). A hole rim gives a disc; on a shelled opening pick the OUTER outline for the lid, the inner one for a smaller patch, never both (refused). `thicken` of the sheet makes a lid. Give `feature` to re-pick. Returns `feature` (= sheet id), `selected_edges`, `sheet`, `rebuild`.
+Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch; the source stays. Edges must close (a chain meeting end to end, or one ring, else refused). A hole rim gives a disc; on a shelled opening pick the OUTER outline for the lid, the inner one for a smaller patch, never both (refused). `thicken` of the sheet (it is consumed) makes a lid. Give `feature` to re-pick. Returns `feature` (= sheet id), `selected_edges`, `sheet`, `rebuild`.
 
 ```json
 {
@@ -5641,7 +5641,7 @@ Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature. Not with `feature`.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused. Not with `feature`.",
       "type": [
         "string",
         "null"
@@ -5748,7 +5748,7 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -5856,7 +5856,7 @@ Copy the WHOLE body `count` times about an axis (default world Z), including all
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -5958,7 +5958,7 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
     },
     "name": {
       "default": null,
-      "description": "Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.",
+      "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
         "null"
@@ -7432,7 +7432,7 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
 
 ## export
 
-Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body. STEP/3MF/GLB carry native body colours (manual or palette) and imported face/triangle colours; STL/OBJ are colourless. Returns colors, per-body color_rgb/color_source, skipped_hidden and the bodies written. visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. Returns triangle count, current document warnings and per-body sheet, area_mm2 and mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info; a sheet is written as an open surface and has no mesh_volume_mm3). Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
+Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for printing, CAM or other CAD. Each body is placed where it stands in the document; one object per body. STEP/3MF/GLB carry native body colours (manual or palette) and imported face/triangle colours; STL/OBJ are colourless. visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. Returns colors, triangle count, warnings, skipped_hidden and per body color_rgb/color_source, sheet, area_mm2, mesh_volume_mm3 (mm³; compare with doc_info volume_mm3). A sheet is written as an open surface: no mesh_volume_mm3, a `note` says it is not printable. Refuses export if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
@@ -7547,7 +7547,7 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
 
 ## render
 
-Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. The caption lists skipped_hidden. Returns current document warnings with the image. Use it to check shape and feature placement after building. Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
+Look at the model: a shaded orthographic PNG of the result bodies with dark edges on a light background, fitted to the frame (not to scale between calls). The caption's bbox coordinates are rounded to 0.01 mm for display. visible_only defaults false (includes hidden current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. The caption lists skipped_hidden. Returns current document warnings with the image. A sheet seen from behind is not drawn (back faces are culled). Refuses rendering if any timeline node has a regeneration error, even when the selected bodies are clean.
 
 ```json
 {
