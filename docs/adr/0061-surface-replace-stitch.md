@@ -32,4 +32,4 @@ Engine `surface_replace_stitch.rs` (scenarios and numbers of the app's `face_cop
 
 ## Not covered
 
-Patch and Trim (P22, P24); a stitch whose parts lie in different Parts (the node goes to the first part's Part, as the app's parent rule is the active Part; not probed); the replacement's `replace_by_reaching` mode with curved sheets (not probed).
+Patch (P22; Trim is ADR 0062); a stitch whose parts lie in different Parts (the node goes to the first part's Part, as the app's parent rule is the active Part; not probed); the replacement's `replace_by_reaching` mode with curved sheets (not probed).
