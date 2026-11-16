@@ -288,6 +288,12 @@ pub(crate) fn edges_with_ends(shape: &Shape) -> Result<Vec<qymcad_core::geom::Me
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
 /// This function always acquires that non-reentrant mutex (F-069).
 fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
+    reporting_metrics(shape).0
+}
+
+/// The reporting bounds and, from the same tessellation, the sum of the kernel's face areas (`None` when the mesh is
+/// partial). Same preconditions as [`reporting_bbox`].
+fn reporting_metrics(shape: &Shape) -> (Option<[f64; 6]>, Option<f64>) {
     let measured = || {
         let copy = copy_shapes([(0, shape)]).ok()?.remove(&0)?;
         // Keep .005 mm accuracy for ordinary parts, but avoid unbounded mesh growth on huge imports.
@@ -313,12 +319,15 @@ fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
                 bbox[i + 3] = bbox[i + 3].max(coordinate);
             }
         }
-        Some(bbox)
+        Some((bbox, faces.iter().map(|f| f.area).sum::<f64>()))
     };
-    measured().or_else(|| {
-        let _gate = qymcad_kernel::kernel_gate();
-        shape.bbox()
-    })
+    match measured() {
+        Some((bbox, area)) => (Some(bbox), Some(area)),
+        None => {
+            let _gate = qymcad_kernel::kernel_gate();
+            (shape.bbox(), None)
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1292,7 +1301,8 @@ impl Session {
                 let owner_part = self.p.body_owner(b);
                 let world_transform = self.p.body_world_transform(b);
                 if let Some(sh) = self.shapes.get(&b) {
-                    let bbox_local = reporting_bbox(sh).unwrap_or([0.0; 6]);
+                    let (measured_bbox, measured_area) = reporting_metrics(sh);
+                    let bbox_local = measured_bbox.unwrap_or([0.0; 6]);
                     let mut bbox_world =
                         [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
                     for i in 0..8 {
@@ -1318,7 +1328,7 @@ impl Session {
                         color_source,
                         volume: sh.volume(),
                         sheet: self.is_sheet(b),
-                        area: self.body_face_area(b),
+                        area: self.cached_face_area(b).or(measured_area).unwrap_or(0.0),
                         bbox: bbox_local,
                         bbox_frame: "part_local",
                         bbox_local,
@@ -1371,11 +1381,18 @@ impl Session {
         self.p.bodies.iter().any(|b| b.id == body && b.sheet)
     }
 
-    /// Sum of the face areas of a built body, mm²: the faces the rebuild produced (`regen_faces`), else the ones the
-    /// document stores with the body (a file opened without a rebuild).
-    pub(crate) fn body_face_area(&self, body: Id) -> f64 {
+    /// Sum of the face areas of a body, mm², from the faces the rebuild produced (`regen_faces`) or the ones the document
+    /// stores with the body; `None` when neither is there (a file saved without faces, before its topology is read).
+    fn cached_face_area(&self, body: Id) -> Option<f64> {
         let stored = self.p.mesh_index(body).map(|i| self.p.bodies[i].faces.as_slice()).unwrap_or_default();
-        self.p.regen_faces.get(&body).map_or(stored, Vec::as_slice).iter().map(|f| f.area).sum()
+        let faces = self.p.regen_faces.get(&body).map_or(stored, Vec::as_slice);
+        (!faces.is_empty()).then(|| faces.iter().map(|f| f.area).sum())
+    }
+
+    /// The surface area of a built body, mm²: its cached face areas, else the kernel's, from a tessellation.
+    /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
+    pub(crate) fn body_face_area(&self, body: Id) -> f64 {
+        self.cached_face_area(body).or_else(|| self.shapes.get(&body).and_then(|sh| reporting_metrics(sh).1)).unwrap_or(0.0)
     }
 
     /// Several Parts, or any non-identity placement: body results then report owner and frames.

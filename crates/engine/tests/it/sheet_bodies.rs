@@ -439,3 +439,36 @@ fn only_a_sheets_thicken_may_be_edited_negative_and_a_solids_stays_positive() {
     let e = refused(s.thicken(Some(solid), &Sel::Ids(vec![top]), &v(-1.), None));
     assert!(e.contains("F-150"), "{e}");
 }
+
+// ---- (g) a document saved without faces ----
+
+/// A file the app saved without stored faces has none cached until its topology is read; the area still comes from the kernel
+/// (it was 0 there, and `doc_info` changed when a tool read the topology).
+#[test]
+fn area_does_not_depend_on_the_face_cache() {
+    use std::io::{Read, Write};
+    let mut s = Session::new_part();
+    let solid = block(&mut s, 12., 5.);
+    let original = common::scratch("t0-area-with-faces.qcad");
+    s.save(Some(&original)).unwrap();
+    let legacy = common::scratch("t0-area-no-faces.qcad");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&legacy).unwrap());
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&original).unwrap()).unwrap();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).unwrap();
+        if entry.name().starts_with("faces/") {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        zip.start_file(entry.name().to_string(), zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap();
+    let (mut opened, _) = Session::open(&legacy).unwrap();
+    let before = info(&opened, solid).area;
+    close(before, 2. * 144. + 4. * 60., 1e-3, "area before any topology call");
+    let t = opened.topology(Some(solid), false).unwrap();
+    close(t.faces.iter().map(|f| f.area).sum::<f64>(), before, 1e-3, "the same once the faces are read");
+    assert_eq!(info(&opened, solid).area, before);
+}
