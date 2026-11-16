@@ -163,3 +163,42 @@ fn native_gui_named_reference_parameter_edit_characterization() {
     let v = gui_edit_param(&path, "w", "12");
     assert_close(v, 16.0 * (12f64.powi(2) + 3f64.powi(2)).sqrt(), 1e-6, "native GUI B follows measured diagonal");
 }
+
+/// ADR 0064: a mirror about a face-derived datum (and one offset from it) follows the face when a parameter moves it. The app's
+/// `inputs` do not tie the plane to the body it is read off; the whole-history rebuild used to hide that.
+#[test]
+fn a_mirror_about_a_face_derived_datum_follows_the_face_on_a_parameter_edit() {
+    for chained in [false, true] {
+        let mut s = Session::new_part();
+        s.param_set("w", &10.0.into()).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(sk, &0.0.into(), &0.0.into(), &8.0.into(), &6.0.into(), false).unwrap();
+        let f = extrude(&mut s, sk, Num::Expr("w".into()));
+        let top = s.topology(Some(f), false).unwrap().faces.into_iter().find(|face| face.normal.is_some_and(|n| n[2] > 0.99)).unwrap().id;
+        let path = scratch(&format!("face-datum-mirror-{chained}.qcad"));
+        s.save(Some(&path)).unwrap();
+        let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
+        let mut plane = project.add_plane_from_face(f, FaceKey { id: top, ..Default::default() }, 2.0);
+        project.mark_node_dirty(plane);
+        if chained {
+            plane = project.add_offset_from_plane(plane, 5.0);
+            project.mark_node_dirty(plane);
+        }
+        qymcad_io::save_project_guarded_with_brep(&project, path.to_str().unwrap(), &breps).unwrap();
+        let (mut s, r) = Session::open(&path).unwrap();
+        assert!(r.errors.is_empty(), "{r:?}");
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(sk, &30.0.into(), &0.0.into(), &4.0.into(), &4.0.into(), false).unwrap();
+        let b = extrude(&mut s, sk, 1.0.into());
+        let (mirrored, _) = s.mirror(Some(b), &PlaneRef::Plane(plane), false, None).unwrap();
+        for w in [10.0, 20.0] {
+            if w != 10.0 {
+                s.param_set("w", &w.into()).unwrap();
+            }
+            let z = w + 2.0 + if chained { 5.0 } else { 0.0 };
+            let bbox = s.result_bodies().into_iter().find(|body| body.id == mirrored).unwrap().bbox;
+            assert_close(bbox[2], 2.0 * z - 1.0, 1e-6, "mirrored block bottom follows the face datum");
+            assert_close(bbox[5], 2.0 * z, 1e-6, "mirrored block top follows the face datum");
+        }
+    }
+}

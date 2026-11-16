@@ -258,7 +258,6 @@ impl Session {
         }
         // Native inputs() omits datum-hosted sketches. Blanket dirtying alone can still prepare a solid
         // on the old frame, so dirty face-derived datum sketches as barriers without solving them.
-        self.p.mark_param_dependents_dirty();
         let mut barriers = Vec::new();
         for sketch in &self.p.sketches {
             if let qymcad_core::feature::SketchPlane::Datum(mut plane) = sketch.plane {
@@ -277,7 +276,53 @@ impl Session {
         for sid in barriers {
             self.p.mark_sketch_dirty(sid);
         }
+        self.mark_derived_datums_dirty();
         Ok(unsolved)
+    }
+
+    /// Native `inputs` omit what a derived datum is read off (a two-point axis's points, an edge or face axis's body,
+    /// a vertex point's body, a face-offset plane's body and an offset plane's parent) and a revolve's datum axis, so a targeted edit would leave them, and what turns about
+    /// them, on the old geometry. Mark them dirty while their source is in the regeneration plan (ADR 0064).
+    fn mark_derived_datums_dirty(&mut self) {
+        use qymcad_core::feature::FeatureKind;
+        use qymcad_core::model::{AxisDef, PlaneDef, PointDef};
+        for _ in 0..=self.p.timeline.len() {
+            let plan: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
+            let planned = |declared: Id| self.p.timeline.iter().any(|n| plan.contains(&n.id) && n.kind.declares().contains(&declared));
+            let stale: Vec<Id> = self
+                .p
+                .timeline
+                .iter()
+                .filter(|n| !plan.contains(&n.id))
+                .filter(|n| match n.kind {
+                    FeatureKind::DatumAxis { axis } => self.p.datum_axes.iter().find(|a| a.id == axis).is_some_and(|a| match a.def {
+                        AxisDef::TwoPoints { a, b } => planned(a) || planned(b),
+                        AxisDef::FromEdge { body, .. } | AxisDef::FromFace { body, .. } => planned(body),
+                        AxisDef::Manual { .. } => false,
+                    }),
+                    FeatureKind::DatumPoint { point } => self
+                        .p
+                        .datum_points
+                        .iter()
+                        .find(|d| d.id == point)
+                        .is_some_and(|d| matches!(d.def, PointDef::AtVertex { body, .. } if planned(body))),
+                    FeatureKind::Plane { plane } => self.p.planes.iter().find(|d| d.id == plane).is_some_and(|d| match d.def {
+                        PlaneDef::OffsetFace { body, .. } => planned(body),
+                        PlaneDef::OffsetPlane { plane: parent, .. } => planned(parent),
+                        _ => false,
+                    }),
+                    FeatureKind::Revolve { axis_datum, .. } => axis_datum != 0 && planned(axis_datum),
+                    _ => false,
+                })
+                .map(|n| n.id)
+                .collect();
+            if stale.is_empty() {
+                return;
+            }
+            for id in stale {
+                self.p.mark_node_dirty(id);
+            }
+        }
     }
 
     /// Validate polygon counts before native evaluation rounds/clamps them or allocates new vertices.
@@ -532,6 +577,41 @@ mod tests {
         PARAM_SOLVES.with(|solves| assert!(solves.borrow().is_empty()));
         let map = s.p.param_map();
         assert_eq!((map["w"], map["W"], map["twice"]), (10.0, 50.0, 20.0));
+    }
+
+    /// Review lead after E2.5: an edit of a parameter nothing reads rebuilt the whole history (ADR 0064). Now the plan holds
+    /// only what reads the changed names; a parameter a sketch reads plans that sketch and its extrusion.
+    #[test]
+    fn a_parameter_edit_plans_only_what_reads_the_changed_names() {
+        let mut s = Session::new_part();
+        s.param_set("w", &10.0.into()).unwrap();
+        s.param_set("unused", &1.0.into()).unwrap();
+        s.param_set("h", &2.0.into()).unwrap();
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(sk, &0.0.into(), &0.0.into(), &Num::Expr("w".into()), &3.0.into(), false).unwrap();
+        let block = Extrude {
+            down: None,
+            sketch: sk,
+            profiles: None,
+            profiles_at: None,
+            height: Num::Expr("h".into()),
+            op: Op::NewBody,
+            direction: Direction::Normal,
+            through: false,
+            target: None,
+            name: None,
+        };
+        let (body, _) = s.extrude(&block).unwrap();
+        let planned = |s: &mut Session, name: &str, value: f64| {
+            let before = s.p.clone();
+            s.stage_param_edit(name, &format!("{value}"), &before).unwrap();
+            let nodes = crate::dependencies::rebuild_nodes(&s.p);
+            s.p = before;
+            nodes
+        };
+        assert!(planned(&mut s, "unused", 2.0).is_empty());
+        let nodes = planned(&mut s, "w", 12.0);
+        assert!(nodes.contains(&sk) && nodes.contains(&body), "{nodes:?}");
     }
 
     #[test]

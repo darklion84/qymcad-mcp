@@ -1,6 +1,6 @@
 # ADR 0017: Optimize parameter solves without narrowing rebuild safety
 
-- Status: accepted (2026-10-09)
+- Status: accepted (2026-10-09); the blanket rebuild dirtying is superseded by ADR 0064 (targeted, with derived-datum dependencies); the face-datum sketch barriers stay.
 
 ## Context
 J6 reduced both sketch solves and feature rebuild dirtying to changed-expression reachability. The pinned

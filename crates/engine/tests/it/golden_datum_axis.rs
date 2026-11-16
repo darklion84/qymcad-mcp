@@ -462,3 +462,27 @@ fn a_revolve_cannot_take_the_axis_of_another_part() {
     assert!(e.contains(&format!("datum axis {}", axis.id)) && e.contains("another Part"), "{e}");
     assert!(snap(&s) == before);
 }
+
+/// ADR 0064: points on the vertices of an edge, an axis through them and an array about it all follow the edge when a
+/// parameter moves it. The app's `inputs` tie neither the points to the body nor the axis to the points.
+#[test]
+fn an_axis_through_vertex_points_follows_the_vertices_on_a_parameter_edit() {
+    let mut s = Session::new_part();
+    let b = block_b(&mut s);
+    let d = block_d(&mut s);
+    let edge = s
+        .topology(Some(d), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .find(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 5.0 && e.a[0] > 30.0 && e.a[1] > 0.0)
+        .unwrap();
+    let (p, _) = s.datum_point(&PointSpec::Vertex { edge: edge.id, end: VertexEnd::Start, body: Some(d) }, None).unwrap();
+    let (q, _) = s.datum_point(&PointSpec::Vertex { edge: edge.id, end: VertexEnd::End, body: Some(d) }, None).unwrap();
+    let (axis, _) = s.datum_axis(&AxisSpec::Points([p.id, q.id]), None).unwrap();
+    array(&mut s, b, axis.id);
+    assert_box(last_bbox(&s), [-5.0, -35.0, 0.0, 75.0, 45.0, 4.0], "array about the vertex axis");
+    s.param_set("w", &20.0.into()).unwrap();
+    assert_eq!([axis_state(&s, axis.id).0[0], axis_state(&s, axis.id).0[1]], [40.0, 5.0], "the axis moved with the vertices");
+    assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the vertices");
+}
