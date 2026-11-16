@@ -614,13 +614,13 @@ mod tests {
     #[test]
     fn retention_by_size_never_keeps_an_older_log_after_dropping_a_newer_one() {
         let now = UNIX_EPOCH + Duration::from_secs(100 * 86400);
-        // Newest first: 14 full files fit with the new one, the 15th full file does not; the older small one goes too.
+        // Newest first: 14 full files and the new one leave 64 MiB. A newer double-size file does not fit; an older
+        // 1-byte file would, but it goes too.
         let mut files: Vec<_> =
-            (0..15).map(|i| (format!("qymcad-mcp-big{i:02}.jsonl"), now - Duration::from_secs(10 + i), FILE_LIMIT)).collect();
+            (0..14).map(|i| (format!("qymcad-mcp-big{i:02}.jsonl"), now - Duration::from_secs(10 + i), FILE_LIMIT)).collect();
+        files.push(("qymcad-mcp-double.jsonl".into(), now - Duration::from_secs(50), 2 * FILE_LIMIT));
         files.push(("qymcad-mcp-small.jsonl".into(), now - Duration::from_secs(100), 1));
-        let mut deleted = retention_selection(&files, now);
-        deleted.sort();
-        assert_eq!(deleted, ["qymcad-mcp-big14.jsonl", "qymcad-mcp-small.jsonl"]);
+        assert_eq!(retention_selection(&files, now), ["qymcad-mcp-small.jsonl", "qymcad-mcp-double.jsonl"]);
     }
 
     #[test]
