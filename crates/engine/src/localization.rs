@@ -7,6 +7,12 @@ pub(crate) fn name(stored: &str) -> String {
     qymcad_i18n::name(stored)
 }
 
+/// An app message by its Fluent key (the GUI's own words for a refusal), in server English.
+pub(crate) fn text(key: &str) -> String {
+    qymcad_i18n::set_language("en");
+    qymcad_i18n::tr(key)
+}
+
 pub(crate) fn error(error: &CoreError) -> String {
     let native = error.to_string();
     // Keep already-readable native diagnostics (including I2's kernel chamfer reason). Translate keys

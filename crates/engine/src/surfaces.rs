@@ -1,4 +1,5 @@
-//! Surface tools: the app's FaceCopy and OffsetSurface nodes (ADR 0060), SurfaceReplace and Stitch (ADR 0061), Trim (ADR 0062).
+//! Surface tools: the app's FaceCopy and OffsetSurface nodes (ADR 0060), SurfaceReplace and Stitch (ADR 0061), Trim (ADR 0062),
+//! Patch (ADR 0063).
 //! FaceCopy and OffsetSurface take faces of a body (solid or sheet) and make a NEW sheet body beside it; the source is read,
 //! not consumed. Several faces make ONE sheet body. SurfaceReplace swaps faces of a solid for a sheet that closes them and
 //! Stitch joins sheets into one body; both consume their inputs. Faces are stored as `Ref::picks` of the resolved ids, the
@@ -11,6 +12,7 @@ use crate::topology::{Element, Sel};
 use crate::value::Num;
 use qymcad_core::errors::CoreError;
 use qymcad_core::feature::FeatureKind;
+use qymcad_core::geom::MeshEdge;
 use qymcad_core::model::Id;
 use qymcad_core::refs::Ref;
 
@@ -38,6 +40,30 @@ fn offset_distance(v: f64) -> Result<f64> {
         )));
     }
     Ok(v)
+}
+
+/// WHETHER THE PICKED EDGES BOUND A PATCH: the app's `patch_boundary` (qymcad-part `apply/faces.rs:67-90`, `pub(crate)` there, so
+/// reimplemented here rule for rule). Every picked id must be a live edge of the body (an id with no edge refuses); a ring (an edge
+/// whose ends are less than 1e-6 apart: a circle, an ellipse) closes on itself and counts no ends; every end of the other edges
+/// must meet exactly one other end, ends compared on a 1e-4 mm grid (`round(c * 1e4)`). So: one ring, or several rings, or an open
+/// edge chain that closes. One straight edge, a chain with a loose end and an edge picked past the loop are refused. It is the
+/// app's limit, not a kernel one: the kernel also fills open chains (a piece of a dome).
+fn patch_boundary(edges: &[MeshEdge], picked: &[u32]) -> bool {
+    let found: Vec<&MeshEdge> = picked.iter().filter_map(|id| edges.iter().find(|e| e.id == *id)).collect();
+    if found.is_empty() || found.len() != picked.len() {
+        return false;
+    }
+    let key = |p: [f64; 3]| p.map(|c| (c * 1e4).round() as i64);
+    let mut ends: std::collections::HashMap<[i64; 3], usize> = std::collections::HashMap::new();
+    for e in found {
+        let d = [e.a[0] - e.b[0], e.a[1] - e.b[1], e.a[2] - e.b[2]];
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() < 1e-6 {
+            continue; // a ring
+        }
+        *ends.entry(key(e.a)).or_default() += 1;
+        *ends.entry(key(e.b)).or_default() += 1;
+    }
+    ends.values().all(|&n| n == 2)
 }
 
 impl Session {
@@ -367,6 +393,57 @@ impl Session {
             Some(())
         })?;
         Ok((node_body, self.current_rebuild_after_edit(bodies)))
+    }
+
+    /// The edges a Patch spans, as ids: a selection of edges of `src` (a set: each id once) that the app's `patch_boundary` accepts, which
+    /// is checked on creation as the app does before it lays a node. `check` is off on a re-pick: the app's edit mode does not ask
+    /// (`cmd_ready` is true for any edit), the rebuild judges.
+    fn patch_edges(&self, src: Id, sel: &Sel, check: bool) -> Result<Vec<u32>> {
+        let mut ids = self.resolve_sel(src, Element::Edges, sel)?;
+        ids.dedup();
+        let closes = !check || self.p.regen_edges.get(&src).is_some_and(|edges| patch_boundary(edges, &ids));
+        if ids.is_empty() || !closes {
+            return Err(Error::Invalid(format!("{} (edges {ids:?} of body {src})", localization::text("msg-patch-needs-edges"))));
+        }
+        Ok(ids)
+    }
+
+    /// Span a surface over a boundary of edges (the app's Patch): a NEW sheet body of one face, `tangent` meeting the neighbouring faces
+    /// smoothly instead of flat. The source is not consumed. Returns the node (also the sheet's id), the edge ids and the report.
+    pub fn patch(&mut self, body: Option<Id>, edges: &Sel, tangent: bool, name: Option<&str>) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        self.atomic(|s| {
+            let src = s.source_body(body)?;
+            let ids = s.patch_edges(src, edges, true)?;
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_patch(src, Ref::picks(&ids), tangent));
+            s.set_node_name(id, name)?;
+            Ok((id, ids))
+        })
+        .map(|((id, ids), rebuild)| (id, ids, rebuild))
+    }
+
+    /// Re-pick the edges and/or the mode of an existing Patch node (the app's edit mode sets both). `ids` are empty when only the
+    /// mode changes.
+    pub fn repick_patch(&mut self, feature: Id, edges: Option<&Sel>, tangent: Option<bool>) -> Result<(Id, Vec<u32>, Rebuild)> {
+        self.ensure_topology()?;
+        let (src, body) = self.feature_as(feature, "patch", |kind| match kind {
+            FeatureKind::Patch { src, body, .. } => Some((*src, *body)),
+            _ => None,
+        })?;
+        let ids = edges.map(|sel| self.patch_edges(src, sel, false)).transpose()?;
+        let bodies = self.repick_rebuild(feature, "patch", |kind, _| {
+            let FeatureKind::Patch { edges: stored, tangent: mode, .. } = kind else {
+                return None;
+            };
+            if let Some(ids) = &ids {
+                *stored = Ref::picks(ids);
+            }
+            if let Some(t) = tangent {
+                *mode = t;
+            }
+            Some(())
+        })?;
+        Ok((body, ids.unwrap_or_default(), self.current_rebuild_after_edit(bodies)))
     }
 
     /// FINDINGS F-198: Stitch nodes picked by `check` whose SOLID result is not one. When the tolerance is wider than the gap

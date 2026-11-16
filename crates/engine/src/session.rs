@@ -1067,8 +1067,8 @@ impl Session {
 
     /// Reject only planned stored edge queries, including transitive dependents of an unrestorable body.
     /// Pick lists use live kernel edges; queries require the restored pool (F-023/F-024).
-    /// The engine never creates Patch features. If Patch is added, include its boundary edge queries in
-    /// this guard before exposing the feature; checking only Fillet/Chamfer would leave them unrestorable.
+    /// Patch is created with pick lists of resolved edge ids too (ADR 0063), so it needs no entry here. A Patch that holds a query (a
+    /// file the app wrote with a recorded description) is not covered: add it to the filter below if that ever has to be judged.
     fn edge_query_rebuild_errors(&self, p: &Project) -> Vec<NodeIssue> {
         use qymcad_core::feature::FeatureKind;
         let planned = crate::dependencies::rebuild_nodes(p);
