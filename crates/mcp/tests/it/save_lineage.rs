@@ -14,10 +14,18 @@ fn stock(r: &mut Registry) {
     call(r, "extrude", json!({"sketch":"profile", "height":"height", "name":"stock"}));
 }
 
+/// One directory per process, emptied on first use. A pid comes round again after the counter wraps, and the directory of an
+/// earlier run with the same pid still held `initially-empty.qcad` with bodies: the first save of an EMPTY document then
+/// refuses to overwrite "a file that has bodies" (the flake seen once in a full run).
 fn path(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("qymcad-save-lineage-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join(name)
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("qymcad-save-lineage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    })
+    .join(name)
 }
 
 #[test]
