@@ -32,4 +32,4 @@ Engine `surface_replace_stitch.rs` (scenarios and numbers of the app's `face_cop
 
 ## Not covered
 
-Patch (P22; Trim is ADR 0062, Patch ADR 0063); a stitch whose parts lie in different Parts (the node goes to the first part's Part, as the app's parent rule is the active Part; not probed); the replacement's `replace_by_reaching` mode with curved sheets (not probed).
+Patch (P22; Trim is ADR 0062, Patch ADR 0063); a stitch or replacement whose inputs lie in different Parts: probed in review round TR, the core refuses every node whose input body belongs to another component (`isolation_error`, "cross-component input N"), at creation and on a re-pick, so no server refusal is needed (`stitch_and_replace_with_inputs_of_another_part_are_refused_by_the_core`); the replacement's `replace_by_reaching` mode with curved sheets (not probed).

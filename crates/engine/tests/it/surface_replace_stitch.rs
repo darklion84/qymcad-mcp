@@ -426,3 +426,67 @@ fn stitch_survives_save_open_and_the_app_edit_path() {
     let area: f64 = project.regen_faces[&one].iter().map(|f| f.area).sum();
     common::assert_close(area, 4680., 5.0, "the app's edit of w");
 }
+
+// ---- TR 3: one Part ----
+
+/// A plate in the first Part with copies of its top and front, then a second Part holding a plate of its own and a sheet copied
+/// from it. Returns (session, plate, top copy, front copy, foreign sheet).
+fn two_parts() -> (Session, Id, Id, Id, Id) {
+    let (mut s, plate) = block(60., 40., "12");
+    let parts = copies(&mut s, plate, &[up(), front()]);
+    s.part_new("other").unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &v(0.), &v(0.), &v(60.), &v(40.), false).unwrap();
+    let (other, r) = s.extrude(&extrude(sk, "12")).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let (foreign, _, r) = s.face_copy(Some(other), &up(), None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_ne!(s.project().body_owner(foreign), s.project().body_owner(plate), "setup: two Parts");
+    (s, plate, parts[0], parts[1], foreign)
+}
+
+/// Review item "stitch and Replace face must refuse inputs of another Part like Trim does" assumed that the kernel would sew or replace
+/// in the wrong frame and the node would come out green. It does not: the core refuses EVERY node whose input body belongs to another
+/// component (`isolation_error` in `regen/apply.rs`: "cross-component input N"), so the edit is rolled back and nothing is laid, with no
+/// server code. This test pins that, at creation and on a re-pick, in every position (stitch: first or later part; replace: the sheet).
+/// If a QymCAD release drops the rule, this goes red and a server refusal like Trim's is needed.
+#[test]
+fn stitch_and_replace_with_inputs_of_another_part_are_refused_by_the_core() {
+    let (mut s, plate, top, front_copy, foreign) = two_parts();
+    let before = recipe(&s);
+    for (what, e) in [
+        ("stitch, foreign last", error(s.stitch(&[top, foreign], &v(1e-4), None))),
+        ("stitch, foreign first", error(s.stitch(&[foreign, top], &v(1e-4), None))),
+        ("replace", error(s.surface_replace(Some(plate), &up(), foreign, None))),
+    ] {
+        assert!(e.contains("cross-component input") && e.contains("rolled back"), "{what}: {e}");
+    }
+    assert_eq!(recipe(&s), before, "nothing was laid");
+    // The re-picks.
+    let (one, r) = s.stitch(&[top, front_copy], &v(1e-4), None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let before = recipe(&s);
+    let e = error(s.repick_stitch(one, &[top, foreign]));
+    assert!(e.contains("cross-component input"), "{e}");
+    assert_eq!(recipe(&s), before);
+    let (mut s, plate, top, _, foreign) = two_parts();
+    let (out, _, r) = s.surface_replace(Some(plate), &up(), top, None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let before = recipe(&s);
+    let e = error(s.repick_surface_replace(out, None, Some(foreign)));
+    assert!(e.contains("cross-component input"), "{e}");
+    assert_eq!(recipe(&s), before);
+}
+
+/// Another Part existing does not get in the way of stitching and replacing inside one.
+#[test]
+fn inputs_of_the_same_part_are_fine_beside_another_part() {
+    let (mut s, _, top, front_copy, _) = two_parts();
+    let (one, r) = s.stitch(&[top, front_copy], &v(1e-4), None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    common::assert_close(info(&s, one).area, 3120., 1.0, "top and front");
+    let (mut s, plate, top, ..) = two_parts();
+    let (out, _, r) = s.surface_replace(Some(plate), &up(), top, None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    common::assert_close(info(&s, out).volume, 28800., 1.0, "put back");
+}
