@@ -196,6 +196,7 @@ const MODELLING_TOOLS: &[&str] = &[
     "offset_surface",
     "surface_replace",
     "stitch",
+    "trim",
     "move",
     "linear_array",
     "circular_array",

@@ -303,3 +303,15 @@ fn trim_survives_save_open_and_the_app_edit_path() {
     let area: f64 = project.regen_faces[&left].iter().map(|f| f.area).sum();
     common::assert_close(area, 1800., 5.0, "the app's edit of d");
 }
+
+/// The node lands in the Part of its sheet, not in the Part that happens to be active.
+#[test]
+fn the_trim_lands_in_the_part_of_its_sheet() {
+    let (mut s, _, sheet, t) = setup();
+    let part = s.project().active_component.unwrap();
+    s.part_new("other").unwrap();
+    assert_ne!(s.project().active_component, Some(part));
+    let (left, r) = s.trim(sheet, t, LEFT, None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(info(&s, left).owner_part, Some(part));
+}

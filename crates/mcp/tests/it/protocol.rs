@@ -284,6 +284,7 @@ fn lists_tools_with_object_schemas() {
         "offset_surface",
         "surface_replace",
         "stitch",
+        "trim",
         "move",
         "linear_array",
         "circular_array",

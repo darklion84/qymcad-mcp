@@ -230,6 +230,7 @@ fn limits_allowlist_and_outer_schema() {
         "offset_surface",
         "surface_replace",
         "stitch",
+        "trim",
         "move",
         "linear_array",
         "circular_array",

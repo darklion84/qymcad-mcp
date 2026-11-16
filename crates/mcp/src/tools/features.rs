@@ -498,6 +498,26 @@ pub struct StitchArgs {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TrimArgs {
+    /// Sheet to trim (a solid is refused; never the default). Required without `feature`; with it, a new sheet needs its own `keep`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Body that cuts, solid or sheet, same Part, not the sheet itself. Required without `feature`.
+    #[serde(default)]
+    pub tool: Option<ObjRef>,
+    /// [x, y, z] mm, in the Part's own frame (as topology), not the world: the piece nearest to it stays. Required without `feature`.
+    #[serde(default)]
+    pub keep: Option<[f64; 3]>,
+    /// Existing Trim feature id/name to re-pick `body`, `tool` and/or `keep`. `name` is refused with it.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 fn zero() -> Num {
     Num::Value(0.0)
 }
@@ -948,7 +968,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "thicken",
-            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (an open surface, body sheet:true) is thickened whole into a solid from one face, as the app does, and takes either sign: positive grows along the face normal, negative against it (only 0 and |t| > 100000 are refused). A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`.", stale!()),
+            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (sheet:true) is thickened whole into a solid from one face, as the app does, and takes either sign: positive grows along the face normal, negative against it (0 and |t| > 100000 are refused). A plate into a cavity is not clipped. Give `feature` to replace the face; its thickness formula stays (edit via `dimension_set` key `thickness`).", stale!()),
             |st, a: ThickenArgs| {
                 let s = st.doc()?;
                 let face = a.face.resolve(s)?;
@@ -985,7 +1005,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "face_copy",
-            "Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0, area_mm2), as the app's Copy faces; several faces make one sheet. The source stays and is not consumed; the sheet lies on its face and follows later edits of the source. The sheet is never the default body of other tools: pass its id as `body`. Give `feature` to replace the faces of an existing node. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
+            "Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0), as the app's Copy faces; several faces make one sheet. The source stays; the sheet follows later edits of it. A sheet is never the default body of other tools: pass its id as `body`. Give `feature` to replace the faces. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
             |st, a: FaceCopyArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;
@@ -1005,7 +1025,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "offset_surface",
-            "Move faces of a body (solid or sheet) along their normals into a NEW SHEET body, as the app's Offset surface: top lifted 5 gives a sheet 5 above it. Faces meeting smoothly move as one piece, faces at a sharp edge move apart (still one body). The source stays. A distance that turns a cylinder inside out fails natively (OffsetPastRadius). Same sheet rules as face_copy. Give `feature` to replace the faces; `distance` stays (its formula, values via `dimension_set` key `dist`). Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
+            "Move faces of a body (solid or sheet) along their normals into a NEW SHEET body, as the app's Offset surface: top lifted 5 gives a sheet 5 above it. Faces meeting smoothly move as one piece, faces at a sharp edge move apart. The source stays. A distance that turns a cylinder inside out fails natively. Same sheet rules as face_copy. Give `feature` to replace the faces; `distance` stays (edit via `dimension_set` key `dist`). Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
             |st, a: OffsetSurfaceArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;
@@ -1026,7 +1046,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "surface_replace",
-            "Replace faces of a solid with a sheet that closes them, as the app's Replace face: the top replaced by a copy of the top lifted 5 makes the block 5 taller. A new solid replaces both inputs (the solid and the sheet are consumed) and takes later features such as a fillet. The sheet must close exactly what the dropped faces leave open (else refused, the free edge count is named); one face with a one-face sheet may also be reached by the sheet's extension. Give `feature` to replace the faces and/or the sheet of an existing node. Returns `feature` (also the new solid's id), `selected_faces`, `rebuild`.",
+            "Replace faces of a solid with a sheet that closes them, as the app's Replace face: the top replaced by a copy of the top lifted 5 makes the block 5 taller. A new solid replaces both inputs (both consumed). The sheet must close exactly what the dropped faces leave open (else refused, free edges named); one face with a one-face sheet may also be reached by the sheet's extension. Give `feature` to re-pick faces and/or sheet. Returns `feature` (also the new solid's id), `selected_faces`, `rebuild`.",
             |st, a: SurfaceReplaceArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.map(|f| f.resolve(s)).transpose()?;
@@ -1052,7 +1072,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "stitch",
-            "Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. When the sheets close a shell the result is a SOLID (six face copies of a plate give the plate), otherwise a sheet (`sheet` in the result). Sheets that share no edge within `tolerance` fail natively (they do not touch); a tolerance wider than the gap between edges is refused (it glues sheets that do not meet). Give `feature` to replace the parts of an existing node; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.",
+            "Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. Sheets that close a shell give a SOLID (six face copies of a plate), otherwise a sheet (`sheet` in the result). Sheets sharing no edge within `tolerance` fail natively; a tolerance wider than the gap between edges is refused. Give `feature` to replace the parts; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.",
             |st, a: StitchArgs| {
                 let s = st.doc()?;
                 let parts = a.parts.ok_or("`parts` is required")?.iter().map(|p| p.resolve(s)).collect::<Result<Vec<_>, _>>()?;
@@ -1064,6 +1084,31 @@ pub fn tools() -> Vec<Tool> {
                 } else {
                     let tolerance = a.tolerance.unwrap_or(Num::Value(STITCH_TOLERANCE_DEFAULT));
                     s.stitch(&parts, &tolerance, a.name.as_deref()).map_err(err)?
+                };
+                let sheet = rebuild.bodies.iter().find(|b| b.id == feature).map(|b| b.sheet);
+                Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "sheet": sheet, "rebuild": rebuild_json(&rebuild) }))
+            },
+        ),
+        tool(
+            "trim",
+            "Cut a SHEET by a body and keep one piece, as the app's Trim: the piece nearest `keep` stays as a NEW sheet; the sheet is consumed, `tool` is not. A tool that cuts nothing fails natively. Give `feature` to re-pick. Returns `feature` (= new sheet id), `sheet`, `rebuild`.",
+            |st, a: TrimArgs| {
+                let s = st.doc()?;
+                let body = a.body.map(|b| b.resolve(s)).transpose()?;
+                let tool = a.tool.map(|b| b.resolve(s)).transpose()?;
+                let (feature, rebuild) = if let Some(feature) = a.feature {
+                    if a.name.is_some() {
+                        return Err("with `feature`, `name` is not accepted".into());
+                    }
+                    if body.is_none() && tool.is_none() && a.keep.is_none() {
+                        return Err("with `feature`, give `body`, `tool` and/or `keep` to re-pick".into());
+                    }
+                    s.repick_trim(feature.resolve(s)?, body, tool, a.keep).map_err(err)?
+                } else {
+                    let body = body.ok_or("`body` (the sheet to trim) is required unless `feature` is given")?;
+                    let tool = tool.ok_or("`tool` is required unless `feature` is given")?;
+                    let keep = a.keep.ok_or("`keep` is required unless `feature` is given")?;
+                    s.trim(body, tool, keep, a.name.as_deref()).map_err(err)?
                 };
                 let sheet = rebuild.bodies.iter().find(|b| b.id == feature).map(|b| b.sheet);
                 Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "sheet": sheet, "rebuild": rebuild_json(&rebuild) }))
