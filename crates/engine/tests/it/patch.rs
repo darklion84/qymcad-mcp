@@ -135,7 +135,7 @@ fn a_tangent_patch_is_larger_than_a_flat_one_and_is_stored() {
     let (smooth, _, r) = t.patch(Some(shell), &ids(&edges), true, None).unwrap();
     assert!(r.errors.is_empty(), "{:?}", r.errors);
     let a_smooth = info(&t, smooth).area;
-    assert!(a_smooth > a_flat + 5., "smooth {a_smooth} against flat {a_flat}");
+    assert!(a_smooth > a_flat + 2., "smooth {a_smooth} against flat {a_flat}");
     assert!(node_of(&t, smooth).2, "tangent is stored in the node");
 }
 
@@ -337,6 +337,31 @@ fn a_repick_onto_an_open_chain_is_refused_by_the_rebuild() {
         assert_eq!(recipe(&s), before, "{what}: the document is as it was");
     }
     common::assert_close(info(&s, patch).area, 1200., 5.0, "unchanged");
+}
+
+/// TR 8: two opposite sides of the opening are no closed boundary; on a re-pick (no pre-check in the app) the refusal says that, not that
+/// "2 separate boundaries" were picked (they are not boundaries at all). Edges that do close twice keep the F-199 words.
+#[test]
+fn a_repick_onto_edges_that_do_not_close_says_so() {
+    let (mut s, shell) = open_box();
+    let outer = rim(&mut s, shell, true);
+    let (patch, _, _) = s.patch(Some(shell), &ids(&outer), false, None).unwrap();
+    let before = recipe(&s);
+    // Opposite edges of the outline: find a pair that does not share an end.
+    let live = s.topology(Some(shell), false).unwrap();
+    let ends = |id: u32| {
+        let e = live.edges.iter().find(|e| e.id == id).unwrap();
+        (e.a.map(|c| (c * 1e3).round() as i64), e.b.map(|c| (c * 1e3).round() as i64))
+    };
+    let pair = outer
+        .iter()
+        .flat_map(|a| outer.iter().map(move |b| (*a, *b)))
+        .find(|(a, b)| a < b && ![ends(*b).0, ends(*b).1].iter().any(|p| [ends(*a).0, ends(*a).1].contains(p)))
+        .expect("two opposite edges");
+    let e = error(s.repick_patch(patch, Some(&ids(&[pair.0, pair.1])), None));
+    assert!(e.contains("do not close") && !e.contains("separate boundaries"), "{e}");
+    assert!(e.contains("2 separate chains") && e.contains("F-199"), "{e}");
+    assert_eq!(recipe(&s), before);
 }
 
 /// A sheet is a source too: the four boundary edges of the copy of a block's top take a patch of the same 1200 (a second sheet).

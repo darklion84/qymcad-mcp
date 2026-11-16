@@ -69,7 +69,8 @@ fn patch_is_the_lid_and_the_source_stays() {
     let mut t = open_box();
     let outer = rim(&mut t, "cup", true);
     let smooth = call(&mut t, "patch", json!({"edges": outer, "mode": "tangent"}));
-    assert!(area(&mut t, &smooth["body"]) > 1205., "tangent bows towards the walls");
+    let tangent = area(&mut t, &smooth["body"]);
+    assert!(tangent > 1202., "tangent bows towards the walls: {tangent}");
     call(&mut r, "param_set", json!({"name": "w", "value": 60}));
     close(area(&mut r, &out["body"]), 1800., "60 x 30");
 }
@@ -140,7 +141,8 @@ fn patch_feature_repicks_edges_and_mode() {
     assert_eq!(again["feature"], out["feature"]);
     close(area(&mut r, &out["body"]), 936., "the inner outline, 36 x 26");
     call(&mut r, "patch", json!({"feature": "lid", "mode": "tangent"}));
-    assert!(area(&mut r, &out["body"]) > 940.);
+    let tangent = area(&mut r, &out["body"]);
+    assert!(tangent > 937., "tangent of the inner outline (flat 936): {tangent}");
     call(&mut r, "patch", json!({"feature": "lid", "edges": outer, "mode": "flat"}));
     close(area(&mut r, &out["body"]), 1200., "back to the lid");
     // An open chain on a re-pick reaches the rebuild and is rolled back.

@@ -439,6 +439,14 @@ impl Session {
             return Err(Error::Invalid(format!("{} (edges {ids:?} of body {src})", localization::text("msg-patch-needs-edges"))));
         }
         let loops = patch_loops(live, &ids);
+        if loops > 1 && !patch_boundary(live, &ids) {
+            // Only a re-pick gets here (a new patch is refused above): edges that do not close AND fall apart. Say that first.
+            return Err(Error::Invalid(format!(
+                "{} (edges {ids:?} of body {src}; they also fall into {loops} separate chains, and QymCAD would span one of them and drop the \
+                 rest without a word, F-199)",
+                localization::text("msg-patch-needs-edges")
+            )));
+        }
         if loops > 1 {
             return Err(Error::Invalid(format!(
                 "the edges {ids:?} of body {src} make {loops} separate boundaries (a ring, or a chain of edges that meet end to end, is one); a patch \
