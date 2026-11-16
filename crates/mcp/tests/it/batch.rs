@@ -394,3 +394,30 @@ fn warnings_restore_on_failure_and_successful_batch_undo() {
     assert!(undone["warnings"].as_array().unwrap().iter().any(|w| w["message"].as_str().unwrap().contains("sealed internal void")));
     assert_eq!(call(&mut r, "doc_info", json!({})), before);
 }
+
+/// Review item E2.5: the steps of a batch skip the exact body metrics their dropped reports would carry. The final report,
+/// a verbose step's result, and every call after a batch that failed still measure the bodies.
+#[test]
+fn deferred_step_metrics_never_reach_a_report() {
+    let block = |name: &str, x: i64| {
+        vec![
+            step("sketch_create", json!({"plane":"XY", "name":format!("{name}-s")})),
+            step("sketch_add", json!({"sketch":format!("{name}-s"), "entities":[{"type":"rect", "cx":x, "cy":0, "w":10, "h":20}]})),
+            step("extrude", json!({"sketch":format!("{name}-s"), "height":5, "name":name})),
+        ]
+    };
+    let mut r = fresh();
+    let out = call(&mut r, "batch", json!({"steps":block("a", 0)}));
+    let measured = call(&mut r, "doc_info", json!({}))["bodies"].clone();
+    assert!(measured[0]["bbox"].as_array().is_some_and(|b| b.iter().any(|v| v.as_f64() != Some(0.0))), "{measured}");
+    assert_eq!(out["bodies"], measured);
+
+    let verbose = call(&mut r, "batch", json!({"steps":block("b", 5), "verbose":true}));
+    let measured = call(&mut r, "doc_info", json!({}))["bodies"].clone();
+    assert_eq!(verbose["steps"][2]["result"]["rebuild"]["bodies"], measured, "{verbose}");
+
+    let mut failing = block("c", 10);
+    failing.push(step("extrude", json!({"sketch":"missing", "height":1})));
+    error(&mut r, json!({"steps":failing}));
+    assert_eq!(call(&mut r, "doc_info", json!({}))["bodies"], measured);
+}

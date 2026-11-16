@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Changed
+- `batch` no longer measures the bodies after every step: a step's body report is dropped unless `verbose` is set, and the exact bounding box and area came from a fresh 0.005 mm tessellation each time (review item E2.5; a quarter of a 50-step batch on an 8-body assembly). The final report, a verbose step's result and every call after the batch measure as before.
+
 ## 0.1.1-dev.20261026.20 — surfaces: sheet bodies and six surface tools (P20–P24, P27)
 
 ### Added

@@ -86,7 +86,12 @@ fn run(tools: &[Tool], state: &mut State, arguments: Value) -> Result<Content, S
     }
     let mut snapshot = state.doc()?.begin_tool_edit().map_err(|e| e.to_string())?;
     snapshot.record_call("batch", arguments);
+    // Steps' body reports are dropped (unless verbose): skip their exact tessellation; `execute` clears it for the final one.
+    state.doc()?.defer_body_metrics(!batch.verbose);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute(tools, state, &batch, &handlers)));
+    if let Ok(session) = state.doc() {
+        session.defer_body_metrics(false);
+    }
     let result = match result {
         Ok(result) => result,
         Err(panic) => {
@@ -153,6 +158,7 @@ fn execute(tools: &[Tool], state: &mut State, batch: &BatchArgs, handlers: &[&To
         }
         steps.push(entry);
     }
+    state.doc()?.defer_body_metrics(false);
     let report = state.doc()?.current_rebuild();
     let mut out = json!({"ok":true, "steps":steps, "bodies":report.bodies, "warnings":report.warnings, "errors":report.errors});
     if !report.assembly.is_null() {

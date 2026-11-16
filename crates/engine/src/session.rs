@@ -297,6 +297,7 @@ fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
     reporting_metrics(shape).bbox
 }
 
+#[derive(Default)]
 /// What one exact tessellation of a body (the reporting mesh: 0.005 mm, more only for huge bodies) says. Independent of the document's
 /// `GeomQuality` and of the faces cached with the body, which carry the coarser display mesh.
 pub(crate) struct Reported {
@@ -366,6 +367,8 @@ pub struct Session {
     pub(crate) undo: std::collections::VecDeque<crate::history::Snapshot>,
     pub(crate) undo_limit_reached: bool,
     pub(crate) tool_edit_active: bool,
+    /// Set by `batch` while its steps run: their body reports are discarded, the final one is made after it is cleared.
+    metrics_deferred: bool,
     // Originals removed by native sketch deletion, retained once while undo still references them.
     pub(crate) retired_sources: HashMap<Id, qymcad_core::model::SourceFile>,
     pub(crate) detached_projections: HashMap<(Id, Id), DetachedProjection>,
@@ -403,6 +406,7 @@ impl Session {
             undo: Default::default(),
             undo_limit_reached: false,
             tool_edit_active: false,
+            metrics_deferred: false,
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
             drive_clamps: Vec::new(),
@@ -451,6 +455,7 @@ impl Session {
             undo: Default::default(),
             undo_limit_reached: false,
             tool_edit_active: false,
+            metrics_deferred: false,
             retired_sources: HashMap::new(),
             detached_projections: HashMap::new(),
             drive_clamps: Vec::new(),
@@ -1310,6 +1315,13 @@ impl Session {
         r
     }
 
+    /// While set, [`Self::result_bodies`] skips the exact reporting tessellation: `bbox` is zero and `area` the cached
+    /// display mesh's, everything else as usual. For `batch`, which discards its steps' body reports (review item E2.5:
+    /// a quarter of a 50-step batch on an 8-body assembly); no decision may read those fields while it is set.
+    pub fn defer_body_metrics(&mut self, deferred: bool) {
+        self.metrics_deferred = deferred;
+    }
+
     /// Bodies that are current results: built, and not consumed by a later feature.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`;
     /// bbox reporting acquires that non-reentrant mutex.
@@ -1325,7 +1337,7 @@ impl Session {
                 let owner_part = self.p.body_owner(b);
                 let world_transform = self.p.body_world_transform(b);
                 if let Some(sh) = self.shapes.get(&b) {
-                    let measured = reporting_metrics(sh);
+                    let measured = if self.metrics_deferred { Reported::default() } else { reporting_metrics(sh) };
                     let bbox_local = measured.bbox.unwrap_or([0.0; 6]);
                     let mut bbox_world =
                         [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
