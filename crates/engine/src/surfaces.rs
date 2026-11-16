@@ -433,7 +433,7 @@ impl Session {
     /// is checked on creation as the app does before it lays a node. `check` is off on a re-pick: the app's edit mode does not ask
     /// (`cmd_ready` is true for any edit), the rebuild judges. F-199 is held either way: the edges make ONE boundary.
     fn patch_edges(&self, src: Id, sel: &Sel, check: bool) -> Result<Vec<u32>> {
-        let mut ids = self.resolve_sel(src, Element::Edges, sel)?;
+        let ids = self.resolve_sel(src, Element::Edges, sel)?;
         let live = self.p.regen_edges.get(&src).map(Vec::as_slice).unwrap_or_default();
         if ids.is_empty() || (check && !patch_boundary(live, &ids)) {
             return Err(Error::Invalid(format!("{} (edges {ids:?} of body {src})", localization::text("msg-patch-needs-edges"))));
