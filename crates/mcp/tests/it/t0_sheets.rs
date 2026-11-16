@@ -30,7 +30,7 @@ fn solid_then_sheet() -> Registry {
     r
 }
 
-fn body<'a>(info: &'a Value, volume_zero: bool) -> &'a Value {
+fn body(info: &Value, volume_zero: bool) -> &Value {
     info["bodies"].as_array().unwrap().iter().find(|b| (b["volume_mm3"].as_f64().unwrap() == 0.0) == volume_zero).unwrap()
 }
 
