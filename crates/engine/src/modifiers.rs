@@ -547,6 +547,7 @@ impl Session {
             None => old_reference,
         };
         self.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
+        self.refuse_sheet_boundary_edges(src, &ids)?;
         let bodies = self.repick_rebuild(feature, "chamfer", |kind, _| {
             let FeatureKind::Chamfer { edges, ref_face, .. } = kind else {
                 return None;

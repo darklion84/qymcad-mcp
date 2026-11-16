@@ -385,6 +385,28 @@ fn chamfer_on_a_sheet_takes_shared_edges_and_refuses_boundary_edges_f197() {
     close(b.area, 720. - 10. * (2. - 2f64.sqrt()), 1e-3, "one corner chamfered");
 }
 
+/// TR 4: the F-197 guard holds on a re-pick too: a chamfer of one shared edge re-picked with the boundary edges is refused (it
+/// used to go through: QymCAD bevelled the shared edges only and said nothing), the document unchanged; shared edges re-pick fine.
+#[test]
+fn chamfer_repick_on_a_sheet_refuses_boundary_edges_f197() {
+    let (mut s, sheet) = fresh();
+    let t = s.topology(Some(sheet), true).unwrap();
+    let shared: Vec<u32> = t.edges.iter().filter(|e| e.faces.is_some()).map(|e| e.id).collect();
+    let boundary: Vec<u32> = t.edges.iter().filter(|e| e.faces.is_none()).map(|e| e.id).collect();
+    let (id, r) = s.chamfer(Some(sheet), &Sel::Ids(vec![shared[0]]), &v(1.), None, None).unwrap();
+    assert!(r.errors.is_empty());
+    let before = serde_json::to_string(s.project()).unwrap();
+    for pick in [[shared.clone(), boundary.clone()].concat(), vec![boundary[0]]] {
+        let e = refused(s.repick_chamfer(id, &Sel::Ids(pick), None));
+        assert!(e.contains(&format!("body {sheet} is a sheet")) && e.contains("F-197"), "{e}");
+    }
+    assert_eq!(serde_json::to_string(s.project()).unwrap(), before);
+    let (_, ids, r) = s.repick_chamfer(id, &Sel::Ids(vec![shared[0], shared[1]]), None).unwrap();
+    assert!(r.errors.is_empty());
+    assert_eq!(ids.len(), 2);
+    close(info(&s, id).area, 720. - 2. * 10. * (2. - 2f64.sqrt()), 1e-3, "two corners chamfered");
+}
+
 // ---- (e) thicken of a sheet ----
 
 /// thicken of a sheet, both signs (the app's command takes either): +1 grows outward, -1 inward; the sheet becomes a solid.
