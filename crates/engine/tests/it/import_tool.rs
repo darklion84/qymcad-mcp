@@ -27,7 +27,7 @@ fn box_body(session: &mut Session, center: [f64; 2], size: [f64; 3]) -> Id {
 
 fn fixture(format: ExactFormat) -> (PathBuf, PathBuf) {
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    let dir = std::env::temp_dir().join(format!("qymcad-import-tool-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+    let dir = crate::common::scratch(&format!("qymcad-import-tool-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir_all(&dir).unwrap();
     let extension = match format {
         ExactFormat::Step => "step",

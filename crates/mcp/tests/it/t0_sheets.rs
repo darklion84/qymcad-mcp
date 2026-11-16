@@ -55,7 +55,7 @@ fn doc_info_and_the_loft_result_say_which_body_is_a_sheet_and_its_area() {
 #[test]
 fn export_names_a_sheet_and_leaves_out_its_mesh_volume() {
     let mut r = solid_then_sheet();
-    let path = std::env::temp_dir().join(format!("t0-sheet-{}.stl", std::process::id()));
+    let path = crate::scratch::path("t0-sheet.stl");
     let out = call(&mut r, "export", json!({"path": path.to_str().unwrap(), "format": "stl"}));
     let bodies = out["bodies"].as_array().unwrap();
     let sheet = bodies.iter().find(|b| b["sheet"] == true).expect("the sheet");
@@ -86,7 +86,7 @@ fn a_sheet_in_doc_info_and_in_a_reopened_file_raises_no_sealed_void_warning() {
     let mut r = solid_then_sheet();
     let sealed = |v: &Value| v["warnings"].as_array().unwrap().iter().any(|w| w.to_string().contains("sealed"));
     assert!(!sealed(&call(&mut r, "doc_info", json!({}))));
-    let path = std::env::temp_dir().join(format!("t0-sheet-warn-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("t0-sheet-warn.qcad");
     call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
     let opened = call(&mut r, "doc_open", json!({"path": path.to_str().unwrap()}));
     assert!(!opened.to_string().contains("sealed"), "{opened}");

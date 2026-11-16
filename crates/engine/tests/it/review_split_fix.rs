@@ -94,7 +94,7 @@ fn split_pieces_can_move_without_reordering() {
 #[test]
 fn a_preexisting_split_error_cannot_exempt_an_identity_swap() {
     let (mut s, split) = u_part();
-    let path = std::env::temp_dir().join(format!("qymcad-error-split-{}.qcad", std::process::id()));
+    let path = crate::common::scratch("qymcad-error-split.qcad");
     s.save(Some(&path)).unwrap();
     let mut loaded = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     // Current right_end22 gives offset2, two pieces (invalid stored count3).
@@ -178,7 +178,7 @@ fn a_split_saved_past_the_rollback_bar_is_judged_by_what_it_cut_when_the_file_is
     let (mut s, result) = u_part();
     let before_split = timeline_head(&s, result.feature);
     s.history_rollback(Some(before_split), None).unwrap();
-    let path = std::env::temp_dir().join(format!("k2-split-bar-{}.qcad", std::process::id()));
+    let path = crate::common::scratch("k2-split-bar.qcad");
     s.save(Some(&path)).unwrap();
     let (mut opened, _) = Session::open(&path).unwrap();
     opened.param_set("right_end", &18.0.into()).unwrap();

@@ -249,7 +249,7 @@ fn e3_stdio_refusals_preserve_full_doc_topology_and_undo_depth() {
 #[test]
 fn e3_stdio_noop_adds_no_history_and_undo_restores_exact_archive() {
     let Fixture { mut client, source, body, .. } = fixture();
-    let path = std::env::temp_dir().join(format!("e3-stdio-undo-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("e3-stdio-undo.qcad");
     let entries = archive(&mut client, &path);
     let before = client.snapshot();
     let original = identity(&mut client, &body);
@@ -283,7 +283,7 @@ fn e3_stdio_noop_adds_no_history_and_undo_restores_exact_archive() {
 #[test]
 fn e3_stdio_batch_late_failure_archive_rollback_and_successful_extrude() {
     let Fixture { mut client, sketch, source, body } = fixture();
-    let path = std::env::temp_dir().join(format!("e3-stdio-batch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("e3-stdio-batch.qcad");
     let entries = archive(&mut client, &path);
     let before = client.snapshot();
     let error = client

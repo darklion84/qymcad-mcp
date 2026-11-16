@@ -127,7 +127,7 @@ fn volume(body: &Value, expected: f64) {
     assert!((body["volume_mm3"].as_f64().unwrap() - expected).abs() < 1e-6, "{body}; expected {expected}");
 }
 fn path(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("qymcad-t-reorder-{}-{label}.qcad", std::process::id()))
+    crate::scratch::path(&format!("qymcad-t-reorder-{label}.qcad"))
 }
 #[test]
 fn t_stdio_reorder_strict_schema_refusals_and_ambiguous_names() {

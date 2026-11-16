@@ -255,7 +255,7 @@ fn e1_stdio_renamed_aliases_work_immediately_and_after_open() {
     c.rename("feature", sketch.clone(), "sketch timeline");
     c.rename("feature", body.clone(), "Плита α # / :");
     c.rename("body", body.clone(), "Housing");
-    let path = std::env::temp_dir().join(format!("e1-stdio-aliases-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("e1-stdio-aliases.qcad");
     for reopened in [false, true] {
         if reopened {
             c.ok("doc_save", json!({"path":path}));
@@ -292,7 +292,7 @@ fn e1_stdio_renamed_aliases_work_immediately_and_after_open() {
 fn e1_stdio_batch_uses_new_name_and_late_failure_restores_archive() {
     let (mut c, sketch, body) = fixture();
     result(c.rename("feature", body.clone(), "Base"), "feature", &body, ["plate", "Base", "Base"], true, json!([]));
-    let path = std::env::temp_dir().join(format!("e1-stdio-batch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("e1-stdio-batch.qcad");
     let before = archive(&mut c, &path);
     let state = c.snapshot();
     let error = c

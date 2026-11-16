@@ -166,7 +166,7 @@ fn rollback(c: &mut Client, args: Value, expected: Value, changed: bool, bodies:
     result
 }
 fn path(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("qymcad-e7-mcp-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-e7-mcp");
     std::fs::create_dir_all(&dir).unwrap();
     dir.join(name)
 }

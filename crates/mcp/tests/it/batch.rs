@@ -128,7 +128,7 @@ fn failure_step_seven_restores_loaded_state_exact_breps_and_history() {
         for s in part() {
             call(&mut r, s["tool"].as_str().unwrap(), s["args"].clone());
         }
-        let dir = std::env::temp_dir().join(format!("qymcad-batch-{}-{}", std::process::id(), fail["tool"].as_str().unwrap()));
+        let dir = crate::scratch::path(&format!("qymcad-batch-{}", fail["tool"].as_str().unwrap()));
         std::fs::create_dir_all(&dir).unwrap();
         let before_path = dir.join("before.qcad");
         let after_path = dir.join("after.qcad");

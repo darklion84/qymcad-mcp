@@ -391,7 +391,7 @@ fn builds_saves_and_reopens_the_plate() {
     let v = r["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
     assert!((v - expected(6.0)).abs() < 1e-3, "volume {v}");
 
-    let path = std::env::temp_dir().join(format!("qymcad-mcp-protocol-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-mcp-protocol.qcad");
     let saved = c.ok("doc_save", json!({ "path": path.to_str().unwrap() }));
     assert!(saved["saved"].as_str().unwrap().ends_with(".qcad"));
 
@@ -445,7 +445,7 @@ fn paths_are_restricted_to_cad_files() {
 
 #[test]
 fn symlinks_are_not_followed() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-symlink-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-symlink");
     std::fs::create_dir_all(&dir).unwrap();
     let victim = dir.join("victim.txt");
     std::fs::write(&victim, "keep me").unwrap();
@@ -616,7 +616,7 @@ fn build_box(c: &mut Client) {
 
 #[test]
 fn imports_step_through_mcp_and_batch_with_embedded_source() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-import-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-import");
     std::fs::create_dir_all(&dir).unwrap();
     let source = dir.join("box.step");
     let mut maker = Client::start();
@@ -654,7 +654,7 @@ fn imports_step_through_mcp_and_batch_with_embedded_source() {
 
 #[test]
 fn imports_iges_through_mcp() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-iges-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-iges");
     std::fs::create_dir_all(&dir).unwrap();
     let source = dir.join("box.iges");
     // Server-built 10×10×5 mm box, written by the native IGES writer in inches;
@@ -701,7 +701,7 @@ fn imports_iges_through_mcp() {
 
 #[test]
 fn exports_through_mcp() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-export-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-export");
     std::fs::create_dir_all(&dir).unwrap();
     let mut c = Client::start();
     build_box(&mut c);
@@ -739,7 +739,7 @@ fn export_paths_are_restricted() {
         let (is_err, msg) = c.tool("export", json!({ "format": format, "path": path }));
         assert!(is_err && msg.as_str().unwrap().contains("only"), "{format} {path}: {msg}");
     }
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-export-link-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-export-link");
     std::fs::create_dir_all(&dir).unwrap();
     let victim = dir.join("victim.txt");
     std::fs::write(&victim, "keep me").unwrap();
@@ -774,7 +774,7 @@ fn unbase64(s: &str) -> Vec<u8> {
 
 #[test]
 fn mesh_import_move_batch_and_undo_over_real_stdio() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-mesh-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-mesh");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("tetra.stl");
     std::fs::write(&path, "solid tetra\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 10 0 0\n   vertex 0 10 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 10 0\n   vertex 0 0 10\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 0 10\n   vertex 10 0 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 10 0 0\n   vertex 0 0 10\n   vertex 0 10 0\n  endloop\n endfacet\nendsolid tetra\n").unwrap();
@@ -803,7 +803,7 @@ fn mesh_import_move_batch_and_undo_over_real_stdio() {
 
 #[test]
 fn import_mesh_format_and_unit_are_enums_in_the_schema_and_refuse_unknown_values() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-mesh-enum-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-mesh-enum");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("tetra.stl");
     std::fs::write(&path, "solid tetra\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 10 0 0\n   vertex 0 10 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 10 0\n   vertex 0 0 10\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 0 10\n   vertex 10 0 0\n  endloop\n endfacet\n facet normal 0 0 0\n  outer loop\n   vertex 10 0 0\n   vertex 0 0 10\n   vertex 0 10 0\n  endloop\n endfacet\nendsolid tetra\n").unwrap();
@@ -841,7 +841,7 @@ fn import_mesh_format_and_unit_are_enums_in_the_schema_and_refuse_unknown_values
 
 #[test]
 fn mesh_import_recognise_fillet_batch_and_undo_over_real_stdio() {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-recognise-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-recognise");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("cube.stl");
     let mut bytes = vec![0u8; 84 + 12 * 50];
@@ -1170,7 +1170,7 @@ fn remove_face_is_registered_descriptive_batchable_and_undoable_over_stdio() {
 
 #[test]
 fn sketch_import_batch_extrude_and_undo_over_stdio() {
-    let path = std::env::temp_dir().join(format!("qymcad-mcp-sketch-import-{}.dxf", std::process::id()));
+    let path = crate::scratch::path("qymcad-mcp-sketch-import.dxf");
     std::fs::write(&path, "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n8\n0\n90\n4\n70\n1\n10\n0\n20\n0\n10\n10\n20\n0\n10\n10\n20\n10\n10\n0\n20\n10\n0\nENDSEC\n0\nEOF\n").unwrap();
     let mut c = Client::start();
     c.init();

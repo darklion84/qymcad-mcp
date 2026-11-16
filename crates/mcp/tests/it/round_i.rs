@@ -48,7 +48,7 @@ fn bbox_json_uses_one_four_decimal_precision_on_build_open_info_and_undo() {
     assert_eq!(call(&mut r, "doc_info", json!({}))["bodies"][0]["bbox"], expected, "info removes f32 noise");
     call(&mut r, "param_set", json!({"name":"unused","value":1}));
     assert_eq!(call(&mut r, "undo", json!({}))["bodies"][0]["bbox"], expected);
-    let path = std::env::temp_dir().join(format!("qymcad-round-i-bbox-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-round-i-bbox.qcad");
     call(&mut r, "doc_save", json!({"path":path}));
     let opened = call(&mut r, "doc_open", json!({"path":path}));
     assert_eq!(opened["doc"]["bodies"][0]["bbox"], expected);

@@ -45,7 +45,7 @@ fn modelling_tools_undo_exact_breps_after_failed_read_and_save_calls() {
     for operation in ["extrude", "fillet", "param_set"] {
         let mut r = Registry::new();
         stock(&mut r);
-        let dir = std::env::temp_dir().join(format!("qymcad-mcp-history-{}", std::process::id()));
+        let dir = crate::scratch::path("qymcad-mcp-history");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{operation}.qcad"));
         call(&mut r, "doc_save", json!({"path":path}));

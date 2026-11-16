@@ -69,7 +69,7 @@ fn empty_save_requires_override_to_replace_a_body_containing_file() {
     for operation in ["undo", "feature_delete"] {
         let mut r = Registry::new();
         stock(&mut r);
-        let dir = std::env::temp_dir().join(format!("qymcad-empty-save-{}-{operation}", std::process::id()));
+        let dir = crate::scratch::path(&format!("qymcad-empty-save-{operation}"));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("part.qcad");
         call(&mut r, "doc_save", json!({"path":path}));

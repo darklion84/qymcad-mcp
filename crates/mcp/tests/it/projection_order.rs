@@ -33,7 +33,7 @@ fn r1_1_forward_projection_tool_refuses_edge_and_face_without_history_changes() 
     call(&mut r, "extrude", json!({"sketch":"profile","height":10,"name":"body"}));
     let edge = call(&mut r, "select", json!({"body":"body","edges":{"edges_of":{"facing":"+z"}}}))["edges"][0]["id"].clone();
     let face = call(&mut r, "select", json!({"body":"body","faces":{"facing":"+z"}}))["faces"][0]["id"].clone();
-    let path = std::env::temp_dir().join(format!("qymcad-r1-forward-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-r1-forward.qcad");
     let before = saved_state(&mut r, &path);
     let doc = call(&mut r, "doc_info", json!({}));
     let sketch = call(&mut r, "sketch_info", json!({"sketch":"early"}));

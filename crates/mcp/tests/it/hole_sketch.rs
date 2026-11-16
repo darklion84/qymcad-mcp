@@ -81,7 +81,7 @@ fn hole_sketch_schema_and_branch_refusals_preserve_archive() {
     }
     let description = hole["description"].as_str().unwrap();
     assert!(description.contains("unnamed") && description.contains("stale"));
-    let path = std::env::temp_dir().join(format!("a4-mcp-branches-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a4-mcp-branches.qcad");
     let before = archive(&mut r, &path);
     for args in [
         json!({"diameter":4,"depth":10}),
@@ -126,7 +126,7 @@ fn hole_sketch_registry_explicit_points_formulas_counterbores_and_undo() {
 #[test]
 fn hole_sketch_missing_site_and_batch_failure_restore_exact_archive() {
     let (mut r, ids) = fixture();
-    let path = std::env::temp_dir().join(format!("a4-mcp-batch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a4-mcp-batch.qcad");
     let before = archive(&mut r, &path);
     let error = r
         .call(

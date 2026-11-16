@@ -200,7 +200,7 @@ fn refusals_leave_the_document_untouched() {
     assert!(error(s.trim(sheet, plate, LEFT, None)).contains("rolled back"));
     assert_eq!(recipe(&s), before);
     // A mesh body, as sheet and as tool.
-    let dir = std::env::temp_dir().join(format!("qymcad-trim-mesh-{}", std::process::id()));
+    let dir = crate::common::scratch("qymcad-trim-mesh");
     std::fs::create_dir_all(&dir).unwrap();
     let stl = dir.join("tetra.stl");
     std::fs::write(

@@ -553,7 +553,7 @@ mod panic_tests {
 
     #[test]
     fn recovery_saves_elsewhere_and_never_over_the_original_file() {
-        let dir = std::env::temp_dir().join(format!("qymcad-m7-{}", std::process::id()));
+        let dir = crate::test_scratch::path("qymcad-m7");
         std::fs::create_dir_all(&dir).unwrap();
         let (original, recovered) = (dir.join("original.qcad"), dir.join("recovered.qcad"));
         let mut registry = Registry::new();

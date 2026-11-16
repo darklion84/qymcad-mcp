@@ -328,7 +328,7 @@ fn a_preexisting_thread_error_cannot_exempt_new_safety_refusals() {
         )
         .unwrap()
         .body;
-    let path = std::env::temp_dir().join(format!("qymcad-error-thread-{}.qcad", std::process::id()));
+    let path = crate::common::scratch("qymcad-error-thread.qcad");
     s.save(Some(&path)).unwrap();
     let mut loaded = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     loaded.project.feat_dims.entry(thread).or_default().insert("length".into(), "21".into());

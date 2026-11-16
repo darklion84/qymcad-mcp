@@ -5,12 +5,13 @@ use qymcad_core::model::Id;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// A fresh scratch path under the system temp dir (no extra dependency for tempfiles).
+/// `name` in this process's scratch directory (`src/test_scratch.rs`), swept once the process is gone.
 pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-tests-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join(name)
+    scratch_dir::path(name)
 }
+
+#[path = "../../src/test_scratch.rs"]
+mod scratch_dir;
 
 pub fn assert_close(actual: f64, expected: f64, tol: f64, what: &str) {
     assert!((actual - expected).abs() <= tol, "{what}: got {actual}, expected {expected} ± {tol}");

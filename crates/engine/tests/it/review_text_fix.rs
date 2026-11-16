@@ -99,7 +99,7 @@ fn imported_height_formula(from_dimension: bool) -> (Session, Id, Id) {
         s.param_set("letter_height", &10.0.into()).unwrap();
         "letter_height"
     };
-    let dir = std::env::temp_dir().join(format!("qymcad-text-fix-{}", std::process::id()));
+    let dir = crate::common::scratch("qymcad-text-fix");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("inherited-text-height-{from_dimension}.qcad"));
     s.save(Some(&path)).unwrap();
@@ -161,7 +161,7 @@ fn ordinary_parameter_dimension_and_sketch_edits_match_a_fresh_text_build() {
 #[test]
 fn opening_a_stale_text_item_formula_cannot_resize_existing_text() {
     let (mut s, text, _) = text_part(10.);
-    let path = std::env::temp_dir().join(format!("qymcad-stale-text-{}.qcad", std::process::id()));
+    let path = crate::common::scratch("qymcad-stale-text.qcad");
     s.save(Some(&path)).unwrap();
     let mut loaded = qymcad_io::load_project_with_brep(path.to_str().unwrap()).unwrap();
     loaded.project.feat_dims.entry(text).or_default().insert("height".into(), "20".into());

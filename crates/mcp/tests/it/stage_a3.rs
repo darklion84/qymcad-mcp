@@ -100,7 +100,7 @@ fn a3_formula_rotation_refusal_and_batch_rollback_restore_exact_archive() {
     let mut r = stock();
     call(&mut r, "param_set", json!({"name":"shift","value":7}));
     call(&mut r, "move", json!({"dx":"shift+3","name":"placed"}));
-    let path = std::env::temp_dir().join(format!("a3-mcp-rollback-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a3-mcp-rollback.qcad");
     let before = archive(&mut r, &path);
     let error = r.call("move", json!({"rotation":{"axis":"z","angle":90,"pivot":[0,0,0]}})).unwrap().unwrap_err();
     assert_eq!(error,"invalid request: rotation accumulation on a formula-driven Move is unsupported: native accumulate_move adds numeric deltas to stored translation formulas instead of rotating their variable coefficients");

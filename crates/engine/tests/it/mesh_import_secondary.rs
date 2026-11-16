@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 fn dir() -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    let d = std::env::temp_dir().join(format!("qymcad-mesh-secondary-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+    let d = crate::common::scratch(&format!("qymcad-mesh-secondary-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir_all(d.join("mesh")).unwrap();
     d
 }

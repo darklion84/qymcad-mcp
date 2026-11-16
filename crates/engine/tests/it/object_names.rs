@@ -55,7 +55,7 @@ fn invalid_import_names_are_refused_without_changing_project_or_original_breps()
 
 #[test]
 fn invalid_filename_derived_import_name_is_refused_atomically() {
-    let dir = std::env::temp_dir().join(format!("qymcad-object-names-{}", std::process::id()));
+    let dir = crate::common::scratch("qymcad-object-names");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(" Imported .igs");
     std::fs::copy(fixture(), &path).unwrap();

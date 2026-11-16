@@ -163,7 +163,7 @@ fn angle_and_reference_refusals_restore_exact_archive_and_history() {
     stock(&mut r);
     call(&mut r, "param_set", json!({"name":"angle_driver","value":30}));
     call(&mut r, "chamfer", json!({"edges":edge(),"dist":2,"angle":"angle_driver","reference_face":{"facing":"+x"},"name":"bevel"}));
-    let path = std::env::temp_dir().join(format!("a2-refusals-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a2-refusals.qcad");
     let before = archive(&mut r, &path);
     for (tool, args) in [
         ("param_set", json!({"name":"angle_driver","value":181})),
@@ -196,7 +196,7 @@ fn tilted_plane_evaluated_bounds_restore_exact_archive() {
     call(&mut r, "param_set", json!({"name":"turn_driver","value":15}));
     call(&mut r, "plane_offset", json!({"base":"XY","dist":0,"turn":"turn_driver","name":"tilted"}));
     stock(&mut r);
-    let path = std::env::temp_dir().join(format!("a2-plane-refusals-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a2-plane-refusals.qcad");
     let before = archive(&mut r, &path);
     for (tool, args) in [
         ("param_set", json!({"name":"turn_driver","value":361})),

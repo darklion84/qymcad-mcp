@@ -187,7 +187,7 @@ fn e2_stdio_block_single_pair_and_open() {
     );
     // Plane z=h=5; point z=12: perpendicular gap 12-5=7.
     near(&measure(&mut c, json!({"point":[0,0,12]}), Some(top.clone()))["distance_mm"], 12.0 - 5.0);
-    let path = std::env::temp_dir().join(format!("qymcad-e2-open-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-e2-open.qcad");
     c.ok("doc_save", json!({"path":path}));
     c.ok("doc_open", json!({"path":path}));
     assert_eq!(measure(&mut c, top.clone(), Some(bottom.clone())), gap);
@@ -235,7 +235,7 @@ fn e2_stdio_strict_refusals_preserve_state_archive_and_history() {
     let topology = c.ok("topology", json!({"body":body}));
     let edge_id = topology["edges"][0]["id"].clone();
     let face_id = topology["faces"][0]["id"].clone();
-    let path = std::env::temp_dir().join(format!("qymcad-e2-readonly-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-e2-readonly.qcad");
     let before = archive(&mut c, &path);
     let failures = vec![
         json!({"a":{"point":[0,0,0]}}),

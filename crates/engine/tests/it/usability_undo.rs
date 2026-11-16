@@ -185,7 +185,7 @@ fn undo_preserves_the_latest_save_path() {
     let snapshot = s.begin_tool_edit().unwrap();
     s.param_set("h", &25.0.into()).unwrap();
     s.finish_tool_edit(snapshot, true);
-    let dir = std::env::temp_dir().join(format!("qymcad-undo-save-{}", std::process::id()));
+    let dir = crate::common::scratch("qymcad-undo-save");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("latest.qcad");
     s.save(Some(&path)).unwrap();

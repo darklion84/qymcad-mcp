@@ -49,7 +49,7 @@ fn pending(s: &mut Session, value: &str) {
     s.p.mark_all_dirty();
 }
 fn archive(s: &mut Session) -> std::collections::BTreeMap<String, Vec<u8>> {
-    let path = std::env::temp_dir().join(format!("r4-unit-{}-{:?}.qcad", std::process::id(), std::thread::current().id()));
+    let path = crate::test_scratch::path(&format!("r4-unit-{:?}.qcad", std::thread::current().id()));
     s.save_with_options(Some(&path), true).unwrap();
     let mut z = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
     let entries = (0..z.len())
@@ -102,7 +102,7 @@ fn late_array_limits_refuse_open_without_rewriting() {
     for value in ["45", "10010"] {
         let (mut s, _) = array_fixture();
         pending(&mut s, value);
-        let path = std::env::temp_dir().join(format!("r4-array-open-{}-{value}.qcad", std::process::id()));
+        let path = crate::test_scratch::path(&format!("r4-array-open-{value}.qcad"));
         s.save_with_options(Some(&path), true).unwrap();
         let before = std::fs::read(&path).unwrap();
         let error = match Session::open(&path) {

@@ -181,7 +181,7 @@ fn patch_batch_undo_and_save_open() {
     assert_eq!(call(&mut r, "doc_info", json!({})), before);
     // Save and open: the patch comes back and follows an edit.
     let out = call(&mut r, "patch", json!({"edges": outer, "name": "lid", "mode": "tangent"}));
-    let path = std::env::temp_dir().join(format!("t4-patch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("t4-patch.qcad");
     call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
     let a0 = area(&mut r, &out["body"]);
     let mut fresh = Registry::new();

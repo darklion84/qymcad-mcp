@@ -112,6 +112,10 @@ fn plist_string(plist: &str, key: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+#[path = "../../engine/src/test_scratch.rs"]
+mod test_scratch;
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn reads_a_plist_string() {

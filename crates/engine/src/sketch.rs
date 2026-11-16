@@ -1188,7 +1188,7 @@ mod r1_point_guards {
     use super::*;
 
     fn archive(s: &mut Session, label: &str) -> std::collections::BTreeMap<String, Vec<u8>> {
-        let path = std::env::temp_dir().join(format!("qymcad-r1-{}-{label}.qcad", std::process::id()));
+        let path = crate::test_scratch::path(&format!("qymcad-r1-{label}.qcad"));
         s.save_with_options(Some(&path), true).unwrap();
         let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
         let entries = (0..zip.len())

@@ -34,7 +34,7 @@ fn fixture(format: ExactFormat, stored: bool, parametric: bool) -> Fixture {
 fn scaled_fixture(format: ExactFormat, stored: bool, parametric: bool, scale: f64) -> Fixture {
     let lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    let dir = std::env::temp_dir().join(format!("qymcad-imports-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+    let dir = crate::common::scratch(&format!("qymcad-imports-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir(&dir).unwrap();
     let path = dir.join("import.qcad");
     let mut s = Session::new_part();

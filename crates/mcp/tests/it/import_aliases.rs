@@ -37,7 +37,7 @@ fn saved_state(registry: &mut Registry, path: &Path) -> BTreeMap<String, Vec<u8>
 #[test]
 fn invalid_import_and_sketch_names_preserve_saved_state_and_undo_history() {
     let (mut registry, _) = imported();
-    let path = std::env::temp_dir().join(format!("qymcad-invalid-object-names-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-invalid-object-names.qcad");
     let before = saved_state(&mut registry, &path);
     let doc = call(&mut registry, "doc_info", json!({}));
     for name in [" Imported ", "\u{2003}Imported"] {
@@ -163,7 +163,7 @@ fn a_fillet_on_the_defaulted_imported_body_matches_the_explicit_one() {
         let bodies = call(&mut registry, "doc_info", json!({}))["bodies"].clone();
         assert_eq!(bodies.as_array().unwrap().len(), 1, "{bodies}");
         assert!(bodies[0]["volume_mm3"].as_f64().unwrap() < 500.0, "{bodies}");
-        let path = std::env::temp_dir().join(format!("qymcad-default-fillet-{explicit}-{}.qcad", std::process::id()));
+        let path = crate::scratch::path(&format!("qymcad-default-fillet-{explicit}.qcad"));
         let recipe = String::from_utf8(saved_state(&mut registry, &path).remove("document.ron").unwrap()).unwrap();
         std::fs::remove_file(path).unwrap();
         saved.push((recipe, call(&mut registry, "topology", json!({"body":bodies[0]["id"]}))));

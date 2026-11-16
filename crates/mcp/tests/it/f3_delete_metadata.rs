@@ -57,7 +57,7 @@ fn f3_metadata_cleanup_survives_save_and_reopen() {
     let mut r = fresh();
     hexes(&mut r, "hexes", "repeat_count", 0.0, true);
     call(&mut r, "feature_delete", json!({"feature":"hexes","cascade":true}));
-    let path = std::env::temp_dir().join(format!("qymcad-f3-reopen-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-f3-reopen.qcad");
     call(&mut r, "doc_save", json!({"path":path,"allow_empty":true}));
     let mut reopened = Registry::new();
     call(&mut reopened, "doc_open", json!({"path":path}));

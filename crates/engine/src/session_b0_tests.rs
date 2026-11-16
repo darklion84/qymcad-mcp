@@ -45,7 +45,7 @@ fn standalone_rebuild_refuses_array_over_cap_before_kernel() {
 #[test]
 fn open_refuses_array_over_cap_before_kernel() {
     let mut s = oversized("10000");
-    let path = std::env::temp_dir().join(format!("b0-array-open-{}-{:?}.qcad", std::process::id(), std::thread::current().id()));
+    let path = crate::test_scratch::path(&format!("b0-array-open-{:?}.qcad", std::thread::current().id()));
     s.save_with_options(Some(&path), true).unwrap();
     let before = std::fs::read(&path).unwrap();
     let t = std::time::Instant::now();

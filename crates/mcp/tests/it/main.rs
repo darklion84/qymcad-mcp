@@ -45,6 +45,8 @@ mod protocol;
 mod review_r3;
 mod round_i;
 mod save_lineage;
+#[path = "../../../engine/src/test_scratch.rs"]
+mod scratch;
 mod sketch_edits_2;
 mod solids_3;
 mod stage_a1;

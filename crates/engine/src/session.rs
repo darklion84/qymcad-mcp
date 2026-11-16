@@ -1887,7 +1887,7 @@ mod tests {
         let before = s.info();
         assert!(s.topology(Some(tail), true).is_err());
         assert_eq!(s.info(), before);
-        let path = std::env::temp_dir().join(format!("e56-prefix-before-rebuild-{}.step", std::process::id()));
+        let path = crate::test_scratch::path("e56-prefix-before-rebuild.step");
         let exported = s.export(ExportFormat::Step, &path, Quality::Standard, None).unwrap();
         assert_eq!(exported.bodies.iter().map(|b| b.id).collect::<Vec<_>>(), vec![base]);
         let _ = std::fs::remove_file(path);

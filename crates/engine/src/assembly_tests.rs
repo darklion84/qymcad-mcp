@@ -113,7 +113,7 @@ fn a_formula_numeric_clear_release_and_native_drag_persist() {
     s.p.drag_pull = None;
     assert!(s.rebuild().errors.is_empty());
     close(pose(&s, b)[1], -120.);
-    let path = std::env::temp_dir().join(format!("qymcad-a-release-{}.qcad", std::process::id()));
+    let path = crate::test_scratch::path("qymcad-a-release.qcad");
     s.part_select(&PartRef::Root { root: true }).unwrap();
     s.save(Some(&path)).unwrap();
     let (s, _) = Session::open(&path).unwrap();
@@ -140,7 +140,7 @@ fn a_fault_is_unhealthy_despite_no_feature_errors() {
     assert!(s.p.regen_errors.is_empty());
     assert!(!s.assembly_info()["healthy"].as_bool().unwrap());
     assert!(s.assembly_accept(None).unwrap_err().to_string().contains(&format!("faulty joints [{j}]")));
-    let path = std::env::temp_dir().join(format!("qymcad-a-fault-{}.qcad", std::process::id()));
+    let path = crate::test_scratch::path("qymcad-a-fault.qcad");
     s.save(Some(&path)).unwrap();
     let (mut opened, r) = Session::open(&path).unwrap();
     assert!(!opened.info().assembly["healthy"].as_bool().unwrap());

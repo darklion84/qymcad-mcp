@@ -200,7 +200,7 @@ fn stdio_four_edit_batch_matches_singles_with_final_source_and_brep() {
 #[test]
 fn stdio_later_batch_failure_restores_source_instances_and_brep() {
     let mut server = Server::minimal();
-    let path = std::env::temp_dir().join(format!("qymcad-f5-mcp-rollback-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-f5-mcp-rollback.qcad");
     let before_archive = archive(&mut server, &path);
     let before = server.geometry();
     let result = server.raw_tool(

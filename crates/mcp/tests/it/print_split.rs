@@ -77,7 +77,7 @@ fn split_secondary_piece_names_ids_exports_and_roundtrip() {
         let topology = call(&mut registry, "topology", json!({"body":reference}));
         assert_eq!(topology["body"], second["id"]);
     }
-    let folder = std::env::temp_dir().join(format!("qymcad-split-mcp-{}", std::process::id()));
+    let folder = crate::scratch::path("qymcad-split-mcp");
     std::fs::create_dir_all(&folder).unwrap();
     for format in ["stl", "3mf", "step"] {
         let path = folder.join(format!("piece.{format}"));

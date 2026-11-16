@@ -73,7 +73,7 @@ fn text_profiles_keep_all_letters_and_counters_through_edit_and_reopen() {
     let extruded = call(&mut registry, "extrude", json!({"sketch":"labels","height":"Depth","name":"letters"}));
     let volume = extruded["rebuild"]["bodies"][0]["volume_mm3"].as_f64().unwrap();
     assert!((volume - 2.0 * ABC_AREA).abs() < 1e-6, "all letters and holes: {extruded}");
-    let path = std::env::temp_dir().join(format!("qymcad-text-mcp-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-text-mcp.qcad");
     call(&mut registry, "doc_save", json!({"path":path}));
     call(&mut registry, "doc_open", json!({"path":path}));
     assert_eq!(call(&mut registry, "sketch_info", json!({"sketch":"labels"}))["texts"], detail["texts"]);

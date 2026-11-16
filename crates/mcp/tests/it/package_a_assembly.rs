@@ -122,7 +122,7 @@ fn mechanism_steps() -> Vec<Value> {
 fn a_batch_restores_all_assembly_state_and_success_is_one_undo() {
     let mut r = Registry::new();
     fixture(&mut r);
-    let path = std::env::temp_dir().join(format!("a-mcp-batch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a-mcp-batch.qcad");
     let breps = saved_breps(&mut r, &path);
     assert_eq!(breps.len(), 2, "both Parts retain native B-reps");
     let before = call(&mut r, "assembly_info", json!({}));

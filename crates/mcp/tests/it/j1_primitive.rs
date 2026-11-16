@@ -151,7 +151,7 @@ fn the_first_placed_primitive_is_its_move_and_survives_undo_save_and_open() {
         call(r, "doc_info", json!({}))["timeline"].as_array().unwrap().iter().map(|n| n["kind"].as_str().unwrap().to_string()).collect()
     };
     assert_eq!(kinds(&mut r), ["datumpoint", "sphere", "move"]);
-    let dir = std::env::temp_dir().join(format!("qymcad-mcp-j1-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-mcp-j1");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("placed.qcad").to_str().unwrap().to_string();
     call(&mut r, "doc_save", json!({"path":path}));

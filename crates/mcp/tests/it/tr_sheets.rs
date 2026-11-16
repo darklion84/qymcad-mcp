@@ -134,7 +134,7 @@ fn suppress_and_delete_of_a_copy_that_a_stitch_consumed() {
 fn a_sheet_exports_to_step_as_an_open_shell() {
     let mut r = plate();
     call(&mut r, "stitch", json!({"parts": ["top", "front"], "name": "skin"}));
-    let path = std::env::temp_dir().join(format!("tr-sheet-{}.step", std::process::id()));
+    let path = crate::scratch::path("tr-sheet.step");
     let out = call(&mut r, "export", json!({"path": path.to_str().unwrap(), "format": "step", "bodies": ["skin"]}));
     let body = &out["bodies"][0];
     assert_eq!((body["sheet"].clone(), body["area_mm2"].as_f64().unwrap().round()), (json!(true), 3120.));

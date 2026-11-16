@@ -135,7 +135,7 @@ fn surface_replace_batch_undo_and_save_open() {
     assert_eq!(call(&mut r, "doc_info", json!({})), before);
     // Save and open.
     let out = call(&mut r, "surface_replace", json!({"faces": {"facing": "+z"}, "surface": "lid", "name": "swap"}));
-    let path = std::env::temp_dir().join(format!("t2-replace-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("t2-replace.qcad");
     call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
     let mut fresh = Registry::new();
     let opened = call(&mut fresh, "doc_open", json!({"path": path.to_str().unwrap()}));
@@ -266,7 +266,7 @@ fn stitch_batch_undo_and_save_open() {
         {"tool": "stitch", "args": {"parts": ["top", "front"], "tolerance": 0.0001, "name": "skin"}},
     ]});
     call(&mut r, "batch", steps);
-    let path = std::env::temp_dir().join(format!("t2-stitch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("t2-stitch.qcad");
     call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
     let mut fresh = Registry::new();
     let opened = call(&mut fresh, "doc_open", json!({"path": path.to_str().unwrap()}));

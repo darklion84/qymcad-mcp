@@ -640,7 +640,7 @@ fn area_does_not_depend_on_the_face_cache() {
 /// The faces of an imported mesh body written to a `.qcad`, left out again: what a file saved without `faces/` looks like.
 fn tetra_without_faces() -> (Session, Id, f64) {
     use std::io::{Read, Write};
-    let dir = std::env::temp_dir().join(format!("qymcad-tr6-{}", std::process::id()));
+    let dir = crate::common::scratch("qymcad-tr6");
     std::fs::create_dir_all(&dir).unwrap();
     let stl = dir.join("tetra.stl");
     // Three right-angled faces of 50 and one equilateral face of side 10 sqrt 2: 150 + 86.6025 mm2.

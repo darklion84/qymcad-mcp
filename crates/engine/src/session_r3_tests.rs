@@ -49,7 +49,7 @@ fn pending(s: &mut Session, value: &str) {
     s.p.mark_all_dirty();
 }
 fn archive(s: &mut Session) -> std::collections::BTreeMap<String, Vec<u8>> {
-    let path = std::env::temp_dir().join(format!("r3-unit-{}-{:?}.qcad", std::process::id(), std::thread::current().id()));
+    let path = crate::test_scratch::path(&format!("r3-unit-{:?}.qcad", std::thread::current().id()));
     s.save_with_options(Some(&path), true).unwrap();
     let mut z = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
     let entries = (0..z.len())
@@ -240,7 +240,7 @@ fn reopen_repairs_clean_native_cache_after_reference_refresh() {
     assert_eq!(s.p.param_map()["measured_w"], 60.);
     assert!(s.p.timeline.iter().all(|n| !n.dirty));
     assert!((s.shapes[&m].bbox().unwrap()[0] - 105.).abs() < 1e-6);
-    let file = std::env::temp_dir().join(format!("r3-clean-native-{}.qcad", std::process::id()));
+    let file = crate::test_scratch::path("r3-clean-native.qcad");
     s.save_with_options(Some(&file), true).unwrap();
     let (opened, r) = Session::open(&file).unwrap();
     assert!(r.errors.is_empty(), "{r:?}");

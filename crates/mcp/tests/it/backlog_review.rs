@@ -250,7 +250,7 @@ fn chamfer_chain_tangent_junctions_are_not_uncertain_corners() {
 #[test]
 fn mesh_export_volume_names_its_cubic_millimetre_unit() {
     let mut r = block();
-    let dir = std::env::temp_dir().join(format!("qymcad-backlog3-export-{}", std::process::id()));
+    let dir = crate::scratch::path("qymcad-backlog3-export");
     std::fs::create_dir_all(&dir).unwrap();
     for (format, extension) in [("stl", "stl"), ("3mf", "3mf"), ("glb", "glb"), ("obj", "obj"), ("step", "step")] {
         let exported = call(&mut r, "export", json!({"format":format,"path":dir.join(format!("box.{extension}"))}));
@@ -270,7 +270,7 @@ fn mesh_export_volume_names_its_cubic_millimetre_unit() {
 #[test]
 fn save_reports_fresh_and_replaced_targets() {
     let mut r = block();
-    let path = std::env::temp_dir().join(format!("qymcad-backlog3-save-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("qymcad-backlog3-save.qcad");
     assert!(!path.exists(), "test starts at a fresh path");
     let first = call(&mut r, "doc_save", json!({"path":path}));
     assert_ne!(first["replaced"], true, "fresh save is not a replacement");

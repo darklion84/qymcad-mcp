@@ -27,7 +27,7 @@ fn sealed_pocket(r: &mut Registry) -> Vec<String> {
 fn export_repeats_current_document_warnings() {
     let mut r = Registry::new();
     let warnings = sealed_pocket(&mut r);
-    let path = std::env::temp_dir().join(format!("qymcad-backlog-warnings-{}.stl", std::process::id()));
+    let path = crate::scratch::path("qymcad-backlog-warnings.stl");
     let result = call(&mut r, "export", json!({"format":"stl", "path":path}));
     assert_eq!(result["warnings"], json!(warnings), "export must repeat current document warnings");
     std::fs::remove_file(path).unwrap();

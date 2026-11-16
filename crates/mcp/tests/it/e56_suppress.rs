@@ -278,7 +278,7 @@ fn e56_stdio_lost_cut_rim_pick_refuses_and_restores_every_archive_entry() {
     let (r, f) = (2.0, 0.5_f64);
     let loss = std::f64::consts::PI * (2.0 * r * f * f + 5.0 / 3.0 * f.powi(3) - std::f64::consts::PI / 2.0 * (r + f) * f * f);
     volume(&c.ok("doc_info", json!({}))["bodies"][0], 10.0 * 20.0 * 20.0 - std::f64::consts::PI * r * r * 20.0 - loss);
-    let path = std::env::temp_dir().join(format!("e56-lost-pick-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("e56-lost-pick.qcad");
     let before_archive = archive(&mut c, &path);
     let before = c.snapshot();
     let error = c.tool("feature_suppress", json!({"feature":cut,"suppressed":true})).expect_err("lost native rim pick must be refused");
@@ -295,7 +295,7 @@ fn e56_stdio_lost_cut_rim_pick_refuses_and_restores_every_archive_entry() {
 #[test]
 fn e56_stdio_batch_suppression_failure_restores_and_success_is_one_undo() {
     let Fixture { mut client, sketch, cut, .. } = fixture();
-    let path = std::env::temp_dir().join(format!("e56-batch-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("e56-batch.qcad");
     let before_archive = archive(&mut client, &path);
     let before = client.snapshot();
     let error = client

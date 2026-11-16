@@ -631,7 +631,7 @@ mod r2_tests {
         let h = s.p.add_hole_from_sketch(0, marker, HoleTool { kind: 0, diameter: 4., depth: 4., dia2: 0., depth2: 0. }, true);
         s.reconcile_hole_dependencies();
         let archive = |s: &mut Session, label| {
-            let file = std::env::temp_dir().join(format!("qymcad-r2-rebuild-{}-{label}.qcad", std::process::id()));
+            let file = crate::test_scratch::path(&format!("qymcad-r2-rebuild-{label}.qcad"));
             s.save_with_options(Some(&file), true).unwrap();
             let mut z = zip::ZipArchive::new(std::fs::File::open(&file).unwrap()).unwrap();
             let entries = (0..z.len())

@@ -47,7 +47,7 @@ fn a_contract_imported_bad_joint_formula_is_unhealthy_on_info_open_and_rebuild()
     s.p.set_feat_dim(j, "offset", "missing_parameter".into());
     assert_eq!(s.assembly_info()["healthy"], false, "formula validation belongs to diagnostic acceptance too");
     assert_eq!(s.rebuild().assembly["healthy"], false);
-    let path = std::env::temp_dir().join(format!("a-contract-formula-{}.qcad", std::process::id()));
+    let path = crate::test_scratch::path("a-contract-formula.qcad");
     s.save(Some(&path)).unwrap();
     let (opened, report) = Session::open(&path).unwrap();
     assert_eq!(opened.info().assembly["healthy"], false);

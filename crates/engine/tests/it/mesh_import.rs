@@ -90,7 +90,7 @@ fn cylinder_stl_rows(segments: usize, radius: f64, height: f64, rows: usize) -> 
 
 fn fixture() -> (PathBuf, PathBuf) {
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    let dir = std::env::temp_dir().join(format!("qymcad-mesh-import-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+    let dir = crate::common::scratch(&format!("qymcad-mesh-import-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir(&dir).unwrap();
     let input = dir.join("cube.stl");
     std::fs::write(&input, cube_stl()).unwrap();
@@ -440,7 +440,7 @@ fn recognise_polyhedron_cube_is_a_consuming_solid() {
 
 #[test]
 fn recognise_exact_and_polyhedron_cylinder_have_hand_computed_metrics() {
-    let dir = std::env::temp_dir().join(format!("qymcad-cylinder-{}", std::process::id()));
+    let dir = crate::common::scratch("qymcad-cylinder");
     std::fs::create_dir(&dir).unwrap();
     let path = dir.join("cylinder.stl");
     std::fs::write(&path, cylinder_stl(200, 10.0, 40.0)).unwrap();

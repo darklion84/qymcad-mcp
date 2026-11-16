@@ -85,7 +85,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         static SEQ: AtomicU64 = AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!("e4-stdio-{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
+        let path = crate::scratch::path(&format!("e4-stdio-{}", SEQ.fetch_add(1, Ordering::Relaxed)));
         std::fs::create_dir(&path).unwrap();
         Self(path)
     }

@@ -58,6 +58,8 @@ mod surfaces;
 mod surfaces_tests;
 mod sweep;
 #[cfg(test)]
+mod test_scratch;
+#[cfg(test)]
 mod test_support;
 mod thread;
 mod topology;

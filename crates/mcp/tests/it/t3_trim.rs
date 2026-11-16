@@ -136,7 +136,7 @@ fn trim_batch_undo_and_save_open() {
     assert_eq!(bodies(&mut r), 3);
     // Save and open: the trim comes back and follows an edit.
     let out = call(&mut r, "trim", json!({"body": "lid", "tool": "cutter", "keep": [-15, 0, 12], "name": "left"}));
-    let path = std::env::temp_dir().join(format!("t3-trim-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("t3-trim.qcad");
     call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
     let mut fresh = Registry::new();
     let opened = call(&mut fresh, "doc_open", json!({"path": path.to_str().unwrap()}));

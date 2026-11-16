@@ -151,7 +151,7 @@ fn batch_undo_and_save_open() {
     // Save and open.
     call(&mut r, "face_copy", json!({"faces": {"facing": "+z"}, "name": "lid"}));
     call(&mut r, "offset_surface", json!({"faces": {"facing": "+z"}, "distance": "h/2", "name": "lift"}));
-    let path = std::env::temp_dir().join(format!("t1-surfaces-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("t1-surfaces.qcad");
     call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
     let saved = call(&mut r, "doc_info", json!({}));
     let mut fresh = Registry::new();

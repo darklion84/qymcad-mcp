@@ -73,7 +73,7 @@ fn two_sides_refusals_preserve_exact_archive_and_undo() {
     rect(&mut r);
     call(&mut r, "param_set", json!({"name":"back","value":3}));
     call(&mut r, "extrude", json!({"sketch":"profile","height":7,"down":"back","name":"solid"}));
-    let path = std::env::temp_dir().join(format!("a1-down-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a1-down.qcad");
     let before = state(&mut r, &path);
     for (tool, args) in [
         ("extrude", json!({"sketch":"profile","height":7,"down":3,"direction":"symmetric"})),
@@ -151,7 +151,7 @@ fn point_remove_batch_undo_and_refusals_preserve_archive() {
     let used = p["sketch"]["entities"][0]["points"][0].clone();
     let entity = p["sketch"]["entities"][0]["id"].clone();
     let origin = p["sketch"]["points"].as_array().unwrap().iter().find(|p| p["role"] == "origin").unwrap()["id"].clone();
-    let path = std::env::temp_dir().join(format!("a1-point-{}.qcad", std::process::id()));
+    let path = crate::scratch::path("a1-point.qcad");
     let before = state(&mut r, &path);
     for args in [
         json!({"sketch":"profile","point":used}),

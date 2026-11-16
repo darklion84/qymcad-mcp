@@ -489,7 +489,7 @@ mod tests {
         s.p.set_feat_dim(feature, key, text.into());
         s.p.mark_all_dirty();
         s.rebuild();
-        let dir = std::env::temp_dir().join(format!("qymcad-mcp-primitive-{}", std::process::id()));
+        let dir = crate::test_scratch::path("qymcad-mcp-primitive");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{tag}.qcad"));
         s.save(Some(&path)).unwrap();

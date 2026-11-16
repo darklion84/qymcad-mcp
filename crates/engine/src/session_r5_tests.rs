@@ -20,7 +20,7 @@ fn fixture(name: &str) -> Session {
     s
 }
 fn archive(s: &mut Session) -> std::collections::BTreeMap<String, Vec<u8>> {
-    let file = std::env::temp_dir().join(format!("qymcad-r5-unit-{}-{:?}.qcad", std::process::id(), std::thread::current().id()));
+    let file = crate::test_scratch::path(&format!("qymcad-r5-unit-{:?}.qcad", std::thread::current().id()));
     s.save_with_options(Some(&file), true).unwrap();
     let mut z = zip::ZipArchive::new(std::fs::File::open(&file).unwrap()).unwrap();
     let entries = (0..z.len())
@@ -62,7 +62,7 @@ fn opening_legacy_offset_recipe_persists_native_point_retention() {
     // This pre-R5 fixture contains the free Point at (50,60), alongside its driving Point.
     let si = s.p.sketches.iter().position(|sk| sk.points.iter().any(|pt| (pt.x - 50.).abs() < 1e-9 && (pt.y - 60.).abs() < 1e-9)).unwrap();
     let point = s.p.sketches[si].points.iter().find(|pt| (pt.x - 50.).abs() < 1e-9 && (pt.y - 60.).abs() < 1e-9).unwrap().id;
-    let output = std::env::temp_dir().join(format!("qymcad-r5-legacy-offset-{}.qcad", std::process::id()));
+    let output = crate::test_scratch::path("qymcad-r5-legacy-offset.qcad");
     s.save(Some(&output)).unwrap();
     let qymcad_io::LoadedProject { mut project, breps } = qymcad_io::load_project_with_brep(output.to_str().unwrap()).unwrap();
     project.parameters.iter_mut().find(|p| p.name == "bend").unwrap().expr = "2".into();
