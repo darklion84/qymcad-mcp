@@ -3,12 +3,6 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
-
-### Changed
-- A sheet is refused as the object of `hole` (face and sketch placement), `draft`, `remove_face`, `split`, `split_face`, `mirror` and as body A of `body_boolean`, with the document unchanged; the re-pick (`feature`) of `draft`, `remove_face` and `shell` on a sheet is refused too. The app's GUI takes a sheet as the object of none of them (GUI check 2026-11-16, F-200): a sheet's face works only as the plane of `split`, `split_face` and `mirror` (still allowed), and a sheet as B of `body_boolean` stays the kernel's own refusal. Arrays, `move`, `thicken`, `stitch`, `trim` and the surface tools take a sheet as before. `split_face` already refused a sheet; its message now has the same form as the others.
-- `thicken` of a sheet: no change of sign (the app and the server pass the value to the kernel unchanged, and the side is the sheet's own face normal, which for a loft follows the order of its sections: a tube lofted top section first thickens inward for +t, F-201). The tool text now says so and that one picked face offsets the whole sheet. ADR 0059 gains a "GUI" column.
-
 ## 0.1.1-dev.20261026.20 — surfaces: sheet bodies and six surface tools (P20–P24, P27)
 
 ### Added
@@ -26,6 +20,8 @@ All notable changes to this project are documented here. The format follows
 - A tool that takes no body defaults to the part's last solid and skips sheets, as the app does (`extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others); a sheet is the default only when it is the only body of the document (a part holding nothing else). `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
 
 ### Changed
+- A sheet is refused as the object of `hole` (face and sketch placement), `draft`, `remove_face`, `split`, `split_face`, `mirror` and as body A of `body_boolean`, with the document unchanged; the re-pick (`feature`) of `draft`, `remove_face` and `shell` on a sheet is refused too. The app's GUI takes a sheet as the object of none of them (GUI check 2026-11-16, F-200): a sheet's face works only as the plane of `split`, `split_face` and `mirror` (still allowed), and a sheet as B of `body_boolean` stays the kernel's own refusal. Arrays, `move`, `thicken`, `stitch`, `trim` and the surface tools take a sheet as before. `split_face` already refused a sheet; its message now has the same form as the others.
+- `thicken` of a sheet: no change of sign (the app and the server pass the value to the kernel unchanged, and the side is the sheet's own face normal, which for a loft follows the order of its sections: a tube lofted top section first thickens inward for +t, F-201). The tool text now says so and that one picked face offsets the whole sheet. ADR 0059 gains a "GUI" column.
 - Tool texts (sheets): `render` says a sheet seen from behind is not drawn; `thicken` says a sheet is consumed and joined to its part; `patch` says the thickened sheet is consumed; `stitch` keeps the reason for its tolerance refusal; `export` mentions the per-body `note` of a sheet; the `name` argument of the six surface tools says it can stand for the id and that numeric names are refused. The `name` docs of the older tools and the `export` text are shorter, so `tools/list` stays inside its budget (about 400 bytes under it, `BUDGET_BYTES` unchanged).
 - The `stitch` check against a collapsed solid (F-198) compares the kernel volume with the exact reporting mesh and an allowance of `area * deflection` plus 0.1 %, not with the display mesh by a flat 5 %: real thin curved solids (a lens 11 % short at Draft) are no longer refused; a wide tolerance that collapses a gap still is. The refusal names both volumes.
 - Descriptions of `face_copy`, `offset_surface`, `surface_replace`, `stitch` and `thicken` are shorter (the `tools/list` budget is unchanged and `trim` needed room); no behaviour changed.
