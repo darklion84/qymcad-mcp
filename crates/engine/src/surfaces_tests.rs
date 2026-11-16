@@ -97,3 +97,36 @@ fn the_volume_allowance_follows_area_and_deflection() {
     assert!(!collapsed_solid(-2674.7, 2674.0, 8060., 0.005), "a solid turned inside out is not a collapse");
     assert!(collapsed_solid(-4000., 0., 4800., 0.005));
 }
+
+/// TR 2: `area_mm2` has one source, the exact reporting mesh. A cylinder (R10, 20 high, 1884.956 mm2) reports the same figure
+/// whatever the document's `GeomQuality` (the face cache holds the display mesh and changes with it), before and after the topology
+/// is read, after a rebuild, from `export` and from the engine's helper.
+#[test]
+fn area_of_a_curved_body_does_not_depend_on_quality_or_the_face_cache() {
+    let area = |s: &Session, b: Id| s.result_bodies().into_iter().find(|x| x.id == b).unwrap().area;
+    let mut figures = Vec::new();
+    for quality in [GeomQuality::Draft, GeomQuality::Normal, GeomQuality::Fine] {
+        let mut s = Session::new_part();
+        s.p.geom_quality = quality;
+        let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_circle(sk, &v(0.), &v(0.), &v(20.), false).unwrap();
+        let ex: Extrude = serde_json::from_value(serde_json::json!({"sketch": sk, "height": "20", "op": "add"})).unwrap();
+        let (body, r) = s.extrude(&ex).unwrap();
+        assert!(r.errors.is_empty(), "{:?}", r.errors);
+        let first = area(&s, body);
+        assert!((first - 1884.956).abs() < 1.5, "{quality:?}: {first} is not the cylinder's area");
+        // The cached faces (the display mesh) are what changes with the quality: the reported area must not follow them.
+        let cached: f64 = s.p.regen_faces[&body].iter().map(|f| f.area).sum();
+        s.topology(Some(body), false).unwrap();
+        assert_eq!(area(&s, body), first, "{quality:?}: after the topology is read");
+        s.p.mark_all_dirty();
+        assert!(s.rebuild().errors.is_empty());
+        assert_eq!(area(&s, body), first, "{quality:?}: after a rebuild");
+        assert_eq!(s.body_face_area(body), first, "{quality:?}: the export's source");
+        if quality == GeomQuality::Draft {
+            assert!((cached - first).abs() > 1.0, "setup: the display mesh at Draft ({cached}) must differ from the exact one ({first})");
+        }
+        figures.push(first);
+    }
+    assert!(figures.windows(2).all(|w| w[0] == w[1]), "{figures:?}");
+}

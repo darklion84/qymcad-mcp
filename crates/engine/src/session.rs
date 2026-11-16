@@ -61,7 +61,8 @@ pub struct BodyInfo {
     pub volume: f64,
     /// A sheet (an open surface with faces and no solid), the document's own `Body.sheet` flag.
     pub sheet: bool,
-    /// mm², serialized as `area_mm2`: the sum of the body's face areas from the kernel's faces (a mesh body: its triangles).
+    /// mm², serialized as `area_mm2`: the sum of the body's face areas from the exact reporting mesh (0.005 mm; the same figure whatever the
+    /// document's `GeomQuality` and face cache; a mesh body: its triangles).
     pub area: f64,
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm, from fresh nominal-deflection tessellation
     /// (.005 mm, scaled to 1e-5 of diagonals over 500 mm) plus f32 coordinate rounding; native bounds are a fallback if meshing fails (F-066).
@@ -1346,7 +1347,7 @@ impl Session {
                         color_source,
                         volume: sh.volume(),
                         sheet: self.is_sheet(b),
-                        area: self.cached_face_area(b).or(measured.area).unwrap_or(0.0),
+                        area: measured.area.or_else(|| self.cached_face_area(b)).unwrap_or(0.0),
                         bbox: bbox_local,
                         bbox_frame: "part_local",
                         bbox_local,
@@ -1399,18 +1400,20 @@ impl Session {
         self.p.bodies.iter().any(|b| b.id == body && b.sheet)
     }
 
-    /// Sum of the face areas of a body, mm², from the faces the rebuild produced (`regen_faces`) or the ones the document
-    /// stores with the body; `None` when neither is there (a file saved without faces, before its topology is read).
+    /// Sum of the face areas cached with a body, mm²: the faces the rebuild produced (`regen_faces`) or the ones the document stores
+    /// with the body. They carry the areas of the DISPLAY mesh, which change with the document's `GeomQuality`, so this is only the
+    /// fallback for the reported area when the exact mesh is partial; `None` when no face is there (a file saved without faces).
     fn cached_face_area(&self, body: Id) -> Option<f64> {
         let stored = self.p.mesh_index(body).map(|i| self.p.bodies[i].faces.as_slice()).unwrap_or_default();
         let faces = self.p.regen_faces.get(&body).map_or(stored, Vec::as_slice);
         (!faces.is_empty()).then(|| faces.iter().map(|f| f.area).sum())
     }
 
-    /// The surface area of a built body, mm²: its cached face areas, else the kernel's, from a tessellation.
+    /// The surface area of a built body, mm², as `doc_info` reports it: the sum of the face areas of the exact reporting mesh (0.005 mm),
+    /// independent of the face cache and of the document's `GeomQuality`; the cached faces only when that mesh is partial.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
     pub(crate) fn body_face_area(&self, body: Id) -> f64 {
-        self.cached_face_area(body).or_else(|| self.shapes.get(&body).and_then(|sh| reporting_metrics(sh).area)).unwrap_or(0.0)
+        self.shapes.get(&body).and_then(|sh| reporting_metrics(sh).area).or_else(|| self.cached_face_area(body)).unwrap_or(0.0)
     }
 
     /// Several Parts, or any non-identity placement: body results then report owner and frames.

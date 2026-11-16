@@ -111,7 +111,7 @@ pub struct ExportedBody {
     pub color_source: &'static str,
     /// A sheet: an open surface, written like any other body but with no volume and not printable as it stands.
     pub sheet: bool,
-    /// The body's surface area, mm² (the sum of its face areas).
+    /// The body's surface area, mm² (the sum of the face areas of the exact reporting mesh, as `doc_info`).
     pub area_mm2: f64,
     /// Mesh formats: volume of the written mesh (sum of tetrahedra, absolute), mm³. Compare with the B-rep volume to see
     /// the tessellation error. Omitted for a sheet: the tetrahedron sum of an open mesh means nothing.
