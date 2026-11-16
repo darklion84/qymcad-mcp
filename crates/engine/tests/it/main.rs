@@ -117,6 +117,7 @@ mod sketch_behaviour;
 mod sketch_parallel;
 mod sketch_removal;
 mod smoke;
+mod surface_makers;
 mod t0_probes;
 mod timeline_kinds;
 mod usability_info;

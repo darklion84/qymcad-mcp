@@ -688,6 +688,7 @@ impl Session {
         self.check_datum_values()?;
         self.check_chamfer_values()?;
         self.check_draft_thicken_values()?;
+        self.check_offset_values()?;
         self.check_hole_values()
     }
 

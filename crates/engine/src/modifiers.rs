@@ -476,7 +476,7 @@ impl Session {
 
     /// The node `feature` as seen by `pick` (which returns `None` for the wrong kind of node): `NotFound` when
     /// there is no such node, `Invalid` when it is not a `word` feature. First step of every `repick_*`.
-    fn feature_as<T>(&self, feature: Id, word: &str, pick: impl FnOnce(&FeatureKind) -> Option<T>) -> Result<T> {
+    pub(crate) fn feature_as<T>(&self, feature: Id, word: &str, pick: impl FnOnce(&FeatureKind) -> Option<T>) -> Result<T> {
         let node = self.p.timeline.iter().find(|n| n.id == feature).ok_or_else(|| Error::NotFound(format!("feature {feature}")))?;
         pick(&node.kind).ok_or_else(|| Error::Invalid(format!("feature {feature} is not a {word} feature")))
     }
@@ -485,7 +485,7 @@ impl Session {
     /// (`None` = not a `word` feature), mark it dirty, rebuild, refuse if any node reports an error, and
     /// restore the document on any failure. The caller resolves the new selection first and adds what is its
     /// own (adjacency checks, notes) before and after. Returns the bodies of the successful rebuild.
-    fn repick_rebuild(
+    pub(crate) fn repick_rebuild(
         &mut self,
         feature: Id,
         word: &str,
