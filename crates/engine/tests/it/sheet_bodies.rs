@@ -194,7 +194,10 @@ fn a_sheet_is_the_default_only_as_the_only_body_of_the_document() {
     // Two sheets and no solid: nothing is the default.
     let before = serde_json::to_string(s.project()).unwrap();
     let e = refused(s.topology(None, false));
-    assert!(e.contains("pass body"), "{e}");
+    assert!(
+        e.contains("pass body") && e.contains("no solid body") && e.contains(&format!("({sheet}, sheet)")),
+        "TR 9, not 'has no body': {e}"
+    );
     let e = refused(s.face_copy(None, &Sel::Ids(vec![face]), None));
     assert!(e.contains("pass body"), "{e}");
     assert_eq!(serde_json::to_string(s.project()).unwrap(), before);

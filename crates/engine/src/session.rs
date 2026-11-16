@@ -1480,8 +1480,14 @@ impl Session {
             [] => Err(Error::Invalid(empty.into())),
             [only] => Ok(*only),
             many => {
-                let names: Vec<String> = many.iter().map(|b| format!("{} ({b})", self.body_name(*b))).collect();
-                Err(Error::Invalid(format!("the active part has no body; pass body: one of {}", names.join(", "))))
+                let names: Vec<String> = many
+                    .iter()
+                    .map(|b| format!("{} ({b}{})", self.body_name(*b), if self.is_sheet(*b) { ", sheet" } else { "" }))
+                    .collect();
+                Err(Error::Invalid(format!(
+                    "the active part has no solid body to default to and the document holds several bodies; pass body: one of {}",
+                    names.join(", ")
+                )))
             }
         }
     }
