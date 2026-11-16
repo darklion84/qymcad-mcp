@@ -5346,7 +5346,7 @@ Replace faces of a solid with a sheet that closes them, as the app's Replace fac
           "type": "null"
         }
       ],
-      "description": "Faces of the solid to drop, at least one, as topology ids or a description such as {\"facing\": \"+z\"}. Frozen to the matched ids. Required without `feature`; with it, replaces them. Face/edge selection: ids from `topology` ([id, ...] or one id), \"largest\", or an object: {\"facing\": \"+z\"} faces by normal, {\"along\": \"z\"} edges by direction, {\"edges_of\": <faces>} their boundary edges. Full grammar: tool `select`."
+      "description": "Faces of the solid to drop, at least one, as topology ids or a description such as {\"facing\": \"+z\"}. Frozen to the matched ids. Required without `feature`; with it, replaces them."
     },
     "feature": {
       "anyOf": [

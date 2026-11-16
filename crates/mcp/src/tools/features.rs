@@ -469,7 +469,6 @@ pub struct SurfaceReplaceArgs {
     pub body: Option<ObjRef>,
     /// Faces of the solid to drop, at least one, as topology ids or a description such as {"facing": "+z"}. Frozen to the matched ids. Required without `feature`; with it, replaces them.
     #[serde(default)]
-    #[schemars(transform = super::topology::with_sel_brief)]
     pub faces: Option<SelArg>,
     /// Sheet body id or name (face_copy, offset_surface, a loft surface) that closes the opening. Required without `feature`; with it, replaces the sheet.
     #[serde(default)]

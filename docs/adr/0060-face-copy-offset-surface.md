@@ -25,4 +25,4 @@ Engine `surface_makers.rs` (scenarios and numbers of the app's `face_copy.rs` an
 
 ## Not covered
 
-The app's "replace a face with a surface" round trip (SurfaceReplace, P21, T2), and a hand-written GUI sheet whose faces the server cannot name.
+The app's "replace a face with a surface" round trip (SurfaceReplace, now ADR 0061), and a hand-written GUI sheet whose faces the server cannot name.
