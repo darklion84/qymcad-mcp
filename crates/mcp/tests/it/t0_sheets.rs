@@ -93,3 +93,20 @@ fn a_sheet_in_doc_info_and_in_a_reopened_file_raises_no_sealed_void_warning() {
     let _ = std::fs::remove_file(path);
 }
 
+// ---- (c) defaults skip sheets ----
+
+#[test]
+fn extrude_without_a_target_lands_on_the_solid_and_sketch_project_reads_the_solid() {
+    let mut r = solid_then_sheet();
+    call(&mut r, "sketch_create", json!({"plane": "XY", "name": "boss"}));
+    call(&mut r, "sketch_add", json!({"sketch": "boss", "entities": [{"type": "rect", "w": 10, "h": 10}]}));
+    call(&mut r, "sketch_create", json!({"plane": "XY", "name": "proj"}));
+    let projected = call(&mut r, "sketch_project", json!({"sketch": "proj", "edges": {"edges_of": {"facing": "+z"}}}));
+    assert_eq!(projected["projections"].as_array().unwrap().len(), 4, "the four top edges of the block, not the sheet: {projected}");
+    let boss = call(&mut r, "extrude", json!({"sketch": "boss", "height": 15, "op": "add"}));
+    assert!(boss["rebuild"].get("errors").is_none(), "{boss}");
+    let info = call(&mut r, "doc_info", json!({}));
+    assert_eq!(info["bodies"].as_array().unwrap().len(), 2, "the sheet stays beside the solid");
+    close(body(&info, false)["volume_mm3"].as_f64().unwrap(), 16000. + 10. * 10. * 5., "boss on the block");
+}
+

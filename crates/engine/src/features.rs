@@ -380,7 +380,7 @@ impl Session {
             }
             (None, Op::NewBody) => Ok(None),
             (None, _) => Ok(match self.sketch_part(sketch) {
-                Some(part) => self.current_body_ids().into_iter().rfind(|b| self.p.body_owner(*b) == Some(part)),
+                Some(part) => self.tip_body_in(Some(part)),
                 None => self.tip_body(),
             }),
         }

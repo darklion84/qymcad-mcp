@@ -1413,8 +1413,13 @@ impl Session {
 
     /// The single current body of the active part, which features modify by default.
     pub(crate) fn tip_body(&self) -> Option<Id> {
-        let part = self.p.active_component;
-        self.current_body_ids().into_iter().rfind(|b| part.is_none() || self.p.body_owner(*b) == part)
+        self.tip_body_in(self.p.active_component)
+    }
+
+    /// The last current solid body of `part` (any part when `None`). A sheet is never the body a feature lands on by
+    /// default: the app's `active_body_before` skips it (a boss united with a sheet failed and ate the sheet).
+    pub(crate) fn tip_body_in(&self, part: Option<Id>) -> Option<Id> {
+        self.current_body_ids().into_iter().rfind(|b| !self.is_sheet(*b) && (part.is_none() || self.p.body_owner(*b) == part))
     }
 
     /// The body a tool uses when none is given: the active part's current body, else the document's only current body

@@ -123,3 +123,57 @@ fn a_sheet_is_not_a_sealed_void() {
     assert!(sealed(opened.info().warnings).is_empty(), "{:?}", opened.info().warnings);
 }
 
+// ---- (c) defaults skip sheets ----
+
+/// A solid block `w`×`w`×`h` from the XY plane up, centred on the origin.
+fn block(s: &mut Session, w: f64, h: f64) -> Id {
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &v(0.), &v(0.), &v(w), &v(w), false).unwrap();
+    let (_, r) = s.extrude(&extrude(sk, h, Op::Add)).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    r.bodies.last().unwrap().id
+}
+
+/// A sheet after a solid: `extrude op:add` without a target lands on the solid (it failed with «Boolean» on the sheet).
+#[test]
+fn extrude_add_without_a_target_lands_on_the_solid_not_the_sheet() {
+    let mut s = Session::new_part();
+    let solid = block(&mut s, 40., 10.);
+    let sheet = loft_sheet(&mut s, 10.);
+    assert_eq!(s.result_bodies().iter().map(|b| b.id).collect::<Vec<_>>(), vec![solid, sheet]);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(sk, &v(0.), &v(0.), &v(10.), &v(10.), false).unwrap();
+    let (_, r) = s.extrude(&extrude(sk, 20., Op::Add)).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let bodies = s.result_bodies();
+    assert_eq!(bodies.len(), 2, "the sheet stays beside the solid: {bodies:?}");
+    let grown = bodies.iter().find(|b| !b.sheet).unwrap();
+    close(grown.volume, 40. * 40. * 10. + 10. * 10. * 10., 1e-6, "the boss grew from the solid (z 10..20 over the block)");
+    assert!(bodies.iter().any(|b| b.id == sheet && b.sheet), "the sheet is untouched");
+}
+
+/// The default body of every tool that takes none is the solid, also when a sheet was made last.
+#[test]
+fn the_default_body_of_a_tool_is_the_solid_when_a_sheet_came_last() {
+    let mut s = Session::new_part();
+    let solid = block(&mut s, 40., 10.);
+    let sheet = loft_sheet(&mut s, 10.);
+    assert_eq!(s.topology(None, false).unwrap().body, solid);
+    assert_eq!(s.topology(Some(sheet), false).unwrap().body, sheet, "an explicit sheet is still served");
+    // Default fillet on all top edges: the solid is rounded, no «solid tool on a sheet».
+    let (_, r) = s.fillet(None, &Sel::EdgesOf(Box::new(Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. })), &v(2.), None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let rounded = s.result_bodies().into_iter().find(|b| !b.sheet).unwrap();
+    // Four rim edges, (1 − π/4)·r² each per mm: 4·(1 − π/4)·4·36 = 123.6 mm³ without the corners, 137.4 with the whole 40 mm.
+    let removed = 16000. - rounded.volume;
+    assert!((123. ..138.).contains(&removed), "the top rim of the solid is rounded: {removed}");
+}
+
+/// With nothing but a sheet in the document the sheet is still the default (the only body), so thicken and topology work on it.
+#[test]
+fn a_document_of_one_sheet_still_defaults_to_it() {
+    let mut s = Session::new_part();
+    let sheet = loft_sheet(&mut s, 10.);
+    assert_eq!(s.topology(None, false).unwrap().body, sheet);
+}
+

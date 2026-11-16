@@ -1808,7 +1808,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
           "type": "null"
         }
       ],
-      "description": "Source body id or name; defaults to the latest result body."
+      "description": "Source body id or name; defaults to the latest result body that is not a sheet."
     },
     "edges": {
       "anyOf": [

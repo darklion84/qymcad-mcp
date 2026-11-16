@@ -167,7 +167,7 @@ pub struct AddArgs {
 pub struct ProjectArgs {
     /// Sketch id or name receiving the projection.
     pub sketch: ObjRef,
-    /// Source body id or name; defaults to the latest result body.
+    /// Source body id or name; defaults to the latest result body that is not a sheet.
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// An edge selection (ids or the existing description syntax, such as {\"edges_of\":{\"facing\":\"+z\"}}); exactly one of edges/face.
@@ -239,6 +239,13 @@ pub(super) fn sketch_result(s: &qymcad_engine::Session, sketch: Id, rebuild: Opt
         o["rebuild"] = rebuild_json(r);
     }
     Ok(o)
+}
+
+/// The body `sketch_project` reads when none is named: the last result body that is not a sheet (the app's default body
+/// skips sheets), or the last body when the document holds nothing but sheets.
+fn default_projection_body(s: &qymcad_engine::Session) -> Option<Id> {
+    let bodies = s.result_bodies();
+    bodies.iter().rfind(|b| !b.sheet).or(bodies.last()).map(|b| b.id)
 }
 
 pub fn tools() -> Vec<Tool> {
@@ -363,12 +370,12 @@ pub fn tools() -> Vec<Tool> {
                 let body = a.body.as_ref().map(|b| b.resolve(s)).transpose()?;
                 let (body, sources) = match (&a.edges, &a.face) {
                     (Some(edges), None) => {
-                        let body = body.or_else(|| s.result_bodies().last().map(|b| b.id)).ok_or_else(|| "the part has no built body".to_string())?;
+                        let body = body.or_else(|| default_projection_body(s)).ok_or_else(|| "the part has no built body".to_string())?;
                         let ids = s.select(Some(body), Element::Edges, &edges.resolve(s)?).map_err(err)?.1;
                         (body, ids.into_iter().map(ProjSource::Edge).collect::<Vec<_>>())
                     }
                     (None, Some(face)) => {
-                        let body = body.or_else(|| s.result_bodies().last().map(|b| b.id)).ok_or_else(|| "the part has no built body".to_string())?;
+                        let body = body.or_else(|| default_projection_body(s)).ok_or_else(|| "the part has no built body".to_string())?;
                         let ids = s.select(Some(body), Element::Faces, &face.resolve(s)?).map_err(err)?.1;
                         if ids.len() != 1 {
                             return Err(format!("face selection must resolve to exactly one face; matched {ids:?}"));
