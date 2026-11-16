@@ -1,4 +1,4 @@
-//! Surface tools: the app's FaceCopy and OffsetSurface nodes (ADR 0060), SurfaceReplace and Stitch (ADR 0061).
+//! Surface tools: the app's FaceCopy and OffsetSurface nodes (ADR 0060), SurfaceReplace and Stitch (ADR 0061), Trim (ADR 0062).
 //! FaceCopy and OffsetSurface take faces of a body (solid or sheet) and make a NEW sheet body beside it; the source is read,
 //! not consumed. Several faces make ONE sheet body. SurfaceReplace swaps faces of a solid for a sheet that closes them and
 //! Stitch joins sheets into one body; both consume their inputs. Faces are stored as `Ref::picks` of the resolved ids, the
@@ -143,9 +143,9 @@ impl Session {
         Ok((body, ids, self.current_rebuild_after_edit(bodies)))
     }
 
-    /// A sheet body that SurfaceReplace or Stitch takes (`what` names the role in refusals). `node` is the node being re-picked:
-    /// the bodies it consumes now are still free to it, and a body built after it cannot feed it.
-    fn sheet_input(&self, body: Id, node: Option<Id>, what: &str) -> Result<Id> {
+    /// A body that a node takes as an input: built in the active document, not consumed by a later feature, not a mesh. `node` is
+    /// the node being re-picked: the bodies it consumes now are still free to it.
+    fn live_input(&self, body: Id, node: Option<Id>) -> Result<()> {
         if !self.is_active_body(body) {
             return Err(Error::NotFound(format!("body {body} is not built in the active document")));
         }
@@ -161,17 +161,29 @@ impl Session {
         if self.p.mesh_born(body) {
             return Err(Error::Invalid(crate::topology::mesh_body_refusal(body)));
         }
-        if !self.is_sheet(body) {
-            return Err(Error::Invalid(format!(
-                "body {body} is a solid; {what} must be a sheet (a surface: face_copy, offset_surface, loft surface:true)"
-            )));
-        }
+        Ok(())
+    }
+
+    /// A body built after the node being re-picked cannot feed it.
+    fn built_before(&self, body: Id, node: Option<Id>) -> Result<()> {
         if let Some(node) = node {
             let built_at = |id: Id| self.p.timeline.iter().position(|n| n.kind.bodies().contains(&id));
             if built_at(body) >= built_at(node) {
                 return Err(Error::Invalid(format!("body {body} is built after feature {node}, which cannot take it")));
             }
         }
+        Ok(())
+    }
+
+    /// A sheet body that SurfaceReplace, Stitch or Trim takes (`what` names the role in refusals).
+    fn sheet_input(&self, body: Id, node: Option<Id>, what: &str) -> Result<Id> {
+        self.live_input(body, node)?;
+        if !self.is_sheet(body) {
+            return Err(Error::Invalid(format!(
+                "body {body} is a solid; {what} must be a sheet (a surface: face_copy, offset_surface, loft surface:true)"
+            )));
+        }
+        self.built_before(body, node)?;
         Ok(body)
     }
 
@@ -293,6 +305,68 @@ impl Session {
             Some(())
         })?;
         Ok((body, self.current_rebuild_after_edit(bodies)))
+    }
+
+    /// The point that says which piece of a trimmed sheet stays: three finite numbers, in the Part's own frame (the frame the kernel
+    /// works in, see ADR 0062).
+    fn trim_keep(keep: [f64; 3]) -> Result<[f64; 3]> {
+        if keep.iter().all(|c| c.is_finite()) {
+            Ok(keep)
+        } else {
+            Err(Error::Invalid(format!("trim `keep` must be three finite numbers, got {keep:?}")))
+        }
+    }
+
+    /// The body that cuts: a solid or a sheet (the app takes either), live, built before the node, not the trimmed sheet itself and
+    /// in the same Part as it (the kernel works in one part-local frame).
+    fn trim_tool(&self, tool: Id, sheet: Id, node: Option<Id>) -> Result<Id> {
+        self.live_input(tool, node)?;
+        if tool == sheet {
+            return Err(Error::Invalid(format!("body {tool} cannot trim itself; `tool` is another body that cuts the sheet")));
+        }
+        if self.p.body_owner(tool) != self.p.body_owner(sheet) {
+            return Err(Error::Invalid(format!("the sheet {sheet} and the tool {tool} must belong to the same part")));
+        }
+        self.built_before(tool, node)?;
+        Ok(tool)
+    }
+
+    /// Trim a sheet by a body (the app's Trim): the piece of `body` nearest to `keep` stays, as a NEW sheet; `body` is consumed, the
+    /// tool is not. `keep` is part-local. Returns the node (also the new sheet's id) and the report.
+    pub fn trim(&mut self, body: Id, tool: Id, keep: [f64; 3], name: Option<&str>) -> Result<(Id, Rebuild)> {
+        self.ensure_topology()?;
+        self.atomic(|s| {
+            let src = s.sheet_input(body, None, "the body to trim")?;
+            let tool = s.trim_tool(tool, src, None)?;
+            let keep = Self::trim_keep(keep)?;
+            let id = s.in_component(s.p.body_owner(src), |p| p.add_trim(src, tool, keep));
+            s.set_node_name(id, name)?;
+            Ok(id)
+        })
+    }
+
+    /// Re-pick the sheet, the tool and/or the keep point of an existing Trim node (the app's edit mode sets all three together, so a
+    /// new sheet needs its own `keep`).
+    pub fn repick_trim(&mut self, feature: Id, body: Option<Id>, tool: Option<Id>, keep: Option<[f64; 3]>) -> Result<(Id, Rebuild)> {
+        self.ensure_topology()?;
+        let (old_src, old_tool, old_keep, node_body) = self.feature_as(feature, "trim", |kind| match kind {
+            FeatureKind::Trim { src, tool, keep, body } => Some((*src, *tool, *keep, *body)),
+            _ => None,
+        })?;
+        if body.is_some() && keep.is_none() {
+            return Err(Error::Invalid("a new sheet needs its own `keep`: the old point lies on the old sheet".into()));
+        }
+        let src = body.map(|b| self.sheet_input(b, Some(feature), "the body to trim")).transpose()?.unwrap_or(old_src);
+        let tool = self.trim_tool(tool.unwrap_or(old_tool), src, Some(feature))?;
+        let keep = keep.map(Self::trim_keep).transpose()?.unwrap_or(old_keep);
+        let bodies = self.repick_rebuild(feature, "trim", |kind, _| {
+            let FeatureKind::Trim { src: s, tool: t, keep: k, .. } = kind else {
+                return None;
+            };
+            (*s, *t, *k) = (src, tool, keep);
+            Some(())
+        })?;
+        Ok((node_body, self.current_rebuild_after_edit(bodies)))
     }
 
     /// FINDINGS F-198: Stitch nodes picked by `check` whose SOLID result is not one. When the tolerance is wider than the gap
