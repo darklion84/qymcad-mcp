@@ -177,6 +177,40 @@ fn a_document_of_one_sheet_still_defaults_to_it() {
     assert_eq!(s.topology(None, false).unwrap().body, sheet);
 }
 
+/// TR 5: the exact rule, as the tool texts now state it. A tool without `body` takes the part's last solid; a sheet is the default only
+/// when it is the only body of the document. Two sheets (no solid anywhere), or a sheet in the active Part and a solid in another, give no
+/// default: the caller must name the body. Tools that make a sheet (`face_copy`) and read topology take the sole sheet.
+#[test]
+fn a_sheet_is_the_default_only_as_the_only_body_of_the_document() {
+    // One sheet: topology, face_copy and thicken all take it.
+    let mut s = Session::new_part();
+    let sheet = loft_sheet(&mut s, 10.);
+    assert_eq!(s.topology(None, false).unwrap().body, sheet);
+    let face = s.topology(None, false).unwrap().faces[0].id;
+    let (copy, ids, r) = s.face_copy(None, &Sel::Ids(vec![face]), None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(ids, vec![face]);
+    assert!(info(&s, copy).sheet, "a copy of a face of the sole sheet");
+    // Two sheets and no solid: nothing is the default.
+    let before = serde_json::to_string(s.project()).unwrap();
+    let e = refused(s.topology(None, false));
+    assert!(e.contains("pass body"), "{e}");
+    let e = refused(s.face_copy(None, &Sel::Ids(vec![face]), None));
+    assert!(e.contains("pass body"), "{e}");
+    assert_eq!(serde_json::to_string(s.project()).unwrap(), before);
+    // A sheet in the active Part and a solid in another Part: the active Part has no solid, and the sheet is not the only body.
+    let mut s = Session::new_part();
+    let sheet = loft_sheet(&mut s, 10.);
+    let sheet_part = s.project().body_owner(sheet).unwrap();
+    s.part_new("other").unwrap();
+    let solid = block(&mut s, 20., 10.);
+    assert_eq!(s.topology(None, false).unwrap().body, solid, "the other Part is active: its solid");
+    s.part_select(&PartRef::Id(sheet_part)).unwrap();
+    let e = refused(s.topology(None, false));
+    assert!(e.contains("pass body"), "{e}");
+    assert_eq!(s.topology(Some(sheet), false).unwrap().body, sheet, "named, it is served");
+}
+
 // ---- (d) the probe: what each tool does on a loft sheet ----
 
 /// A sheet, a fresh Part holding only it.

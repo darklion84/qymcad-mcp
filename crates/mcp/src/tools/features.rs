@@ -427,7 +427,7 @@ pub struct RemoveFaceArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FaceCopyArgs {
-    /// Body id or name (a sheet too; a sheet is never the default). Default: the part's current solid; not accepted with `feature`.
+    /// Body id or name (a sheet too). Default: the part's last solid, a sheet only if it is the document's only body; not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// Faces to copy, at least one, as topology ids or a description such as {"facing": "+z"}. Frozen to the matched ids. With `feature`, replaces them.
@@ -444,7 +444,7 @@ pub struct FaceCopyArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OffsetSurfaceArgs {
-    /// Body id or name (a sheet too; a sheet is never the default). Default: the part's current solid; not accepted with `feature`.
+    /// Body id or name (a sheet too). Default: the part's last solid, a sheet only if it is the document's only body; not accepted with `feature`.
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// Faces to offset, at least one, as topology ids or a description such as {"facing": "+z"}. Frozen to the matched ids. With `feature`, replaces them.
@@ -1032,7 +1032,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "face_copy",
-            "Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0), as the app's Copy faces; several faces make one sheet. The source stays; the sheet follows later edits of it. A sheet is never the default body of other tools: pass its id as `body`. Give `feature` to replace the faces. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
+            "Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0), as the app's Copy faces; several faces make one sheet. The source stays; the sheet follows later edits of it. Other tools default to a sheet only when it is the document's only body: else pass its id as `body`. Give `feature` to replace the faces. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
             |st, a: FaceCopyArgs| {
                 let s = st.doc()?;
                 let faces = a.faces.resolve(s)?;

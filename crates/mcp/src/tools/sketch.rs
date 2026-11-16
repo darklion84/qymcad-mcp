@@ -167,7 +167,7 @@ pub struct AddArgs {
 pub struct ProjectArgs {
     /// Sketch id or name receiving the projection.
     pub sketch: ObjRef,
-    /// Source body id or name; defaults to the latest result body that is not a sheet.
+    /// Source body id or name; defaults to the latest result body that is not a sheet (only sheets: the latest sheet).
     #[serde(default)]
     pub body: Option<ObjRef>,
     /// An edge selection (ids or the existing description syntax, such as {\"edges_of\":{\"facing\":\"+z\"}}); exactly one of edges/face.

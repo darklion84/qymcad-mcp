@@ -1814,7 +1814,7 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
           "type": "null"
         }
       ],
-      "description": "Source body id or name; defaults to the latest result body that is not a sheet."
+      "description": "Source body id or name; defaults to the latest result body that is not a sheet (only sheets: the latest sheet)."
     },
     "edges": {
       "anyOf": [
@@ -5089,7 +5089,7 @@ Remove a non-empty set of faces and heal the body using native RemoveFace. Selec
 
 ## face_copy
 
-Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0), as the app's Copy faces; several faces make one sheet. The source stays; the sheet follows later edits of it. A sheet is never the default body of other tools: pass its id as `body`. Give `feature` to replace the faces. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.
+Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0), as the app's Copy faces; several faces make one sheet. The source stays; the sheet follows later edits of it. Other tools default to a sheet only when it is the document's only body: else pass its id as `body`. Give `feature` to replace the faces. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.
 
 ```json
 {
@@ -5119,7 +5119,7 @@ Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 
           "type": "null"
         }
       ],
-      "description": "Body id or name (a sheet too; a sheet is never the default). Default: the part's current solid; not accepted with `feature`."
+      "description": "Body id or name (a sheet too). Default: the part's last solid, a sheet only if it is the document's only body; not accepted with `feature`."
     },
     "faces": {
       "anyOf": [
@@ -5217,7 +5217,7 @@ Move faces of a body (solid or sheet) along their normals into a NEW SHEET body,
           "type": "null"
         }
       ],
-      "description": "Body id or name (a sheet too; a sheet is never the default). Default: the part's current solid; not accepted with `feature`."
+      "description": "Body id or name (a sheet too). Default: the part's last solid, a sheet only if it is the document's only body; not accepted with `feature`."
     },
     "distance": {
       "anyOf": [

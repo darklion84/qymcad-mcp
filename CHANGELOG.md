@@ -16,7 +16,7 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - The F-197 guard (a chamfer whose selection holds a one-sided boundary edge of a sheet) holds on a `chamfer` re-pick (`feature`) too: it went through and QymCAD bevelled the shared edges only, silently.
 - A sheet no longer raises the false warning "result body has N shells and 0 solids; may contain a sealed internal void" on rebuild and on `doc_open` (a void needs a solid; real solids still warn).
-- A tool that takes no body never defaults to a sheet: `extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others take the part's last solid, as the app does. `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
+- A tool that takes no body defaults to the part's last solid and skips sheets, as the app does (`extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others); a sheet is the default only when it is the only body of the document (a part holding nothing else). `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
 
 ### Changed
 - The `stitch` check against a collapsed solid (F-198) compares the kernel volume with the exact reporting mesh and an allowance of `area * deflection` plus 0.1 %, not with the display mesh by a flat 5 %: real thin curved solids (a lens 11 % short at Draft) are no longer refused; a wide tolerance that collapses a gap still is. The refusal names both volumes.
