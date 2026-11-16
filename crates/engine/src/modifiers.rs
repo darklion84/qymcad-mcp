@@ -187,6 +187,11 @@ fn seam_note((id, mut report): (Id, Rebuild), dropped: usize) -> (Id, Rebuild) {
     (id, report)
 }
 
+/// The refusal for a tool whose result on a sheet QymCAD gets wrong without saying so: names the sheet and the reason.
+fn sheet_refusal(src: Id, reason: &str) -> Error {
+    Error::Invalid(format!("body {src} is a sheet (a surface without volume): {reason}"))
+}
+
 /// Evaluate a dimension; positive values only.
 fn positive(s: &Session, n: &Num, what: &str) -> Result<f64> {
     let v = n.eval(&s.p.param_map())?;
@@ -351,6 +356,7 @@ impl Session {
             dropped_seams = dropped;
             let reference = a.reference_face.as_ref().map(|face| s.one_face(src, face).map(|f| f.id)).transpose()?.unwrap_or(0);
             s.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
+            s.refuse_sheet_boundary_edges(src, &ids)?;
             let id = s.in_component(s.p.body_owner(src), |p| {
                 p.add_chamfer_ex(src, dist, ChamferShape { mode, d2, flip: a.flip, ref_face: reference }, ids)
             });
@@ -374,6 +380,28 @@ impl Session {
         })
         .map(|result| seam_note(result, dropped_seams))
         .map_err(|error| chamfer_failure_advice(error, revolve_source))
+    }
+
+    /// A chamfer picked together with the one-sided boundary edges of a sheet: QymCAD chamfers the edges shared by two faces
+    /// and leaves the boundary ones as they were, with no word (F-197); alone they fail as "too big". The public pair API
+    /// omits exactly those edges.
+    fn refuse_sheet_boundary_edges(&self, src: Id, ids: &[u32]) -> Result<()> {
+        if !self.is_sheet(src) {
+            return Ok(());
+        }
+        let pairs = crate::session::edge_face_pairs(&self.shapes[&src])?;
+        let boundary: Vec<String> = ids.iter().filter(|id| !pairs.iter().any(|(e, _, _)| e == *id)).map(u32::to_string).collect();
+        if boundary.is_empty() {
+            return Ok(());
+        }
+        Err(sheet_refusal(
+            src,
+            &format!(
+                "edges {} are boundary edges with a single face, which QymCAD leaves unchamfered without a word when they are picked with \
+                 shared edges (FINDINGS F-197); pick only edges shared by two faces",
+                boundary.join(", ")
+            ),
+        ))
     }
 
     /// Inspect the native retained chamfer mode and reference side.
@@ -538,6 +566,13 @@ impl Session {
         self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
+            if s.is_sheet(src) {
+                return Err(sheet_refusal(
+                    src,
+                    "Shell hollows a solid; on a sheet QymCAD builds no wall, it returns a smaller sheet with the open face's neighbours \
+                     cut back (FINDINGS F-196). Use thicken to give a sheet a wall",
+                ));
+            }
             let t = positive(s, thickness, "shell thickness")?;
             let (ids, _) = s.shell_face_ref(src, open_faces)?;
             let qside = match side {

@@ -110,3 +110,18 @@ fn extrude_without_a_target_lands_on_the_solid_and_sketch_project_reads_the_soli
     close(body(&info, false)["volume_mm3"].as_f64().unwrap(), 16000. + 10. * 10. * 5., "boss on the block");
 }
 
+// ---- (d) refusals ----
+
+fn refused(r: &mut Registry, tool: &str, args: Value) -> String {
+    r.call(tool, args).unwrap().unwrap_err()
+}
+
+#[test]
+fn shell_and_a_chamfer_with_boundary_edges_are_refused_on_a_sheet() {
+    let mut r = solid_then_sheet();
+    let e = refused(&mut r, "shell", json!({"body": "tube", "open_faces": {"facing": "+x"}, "thickness": 1}));
+    assert!(e.contains("is a sheet") && e.contains("F-196"), "{e}");
+    let e = refused(&mut r, "chamfer", json!({"body": "tube", "edges": {"kind": "line"}, "dist": 1}));
+    assert!(e.contains("is a sheet") && e.contains("F-197"), "{e}");
+}
+
