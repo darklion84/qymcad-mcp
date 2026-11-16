@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.20 — surfaces: sheet bodies and six surface tools (P20–P24, P27)
 
 ### Added
 - `face_copy` and `offset_surface` (ADR 0060, P20 and P27): the app's Copy faces and Offset surface. Faces of a body (solid or sheet) become a NEW sheet body beside the source, which is not consumed; several faces make one sheet. `offset_surface` takes `distance` (number or formula, stored as the feature dimension `dist`, so `dimension_set` edits it; the app's range -10000..10000 is held on creation and on every evaluated edit, 0 is a copy in place, outward of a solid is positive). `feature` re-picks the faces of an existing node. A sheet is never the default body of other tools: pass its id as `body`.
