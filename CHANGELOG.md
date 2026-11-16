@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Changed
+- A sheet is refused as the object of `hole` (face and sketch placement), `draft`, `remove_face`, `split`, `split_face`, `mirror` and as body A of `body_boolean`, with the document unchanged; the re-pick (`feature`) of `draft`, `remove_face` and `shell` on a sheet is refused too. The app's GUI takes a sheet as the object of none of them (GUI check 2026-11-16, F-200): a sheet's face works only as the plane of `split`, `split_face` and `mirror` (still allowed), and a sheet as B of `body_boolean` stays the kernel's own refusal. Arrays, `move`, `thicken`, `stitch`, `trim` and the surface tools take a sheet as before. `split_face` already refused a sheet; its message now has the same form as the others.
+- `thicken` of a sheet: no change of sign (the app and the server pass the value to the kernel unchanged, and the side is the sheet's own face normal, which for a loft follows the order of its sections: a tube lofted top section first thickens inward for +t, F-201). The tool text now says so and that one picked face offsets the whole sheet. ADR 0059 gains a "GUI" column.
+
 ## 0.1.1-dev.20261026.20 — surfaces: sheet bodies and six surface tools (P20–P24, P27)
 
 ### Added

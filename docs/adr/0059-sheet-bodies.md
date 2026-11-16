@@ -3,7 +3,7 @@
 - Status: accepted (2026-11-16).
 - Related: ADR 0052 (Draft and Thicken), 0056/0057 (style: one tool = one app action, refuse only silent wrong results), 0009 (advisory diagnostics), 0026 (`body_boolean`), 0027 (`sketch_project`); F-089 (loft sections), F-150, F-196, F-197.
 - Research: `tasks/surfaces-research.md` (sections 0, 1, 8, 10). Package T, step T0: the groundwork before the surface tools (FaceCopy, SurfaceReplace, Patch, Stitch, Trim, OffsetSurface).
-- Principle: the tool is the app's action with the app's limits. Where QymCAD silently gives a wrong result on a sheet, only that case is refused and recorded in FINDINGS; no workaround is written.
+- Principle: the tool is the app's action with the app's limits. Where QymCAD silently gives a wrong result on a sheet, only that case is refused and recorded in FINDINGS; no workaround is written. Amended 2026-11-16 after a GUI check (F-200): a tool the GUI does not let take a sheet is refused too, wrong result or not.
 
 ## What a sheet is
 
@@ -22,29 +22,31 @@ The app's `active_body_before` never picks a sheet as the body an operation land
 
 ## Probe: what each tool does on a loft sheet
 
-Fixture: a ruled `loft surface:true op:new_body` between a 20 x 16 rectangle on XY and the same rectangle at z = 10: a tube of four planar faces, 720 mm2, volume 0, open at both ends. Tests: `crates/engine/tests/it/sheet_bodies.rs` (`probe_*`, `shell_of_a_sheet_...`, `chamfer_on_a_sheet_...`), `t0_probes.rs` (the app's own result, no server guard).
+Fixture: a ruled `loft surface:true op:new_body` between a 20 x 16 rectangle on XY and the same rectangle at z = 10: a tube of four planar faces, 720 mm2, volume 0, open at both ends. Tests: `crates/engine/tests/it/sheet_bodies.rs` (`probe_*`, `shell_of_a_sheet_...`, `chamfer_on_a_sheet_...`, `the_tools_the_gui_does_not_offer_on_a_sheet_...f200`, `repicking_..._f200`, `a_sheets_thicken_follows_...`), `t0_probes.rs` (the app's own result, no server guard).
 
-| Tool | What QymCAD does | Verdict |
-|---|---|---|
-| `body_boolean` sheet cut solid | The sheet minus the part inside the solid: 576 mm2 = 720 - 2 x 12 x 6 for a block piercing two walls; the tool is consumed | Right, kept |
-| `body_boolean` union (either order), solid cut sheet, intersect (either order) | Refused: "came out empty" / "cut left nothing" / "empty body"; rolled back | Native refusal, kept |
-| `move` (translate, rotate) | Moves the surface, still a sheet, area kept | Right, kept |
-| `mirror` (keep or not) about an offset plane | Image at x 50..70 (area 720), with keep both halves in one sheet body (1440) | Right, kept |
-| `linear_array` / `circular_array` | Copies of the surface in one sheet body, area 3 x 720; overlapping copies share face names and give the "ambiguous native face ids" warning | Right, kept |
-| `hole` | The cylinder cuts a round opening in each wall it crosses (blind 6: one wall, 720 - 4 pi; through all: both walls) | Right, kept |
-| `shell` | Green node, a smaller sheet with the open face's neighbours cut back (area 480 / 520, no wall) | Wrong silently through the core API; the GUI offers no shell on a sheet (checked in the app): refused, F-196 |
-| `draft` | The wall tilts about the neutral face's plane and its neighbours follow: area 160/cos 5 + 160 + 200 + (20 + 16 tan 5) x 10 = 734.609 | Right, kept |
-| `remove_face` | Refused ("neighbouring surfaces do not extend") | Native refusal, kept |
-| `chamfer` | A shared edge is bevelled right (720 - 10 x (2 - sqrt 2)); boundary edges picked with them are skipped silently; alone they fail as "too big"; asymmetric on a boundary edge was already refused | Wrong silently through the core API; the GUI offers no chamfer on a sheet and sheet edges cannot be picked (checked in the app): refused on any sheet, F-197 |
-| `fillet` | Refused by the core ("solid tool on a sheet") | Native refusal, kept |
-| `push_face` | Refused by the core ("push face on a sheet") | Native refusal, kept |
-| `thicken` | The whole sheet is offset from one face into a solid; either sign (next section) | Right, explicit and tested |
-| `split` (body) | The kernel counts no two pieces; refused as "split plane cuts nothing" (the reason is not literally true for a plane across the tube, the refusal is) | Native refusal, kept |
-| `split_face` | Refused by the server since ADR 0057 | Kept |
+| Tool | Core API (what QymCAD does with no GUI guard) | GUI (tester, 2026-11-16) | Server |
+|---|---|---|---|
+| `body_boolean` sheet cut solid | The sheet minus the part inside the solid: 576 mm2 = 720 - 2 x 12 x 6 for a block piercing two walls; the tool is consumed | A cannot be a sheet (status "select body A first") | Refused, F-200 |
+| `body_boolean` solid with a sheet as B (cut, intersect, union) | Refused: "came out empty" / "cut left nothing" / "empty body"; rolled back | Cut and intersect fail natively; union is accepted and the node fails | Kernel's refusal, kept |
+| `move` (translate, rotate) | Moves the surface, still a sheet, area kept | Not found in the GUI | Kept |
+| `mirror` (keep or not) about an offset plane | Image at x 50..70 (area 720), with keep both halves in one sheet body (1440) | A sheet's face is only the PLANE; the solid is mirrored, the sheet never | Refused as the body, F-200; a sheet face as the plane stays |
+| `linear_array` / `circular_array` | Copies of the surface in one sheet body, area 3 x 720; overlapping copies share face names and give the "ambiguous native face ids" warning | The sheet is picked as the body ("Тело 1"); applied; copies stay sheets | Kept |
+| `hole` | The cylinder cuts a round opening in each wall it crosses (blind 6: one wall, 720 - 4 pi; through all: both walls) | Face of a sheet rejected: "nothing there" | Refused, F-200 (face and sketch placement) |
+| `shell` | Green node, a smaller sheet with the open face's neighbours cut back (area 480 / 520, no wall) | Not offered ("no body in the part" on a sheet-only Part; face rejected beside a solid) | Refused, F-196 |
+| `draft` | The wall tilts about the neutral face's plane and its neighbours follow: area 160/cos 5 + 160 + 200 + (20 + 16 tan 5) x 10 = 734.609 | Face of a sheet rejected | Refused, F-200 |
+| `remove_face` | Refused ("neighbouring surfaces do not extend") | Face of a sheet rejected | Refused, F-200 |
+| `chamfer` | A shared edge is bevelled right (720 - 10 x (2 - sqrt 2)); boundary edges picked with them are skipped silently; alone they fail as "too big"; asymmetric on a boundary edge was already refused | Not offered; sheet edges cannot be picked | Refused on any sheet, F-197 |
+| `fillet` | Refused by the core ("solid tool on a sheet") | Edge of a sheet rejected | Core's refusal, kept |
+| `push_face` | Refused by the core ("push face on a sheet") | Face of a sheet rejected | Core's refusal, kept |
+| `thicken` | The whole sheet is offset from one face into a solid; either sign (next section) | Takes a face of the sheet, offsets the whole sheet, makes a solid | Right, explicit and tested |
+| `split` (body) | The kernel counts no two pieces; refused as "split plane cuts nothing" | A sheet's face is only the cutting plane; the sheet is not cut | Refused as the body, F-200; a sheet face as the plane stays |
+| `split_face` | Refused by the server since ADR 0057 | A sheet's face is only the plane; "this plane does not divide the faces" | Refused as the body, F-200 (same message form as the others) |
+
+The numbers in the Core API column come from the tests that were replaced by the F-200 refusals (they are pinned in FINDINGS F-200) and from `t0_probes.rs` for shell and chamfer. Stitch, trim, recognise, measure and the surface tools take a sheet in the GUI and here. Where the GUI and the core API differ, the server follows the GUI (one tool = one app action with the app's limits).
 
 Other readings of a sheet: `topology` lists faces and edges normally; the one-sided boundary edges have no `faces` pair (the kernel's pair API omits them; an `edges[].faces` of null is normal on a sheet), `FaceInfo.normal` is the orientation. `render` draws with back-face culling, as the app does (`raster.rs`): a sheet seen from behind disappears (a closed tube of four faces shows two). That is parity and stays; it is a fact of the picture, not of the model. `part_instance` already ignores sheets.
 
-A Shell or Chamfer node already on a sheet in a GUI file is not judged (the refusals are at creation); the node builds as the app builds it.
+A node of one of the refused tools already on a sheet in a GUI file is not judged on open (it builds as the app builds it), but a re-pick (`feature`) of a chamfer, shell, draft or remove_face node on a sheet is refused like creation.
 
 ## Thicken of a sheet
 
@@ -55,5 +57,5 @@ The app's Thicken takes one face and a thickness in -100000..100000 and refuses 
 ## Consequences
 
 - Tools: `doc_info`, `export`, `thicken`, `shell`, `chamfer`, `sketch_project` and the server instructions say what changed; `docs/TOOLS.md` is regenerated.
-- Tests: `sheet_bodies.rs` (engine; each behavioural change fails without its fix: the report fields, the sealed-void warning, the default body, the shell and chamfer refusals, the negative thicken), `t0_sheets.rs` (the tools), `t0_probes.rs` (the app's result, to be dropped with the refusals when QymCAD fixes F-196/F-197).
-- Not covered: a rebuild-time judgement of Shell/Chamfer nodes the app made on a sheet. (The surface commands: P20 and P27 are ADR 0060, P21 and P23 ADR 0061, P24 ADR 0062, P22 ADR 0063.)
+- Tests: `sheet_bodies.rs` (engine; each behavioural change fails without its fix: the report fields, the sealed-void warning, the default body, the shell, chamfer and F-200 refusals, the negative thicken, the thicken side), `t0_sheets.rs` (the tools), `t0_probes.rs` (the app's result for shell and chamfer through the core API).
+- Not covered: a rebuild-time judgement of Shell/Chamfer/Draft/RemoveFace nodes the app made on a sheet (only their re-picks are refused). (The surface commands: P20 and P27 are ADR 0060, P21 and P23 ADR 0061, P24 ADR 0062, P22 ADR 0063.)
