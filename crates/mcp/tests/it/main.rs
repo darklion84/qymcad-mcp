@@ -57,6 +57,7 @@ mod t3_trim;
 mod t4_patch;
 mod t_reorder;
 mod tools_list_budget;
+mod tr_sheets;
 mod usability_history;
 mod usability_polish;
 mod usability_reporting;

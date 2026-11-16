@@ -10,7 +10,7 @@ fn refused(r: &mut Registry, tool: &str, args: Value) -> String {
     r.call(tool, args).unwrap().unwrap_err()
 }
 fn close(actual: f64, expected: f64, what: &str) {
-    assert!((actual - expected).abs() < 1.0, "{what}: got {actual}, expected {expected}");
+    assert!((actual - expected).abs() < 1e-2, "{what}: got {actual}, expected {expected}");
 }
 
 /// A `w` x `d` block `h` high named `block` (parameter w = `w`).

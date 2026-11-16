@@ -11,7 +11,7 @@ fn refused(r: &mut Registry, tool: &str, args: Value) -> String {
     r.call(tool, args).unwrap().unwrap_err()
 }
 fn close(actual: f64, expected: f64, what: &str) {
-    assert!((actual - expected).abs() < 5.0, "{what}: got {actual}, expected {expected}");
+    assert!((actual - expected).abs() < 1e-2, "{what}: got {actual}, expected {expected}");
 }
 fn area(r: &mut Registry, id: &Value) -> f64 {
     let info = call(r, "doc_info", json!({}));
@@ -94,7 +94,9 @@ fn patch_over_a_hole_rim_and_thicken_close_the_loop() {
     assert_eq!(ring.len(), 1);
     let disc = call(&mut r, "patch", json!({"edges": ring}));
     assert!(disc["rebuild"].get("errors").is_none(), "{disc}");
-    close(area(&mut r, &disc["body"]), std::f64::consts::PI * 100., "disc r10");
+    // A round face is measured on the 0.005 mm mesh: pi r^2 within 0.2 (0.03 %: 0.1), a polygon inscribed in the circle.
+    let disc_area = area(&mut r, &disc["body"]);
+    assert!((disc_area - std::f64::consts::PI * 100.).abs() < 0.2, "disc r10: {disc_area}");
     let info = call(&mut r, "doc_info", json!({}));
     assert_eq!(info["bodies"].as_array().unwrap().len(), 2);
     // The lid: a plate of the disc closes the hole (thicken of a sheet takes the whole sheet).
