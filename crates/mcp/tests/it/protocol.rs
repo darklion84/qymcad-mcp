@@ -282,6 +282,8 @@ fn lists_tools_with_object_schemas() {
         "remove_face",
         "face_copy",
         "offset_surface",
+        "surface_replace",
+        "stitch",
         "move",
         "linear_array",
         "circular_array",

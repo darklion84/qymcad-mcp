@@ -355,10 +355,12 @@ fn the_tolerance_is_a_dimension_with_the_apps_range() {
     let (mut s, plate) = block(60., 40., "12");
     let parts = copies(&mut s, plate, &[up(), front()]);
     let before = recipe(&s);
-    for bad in [0., 1e-7, 10.5, -1., f64::NAN] {
+    for bad in [0., 1e-7, 10.5, -1.] {
         let e = error(s.stitch(&parts, &v(bad), None));
-        assert!(e.contains("1e-6..10") || e.contains("stitch tolerance") || e.contains("finite"), "{bad}: {e}");
+        assert!(e.contains("within 1e-6..10 mm"), "{bad}: {e}");
     }
+    // A non-finite number never reaches the node: the expression layer refuses it.
+    error(s.stitch(&parts, &v(f64::NAN), None));
     assert_eq!(recipe(&s), before);
     s.param_set("t", &v(0.5)).unwrap();
     let (one, r) = s.stitch(&parts, &Num::from("t"), None).unwrap();

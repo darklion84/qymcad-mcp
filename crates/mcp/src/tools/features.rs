@@ -7,7 +7,7 @@ use super::topology::{AxisArg, SelArg};
 use super::{tool, Tool};
 use qymcad_engine::{
     ArrayDir, Axis, Chamfer, Direction, Draft, Extrude, Hole, HoleKind, HoleSketch, Id, Loft, LoftSection, Move, Num, Op, Revolve,
-    Rotation, Session, Side, Sweep, SweepPath,
+    Rotation, Session, Side, Sweep, SweepPath, STITCH_TOLERANCE_DEFAULT,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -454,6 +454,44 @@ pub struct OffsetSurfaceArgs {
     #[serde(default)]
     pub distance: Option<Num>,
     /// Existing Offset surface feature id/name to re-pick. With this set, `body`, `distance` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceReplaceArgs {
+    /// Solid body id or name whose faces are dropped (a sheet is refused). Default: the part's current solid; not accepted with `feature`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Faces of the solid to drop, at least one, as topology ids or a description such as {"facing": "+z"}. Frozen to the matched ids. Required without `feature`; with it, replaces them.
+    #[serde(default)]
+    #[schemars(transform = super::topology::with_sel_brief)]
+    pub faces: Option<SelArg>,
+    /// Sheet body id or name (face_copy, offset_surface, a loft surface) that closes the opening. Required without `feature`; with it, replaces the sheet.
+    #[serde(default)]
+    pub surface: Option<ObjRef>,
+    /// Existing Replace face feature id/name to re-pick: give `faces` and/or `surface`. With this set, `body` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StitchArgs {
+    /// Sheet body ids or names, at least two, in order (the first gives the result its lineage). A solid is refused. Required; with `feature`, replaces the sheets.
+    #[serde(default)]
+    pub parts: Option<Vec<ObjRef>>,
+    /// Edge coincidence tolerance, mm (number or expression), 1e-6..10, default 0.01; later edits via `dimension_set` key `tol`. Not accepted with `feature`.
+    #[serde(default)]
+    pub tolerance: Option<Num>,
+    /// Existing Stitch feature id/name to re-pick. With this set, `tolerance` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
     /// Name for the new feature (timeline node). Not accepted with `feature`.
@@ -985,6 +1023,51 @@ pub fn tools() -> Vec<Tool> {
                     let (feature, selected, rebuild) = s.offset_surface(body, &faces, &distance, a.name.as_deref()).map_err(err)?;
                     Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
                 }
+            },
+        ),
+        tool(
+            "surface_replace",
+            "Replace faces of a solid with a sheet that closes them, as the app's Replace face: the top replaced by a copy of the top lifted 5 makes the block 5 taller. A new solid replaces both inputs (the solid and the sheet are consumed) and takes later features such as a fillet. The sheet must close exactly what the dropped faces leave open (else refused, the free edge count is named); one face with a one-face sheet may also be reached by the sheet's extension. Give `feature` to replace the faces and/or the sheet of an existing node. Returns `feature` (also the new solid's id), `selected_faces`, `rebuild`.",
+            |st, a: SurfaceReplaceArgs| {
+                let s = st.doc()?;
+                let faces = a.faces.map(|f| f.resolve(s)).transpose()?;
+                let surface = a.surface.map(|b| b.resolve(s)).transpose()?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body` and `name` are not accepted".into());
+                    }
+                    if faces.is_none() && surface.is_none() {
+                        return Err("with `feature`, give `faces` and/or `surface` to re-pick".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_surface_replace(feature, faces.as_ref(), surface).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let faces = faces.ok_or("`faces` is required unless `feature` is given")?;
+                    let surface = surface.ok_or("`surface` is required unless `feature` is given")?;
+                    let body = opt_body(s, &a.body)?;
+                    let (feature, selected, rebuild) = s.surface_replace(body, &faces, surface, a.name.as_deref()).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                }
+            },
+        ),
+        tool(
+            "stitch",
+            "Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is consumed. When the sheets close a shell the result is a SOLID (six face copies of a plate give the plate), otherwise a sheet (`sheet` in the result). Sheets that share no edge within `tolerance` fail natively (they do not touch); a tolerance wider than the gap between edges is refused (it glues sheets that do not meet). Give `feature` to replace the parts of an existing node; its tolerance stays. Returns `feature` (also the new body's id), `sheet`, `rebuild`.",
+            |st, a: StitchArgs| {
+                let s = st.doc()?;
+                let parts = a.parts.ok_or("`parts` is required")?.iter().map(|p| p.resolve(s)).collect::<Result<Vec<_>, _>>()?;
+                let (feature, rebuild) = if let Some(feature) = a.feature {
+                    if a.tolerance.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `tolerance` and `name` are not accepted; change the tolerance with `dimension_set`".into());
+                    }
+                    s.repick_stitch(feature.resolve(s)?, &parts).map_err(err)?
+                } else {
+                    let tolerance = a.tolerance.unwrap_or(Num::Value(STITCH_TOLERANCE_DEFAULT));
+                    s.stitch(&parts, &tolerance, a.name.as_deref()).map_err(err)?
+                };
+                let sheet = rebuild.bodies.iter().find(|b| b.id == feature).map(|b| b.sheet);
+                Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "sheet": sheet, "rebuild": rebuild_json(&rebuild) }))
             },
         ),
         tool(

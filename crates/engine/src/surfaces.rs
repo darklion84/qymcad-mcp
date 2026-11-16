@@ -26,7 +26,7 @@ const STITCH_TOLERANCE_RANGE: (f64, f64) = (1e-6, 10.0);
 fn stitch_tolerance(v: f64) -> Result<f64> {
     let (lo, hi) = STITCH_TOLERANCE_RANGE;
     if !(v.is_finite() && (lo..=hi).contains(&v)) {
-        return Err(Error::Invalid(format!("stitch tolerance must be finite and within {lo}..{hi} mm (the app's range), got {v}")));
+        return Err(Error::Invalid(format!("stitch tolerance must be finite and within 1e-6..10 mm (the app's range), got {v}")));
     }
     Ok(v)
 }

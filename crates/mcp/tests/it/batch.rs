@@ -228,6 +228,8 @@ fn limits_allowlist_and_outer_schema() {
         "remove_face",
         "face_copy",
         "offset_surface",
+        "surface_replace",
+        "stitch",
         "move",
         "linear_array",
         "circular_array",

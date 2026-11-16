@@ -52,6 +52,7 @@ mod stage_a2;
 mod stage_a3;
 mod t0_sheets;
 mod t1_surfaces;
+mod t2_surfaces;
 mod t_reorder;
 mod tools_list_budget;
 mod usability_history;
