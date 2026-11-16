@@ -196,6 +196,7 @@ impl Session {
         self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
+            s.refuse_sheet_tool(src, "mirror", "a sheet's face works only as the mirror plane (`plane` face); the mirror acts on a solid")?;
             let id = match plane {
                 PlaneRef::Base(b) => s.in_component(s.p.body_owner(src), |p| {
                     p.add_mirror(

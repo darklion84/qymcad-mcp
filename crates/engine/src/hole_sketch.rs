@@ -61,6 +61,7 @@ impl Session {
             s.ensure_topology()?;
             s.atomic(|s| {
                 let src = s.source_body(a.body)?;
+                s.refuse_sheet_tool(src, "hole", "thicken it first")?;
                 s.sketch_si(a.sketch)?;
                 check_support(&s.p, a.sketch, src)?;
                 if s.p.sketch_owner(a.sketch) != s.p.body_owner(src) {

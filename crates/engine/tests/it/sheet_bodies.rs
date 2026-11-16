@@ -238,41 +238,33 @@ fn boolean(s: &mut Session, a: Id, b: Id, op: BooleanOp) -> Result<BodyBooleanRe
     s.body_boolean(&BodyBooleanOptions { a, b, op, name: None, piece_names: None })
 }
 
-/// body_boolean: a sheet cut by a solid that pierces it keeps the sheet's part outside the solid (hand: 720 − 2·12·6 = 576).
-/// Every other combination is refused by the kernel; the document stays as it was.
+/// body_boolean: the app cannot take a sheet as A (the status says "select body A first" and the sheet is not selectable), so a sheet
+/// as A is refused by the server (F-200), whatever the operation. A sheet as B is the app's own native failure, kept: cut, intersect
+/// and union all fail and roll back (the core API alone would let a sheet cut a solid: 720 − 2·12·6 = 576, which the app cannot do).
 #[test]
-fn probe_body_boolean_on_a_sheet_cuts_the_sheet_and_refuses_the_rest() {
+fn probe_body_boolean_refuses_a_sheet_as_a_and_the_kernel_refuses_it_as_b() {
     let make = || {
         let mut s = Session::new_part();
         let sheet = loft_sheet(&mut s, 10.);
         let solid = box_xy(&mut s, 30., 12., 6.);
         (s, sheet, solid)
     };
-    let (mut s, sheet, solid) = make();
-    let r = boolean(&mut s, sheet, solid, BooleanOp::Cut).unwrap();
-    assert!(r.rebuild.errors.is_empty());
-    let bodies = s.result_bodies();
-    assert_eq!(bodies.len(), 1, "the tool is consumed: {bodies:?}");
-    assert!(bodies[0].sheet);
-    close(bodies[0].area, 576., 1e-6, "sheet minus the block's footprint on two walls");
-    for (a_sheet, op) in [
-        (true, BooleanOp::Union),
-        (false, BooleanOp::Union),
-        (false, BooleanOp::Cut),
-        (true, BooleanOp::Intersect),
-        (false, BooleanOp::Intersect),
-    ] {
+    for op in [BooleanOp::Cut, BooleanOp::Union, BooleanOp::Intersect] {
         let (mut s, sheet, solid) = make();
-        let before = serde_json::to_string(&s.result_bodies()).unwrap();
-        let (a, b) = if a_sheet { (sheet, solid) } else { (solid, sheet) };
-        assert!(boolean(&mut s, a, b, op).is_err(), "{op:?} sheet-first={a_sheet}");
-        assert_eq!(serde_json::to_string(&s.result_bodies()).unwrap(), before, "{op:?} sheet-first={a_sheet}: rolled back");
+        let before = serde_json::to_string(s.project()).unwrap();
+        let e = refused(boolean(&mut s, sheet, solid, op));
+        assert!(e.contains(&format!("body {sheet} is a sheet")) && e.contains("F-200") && e.contains("body A"), "{op:?}: {e}");
+        assert_eq!(serde_json::to_string(s.project()).unwrap(), before, "{op:?}: sheet as A, unchanged");
+        let e = refused(boolean(&mut s, solid, sheet, op));
+        assert!(!e.contains("F-200"), "{op:?}: a sheet as B is the kernel's own refusal: {e}");
+        assert_eq!(serde_json::to_string(s.project()).unwrap(), before, "{op:?}: sheet as B, rolled back");
     }
 }
 
-/// move, mirror, linear and circular arrays act on a sheet like on any body; it stays a sheet and its area is the sum of the copies.
+/// move, linear and circular arrays act on a sheet like on any body (the GUI takes a sheet as the object of both arrays); it stays a
+/// sheet and its area is the sum of the copies. Mirror is not here: the GUI mirrors the solid, a sheet only gives the plane (F-200).
 #[test]
-fn probe_move_mirror_and_arrays_keep_a_sheet_a_sheet() {
+fn probe_move_and_arrays_keep_a_sheet_a_sheet() {
     let (mut s, sheet) = fresh();
     let (m, r) = s.move_body(&Move { body: Some(sheet), translation: Some([v(5.), v(0.), v(3.)]), rotation: None, name: None }).unwrap();
     assert!(r.errors.is_empty());
@@ -282,17 +274,6 @@ fn probe_move_mirror_and_arrays_keep_a_sheet_a_sheet() {
     close(b.bbox[0], -5., 1e-3, "x min after +5");
     close(b.bbox[2], 3., 1e-3, "z min after +3");
 
-    for (keep, area, x_min) in [(true, 1440., -10.), (false, 720., 50.)] {
-        let (mut s, sheet) = fresh();
-        let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::YZ), &v(30.), None).unwrap();
-        let (id, r) = s.mirror(Some(sheet), &PlaneRef::Plane(plane), keep, None).unwrap();
-        assert!(r.errors.is_empty());
-        let b = info(&s, id);
-        assert!(b.sheet);
-        close(b.area, area, 1e-6, "mirror area");
-        close(b.bbox[0], x_min, 1e-3, "mirror x min");
-        close(b.bbox[3], 70., 1e-3, "mirror x max (image of x -10)");
-    }
     let (mut s, sheet) = fresh();
     let (id, _) = s.linear_array(Some(sheet), &ArrayDir { dx: v(30.), dy: v(0.), dz: v(0.), count: v(3.) }, None, None).unwrap();
     let b = info(&s, id);
@@ -307,76 +288,16 @@ fn probe_move_mirror_and_arrays_keep_a_sheet_a_sheet() {
     close(b.area, 2160., 1e-3, "three turned copies");
 }
 
-/// hole: the cylinder cuts the surface where it meets it; the hole is πr² of the wall (a mesh area: within 0.1).
-/// Through all (default depth) drills both walls it crosses.
-#[test]
-fn probe_hole_on_a_sheet_cuts_a_round_opening_in_each_wall_it_crosses() {
-    let hole = |depth: Option<Num>| {
-        let (mut s, sheet) = fresh();
-        let side = s.topology(Some(sheet), false).unwrap().faces.iter().find(|f| f.normal.is_some_and(|n| n[0] > 0.9)).unwrap().id;
-        let (id, r) = s
-            .hole(&Hole {
-                body: Some(sheet),
-                face: Sel::Ids(vec![side]),
-                at: None,
-                offset: None,
-                diameter: v(4.),
-                depth,
-                kind: HoleKind::Plain,
-                dia2: None,
-                depth2: None,
-                name: None,
-            })
-            .unwrap();
-        assert!(r.errors.is_empty());
-        let b = info(&s, id);
-        assert!(b.sheet);
-        b.area
-    };
-    close(hole(Some(v(6.))), 720. - std::f64::consts::PI * 4., 0.1, "one wall, blind 6");
-    close(hole(None), 720. - 2. * std::f64::consts::PI * 4., 0.2, "both walls, through all");
-}
-
-/// draft: the +x wall tilted 5° about the +y face's plane; the neighbours follow (hand: 160/cos5° + 160 + 20·10 + (20 + 16·tan5°)·10).
-#[test]
-fn probe_draft_on_a_sheet_tilts_the_wall_and_its_neighbours_follow() {
-    let (mut s, sheet) = fresh();
-    let t = s.topology(Some(sheet), false).unwrap();
-    let pick = |axis: usize| t.faces.iter().find(|f| f.normal.is_some_and(|n| n[axis] > 0.9)).unwrap().id;
-    let (x, y) = (pick(0), pick(1));
-    let (id, r) = s
-        .draft(&Draft { body: Some(sheet), faces: Sel::Ids(vec![x]), neutral: Sel::Ids(vec![y]), angle: v(5.), flip: false, name: None })
-        .unwrap();
-    assert!(r.errors.is_empty());
-    let b = info(&s, id);
-    assert!(b.sheet);
-    let tan = 5f64.to_radians().tan();
-    let hand = 160. / 5f64.to_radians().cos() + 160. + 200. + (20. + 16. * tan) * 10.;
-    close(b.area, hand, 1e-2, "drafted tube area");
-    close(b.bbox[3], 10. + 16. * tan, 1e-2, "the far end of the wall leans out");
-}
-
-/// Refused by QymCAD, the document unchanged: remove_face, fillet (`solid tool on a sheet`), push_face (`push face on a sheet`),
-/// split (the kernel counts no two pieces).
+/// Refused by QymCAD itself, the document unchanged: fillet (`solid tool on a sheet`) and push_face (`push face on a sheet`).
 #[test]
 fn probe_tools_the_kernel_refuses_on_a_sheet_stay_refused_and_change_nothing() {
     let (mut s, sheet) = fresh();
     let side = faces(&mut s, sheet)[1];
     let before = serde_json::to_string(&s.result_bodies()).unwrap();
-    let e = refused(s.remove_face(Some(sheet), &Sel::Ids(vec![side]), None));
-    assert!(e.contains("cannot be removed"), "{e}");
     let e = refused(s.fillet(Some(sheet), &Sel::Kind(SelectionKind::Line), &v(1.), None));
     assert!(e.contains("solid tool on a sheet"), "{e}");
     let e = refused(s.push_face(Some(sheet), &Sel::Ids(vec![side]), &v(2.), None));
     assert!(e.contains("push face on a sheet"), "{e}");
-    let e = refused(s.split(&SplitOptions {
-        body: Some(sheet),
-        plane: PlaneRef::Base(BaseName::XY),
-        offset: v(5.),
-        name: None,
-        piece_names: None,
-    }));
-    assert!(e.contains("split plane cuts nothing"), "{e}");
     assert_eq!(serde_json::to_string(&s.result_bodies()).unwrap(), before);
 }
 
@@ -419,6 +340,159 @@ fn chamfer_on_a_sheet_is_refused_as_in_the_app_f197() {
     let solid = box_xy(&mut s, 20., 16., 10.);
     let (_, r) = s.chamfer(Some(solid), &Sel::Kind(SelectionKind::Line), &v(1.), None, None).unwrap();
     assert!(r.errors.is_empty());
+}
+
+// ---- (d2) the tools the GUI does not offer on a sheet (F-200) ----
+
+/// A hole through the top of a solid, as the plain control for `hole`.
+fn hole_args(body: Id, face: u32) -> Hole {
+    Hole {
+        body: Some(body),
+        face: Sel::Ids(vec![face]),
+        at: None,
+        offset: None,
+        diameter: v(4.),
+        depth: Some(v(6.)),
+        kind: HoleKind::Plain,
+        dia2: None,
+        depth2: None,
+        name: None,
+    }
+}
+
+fn face_with_normal(s: &mut Session, body: Id, axis: usize, sign: f64) -> u32 {
+    s.topology(Some(body), false).unwrap().faces.iter().find(|f| f.normal.is_some_and(|n| n[axis] * sign > 0.9)).unwrap().id
+}
+
+/// The tester's GUI check (2026-11-16): on a Part holding a solid and a sheet, hole, draft, remove_face, split, split_face, mirror and a
+/// boolean with the sheet as A do not take the sheet (the GUI answers "nothing there" or cannot select it). Each is refused here, naming the
+/// body as a sheet, with the document unchanged; the same tool on the solid beside it works, and a sheet's FACE still serves as a plane.
+#[test]
+fn the_tools_the_gui_does_not_offer_on_a_sheet_are_refused_with_the_document_unchanged_f200() {
+    let (mut s, sheet) = fresh();
+    let solid = box_xy(&mut s, 40., 40., 20.);
+    let side = face_with_normal(&mut s, sheet, 0, 1.);
+    let sheet_top_edge_face = faces(&mut s, sheet)[0];
+    let marks = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_point(marks, &v(0.), &v(0.), false).unwrap();
+    s.rebuild();
+    let before = serde_json::to_string(s.project()).unwrap();
+    let check = |what: &str, e: String| {
+        assert!(e.contains(&format!("body {sheet} is a sheet")) && e.contains("F-200"), "{what}: {e}");
+    };
+    check("hole", refused(s.hole(&hole_args(sheet, side))));
+    let by_sketch = HoleSketch {
+        body: Some(sheet),
+        sketch: marks,
+        points: None,
+        flip: false,
+        diameter: v(4.),
+        depth: Some(v(6.)),
+        kind: HoleKind::Plain,
+        dia2: None,
+        depth2: None,
+        name: None,
+    };
+    check("hole by sketch", refused(s.hole_by_sketch(&by_sketch)));
+    let draft = Draft { body: Some(sheet), faces: Sel::Ids(vec![side]), neutral: Sel::Ids(vec![sheet_top_edge_face]), angle: v(5.), flip: false, name: None };
+    check("draft", refused(s.draft(&draft)));
+    check("remove_face", refused(s.remove_face(Some(sheet), &Sel::Ids(vec![side]), None)));
+    for plane in [PlaneRef::Base(BaseName::XY), PlaneRef::Face { body: sheet, face: side }] {
+        let split = SplitOptions { body: Some(sheet), plane: plane.clone(), offset: v(5.), name: None, piece_names: None };
+        check("split", refused(s.split(&split)));
+        let split_face = SplitFaceOptions { body: Some(sheet), plane, offset: v(5.), name: None };
+        check("split_face", refused(s.split_face(&split_face)));
+    }
+    for keep in [true, false] {
+        check("mirror", refused(s.mirror(Some(sheet), &PlaneRef::Base(BaseName::YZ), keep, None)));
+        // A sheet as the object is refused also when the plane is a face of the solid.
+        let top = face_with_normal(&mut s, solid, 2, 1.);
+        check("mirror, face plane", refused(s.mirror(Some(sheet), &PlaneRef::Face { body: solid, face: top }, keep, None)));
+    }
+    for op in [BooleanOp::Cut, BooleanOp::Union, BooleanOp::Intersect] {
+        check("body_boolean", refused(boolean(&mut s, sheet, solid, op)));
+    }
+    assert_eq!(serde_json::to_string(s.project()).unwrap(), before, "no refusal changed the document");
+
+    // The solid beside the sheet still takes each of them.
+    let top = face_with_normal(&mut s, solid, 2, 1.);
+    let (hole, r) = s.hole(&hole_args(solid, top)).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    let (x, bottom) = (face_with_normal(&mut s, hole, 0, 1.), face_with_normal(&mut s, hole, 2, -1.));
+    let draft = Draft { body: Some(hole), faces: Sel::Ids(vec![x]), neutral: Sel::Ids(vec![bottom]), angle: v(5.), flip: false, name: None };
+    let (_, r) = s.draft(&draft).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+}
+
+/// remove_face and the split/mirror family on the solid: the same tools, the solid as the object, a sheet's face as the plane.
+#[test]
+fn a_sheets_face_still_works_as_a_plane_for_split_split_face_and_mirror_on_a_solid_f200() {
+    let plane_of_sheet = |s: &mut Session, sheet: Id| PlaneRef::Face { body: sheet, face: face_with_normal(s, sheet, 0, 1.) };
+    // split: the +x wall of the tube is the plane x = 10; the block spans x -20..20.
+    let (mut s, sheet) = fresh();
+    let solid = box_xy(&mut s, 40., 40., 20.);
+    let plane = plane_of_sheet(&mut s, sheet);
+    let r = s.split(&SplitOptions { body: Some(solid), plane, offset: v(0.), name: None, piece_names: None }).unwrap();
+    assert_eq!(r.pieces.len(), 2);
+    // split_face
+    let (mut s, sheet) = fresh();
+    let solid = box_xy(&mut s, 40., 40., 20.);
+    let plane = plane_of_sheet(&mut s, sheet);
+    let r = s.split_face(&SplitFaceOptions { body: Some(solid), plane, offset: v(0.), name: None }).unwrap();
+    assert!(r.faces.after > r.faces.before);
+    // mirror: the block, about x = 10
+    let (mut s, sheet) = fresh();
+    let solid = box_xy(&mut s, 40., 40., 20.);
+    let plane = plane_of_sheet(&mut s, sheet);
+    let (id, r) = s.mirror(Some(solid), &plane, false, None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    close(info(&s, id).bbox[0], 0., 1e-3, "the block 20..-20 mirrored about x=10 spans 0..40");
+    // remove_face: a solid with a blind hole heals; the same node is refused on the sheet.
+    let (mut s, sheet) = fresh();
+    let solid = box_xy(&mut s, 40., 40., 20.);
+    let top = face_with_normal(&mut s, solid, 2, 1.);
+    let (hole, _) = s.hole(&hole_args(solid, top)).unwrap();
+    let t = s.topology(Some(hole), false).unwrap();
+    let wall = t.faces.iter().find(|f| f.kind == FaceKind::Cylinder).unwrap().id;
+    let bottom = t.faces.iter().find(|f| f.normal.is_some_and(|n| n[2] > 0.99) && (f.centroid[2] - 14.).abs() < 1e-6).unwrap().id;
+    let (_, _, r) = s.remove_face(Some(hole), &Sel::Ids(vec![wall, bottom]), None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert!(s.result_bodies().iter().any(|b| b.id == sheet && b.sheet), "the sheet is untouched");
+}
+
+/// A node a GUI file holds on a sheet (the app builds Shell/Draft/RemoveFace there when the file is made through the core API) is not
+/// judged on open, but a re-pick (`feature`) of it applies the same refusal as creation, the document unchanged.
+#[test]
+fn repicking_a_shell_draft_or_remove_face_node_on_a_sheet_is_refused_f200() {
+    use qymcad_core::feature::ShellSide;
+    let (mut s, sheet) = fresh();
+    let path = common::scratch("t0-f200-repick-src.qcad");
+    s.save(Some(&path)).unwrap();
+    let mut model = common::gui_reorder_load(&path);
+    let t = model.project.regen_faces[&sheet].iter().map(|f| (f.id, f.normal)).collect::<Vec<_>>();
+    let pick = |axis: usize| t.iter().find(|(_, n)| n[axis] > 0.9).unwrap().0;
+    let (x, y) = (pick(0), pick(1));
+    let shell = model.project.add_shell_mode(sheet, 1., vec![x], ShellSide::Inward);
+    let draft = model.project.add_draft(sheet, vec![x], y, 5., false);
+    let face = model.project.regen_faces[&sheet].iter().find(|f| f.id == x).unwrap();
+    let key = qymcad_core::feature::FaceKey { index: 0, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: x };
+    let remove = model.project.add_remove_face(sheet, vec![key]);
+    let breps: Vec<(Id, Vec<u8>)> = {
+        let _gate = qymcad_kernel::kernel_gate();
+        model.shapes.iter().filter_map(|(id, sh)| sh.to_brep_bytes().map(|b| (*id, b))).collect()
+    };
+    let with_nodes = common::scratch("t0-f200-repick.qcad");
+    qymcad_io::save_project_with_brep(&model.project, with_nodes.to_str().unwrap(), &breps).unwrap();
+    let (mut s, _) = Session::open(&with_nodes).unwrap();
+    let before = serde_json::to_string(s.project()).unwrap();
+    for (what, e) in [
+        ("shell", refused(s.repick_shell(shell, &Sel::Ids(vec![y])))),
+        ("draft", refused(s.repick_draft(draft, &Sel::Ids(vec![x]), None))),
+        ("remove_face", refused(s.repick_remove_face(remove, &Sel::Ids(vec![x])))),
+    ] {
+        assert!(e.contains(&format!("body {sheet} is a sheet")) && e.contains("F-200"), "{what}: {e}");
+    }
+    assert_eq!(serde_json::to_string(s.project()).unwrap(), before);
 }
 
 // ---- (e) thicken of a sheet ----

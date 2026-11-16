@@ -165,11 +165,7 @@ impl Session {
                 )));
             }
             let src = s.source_body(options.body)?;
-            if s.p.bodies.iter().any(|b| b.id == src && b.sheet) {
-                return Err(Error::Invalid(format!(
-                    "body {src} is a sheet (a surface without volume): Split faces works on the faces of a solid"
-                )));
-            }
+            s.refuse_sheet_tool(src, "split faces", "a sheet's face works only as the cutting plane (`plane` face); the split acts on a solid")?;
             // A clone of a Part is read-only; say so before anything about the plane, whatever frame the clone stands in.
             if let Some(source) = crate::instances::instance_links(&s.p).get(&s.p.body_owner(src).unwrap_or(0)) {
                 return Err(Error::Assembly(format!("part {} is an instance of {source}; edit the source part", s.p.body_owner(src).unwrap_or(0))));

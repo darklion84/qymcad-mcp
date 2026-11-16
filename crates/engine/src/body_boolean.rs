@@ -66,6 +66,13 @@ impl Session {
                 }
                 let a = s.source_body(Some(options.a))?;
                 let b = s.source_body(Some(options.b))?;
+                if s.is_sheet(a) {
+                    return Err(crate::modifiers::sheet_refusal(
+                        a,
+                        "QymCAD cannot take a sheet as the boolean's body A (FINDINGS F-200); A must be a solid, thicken it first \
+                         (a sheet as B is the app's own native failure and stays as it is)",
+                    ));
+                }
                 if s.p.body_owner(a) != s.p.body_owner(b) {
                     return Err(Error::Invalid("body_boolean operands must belong to the same part".into()));
                 }

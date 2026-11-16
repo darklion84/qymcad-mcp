@@ -125,6 +125,35 @@ fn shell_and_a_chamfer_with_boundary_edges_are_refused_on_a_sheet() {
     assert!(e.contains("is a sheet") && e.contains("F-197"), "{e}");
 }
 
+/// The GUI check (F-200): hole, draft, remove_face, split, split_face, mirror and a boolean with the sheet as A are refused through the
+/// tools, the document unchanged; the block beside the sheet takes the same tools, and a sheet's face still serves as a plane.
+#[test]
+fn the_tools_the_gui_does_not_offer_on_a_sheet_are_refused_through_the_tools_f200() {
+    let mut r = solid_then_sheet();
+    let before = call(&mut r, "doc_info", json!({}));
+    let cases = [
+        ("hole", json!({"body": "tube", "face": {"facing": "+x"}, "diameter": 4, "depth": 6})),
+        ("draft", json!({"body": "tube", "faces": {"facing": "+x"}, "neutral": {"facing": "+y"}, "angle": 5})),
+        ("remove_face", json!({"body": "tube", "faces": {"facing": "+x"}})),
+        ("split", json!({"body": "tube", "plane": "XY", "offset": 5})),
+        ("split_face", json!({"body": "tube", "plane": "XY", "offset": 5})),
+        ("mirror", json!({"body": "tube", "plane": "YZ"})),
+        ("body_boolean", json!({"a": "tube", "b": "block", "op": "cut"})),
+    ];
+    for (tool, args) in cases {
+        let e = refused(&mut r, tool, args);
+        assert!(e.contains("is a sheet") && e.contains("F-200"), "{tool}: {e}");
+    }
+    assert_eq!(call(&mut r, "doc_info", json!({})), before, "no refusal changed the document");
+    // The block takes the same tools (mirror about a face of the sheet: the +x wall is the plane x = 10).
+    let hole = call(&mut r, "hole", json!({"body": "block", "face": {"facing": "+z"}, "diameter": 4, "depth": 6}));
+    let topology = call(&mut r, "topology", json!({"body": "tube"}));
+    let wall = topology["faces"].as_array().unwrap().iter().find(|f| f["normal"][0].as_f64().is_some_and(|x| x > 0.9)).unwrap()["id"].clone();
+    let plane = json!({"body": "tube", "face": wall});
+    let mirrored = call(&mut r, "mirror", json!({"body": hole["body"], "plane": plane, "keep": false}));
+    assert!(mirrored.to_string().contains("rebuild"), "{mirrored}");
+}
+
 // ---- (e) thicken of a sheet ----
 
 #[test]

@@ -203,8 +203,20 @@ fn seam_note((id, mut report): (Id, Rebuild), dropped: usize) -> (Id, Rebuild) {
 }
 
 /// The refusal for a tool whose result on a sheet QymCAD gets wrong without saying so: names the sheet and the reason.
-fn sheet_refusal(src: Id, reason: &str) -> Error {
+pub(crate) fn sheet_refusal(src: Id, reason: &str) -> Error {
     Error::Invalid(format!("body {src} is a sheet (a surface without volume): {reason}"))
+}
+
+impl Session {
+    /// A tool the app's GUI does not let take a sheet as its object (checked in the app 2026-11-16, FINDINGS F-200: on a Part holding
+    /// a solid and a sheet the sheet's faces and edges are rejected, "nothing there"; a Part holding only sheets says "no body in
+    /// the part"). `tool` is the app's name for it, `hint` says what to do instead. Nothing is built; the document is unchanged.
+    pub(crate) fn refuse_sheet_tool(&self, src: Id, tool: &str, hint: &str) -> Result<()> {
+        if !self.is_sheet(src) {
+            return Ok(());
+        }
+        Err(sheet_refusal(src, &format!("QymCAD offers no {tool} on a sheet (FINDINGS F-200); {hint}")))
+    }
 }
 
 /// Evaluate a dimension; positive values only.
@@ -555,6 +567,7 @@ impl Session {
             FeatureKind::Shell { src, body, .. } => Some((*src, *body)),
             _ => None,
         })?;
+        self.refuse_sheet_tool(src, "shell", "use thicken to give a sheet a wall")?;
         let (ids, faces_ref) = self.shell_face_ref(src, open_faces)?;
         let bodies = self.repick_rebuild(feature, "shell", |kind, _| {
             let FeatureKind::Shell { faces: stored, .. } = kind else {
@@ -636,6 +649,7 @@ impl Session {
         let mut dropped = None;
         let result = self.atomic(|s| {
             let src = s.source_body(a.body)?;
+            s.refuse_sheet_tool(src, "draft", "thicken it first")?;
             let angle = draft_angle(a.angle.eval(&s.p.param_map())?)?;
             let (ids, faces_ref) = s.draft_face_ref(src, &a.faces)?;
             let (neutral, neutral_ref) = s.draft_neutral(src, &a.neutral)?;
@@ -662,6 +676,7 @@ impl Session {
             FeatureKind::Draft { src, body, neutral, .. } => Some((*src, *body, neutral.clone())),
             _ => None,
         })?;
+        self.refuse_sheet_tool(src, "draft", "thicken it first")?;
         let (ids, faces_ref) = self.draft_face_ref(src, faces)?;
         let (neutral_id, neutral_ref) = match neutral {
             Some(sel) => self.draft_neutral(src, sel)?,
@@ -732,6 +747,7 @@ impl Session {
         let mut selected = Vec::new();
         self.atomic(|s| {
             let src = s.source_body(body)?;
+            s.refuse_sheet_tool(src, "remove face", "thicken it first")?;
             let ids = s.resolve_sel(src, Element::Faces, faces)?;
             selected = ids.clone();
             if ids.is_empty() {
@@ -765,6 +781,7 @@ impl Session {
             FeatureKind::RemoveFace { src, body, .. } => Some((*src, *body)),
             _ => None,
         })?;
+        self.refuse_sheet_tool(src, "remove face", "thicken it first")?;
         let ids = self.resolve_sel(src, Element::Faces, faces)?;
         if ids.is_empty() {
             return Err(Error::Invalid(format!("the face selection matched no face of source body {src}")));
@@ -785,6 +802,7 @@ impl Session {
         self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(a.body)?;
+            s.refuse_sheet_tool(src, "hole", "thicken it first")?;
             let key = s.planar_face(src, &a.face)?;
             let diameter = positive(s, &a.diameter, "hole diameter")?;
             let depth = match &a.depth {
