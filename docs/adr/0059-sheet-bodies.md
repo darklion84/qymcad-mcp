@@ -32,10 +32,10 @@ Fixture: a ruled `loft surface:true op:new_body` between a 20 x 16 rectangle on 
 | `mirror` (keep or not) about an offset plane | Image at x 50..70 (area 720), with keep both halves in one sheet body (1440) | Right, kept |
 | `linear_array` / `circular_array` | Copies of the surface in one sheet body, area 3 x 720; overlapping copies share face names and give the "ambiguous native face ids" warning | Right, kept |
 | `hole` | The cylinder cuts a round opening in each wall it crosses (blind 6: one wall, 720 - 4 pi; through all: both walls) | Right, kept |
-| `shell` | Green node, a smaller sheet with the open face's neighbours cut back (area 480 / 520, no wall) | Wrong silently: refused, F-196 |
+| `shell` | Green node, a smaller sheet with the open face's neighbours cut back (area 480 / 520, no wall) | Wrong silently through the core API; the GUI offers no shell on a sheet (checked in the app): refused, F-196 |
 | `draft` | The wall tilts about the neutral face's plane and its neighbours follow: area 160/cos 5 + 160 + 200 + (20 + 16 tan 5) x 10 = 734.609 | Right, kept |
 | `remove_face` | Refused ("neighbouring surfaces do not extend") | Native refusal, kept |
-| `chamfer` | A shared edge is bevelled right (720 - 10 x (2 - sqrt 2)); boundary edges picked with them are skipped silently; alone they fail as "too big"; asymmetric on a boundary edge was already refused | Wrong silently in the mixed case: refused, F-197 |
+| `chamfer` | A shared edge is bevelled right (720 - 10 x (2 - sqrt 2)); boundary edges picked with them are skipped silently; alone they fail as "too big"; asymmetric on a boundary edge was already refused | Wrong silently through the core API; the GUI offers no chamfer on a sheet and sheet edges cannot be picked (checked in the app): refused on any sheet, F-197 |
 | `fillet` | Refused by the core ("solid tool on a sheet") | Native refusal, kept |
 | `push_face` | Refused by the core ("push face on a sheet") | Native refusal, kept |
 | `thicken` | The whole sheet is offset from one face into a solid; either sign (next section) | Right, explicit and tested |

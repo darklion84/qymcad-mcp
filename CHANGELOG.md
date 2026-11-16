@@ -16,7 +16,6 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - `surface_replace` with `feature` and only `surface` returned `selected_faces: []` while the node still holds its faces; it returns the stored face ids now.
 - `export` reported `area_mm2` 0 for an imported mesh body that has no cached faces (a file saved without `faces/`) while `doc_info` gave its triangle area; both give the triangle area now. A freshly imported mesh body was already right.
-- The F-197 guard (a chamfer whose selection holds a one-sided boundary edge of a sheet) holds on a `chamfer` re-pick (`feature`) too: it went through and QymCAD bevelled the shared edges only, silently.
 - A sheet no longer raises the false warning "result body has N shells and 0 solids; may contain a sealed internal void" on rebuild and on `doc_open` (a void needs a solid; real solids still warn).
 - A tool that takes no body defaults to the part's last solid and skips sheets, as the app does (`extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others); a sheet is the default only when it is the only body of the document (a part holding nothing else). `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
 
@@ -25,7 +24,7 @@ All notable changes to this project are documented here. The format follows
 - The `stitch` check against a collapsed solid (F-198) compares the kernel volume with the exact reporting mesh and an allowance of `area * deflection` plus 0.1 %, not with the display mesh by a flat 5 %: real thin curved solids (a lens 11 % short at Draft) are no longer refused; a wide tolerance that collapses a gap still is. The refusal names both volumes.
 - Descriptions of `face_copy`, `offset_surface`, `surface_replace`, `stitch` and `thicken` are shorter (the `tools/list` budget is unchanged and `trim` needed room); no behaviour changed.
 - The shared `Num` schema description, the "name for the new feature" docs and the "ids are stale" suffix of the feature tools are shorter, with the same meaning (the `tools/list` budget is unchanged and `patch` needed room).
-- `shell` of a sheet is refused (QymCAD returns a cut-back sheet instead of a wall, F-196) and so is a `chamfer` whose selection holds a one-sided boundary edge of a sheet (QymCAD leaves it unchamfered silently, F-197). The other tools were probed on a loft sheet (body_boolean, move, mirror, arrays, hole, draft, remove_face, fillet, push_face, thicken): the table is in ADR 0059.
+- `shell` and `chamfer` on a sheet are refused, as in the app's GUI, which offers neither on a sheet (checked in the app; through the core API they give a cut-back sheet, F-196, or skip boundary edges silently, F-197). The other tools were probed on a loft sheet (body_boolean, move, mirror, arrays, hole, draft, remove_face, fillet, push_face, thicken): the table is in ADR 0059.
 
 ## 0.1.1-dev.20261026.19 — rest of the external review (B1, M4, M8, C6)
 

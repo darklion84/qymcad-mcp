@@ -373,7 +373,7 @@ impl Session {
             dropped_seams = dropped;
             let reference = a.reference_face.as_ref().map(|face| s.one_face(src, face).map(|f| f.id)).transpose()?.unwrap_or(0);
             s.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
-            s.refuse_sheet_boundary_edges(src, &ids)?;
+            s.refuse_sheet_chamfer(src)?;
             let id = s.in_component(s.p.body_owner(src), |p| {
                 p.add_chamfer_ex(src, dist, ChamferShape { mode, d2, flip: a.flip, ref_face: reference }, ids)
             });
@@ -399,26 +399,14 @@ impl Session {
         .map_err(|error| chamfer_failure_advice(error, revolve_source))
     }
 
-    /// A chamfer picked together with the one-sided boundary edges of a sheet: QymCAD chamfers the edges shared by two faces
-    /// and leaves the boundary ones as they were, with no word (F-197); alone they fail as "too big". The public pair API
-    /// omits exactly those edges.
-    fn refuse_sheet_boundary_edges(&self, src: Id, ids: &[u32]) -> Result<()> {
+    /// Chamfer on a sheet: QymCAD's GUI offers none (a Part holding only sheets says "no body in the part"; sheet edges cannot
+    /// be picked), checked in the app 2026-11-16 (FINDINGS F-197). Through the core API it bevels the shared edges and leaves
+    /// boundary edges as they were, silently. The server keeps the GUI's limit.
+    fn refuse_sheet_chamfer(&self, src: Id) -> Result<()> {
         if !self.is_sheet(src) {
             return Ok(());
         }
-        let pairs = crate::session::edge_face_pairs(&self.shapes[&src])?;
-        let boundary: Vec<String> = ids.iter().filter(|id| !pairs.iter().any(|(e, _, _)| e == *id)).map(u32::to_string).collect();
-        if boundary.is_empty() {
-            return Ok(());
-        }
-        Err(sheet_refusal(
-            src,
-            &format!(
-                "edges {} are boundary edges with a single face, which QymCAD leaves unchamfered without a word when they are picked with \
-                 shared edges (FINDINGS F-197); pick only edges shared by two faces",
-                boundary.join(", ")
-            ),
-        ))
+        Err(sheet_refusal(src, "QymCAD offers no chamfer on a sheet (FINDINGS F-197); thicken it first"))
     }
 
     /// Inspect the native retained chamfer mode and reference side.
@@ -547,7 +535,7 @@ impl Session {
             None => old_reference,
         };
         self.chamfer_adjacency(src, &ids, reference, mode != ChamferMode::Symmetric)?;
-        self.refuse_sheet_boundary_edges(src, &ids)?;
+        self.refuse_sheet_chamfer(src)?;
         let bodies = self.repick_rebuild(feature, "chamfer", |kind, _| {
             let FeatureKind::Chamfer { edges, ref_face, .. } = kind else {
                 return None;
@@ -585,11 +573,7 @@ impl Session {
         self.atomic(|s| {
             let src = s.source_body(body)?;
             if s.is_sheet(src) {
-                return Err(sheet_refusal(
-                    src,
-                    "Shell hollows a solid; on a sheet QymCAD builds no wall, it returns a smaller sheet with the open face's neighbours \
-                     cut back (FINDINGS F-196). Use thicken to give a sheet a wall",
-                ));
+                return Err(sheet_refusal(src, "QymCAD offers no shell on a sheet (FINDINGS F-196); use thicken to give a sheet a wall"));
             }
             let t = positive(s, thickness, "shell thickness")?;
             let (ids, _) = s.shell_face_ref(src, open_faces)?;
