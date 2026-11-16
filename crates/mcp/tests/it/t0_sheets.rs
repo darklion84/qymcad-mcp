@@ -79,3 +79,17 @@ fn the_assembly_metrics_of_a_part_carry_the_sheet_flag_and_area() {
     assert!(metrics.iter().any(|m| m["sheet"] == false));
 }
 
+// ---- (b) the false warning ----
+
+#[test]
+fn a_sheet_in_doc_info_and_in_a_reopened_file_raises_no_sealed_void_warning() {
+    let mut r = solid_then_sheet();
+    let sealed = |v: &Value| v["warnings"].as_array().unwrap().iter().any(|w| w.to_string().contains("sealed"));
+    assert!(!sealed(&call(&mut r, "doc_info", json!({}))));
+    let path = std::env::temp_dir().join(format!("t0-sheet-warn-{}.qcad", std::process::id()));
+    call(&mut r, "doc_save", json!({"path": path.to_str().unwrap()}));
+    let opened = call(&mut r, "doc_open", json!({"path": path.to_str().unwrap()}));
+    assert!(!opened.to_string().contains("sealed"), "{opened}");
+    let _ = std::fs::remove_file(path);
+}
+

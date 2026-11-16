@@ -508,7 +508,8 @@ impl Session {
             let bbox_changed = bounds.is_some_and(|(old, new)| old.iter().zip(new).any(|(a, b)| (a - b).abs() > 0.05));
             let faces = old.faces.zip(new.faces);
             let faces_changed = faces.is_some_and(|(old, new)| old != new);
-            let sealed = old.shells > old.solids;
+            // A sheet has shells and no solid: nothing to seal, so it is not a void (only a real solid can hold one).
+            let sealed = old.solids > 0 && old.shells > old.solids;
             let changed = (volume - rebuilt).abs() > volume_tol
                 || bbox_changed
                 || old.shells != new.shells
@@ -939,7 +940,8 @@ impl Session {
                     node.kind.consumed_body().and_then(|id| self.shapes.get(&id)).map_or((1, 1), |sh| (sh.shell_count(), sh.solid_count()));
                 let old = before_counts.get(&body).copied().unwrap_or(source);
                 // Each disconnected solid contributes one outer shell; only excess shells indicate cavities.
-                let excess = shells.saturating_sub(solids);
+                // A sheet (no solid) has no cavity to seal: the check is for solids.
+                let excess = if solids == 0 { 0 } else { shells.saturating_sub(solids) };
                 if excess > old.0.saturating_sub(old.1) || excess > source.0.saturating_sub(source.1) {
                     self.advisory_warnings.push(AdvisoryWarning::Geometry(self.issue(
                         node.id,

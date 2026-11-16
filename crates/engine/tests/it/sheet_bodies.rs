@@ -100,3 +100,26 @@ fn export_marks_a_sheet_and_leaves_out_its_meaningless_mesh_volume() {
     }
 }
 
+// ---- (b) the false warning ----
+
+/// A sheet has a shell and no solid; the rebuild and the open both used to warn of a sealed void.
+#[test]
+fn a_sheet_is_not_a_sealed_void() {
+    let mut s = Session::new_part();
+    let low = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_rect(low, &v(0.), &v(0.), &v(20.), &v(16.), false).unwrap();
+    let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &v(10.), None).unwrap();
+    let high = s.sketch_create(&PlaneRef::Plane(plane), None).unwrap();
+    s.sketch_rect(high, &v(0.), &v(0.), &v(20.), &v(16.), false).unwrap();
+    let sections = vec![LoftSection { sketch: low, profile: None }, LoftSection { sketch: high, profile: None }];
+    let (_, r) = s.loft(&Loft { sections, ruled: true, op: Op::NewBody, target: None, surface: true, name: None }).unwrap();
+    let sealed = |warnings: Vec<String>| warnings.into_iter().filter(|w| w.contains("sealed")).collect::<Vec<_>>();
+    assert!(sealed(r.warnings.iter().map(|w| w.to_string()).collect()).is_empty(), "{:?}", r.warnings);
+    assert!(sealed(s.info().warnings).is_empty(), "{:?}", s.info().warnings);
+    let path = common::scratch("t0-sheet-warning.qcad");
+    s.save(Some(&path)).unwrap();
+    let (opened, r) = Session::open(&path).unwrap();
+    assert!(sealed(r.warnings.iter().map(|w| w.to_string()).collect()).is_empty(), "{:?}", r.warnings);
+    assert!(sealed(opened.info().warnings).is_empty(), "{:?}", opened.info().warnings);
+}
+
