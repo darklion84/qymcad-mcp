@@ -43,7 +43,7 @@ fn sweep(root: &Path, own: &str) {
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(pid) = name.to_str().and_then(|n| n.strip_suffix(".lock")) else { continue };
-        if pid == own {
+        if pid == own || pid.is_empty() || !pid.bytes().all(|b| b.is_ascii_digit()) {
             continue;
         }
         let fresh =
@@ -76,9 +76,11 @@ fn sweep_removes_the_directories_of_gone_processes_and_keeps_live_and_fresh_ones
     live.lock().unwrap();
     drop(make("3", SystemTime::now())); // created a moment ago, maybe not locked yet
     drop(make("4", old)); // this process's own
+    File::create(root.join("...lock")).unwrap().set_modified(old).unwrap(); // not a pid: "..", the temp directory itself, must never be swept
     sweep(&root, "4");
     assert!(!root.join("1").exists() && !root.join("1.lock").exists());
     for kept in ["2", "3", "4"] {
         assert!(root.join(kept).join("file").exists() && root.join(format!("{kept}.lock")).exists(), "{kept} must stay");
     }
+    assert!(root.join("...lock").exists() && root.parent().unwrap().exists());
 }
