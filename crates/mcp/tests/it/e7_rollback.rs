@@ -152,6 +152,9 @@ fn rollback(c: &mut Client, args: Value, expected: Value, changed: bool, bodies:
         let mut metadata = value.clone();
         metadata.as_object_mut().unwrap().remove("volume_mm3");
         metadata.as_object_mut().unwrap().remove("bbox");
+        // The surface area is covered by the sheet tests; here only that a solid reports one.
+        assert!(metadata.as_object_mut().unwrap().remove("area_mm2").and_then(|a| a.as_f64()).is_some_and(|a| a > 0.0));
+        assert_eq!(metadata.as_object_mut().unwrap().remove("sheet"), Some(json!(false)));
         assert_eq!(
             metadata,
             json!({"id":id,"name":name,"body_name":"Body 1","visible":true,"color_rgb":[10,20,30],"color_source":"manual"})
