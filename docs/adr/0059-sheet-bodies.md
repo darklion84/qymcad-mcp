@@ -54,4 +54,4 @@ The app's Thicken takes one face and a thickness in -100000..100000 and refuses 
 
 - Tools: `doc_info`, `export`, `thicken`, `shell`, `chamfer`, `sketch_project` and the server instructions say what changed; `docs/TOOLS.md` is regenerated.
 - Tests: `sheet_bodies.rs` (engine; each behavioural change fails without its fix: the report fields, the sealed-void warning, the default body, the shell and chamfer refusals, the negative thicken), `t0_sheets.rs` (the tools), `t0_probes.rs` (the app's result, to be dropped with the refusals when QymCAD fixes F-196/F-197).
-- Not covered: the six surface commands themselves (P20-P24, P27), the "sheet closes what it replaces" and boundary pre-checks they need, and a rebuild-time judgement of Shell/Chamfer nodes the app made on a sheet.
+- Not covered: the surface commands (P21-P24; P20 and P27 are ADR 0060), the "sheet closes what it replaces" and boundary pre-checks they need, and a rebuild-time judgement of Shell/Chamfer nodes the app made on a sheet.

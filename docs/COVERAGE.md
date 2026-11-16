@@ -23,14 +23,14 @@ This matrix covers every variant of the four pinned enums `FeatureKind`, `PartTo
 | P17 | Linear pattern | partial | Third direction | `linear_array` | `FeatureKind::LinearArray,PartTool::LinearPattern` |
 | P18 | Circular pattern | covered | — | `circular_array` | `FeatureKind::CircularArray,PartTool::CircularPattern` |
 | P19 | Primitives | covered | One tool, six kinds; the app's field limits on every edit (F-180, F-181, F-182), a primitive over a suppressed body refused (F-185); placement at a datum point or vertex only (no plane or face frame); united with the Part's body as in the app (ADR 0056) | `primitive` | `FeatureKind::Box3,FeatureKind::Cylinder,FeatureKind::Sphere,FeatureKind::Cone,FeatureKind::Torus,FeatureKind::Prism,PartTool::Box,PartTool::Cylinder,PartTool::Sphere,PartTool::Cone,PartTool::Torus,PartTool::Prism` |
-| P20 | Face copy | not covered | Surface operation | none | `FeatureKind::FaceCopy,PartTool::FaceCopy` |
+| P20 | Face copy | covered | Faces of a solid or a sheet into one new sheet; source not consumed; faces stored as picks, `feature` re-pick (ADR 0060) | `face_copy` | `FeatureKind::FaceCopy,PartTool::FaceCopy` |
 | P21 | Surface replace | not covered | Surface operation | none | `FeatureKind::SurfaceReplace,PartTool::SurfaceReplace` |
 | P22 | Patch | not covered | Surface operation | none | `FeatureKind::Patch,PartTool::Patch` |
 | P23 | Stitch | not covered | Surface operation | none | `FeatureKind::Stitch,PartTool::Stitch` |
 | P24 | Surface trim | not covered | Surface operation | none | `FeatureKind::Trim,PartTool::Trim` |
 | P25 | Boolean between bodies | covered | — | `body_boolean` | `FeatureKind::BodyBoolean` |
 | P26 | Recognise mesh as body | covered | Exact analytic recognition and polyhedron B-rep conversion; caps, ranges, closed-solid gate, formulas, persistence, downstream B-rep tools, batch and undo | `recognise` | `FeatureKind::MeshRecognised,FeatureKind::MeshSolid,PartTool::Recognise` |
-| P27 | Offset surface | not covered | Surface operation | none | `FeatureKind::OffsetSurface,PartTool::OffsetSurface` |
+| P27 | Offset surface | covered | Faces of a solid or a sheet moved along their normals into one new sheet; `dist` is a Num feature dimension (-10000..10000 as the app, 0 = copy in place), `dimension_set`, `feature` re-pick; native `OffsetPastRadius` and kernel failures are passed on (ADR 0060) | `offset_surface` | `FeatureKind::OffsetSurface,PartTool::OffsetSurface` |
 | P28 | Move / rotate body | covered | Parametric dx/dy/dz; literal angle/pivot; accumulated rotation onto nonliteral shift formulas refused (ADR 0033) | `move` | `FeatureKind::Move` |
 | D1 | Datum plane with offset | covered | — | `plane_offset` | `FeatureKind::Plane,PartTool::DatumPlane` |
 | D2 | Tilted datum plane | covered | Tilt X/Y and Turn; ancestry barriers and global/named drivers (ADR 0031) | `plane_offset` | — |

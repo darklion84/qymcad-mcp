@@ -6,6 +6,7 @@ All notable changes to this project are documented here. The format follows
 ## Unreleased
 
 ### Added
+- `face_copy` and `offset_surface` (ADR 0060, P20 and P27): the app's Copy faces and Offset surface. Faces of a body (solid or sheet) become a NEW sheet body beside the source, which is not consumed; several faces make one sheet. `offset_surface` takes `distance` (number or formula, stored as the feature dimension `dist`, so `dimension_set` edits it; the app's range -10000..10000 is held on creation and on every evaluated edit, 0 is a copy in place, outward of a solid is positive). `feature` re-picks the faces of an existing node. A sheet is never the default body of other tools: pass its id as `body`.
 - Sheet bodies (ADR 0059): `doc_info`, rebuild/tool results, `export` per-body entries and the assembly `local_metrics` report `sheet` and `area_mm2` (the sum of the face areas, from the kernel's faces) for every body. A sheet is an open surface: `volume_mm3` is 0 and `export` leaves out `mesh_volume_mm3` for it and says so in a per-body `note`.
 - `thicken` of a sheet takes either sign (the app's command does; positive along the face normal, negative against it; only 0 and a value past 100000 are refused). Solids keep F-150 (positive only). `dimension_set` and parameter edits follow the same rule for a sheet's Thicken node.
 
