@@ -197,6 +197,7 @@ const MODELLING_TOOLS: &[&str] = &[
     "surface_replace",
     "stitch",
     "trim",
+    "patch",
     "move",
     "linear_array",
     "circular_array",

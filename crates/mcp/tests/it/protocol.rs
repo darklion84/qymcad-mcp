@@ -285,6 +285,7 @@ fn lists_tools_with_object_schemas() {
         "surface_replace",
         "stitch",
         "trim",
+        "patch",
         "move",
         "linear_array",
         "circular_array",

@@ -66,7 +66,7 @@ pub struct ExtrudeArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -101,7 +101,7 @@ pub struct RevolveArgs {
     /// part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -155,7 +155,7 @@ pub struct SweepArgs {
     /// Body to modify (id or name). Default: the part's current body. Not allowed with op new_body.
     #[serde(default)]
     pub target: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -190,7 +190,7 @@ pub struct LoftArgs {
     /// A sheet through the sections instead of a solid; only with op new_body.
     #[serde(default)]
     pub surface: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -213,7 +213,7 @@ pub struct FilletArgs {
     /// Existing Fillet feature id/name to re-pick. With this set, `edges` is required and all other value fields are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused. Not accepted with `feature`.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -247,7 +247,7 @@ pub struct ChamferArgs {
     /// Existing Chamfer feature id/name to re-pick. With this set, value fields are refused; use `dimension_set`.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused. Not accepted with `feature`.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused. Not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -306,7 +306,7 @@ pub struct HoleArgs {
     /// the wide cylinder, countersink = depth of the cone. Must be less than the hole depth.
     #[serde(default)]
     pub depth2: Option<Num>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -330,7 +330,7 @@ pub struct ShellArgs {
     /// Existing Shell feature id/name to re-pick. With this set, `body`, `thickness`, `side` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -350,7 +350,7 @@ pub struct PushFaceArgs {
     /// Existing PushFace feature id/name to re-pick. With this set, `body`, `dist` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -381,7 +381,7 @@ pub struct DraftArgs {
     /// Existing Draft feature id/name to re-pick. With this set, `body`, `angle`, `flip` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -403,7 +403,7 @@ pub struct ThickenArgs {
     /// Existing Thicken feature id/name to re-pick. With this set, `body`, `thickness` and `name` are refused.
     #[serde(default)]
     pub feature: Option<ObjRef>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused; not accepted with `feature`.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused; not accepted with `feature`.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -518,6 +518,34 @@ pub struct TrimArgs {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+#[schemars(inline)]
+pub enum PatchMode {
+    Flat,
+    Tangent,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PatchArgs {
+    /// Body whose edges bound the patch (solid or sheet). Default: the part's current solid; not with `feature`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Boundary edges: one closed chain meeting end to end, or one ring. Frozen to ids. Required unless `feature` re-picks `mode` only.
+    #[serde(default)]
+    pub edges: Option<SelArg>,
+    /// "flat" (default) or "tangent" (meets the neighbouring faces smoothly). With `feature`, omitted keeps it.
+    #[serde(default)]
+    pub mode: Option<PatchMode>,
+    /// Existing Patch feature to re-pick `edges` and/or `mode`; `body` and `name` are refused with it.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature. Not with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 fn zero() -> Num {
     Num::Value(0.0)
 }
@@ -567,7 +595,7 @@ pub struct LinearArrayArgs {
     /// A second direction, for a grid.
     #[serde(default)]
     pub second: Option<ArrayDirArg>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -592,7 +620,7 @@ pub struct CircularArrayArgs {
     /// Default: world Z through the origin.
     #[serde(default)]
     pub axis: Option<AxisArg>,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -612,7 +640,7 @@ pub struct MirrorArgs {
     /// Keep the original as well (default true): one body with both halves. false: only the image.
     #[serde(default = "yes")]
     pub keep: bool,
-    /// Name for the new feature (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.
+    /// Name for the new feature (timeline node), usable instead of its id later; numeric names are refused.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -681,8 +709,7 @@ fn feature_json(r: Result<(Id, qymcad_engine::Rebuild), qymcad_engine::Error>) -
 /// Appended to every feature description.
 macro_rules! stale {
     () => {
-        " Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are \
-         stale — call topology again before picking more."
+        " Returns the new body id (now the part's current body); earlier face/edge ids are stale: call topology again."
     };
 }
 
@@ -1112,6 +1139,29 @@ pub fn tools() -> Vec<Tool> {
                 };
                 let sheet = rebuild.bodies.iter().find(|b| b.id == feature).map(|b| b.sheet);
                 Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "sheet": sheet, "rebuild": rebuild_json(&rebuild) }))
+            },
+        ),
+        tool(
+            "patch",
+            "Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch; the source stays. Edges must close (a chain meeting end to end, or one ring, else refused). A hole rim gives a disc; on a shelled opening pick the OUTER outline for the lid, the inner one for a smaller patch, never both (refused). `thicken` of the sheet makes a lid. Give `feature` to re-pick. Returns `feature` (= sheet id), `selected_edges`, `sheet`, `rebuild`.",
+            |st, a: PatchArgs| {
+                let s = st.doc()?;
+                let edges = a.edges.map(|e| e.resolve(s)).transpose()?;
+                let tangent = a.mode.map(|m| m == PatchMode::Tangent);
+                let (feature, selected, rebuild) = if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body` and `name` are not accepted".into());
+                    }
+                    if edges.is_none() && tangent.is_none() {
+                        return Err("with `feature`, give `edges` and/or `mode` to re-pick".into());
+                    }
+                    s.repick_patch(feature.resolve(s)?, edges.as_ref(), tangent).map_err(err)?
+                } else {
+                    let edges = edges.ok_or("`edges` is required unless `feature` is given")?;
+                    s.patch(opt_body(s, &a.body)?, &edges, tangent.unwrap_or(false), a.name.as_deref()).map_err(err)?
+                };
+                let sheet = rebuild.bodies.iter().find(|b| b.id == feature).map(|b| b.sheet);
+                Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "selected_edges": selected, "sheet": sheet, "rebuild": rebuild_json(&rebuild) }))
             },
         ),
         tool(

@@ -40,7 +40,9 @@ fn selection_brief_is_short_and_in_every_selection_schema() {
     }
     assert!(SEL_BRIEF.contains("Full grammar: tool `select`"));
     let list = Registry::new().list();
-    for name in ["fillet", "chamfer", "hole", "shell", "push_face", "draft", "thicken", "face_copy", "offset_surface", "surface_replace"] {
+    for name in
+        ["fillet", "chamfer", "hole", "shell", "push_face", "draft", "thicken", "face_copy", "offset_surface", "surface_replace", "patch"]
+    {
         let tool = list.iter().find(|t| t["name"] == name).unwrap_or_else(|| panic!("no tool {name}"));
         // Escaped as it appears inside the serialized schema.
         let escaped = serde_json::to_string(SEL_BRIEF).unwrap();

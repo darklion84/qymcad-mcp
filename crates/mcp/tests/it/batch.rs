@@ -231,6 +231,7 @@ fn limits_allowlist_and_outer_schema() {
         "surface_replace",
         "stitch",
         "trim",
+        "patch",
         "move",
         "linear_array",
         "circular_array",
