@@ -497,7 +497,8 @@ fn repicking_a_shell_draft_or_remove_face_node_on_a_sheet_is_refused_f200() {
 
 // ---- (e) thicken of a sheet ----
 
-/// thicken of a sheet, both signs (the app's command takes either): +1 grows outward, -1 inward; the sheet becomes a solid.
+/// thicken of a sheet, both signs (the app's command takes either): on this fixture (normals outward) +1 grows outward, -1 inward; the
+/// sheet becomes a solid. The side is the sheet's own orientation (see `a_sheets_thicken_follows_its_own_face_normal_...`).
 /// Hand: outward (22×18 − 20×16)·10 less the four rounded corners (4 − π)·10 = 751.416; inward (20×16 − 18×14)·10 = 680.
 #[test]
 fn thicken_of_a_sheet_goes_either_way_and_makes_a_solid() {
@@ -528,6 +529,44 @@ fn thicken_of_a_sheet_goes_either_way_and_makes_a_solid() {
         assert!(e.contains("sheet") && e.contains("either sign"), "{t}: {e}");
     }
     assert_eq!(serde_json::to_string(s.project()).unwrap(), before);
+}
+
+/// The sign of a sheet's thicken is the face's own normal, as in the app (no flip anywhere: `apply_thicken_cmd` passes the number to
+/// `add_thicken`, the kernel offsets along the sheet's orientation). Which way that is on a loft depends on the order of its sections:
+/// the tester's GUI tube had its -x wall (x = -10) with the normal [1, 0, 0], so +2 kept the outer box 20 x 16 x 10, the same as the
+/// server gives for the same input on a loft made from the top section down. Whichever face of the sheet is picked, the WHOLE sheet is
+/// offset (all four walls give the same solid).
+#[test]
+fn a_sheets_thicken_follows_its_own_face_normal_and_takes_the_whole_sheet() {
+    let tube = |top_first: bool| {
+        let mut s = Session::new_part();
+        let low = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+        s.sketch_rect(low, &v(0.), &v(0.), &v(20.), &v(16.), false).unwrap();
+        let (plane, _) = s.plane_offset(&PlaneRef::Base(BaseName::XY), &v(10.), None).unwrap();
+        let high = s.sketch_create(&PlaneRef::Plane(plane), None).unwrap();
+        s.sketch_rect(high, &v(0.), &v(0.), &v(20.), &v(16.), false).unwrap();
+        let order = if top_first { [high, low] } else { [low, high] };
+        let sections = order.iter().map(|&sketch| LoftSection { sketch, profile: None }).collect();
+        let (_, r) = s.loft(&Loft { sections, ruled: true, op: Op::NewBody, target: None, surface: true, name: None }).unwrap();
+        let sheet = r.bodies.last().unwrap().id;
+        (s, sheet)
+    };
+    for (top_first, normal_x, bbox_x) in [(false, -1., 12.), (true, 1., 10.)] {
+        let mut volumes = Vec::new();
+        for face in 0..4 {
+            let (mut s, sheet) = tube(top_first);
+            let t = s.topology(Some(sheet), false).unwrap();
+            let wall = t.faces.iter().find(|f| f.centroid[0] < -9.9 && f.normal.is_some_and(|n| n[0].abs() > 0.9)).unwrap();
+            close(wall.normal.unwrap()[0], normal_x, 1e-9, "normal of the -x wall");
+            let (id, r) = s.thicken(Some(sheet), &Sel::Ids(vec![t.faces[face].id]), &v(2.), None).unwrap();
+            assert!(r.errors.is_empty(), "{:?}", r.errors);
+            let b = info(&s, id);
+            assert!(!b.sheet);
+            close(b.bbox[3], bbox_x, 1e-3, &format!("outer x max, sections top_first={top_first}, face {face}"));
+            volumes.push(b.volume);
+        }
+        assert!(volumes.iter().all(|x| (x - volumes[0]).abs() < 1e-6), "the whole sheet is offset whichever face is picked: {volumes:?}");
+    }
 }
 
 /// A solid keeps F-150: positive only. And a sheet's thicken edits to a negative value through `dimension_set` and a parameter.

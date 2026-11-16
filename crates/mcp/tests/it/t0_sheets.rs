@@ -186,6 +186,7 @@ fn the_tool_texts_say_what_a_sheet_does() {
     let text = |name: &str| list.iter().find(|t| t["name"] == name).unwrap().to_string();
     assert!(text("render").contains("seen from behind is not drawn"));
     assert!(text("thicken").contains("consumed and joined"));
+    assert!(text("thicken").contains("section order") && text("thicken").contains("offsets the whole sheet"));
     assert!(text("patch").contains("(it is consumed)") && text("patch").contains("the source stays"));
     assert!(text("stitch").contains("glue sheets that do not meet"));
     assert!(text("export").contains("`note`"));
