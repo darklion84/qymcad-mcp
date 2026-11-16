@@ -61,7 +61,6 @@ fn trim_keeps_the_piece_under_the_point_and_consumes_the_sheet() {
 #[test]
 fn trim_refusals_leave_the_document_unchanged() {
     let mut r = scene();
-    let before = call(&mut r, "doc_info", json!({}));
     let e = refused(&mut r, "trim", json!({"body": "block", "tool": "cutter", "keep": [-15, 0, 12]}));
     assert!(e.contains("is a solid") && e.contains("must be a sheet"), "{e}");
     assert!(refused(&mut r, "trim", json!({"body": "lid", "tool": "lid", "keep": [-15, 0, 12]})).contains("cannot trim itself"));
@@ -69,8 +68,8 @@ fn trim_refusals_leave_the_document_unchanged() {
     assert!(refused(&mut r, "trim", json!({"tool": "cutter", "keep": [1, 2, 3]})).contains("`body`"));
     assert!(refused(&mut r, "trim", json!({"body": "lid", "keep": [1, 2, 3]})).contains("`tool`"));
     assert!(refused(&mut r, "trim", json!({"body": "lid", "tool": "cutter"})).contains("`keep`"));
-    assert!(refused(&mut r, "trim", json!({"body": "lid", "tool": "cutter", "keep": [1, 2]})).len() > 0);
-    assert!(refused(&mut r, "trim", json!({"body": "lid", "tool": "cutter", "keep": [1, 2, 3], "extra": 1})).len() > 0);
+    assert!(refused(&mut r, "trim", json!({"body": "lid", "tool": "cutter", "keep": [1, 2]})).contains("length"));
+    assert!(refused(&mut r, "trim", json!({"body": "lid", "tool": "cutter", "keep": [1, 2, 3], "extra": 1})).contains("extra"));
     // A tool that does not reach the sheet.
     call(&mut r, "sketch_create", json!({"plane": "XY", "name": "far sketch"}));
     call(&mut r, "sketch_add", json!({"sketch": "far sketch", "entities": [{"type": "rect", "cx": 500, "w": 60, "h": 200}]}));
