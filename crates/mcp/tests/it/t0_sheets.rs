@@ -148,7 +148,8 @@ fn the_tools_the_gui_does_not_offer_on_a_sheet_are_refused_through_the_tools_f20
     // The block takes the same tools (mirror about a face of the sheet: the +x wall is the plane x = 10).
     let hole = call(&mut r, "hole", json!({"body": "block", "face": {"facing": "+z"}, "diameter": 4, "depth": 6}));
     let topology = call(&mut r, "topology", json!({"body": "tube"}));
-    let wall = topology["faces"].as_array().unwrap().iter().find(|f| f["normal"][0].as_f64().is_some_and(|x| x > 0.9)).unwrap()["id"].clone();
+    let wall =
+        topology["faces"].as_array().unwrap().iter().find(|f| f["normal"][0].as_f64().is_some_and(|x| x > 0.9)).unwrap()["id"].clone();
     let plane = json!({"body": "tube", "face": wall});
     let mirrored = call(&mut r, "mirror", json!({"body": hole["body"], "plane": plane, "keep": false}));
     assert!(mirrored.to_string().contains("rebuild"), "{mirrored}");

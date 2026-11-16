@@ -119,7 +119,11 @@ impl Session {
         self.ensure_topology()?;
         let ((ids, names, offset), mut rebuild) = self.atomic(|s| {
             let src = s.source_body(options.body)?;
-            s.refuse_sheet_tool(src, "split body", "a sheet's face works only as the cutting plane (`plane` face); the split acts on a solid")?;
+            s.refuse_sheet_tool(
+                src,
+                "split body",
+                "a sheet's face works only as the cutting plane (`plane` face); the split acts on a solid",
+            )?;
             let offset = options.offset.eval(&s.p.param_map())?;
             let op = s.resolve_op_plane(&options.plane)?;
             let at = op.at(offset);

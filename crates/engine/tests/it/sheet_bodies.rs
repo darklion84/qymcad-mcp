@@ -394,7 +394,14 @@ fn the_tools_the_gui_does_not_offer_on_a_sheet_are_refused_with_the_document_unc
         name: None,
     };
     check("hole by sketch", refused(s.hole_by_sketch(&by_sketch)));
-    let draft = Draft { body: Some(sheet), faces: Sel::Ids(vec![side]), neutral: Sel::Ids(vec![sheet_top_edge_face]), angle: v(5.), flip: false, name: None };
+    let draft = Draft {
+        body: Some(sheet),
+        faces: Sel::Ids(vec![side]),
+        neutral: Sel::Ids(vec![sheet_top_edge_face]),
+        angle: v(5.),
+        flip: false,
+        name: None,
+    };
     check("draft", refused(s.draft(&draft)));
     check("remove_face", refused(s.remove_face(Some(sheet), &Sel::Ids(vec![side]), None)));
     for plane in [PlaneRef::Base(BaseName::XY), PlaneRef::Face { body: sheet, face: side }] {
@@ -419,7 +426,8 @@ fn the_tools_the_gui_does_not_offer_on_a_sheet_are_refused_with_the_document_unc
     let (hole, r) = s.hole(&hole_args(solid, top)).unwrap();
     assert!(r.errors.is_empty(), "{:?}", r.errors);
     let (x, bottom) = (face_with_normal(&mut s, hole, 0, 1.), face_with_normal(&mut s, hole, 2, -1.));
-    let draft = Draft { body: Some(hole), faces: Sel::Ids(vec![x]), neutral: Sel::Ids(vec![bottom]), angle: v(5.), flip: false, name: None };
+    let draft =
+        Draft { body: Some(hole), faces: Sel::Ids(vec![x]), neutral: Sel::Ids(vec![bottom]), angle: v(5.), flip: false, name: None };
     let (_, r) = s.draft(&draft).unwrap();
     assert!(r.errors.is_empty(), "{:?}", r.errors);
 }
@@ -475,7 +483,12 @@ fn repicking_a_shell_draft_or_remove_face_node_on_a_sheet_is_refused_f200() {
     let shell = model.project.add_shell_mode(sheet, 1., vec![x], ShellSide::Inward);
     let draft = model.project.add_draft(sheet, vec![x], y, 5., false);
     let face = model.project.regen_faces[&sheet].iter().find(|f| f.id == x).unwrap();
-    let key = qymcad_core::feature::FaceKey { index: 0, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: x };
+    let key = qymcad_core::feature::FaceKey {
+        index: 0,
+        centroid: [face.centroid.x, face.centroid.y, face.centroid.z],
+        normal: face.normal,
+        id: x,
+    };
     let remove = model.project.add_remove_face(sheet, vec![key]);
     let breps: Vec<(Id, Vec<u8>)> = {
         let _gate = qymcad_kernel::kernel_gate();
