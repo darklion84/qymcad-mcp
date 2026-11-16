@@ -42,6 +42,23 @@ fn offset_distance(v: f64) -> Result<f64> {
     Ok(v)
 }
 
+/// The key of an edge end for the app's pre-check: the point on a 1e-4 mm grid.
+fn end_key(p: [f64; 3]) -> [i64; 3] {
+    p.map(|c| (c * 1e4).round() as i64)
+}
+
+/// A ring (a circle, an ellipse): an edge whose ends are less than 1e-6 apart. It closes on itself.
+fn is_ring(e: &MeshEdge) -> bool {
+    let d = [e.a[0] - e.b[0], e.a[1] - e.b[1], e.a[2] - e.b[2]];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() < 1e-6
+}
+
+/// The picked ids that are edges of the body, `None` when one is not (or none is picked): the first part of the app's pre-check.
+fn picked_edges<'a>(edges: &'a [MeshEdge], picked: &[u32]) -> Option<Vec<&'a MeshEdge>> {
+    let found: Vec<&MeshEdge> = picked.iter().filter_map(|id| edges.iter().find(|e| e.id == *id)).collect();
+    (!found.is_empty() && found.len() == picked.len()).then_some(found)
+}
+
 /// WHETHER THE PICKED EDGES BOUND A PATCH: the app's `patch_boundary` (qymcad-part `apply/faces.rs:67-90`, `pub(crate)` there, so
 /// reimplemented here rule for rule). Every picked id must be a live edge of the body (an id with no edge refuses); a ring (an edge
 /// whose ends are less than 1e-6 apart: a circle, an ellipse) closes on itself and counts no ends; every end of the other edges
@@ -49,21 +66,38 @@ fn offset_distance(v: f64) -> Result<f64> {
 /// edge chain that closes. One straight edge, a chain with a loose end and an edge picked past the loop are refused. It is the
 /// app's limit, not a kernel one: the kernel also fills open chains (a piece of a dome).
 fn patch_boundary(edges: &[MeshEdge], picked: &[u32]) -> bool {
-    let found: Vec<&MeshEdge> = picked.iter().filter_map(|id| edges.iter().find(|e| e.id == *id)).collect();
-    if found.is_empty() || found.len() != picked.len() {
-        return false;
-    }
-    let key = |p: [f64; 3]| p.map(|c| (c * 1e4).round() as i64);
+    let Some(found) = picked_edges(edges, picked) else { return false };
     let mut ends: std::collections::HashMap<[i64; 3], usize> = std::collections::HashMap::new();
-    for e in found {
-        let d = [e.a[0] - e.b[0], e.a[1] - e.b[1], e.a[2] - e.b[2]];
-        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() < 1e-6 {
-            continue; // a ring
-        }
-        *ends.entry(key(e.a)).or_default() += 1;
-        *ends.entry(key(e.b)).or_default() += 1;
+    for e in found.into_iter().filter(|e| !is_ring(e)) {
+        *ends.entry(end_key(e.a)).or_default() += 1;
+        *ends.entry(end_key(e.b)).or_default() += 1;
     }
     ends.values().all(|&n| n == 2)
+}
+
+/// How many separate boundaries the picked edges make: every ring is one, and the other edges join into one boundary where their ends
+/// meet (same 1e-4 mm grid as the pre-check). A patch spans ONE (F-199: the kernel drops all but one without a word). Counts only
+/// edges the pre-check has accepted.
+fn patch_loops(edges: &[MeshEdge], picked: &[u32]) -> usize {
+    let Some(found) = picked_edges(edges, picked) else { return 0 };
+    let rings = found.iter().filter(|e| is_ring(e)).count();
+    let mut parent: std::collections::HashMap<[i64; 3], [i64; 3]> = std::collections::HashMap::new();
+    fn root(parent: &mut std::collections::HashMap<[i64; 3], [i64; 3]>, k: [i64; 3]) -> [i64; 3] {
+        let p = *parent.entry(k).or_insert(k);
+        if p == k {
+            return k;
+        }
+        let r = root(parent, p);
+        parent.insert(k, r);
+        r
+    }
+    for e in found.iter().filter(|e| !is_ring(e)) {
+        let (a, b) = (root(&mut parent, end_key(e.a)), root(&mut parent, end_key(e.b)));
+        parent.insert(a, b);
+    }
+    let keys: Vec<[i64; 3]> = parent.keys().copied().collect();
+    let chains: std::collections::HashSet<[i64; 3]> = keys.into_iter().map(|k| root(&mut parent, k)).collect();
+    rings + chains.len()
 }
 
 impl Session {
@@ -397,13 +431,21 @@ impl Session {
 
     /// The edges a Patch spans, as ids: a selection of edges of `src` (a set: each id once) that the app's `patch_boundary` accepts, which
     /// is checked on creation as the app does before it lays a node. `check` is off on a re-pick: the app's edit mode does not ask
-    /// (`cmd_ready` is true for any edit), the rebuild judges.
+    /// (`cmd_ready` is true for any edit), the rebuild judges. F-199 is held either way: the edges make ONE boundary.
     fn patch_edges(&self, src: Id, sel: &Sel, check: bool) -> Result<Vec<u32>> {
         let mut ids = self.resolve_sel(src, Element::Edges, sel)?;
         ids.dedup();
-        let closes = !check || self.p.regen_edges.get(&src).is_some_and(|edges| patch_boundary(edges, &ids));
-        if ids.is_empty() || !closes {
+        let live = self.p.regen_edges.get(&src).map(Vec::as_slice).unwrap_or_default();
+        if ids.is_empty() || (check && !patch_boundary(live, &ids)) {
             return Err(Error::Invalid(format!("{} (edges {ids:?} of body {src})", localization::text("msg-patch-needs-edges"))));
+        }
+        let loops = patch_loops(live, &ids);
+        if loops > 1 {
+            return Err(Error::Invalid(format!(
+                "the edges {ids:?} of body {src} make {loops} separate boundaries (a ring, or a chain of edges that meet end to end, is one); a patch \
+                 spans one: QymCAD builds the surface over one of them and drops the other edges without a word (F-199). Pick one boundary: \
+                 on a shelled opening the outer outline or the inner one, not both"
+            )));
         }
         Ok(ids)
     }
@@ -473,5 +515,76 @@ impl Session {
                 })
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn edge(id: u32, a: [f64; 3], b: [f64; 3]) -> MeshEdge {
+        MeshEdge { id, a, b, ..Default::default() }
+    }
+
+    /// The four edges of a square of side 10 at z 0, ids 1..=4, ends meeting; ids 11..=14 the same square at x offset 100.
+    fn squares() -> Vec<MeshEdge> {
+        let q = |dx: f64, base: u32| {
+            [
+                edge(base, [dx, 0., 0.], [dx + 10., 0., 0.]),
+                edge(base + 1, [dx + 10., 0., 0.], [dx + 10., 10., 0.]),
+                edge(base + 2, [dx + 10., 10., 0.], [dx, 10., 0.]),
+                edge(base + 3, [dx, 10., 0.], [dx, 0., 0.]),
+            ]
+        };
+        q(0., 1).into_iter().chain(q(100., 11)).collect()
+    }
+
+    #[test]
+    fn the_app_pre_check_rules() {
+        let mut e = squares();
+        e.push(edge(21, [50., 0., 0.], [50., 0., 0.])); // a ring: ends equal
+        e.push(edge(22, [70., 0., 0.], [70., 0., 5e-7])); // a ring: ends 5e-7 apart (< 1e-6)
+        e.push(edge(23, [80., 0., 0.], [80., 0., 2e-6])); // not a ring (2e-6 apart) but both ends in one grid cell
+        e.push(edge(24, [90., 0., 0.], [90., 0., 3e-4])); // not a ring, ends in two cells
+        assert!(patch_boundary(&e, &[1, 2, 3, 4]), "a closed chain");
+        assert!(patch_boundary(&e, &[21]), "one ring");
+        assert!(patch_boundary(&e, &[22]), "a ring within 1e-6");
+        assert!(patch_boundary(&e, &[23]), "ends 2e-6 apart fall in one cell and count each other, as in the app");
+        assert!(!patch_boundary(&e, &[24]), "ends 3e-4 apart are two cells, each met by nothing");
+        assert!(patch_boundary(&e, &[21, 22]), "two rings pass");
+        assert!(patch_boundary(&e, &[1, 2, 3, 4, 11, 12, 13, 14]), "two closed chains pass");
+        assert!(patch_boundary(&e, &[1, 2, 3, 4, 21]), "a chain and a ring pass");
+        assert!(!patch_boundary(&e, &[1]), "one straight edge");
+        assert!(!patch_boundary(&e, &[1, 2, 3]), "an open chain");
+        assert!(!patch_boundary(&e, &[1, 3]), "two opposite edges");
+        assert!(!patch_boundary(&e, &[1, 2, 3, 4, 11]), "an edge past the loop");
+        assert!(!patch_boundary(&e, &[]), "no edge");
+        assert!(!patch_boundary(&e, &[1, 2, 3, 4, 999]), "an id that is no edge of the body");
+        assert!(!patch_boundary(&[], &[1]), "a body without edges");
+    }
+
+    /// Ends meet on a 1e-4 mm grid: `round(c * 1e4)`.
+    #[test]
+    fn ends_meet_on_the_grid_of_a_ten_thousandth() {
+        let near = |gap: f64| vec![edge(1, [0., 0., 0.], [10., 0., 0.]), edge(2, [10. + gap, 0., 0.], [0., 0., 0.])];
+        assert!(patch_boundary(&near(0.), &[1, 2]));
+        assert!(patch_boundary(&near(4e-5), &[1, 2]), "10.00004 rounds to the same cell as 10");
+        assert!(!patch_boundary(&near(6e-5), &[1, 2]), "10.00006 rounds to the next cell");
+    }
+
+    #[test]
+    fn separate_boundaries_are_counted() {
+        let mut e = squares();
+        e.push(edge(21, [50., 0., 0.], [50., 0., 0.]));
+        e.push(edge(22, [60., 0., 0.], [60., 0., 0.]));
+        assert_eq!(patch_loops(&e, &[1, 2, 3, 4]), 1);
+        assert_eq!(patch_loops(&e, &[1, 2, 3]), 1, "an open chain is one");
+        assert_eq!(patch_loops(&e, &[21]), 1);
+        assert_eq!(patch_loops(&e, &[1, 2, 3, 4, 11, 12, 13, 14]), 2, "two squares");
+        assert_eq!(patch_loops(&e, &[1, 2, 3, 4, 21]), 2, "a chain and a ring");
+        assert_eq!(patch_loops(&e, &[21, 22]), 2, "two rings");
+        assert_eq!(patch_loops(&e, &[1, 3]), 2, "two edges that do not meet");
+        assert_eq!(patch_loops(&e, &[1, 2, 3, 4, 11, 12, 13, 14, 21, 22]), 4);
+        assert_eq!(patch_loops(&e, &[999]), 0);
     }
 }
