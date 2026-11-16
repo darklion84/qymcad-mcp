@@ -18,6 +18,7 @@ All notable changes to this project are documented here. The format follows
 - A tool that takes no body never defaults to a sheet: `extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others take the part's last solid, as the app does. `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
 
 ### Changed
+- The `stitch` check against a collapsed solid (F-198) compares the kernel volume with the exact reporting mesh and an allowance of `area * deflection` plus 0.1 %, not with the display mesh by a flat 5 %: real thin curved solids (a lens 11 % short at Draft) are no longer refused; a wide tolerance that collapses a gap still is. The refusal names both volumes.
 - Descriptions of `face_copy`, `offset_surface`, `surface_replace`, `stitch` and `thicken` are shorter (the `tools/list` budget is unchanged and `trim` needed room); no behaviour changed.
 - The shared `Num` schema description, the "name for the new feature" docs and the "ids are stale" suffix of the feature tools are shorter, with the same meaning (the `tools/list` budget is unchanged and `patch` needed room).
 - `shell` of a sheet is refused (QymCAD returns a cut-back sheet instead of a wall, F-196) and so is a `chamfer` whose selection holds a one-sided boundary edge of a sheet (QymCAD leaves it unchamfered silently, F-197). The other tools were probed on a loft sheet (body_boolean, move, mirror, arrays, hole, draft, remove_face, fillet, push_face, thicken): the table is in ADR 0059.

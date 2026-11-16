@@ -288,17 +288,30 @@ pub(crate) fn edges_with_ends(shape: &Shape) -> Result<Vec<qymcad_core::geom::Me
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
 /// This function always acquires that non-reentrant mutex (F-069).
 fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
-    reporting_metrics(shape).0
+    reporting_metrics(shape).bbox
 }
 
-/// The reporting bounds and, from the same tessellation, the sum of the kernel's face areas (`None` when the mesh is
-/// partial). Same preconditions as [`reporting_bbox`].
-fn reporting_metrics(shape: &Shape) -> (Option<[f64; 6]>, Option<f64>) {
-    let measured = || {
+/// What one exact tessellation of a body (the reporting mesh: 0.005 mm, more only for huge bodies) says. Independent of the document's
+/// `GeomQuality` and of the faces cached with the body, which carry the coarser display mesh.
+pub(crate) struct Reported {
+    /// The bounds; the kernel's own when the mesh is partial.
+    pub bbox: Option<[f64; 6]>,
+    /// The sum of the face areas of the mesh; `None` when the mesh is partial.
+    pub area: Option<f64>,
+    /// The volume the mesh encloses (absolute value); `None` when the mesh is partial. Meaningless for an open surface.
+    pub mesh_volume: Option<f64>,
+    /// The deflection the mesh was made with, mm: no face of it is further than this from the kernel's surface.
+    pub deflection: f64,
+}
+
+/// The reporting bounds, face area and enclosed volume, from one tessellation. Same preconditions as [`reporting_bbox`].
+pub(crate) fn reporting_metrics(shape: &Shape) -> Reported {
+    let mut deflection = 0.005_f64;
+    let mut measured = || {
         let copy = copy_shapes([(0, shape)]).ok()?.remove(&0)?;
         // Keep .005 mm accuracy for ordinary parts, but avoid unbounded mesh growth on huge imports.
         // F-066: upstream also scales deflection with size to bound curved-body mesh costs.
-        let deflection = {
+        deflection = {
             let _gate = qymcad_kernel::kernel_gate();
             0.005_f64.max(copy.bbox_diag() * 1e-5)
         };
@@ -319,13 +332,13 @@ fn reporting_metrics(shape: &Shape) -> (Option<[f64; 6]>, Option<f64>) {
                 bbox[i + 3] = bbox[i + 3].max(coordinate);
             }
         }
-        Some((bbox, faces.iter().map(|f| f.area).sum::<f64>()))
+        Some((bbox, faces.iter().map(|f| f.area).sum::<f64>(), mesh.volume()))
     };
     match measured() {
-        Some((bbox, area)) => (Some(bbox), Some(area)),
+        Some((bbox, area, volume)) => Reported { bbox: Some(bbox), area: Some(area), mesh_volume: Some(volume), deflection },
         None => {
             let _gate = qymcad_kernel::kernel_gate();
-            (shape.bbox(), None)
+            Reported { bbox: shape.bbox(), area: None, mesh_volume: None, deflection }
         }
     }
 }
@@ -1306,8 +1319,8 @@ impl Session {
                 let owner_part = self.p.body_owner(b);
                 let world_transform = self.p.body_world_transform(b);
                 if let Some(sh) = self.shapes.get(&b) {
-                    let (measured_bbox, measured_area) = reporting_metrics(sh);
-                    let bbox_local = measured_bbox.unwrap_or([0.0; 6]);
+                    let measured = reporting_metrics(sh);
+                    let bbox_local = measured.bbox.unwrap_or([0.0; 6]);
                     let mut bbox_world =
                         [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
                     for i in 0..8 {
@@ -1333,7 +1346,7 @@ impl Session {
                         color_source,
                         volume: sh.volume(),
                         sheet: self.is_sheet(b),
-                        area: self.cached_face_area(b).or(measured_area).unwrap_or(0.0),
+                        area: self.cached_face_area(b).or(measured.area).unwrap_or(0.0),
                         bbox: bbox_local,
                         bbox_frame: "part_local",
                         bbox_local,
@@ -1397,7 +1410,7 @@ impl Session {
     /// The surface area of a built body, mm²: its cached face areas, else the kernel's, from a tessellation.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
     pub(crate) fn body_face_area(&self, body: Id) -> f64 {
-        self.cached_face_area(body).or_else(|| self.shapes.get(&body).and_then(|sh| reporting_metrics(sh).1)).unwrap_or(0.0)
+        self.cached_face_area(body).or_else(|| self.shapes.get(&body).and_then(|sh| reporting_metrics(sh).area)).unwrap_or(0.0)
     }
 
     /// Several Parts, or any non-identity placement: body results then report owner and frames.

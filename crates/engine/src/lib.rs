@@ -54,6 +54,8 @@ mod sketch_import;
 mod split;
 mod split_face;
 mod surfaces;
+#[cfg(test)]
+mod surfaces_tests;
 mod sweep;
 #[cfg(test)]
 mod test_support;

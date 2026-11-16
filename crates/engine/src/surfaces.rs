@@ -489,7 +489,10 @@ impl Session {
 
     /// FINDINGS F-198: Stitch nodes picked by `check` whose SOLID result is not one. When the tolerance is wider than the gap
     /// between the edges of two sheets, the sewing glues them into a closed shell that encloses nothing (two parallel plates 5 apart
-    /// at tol 5.1: kernel volume 4000, mesh 0), and the node is green. A solid's kernel volume and its mesh agree; here they do not.
+    /// at tol 5.1: kernel volume 4000, mesh 0), and the node is green. A solid's kernel volume and the volume its mesh encloses agree
+    /// to within the mesh's own error ([`collapsed_solid`]); here they do not. The mesh is the exact reporting one (the one
+    /// `doc_info` measures), not the display mesh, whose error grows with the document's `GeomQuality`. When that mesh is partial
+    /// nothing can be said and the node is not judged.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
     pub(crate) fn stitch_refusals(&self, check: impl Fn(Id) -> bool) -> Vec<(Id, String)> {
         self.p
@@ -503,18 +506,32 @@ impl Session {
                     let _gate = qymcad_kernel::kernel_gate();
                     (shape.is_sheet(), shape.volume())
                 };
-                let mesh = self.p.mesh_index(body).map(|i| self.p.bodies[i].mesh.volume())?;
-                (!sheet && (kernel - mesh).abs() > 0.05 * kernel.abs().max(mesh.abs()) + 1e-6).then(|| {
+                if sheet {
+                    return None;
+                }
+                let measured = crate::session::reporting_metrics(shape);
+                let (mesh, area) = (measured.mesh_volume?, measured.area?);
+                collapsed_solid(kernel, mesh, area, measured.deflection).then(|| {
                     (
                         n.id,
                         format!(
-                            "the stitch gave a solid that is not one (kernel volume {kernel:.1} mm3, its mesh encloses {mesh:.1} mm3): the tolerance is wider than the gap between the sheets' edges, so it joined sheets that do not meet; use a smaller `tolerance`"
+                            "the stitch gave a solid that is not one (kernel volume {:.1} mm3, its faces enclose {mesh:.1} mm3): most likely the tolerance is wider than the gap between the sheets' edges, so it joined sheets that do not meet; use a smaller `tolerance`",
+                            kernel.abs()
                         ),
                     )
                 })
             })
             .collect()
     }
+}
+
+/// F-198: whether a stitched solid's kernel volume and the volume its exact mesh encloses (`area` mm2 of faces, tessellated within
+/// `deflection` mm) differ by more than the mesh can explain. A chord of a curved face lies at most `deflection` inside the surface,
+/// so the mesh volume is off by at most `area * deflection`; a relative 0.1 % and 1e-6 mm3 cover the rounding of the sums. Signs do
+/// not matter (the mesh volume is absolute; a kernel volume of the opposite sign is the same solid turned inside out).
+pub(crate) fn collapsed_solid(kernel: f64, mesh: f64, area: f64, deflection: f64) -> bool {
+    let (kernel, mesh) = (kernel.abs(), mesh.abs());
+    (kernel - mesh).abs() > area * deflection + 1e-3 * kernel.max(mesh) + 1e-6
 }
 
 #[cfg(test)]
