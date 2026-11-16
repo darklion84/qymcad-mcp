@@ -72,6 +72,8 @@ fn bbox_serialization_rounds_half_away_normalizes_zero_and_keeps_large_finite_va
             color_rgb: [150, 170, 190],
             color_source: "palette",
             volume: 1.23456789,
+            sheet: false,
+            area: 4.5,
             // ±.00001 mm are closer to zero; 10^305 cannot be scaled by 10^4 in f64.
             bbox: [-tie, -0.00001, -0.0, tie, 0.00001, 1e305],
             bbox_frame: "part_local",

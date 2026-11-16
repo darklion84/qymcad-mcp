@@ -57,8 +57,12 @@ pub struct BodyInfo {
     pub color_rgb: [u8; 3],
     /// Map membership of the lineage root: manual or palette.
     pub color_source: &'static str,
-    /// mm³, serialized as `volume_mm3` at native floating-point precision.
+    /// mm³, serialized as `volume_mm3` at native floating-point precision. A sheet has no volume: 0.
     pub volume: f64,
+    /// A sheet (an open surface with faces and no solid), the document's own `Body.sheet` flag.
+    pub sheet: bool,
+    /// mm², serialized as `area_mm2`: the sum of the body's face areas from the kernel's faces (a mesh body: its triangles).
+    pub area: f64,
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` in mm, from fresh nominal-deflection tessellation
     /// (.005 mm, scaled to 1e-5 of diagonals over 500 mm) plus f32 coordinate rounding; native bounds are a fallback if meshing fails (F-066).
     /// JSON coordinates use four decimals, rounded half away from zero, with negative zero normalized.
@@ -87,6 +91,8 @@ struct BodyWire<'a> {
     color_rgb: [u8; 3],
     color_source: &'static str,
     volume_mm3: f64,
+    sheet: bool,
+    area_mm2: f64,
     #[serde(serialize_with = "serialize_coordinates")]
     bbox: &'a [f64; 6],
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,6 +120,8 @@ impl Serialize for BodyInfo {
             color_rgb: self.color_rgb,
             color_source: self.color_source,
             volume_mm3: self.volume,
+            sheet: self.sheet,
+            area_mm2: self.area,
             bbox: &self.bbox,
             bbox_frame: extra.then_some(self.bbox_frame),
             bbox_local: extra.then_some(&self.bbox_local),
@@ -1307,6 +1315,8 @@ impl Session {
                         color_rgb,
                         color_source,
                         volume: sh.volume(),
+                        sheet: self.is_sheet(b),
+                        area: self.body_face_area(b),
                         bbox: bbox_local,
                         bbox_frame: "part_local",
                         bbox_local,
@@ -1342,6 +1352,8 @@ impl Session {
                     color_rgb,
                     color_source,
                     volume: mesh.volume(),
+                    sheet: self.is_sheet(b),
+                    area: (0..mesh.tris.len()).map(|i| mesh.tri_normal_area(i).1).sum(),
                     bbox,
                     bbox_frame: "world",
                     bbox_local,
@@ -1350,6 +1362,18 @@ impl Session {
                 })
             })
             .collect()
+    }
+
+    /// Whether `body` is a sheet: an open surface, the document's own `Body.sheet` flag (core `model.rs`).
+    pub(crate) fn is_sheet(&self, body: Id) -> bool {
+        self.p.bodies.iter().any(|b| b.id == body && b.sheet)
+    }
+
+    /// Sum of the face areas of a built body, mm²: the faces the rebuild produced (`regen_faces`), else the ones the
+    /// document stores with the body (a file opened without a rebuild).
+    pub(crate) fn body_face_area(&self, body: Id) -> f64 {
+        let stored = self.p.mesh_index(body).map(|i| self.p.bodies[i].faces.as_slice()).unwrap_or_default();
+        self.p.regen_faces.get(&body).map_or(stored, Vec::as_slice).iter().map(|f| f.area).sum()
     }
 
     /// Several Parts, or any non-identity placement: body results then report owner and frames.

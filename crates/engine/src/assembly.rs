@@ -716,7 +716,7 @@ impl Session {
     }
     pub(crate) fn part_result(&self, id: Id, changed: bool) -> Value {
         let c = self.p.components.iter().find(|c| c.id == id).unwrap();
-        json!({"part":{"id":id,"name":crate::localization::name(&c.name),"parent":c.parent},"grounded":c.grounded,"local_transform":c.transform,"world_transform":self.p.world_transform(id),"local_metrics":self.result_bodies().into_iter().filter(|b|b.owner_part==Some(id)).map(|b|json!({"body":b.id,"volume_mm3":b.volume,"bbox_local":b.bbox_local})).collect::<Vec<_>>(),"affected_bodies":self.current_body_ids().into_iter().filter(|b|self.p.body_owner(*b)==Some(id)).collect::<Vec<_>>(),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
+        json!({"part":{"id":id,"name":crate::localization::name(&c.name),"parent":c.parent},"grounded":c.grounded,"local_transform":c.transform,"world_transform":self.p.world_transform(id),"local_metrics":self.result_bodies().into_iter().filter(|b|b.owner_part==Some(id)).map(|b|json!({"body":b.id,"volume_mm3":b.volume,"sheet":b.sheet,"area_mm2":b.area,"bbox_local":b.bbox_local})).collect::<Vec<_>>(),"affected_bodies":self.current_body_ids().into_iter().filter(|b|self.p.body_owner(*b)==Some(id)).collect::<Vec<_>>(),"placements":self.placements(),"diagnostics":self.assembly_diagnostics(),"changed":changed})
     }
     fn part_constrained(&self, id: Id) -> bool {
         self.p.joints.iter().any(|j| [j.a, j.b].iter().any(|c| self.p.connector(*c).is_some_and(|c| c.owner == id)))

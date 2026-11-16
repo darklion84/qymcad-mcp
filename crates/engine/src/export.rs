@@ -109,11 +109,22 @@ pub struct ExportedBody {
     /// Native body sRGB bytes; imported face/triangle colours may override these.
     pub color_rgb: [u8; 3],
     pub color_source: &'static str,
+    /// A sheet: an open surface, written like any other body but with no volume and not printable as it stands.
+    pub sheet: bool,
+    /// The body's surface area, mm² (the sum of its face areas).
+    pub area_mm2: f64,
     /// Mesh formats: volume of the written mesh (sum of tetrahedra, absolute), mm³. Compare with the B-rep volume to see
-    /// the tessellation error.
+    /// the tessellation error. Omitted for a sheet: the tetrahedron sum of an open mesh means nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mesh_volume_mm3: Option<f64>,
+    /// Only on a sheet: what that means for the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<&'static str>,
 }
+
+/// What a sheet in an export is, said once per exported sheet.
+pub const SHEET_EXPORT_NOTE: &str =
+    "sheet: an open surface (faces, no solid, no volume); written as is, not a printable solid, so there is no mesh_volume_mm3";
 
 impl Session {
     /// The bodies an export or render works on: `bodies` (each must be a current result body), or all result
@@ -242,7 +253,10 @@ impl Session {
                 body_name: self.native_body_name(id),
                 color_rgb: color,
                 color_source: self.body_color_source(id),
+                sheet: self.is_sheet(id),
+                area_mm2: self.body_face_area(id),
                 mesh_volume_mm3: None,
+                note: self.is_sheet(id).then_some(SHEET_EXPORT_NOTE),
             });
         }
         if format.is_mesh() {
@@ -279,7 +293,7 @@ impl Session {
                 };
                 weld_colored(&mut mesh, &mut tri_colors);
                 mesh.transform(&self.p.body_world_transform(id));
-                report.bodies[k].mesh_volume_mm3 = Some(mesh.volume());
+                report.bodies[k].mesh_volume_mm3 = (!report.bodies[k].sheet).then(|| mesh.volume());
                 meshes.push(ExportMesh { body: id, mesh, tri_colors });
             }
             report.triangles = Some(meshes.iter().map(|m| m.mesh.tris.len()).sum());

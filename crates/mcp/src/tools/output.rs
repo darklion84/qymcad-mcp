@@ -69,7 +69,7 @@ pub fn tools() -> Vec<Tool> {
              (manual or palette) and imported face/triangle colours; STL/OBJ are colourless. Returns colors, per-body \
              color_rgb/color_source, skipped_hidden and the bodies written. visible_only defaults false (includes hidden \
              current bodies); true filters omitted bodies and refuses explicitly listed hidden bodies. Returns \
-             triangle count, current document warnings and per-body mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info). Refuses export if \
+             triangle count, current document warnings and per-body sheet, area_mm2 and mesh_volume_mm3 (volume in mm³; compare with volume_mm3 from doc_info; a sheet is written as an open surface and has no mesh_volume_mm3). Refuses export if \
              any timeline node has a regeneration error, even when the selected bodies are clean.",
             |st, a: ExportArgs| {
                 let path = checked_path(&a.path, a.format.extensions())?;
