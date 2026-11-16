@@ -434,7 +434,6 @@ impl Session {
     /// (`cmd_ready` is true for any edit), the rebuild judges. F-199 is held either way: the edges make ONE boundary.
     fn patch_edges(&self, src: Id, sel: &Sel, check: bool) -> Result<Vec<u32>> {
         let mut ids = self.resolve_sel(src, Element::Edges, sel)?;
-        ids.dedup();
         let live = self.p.regen_edges.get(&src).map(Vec::as_slice).unwrap_or_default();
         if ids.is_empty() || (check && !patch_boundary(live, &ids)) {
             return Err(Error::Invalid(format!("{} (edges {ids:?} of body {src})", localization::text("msg-patch-needs-edges"))));
@@ -570,6 +569,18 @@ mod tests {
         assert!(patch_boundary(&near(0.), &[1, 2]));
         assert!(patch_boundary(&near(4e-5), &[1, 2]), "10.00004 rounds to the same cell as 10");
         assert!(!patch_boundary(&near(6e-5), &[1, 2]), "10.00006 rounds to the next cell");
+    }
+
+    /// A ring is told by the distance of its ends, not by the grid: an edge whose ends straddle a cell boundary 4e-9 apart is a ring, and
+    /// three edges meeting at two points (every end met three times) are not a boundary.
+    #[test]
+    fn rings_by_distance_and_ends_met_exactly_twice() {
+        let straddle = [edge(1, [4.9998e-5, 0., 0.], [5.0002e-5, 0., 0.])];
+        assert_ne!(end_key(straddle[0].a), end_key(straddle[0].b), "setup: the ends are in two cells");
+        assert!(patch_boundary(&straddle, &[1]), "a ring all the same");
+        let theta = [edge(1, [0., 0., 0.], [10., 0., 0.]), edge(2, [0., 0., 0.], [10., 0., 0.]), edge(3, [0., 0., 0.], [10., 0., 0.])];
+        assert!(!patch_boundary(&theta, &[1, 2, 3]), "each end is met by two others");
+        assert!(patch_boundary(&theta, &[1, 2]), "two edges between two points close a loop");
     }
 
     #[test]

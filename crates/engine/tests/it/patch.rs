@@ -382,3 +382,15 @@ fn the_patch_lands_in_its_part_and_survives_save_open() {
     let a: f64 = project.regen_faces[&patch].iter().map(|f| f.area).sum();
     assert!(a > 1800., "the app's edit of w: {a}");
 }
+
+/// A selection that names an edge twice is a set: the app's selection holds each edge once, so the ends are not counted twice.
+#[test]
+fn an_edge_named_twice_is_one_edge() {
+    let (mut s, shell) = open_box();
+    let mut outer = rim(&mut s, shell, true);
+    outer.push(outer[0]);
+    let (patch, got, r) = s.patch(Some(shell), &ids(&outer), false, None).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    assert_eq!(got.len(), 4);
+    common::assert_close(info(&s, patch).area, 1200., 5.0, "the lid");
+}
