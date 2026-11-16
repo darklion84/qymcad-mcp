@@ -125,3 +125,25 @@ fn shell_and_a_chamfer_with_boundary_edges_are_refused_on_a_sheet() {
     assert!(e.contains("is a sheet") && e.contains("F-197"), "{e}");
 }
 
+// ---- (e) thicken of a sheet ----
+
+#[test]
+fn thicken_of_a_sheet_takes_either_sign_and_a_solid_stays_positive() {
+    let mut r = solid_then_sheet();
+    for (thickness, volume) in [(-1.0, 680.0), (1.0, 760.0 - 10.0 * (4.0 - std::f64::consts::PI))] {
+        let mut r = solid_then_sheet();
+        let out = call(&mut r, "thicken", json!({"body": "tube", "face": {"facing": "+x"}, "thickness": thickness}));
+        assert!(out["rebuild"].get("errors").is_none(), "{out}");
+        let plate = out["rebuild"]["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["sheet"] == false && b["volume_mm3"].as_f64().unwrap() < 2000.)
+            .unwrap()
+            .clone();
+        close(plate["volume_mm3"].as_f64().unwrap(), volume, "plate");
+    }
+    // The solid keeps F-150.
+    let e = refused(&mut r, "thicken", json!({"body": "block", "face": {"facing": "+z"}, "thickness": -1}));
+    assert!(e.contains("F-150"), "{e}");
+}

@@ -146,6 +146,21 @@ fn thicken_thickness(v: f64) -> Result<f64> {
     Ok(v)
 }
 
+/// The thickness of a sheet's whole-sheet offset: either sign, as the app's Thicken command takes it (`thickness`
+/// parameter -100000..100000, only a zero is refused: `apply_thicken_cmd`). A negative value grows the plate against the
+/// face's normal; a sheet has no far side to build into, so F-150 does not apply.
+const APP_THICKEN_LIMIT: f64 = 100_000.0;
+
+pub(crate) fn sheet_thickness(v: f64) -> Result<f64> {
+    if !(v.is_finite() && v.abs() >= NATIVE_ZERO && v.abs() <= APP_THICKEN_LIMIT) {
+        return Err(Error::Invalid(format!(
+            "thicken thickness of a sheet must satisfy 1e-9 <= |thickness| <= {APP_THICKEN_LIMIT} mm (the app's range; either sign: a positive \
+             value grows the plate along the face normal, a negative one against it), got {v}"
+        )));
+    }
+    Ok(v)
+}
+
 /// "Through all" for a hole. QymCAD's hole has no through-all extent, only a depth (F-037); the app's own hole
 /// dialog goes up to 10000 mm. Creation refuses stock whose bbox diagonal exceeds this fixed depth; subsequent
 /// stock growth beyond it can make the hole blind.
@@ -262,7 +277,9 @@ impl Session {
             let checked = match node.kind {
                 FeatureKind::Draft { angle, .. } => value("angle", angle).and_then(draft_angle),
                 // A sheet's whole-sheet offset may go either way; only a solid face grows nonsense (F-150).
-                FeatureKind::Thicken { src, .. } if self.p.bodies.iter().any(|b| b.id == src && b.sheet) => continue,
+                FeatureKind::Thicken { src, thickness, .. } if self.is_sheet(src) => {
+                    value("thickness", thickness).and_then(sheet_thickness)
+                }
                 FeatureKind::Thicken { thickness, .. } => value("thickness", thickness).and_then(thicken_thickness),
                 _ => continue,
             };
@@ -694,7 +711,8 @@ impl Session {
         self.ensure_topology()?;
         self.atomic(|s| {
             let src = s.source_body(body)?;
-            let t = thicken_thickness(thickness.eval(&s.p.param_map())?)?;
+            let t = thickness.eval(&s.p.param_map())?;
+            let t = if s.is_sheet(src) { sheet_thickness(t)? } else { thicken_thickness(t)? };
             let key = s.one_face(src, face)?;
             let id = s.in_component(s.p.body_owner(src), |p| p.add_thicken(src, key.id, t));
             dim(s, id, "thickness", thickness);

@@ -385,3 +385,57 @@ fn chamfer_on_a_sheet_takes_shared_edges_and_refuses_boundary_edges_f197() {
     close(b.area, 720. - 10. * (2. - 2f64.sqrt()), 1e-3, "one corner chamfered");
 }
 
+// ---- (e) thicken of a sheet ----
+
+/// thicken of a sheet, both signs (the app's command takes either): +1 grows outward, -1 inward; the sheet becomes a solid.
+/// Hand: outward (22×18 − 20×16)·10 less the four rounded corners (4 − π)·10 = 751.416; inward (20×16 − 18×14)·10 = 680.
+#[test]
+fn thicken_of_a_sheet_goes_either_way_and_makes_a_solid() {
+    let thicken = |t: f64| {
+        let (mut s, sheet) = fresh();
+        let side = faces(&mut s, sheet)[1];
+        let (id, r) = s.thicken(Some(sheet), &Sel::Ids(vec![side]), &v(t), None).unwrap();
+        assert!(r.errors.is_empty(), "{:?}", r.errors);
+        assert_eq!(s.result_bodies().len(), 1, "the sheet is replaced by the solid");
+        (s, id)
+    };
+    let (s, id) = thicken(1.);
+    let b = info(&s, id);
+    assert!(!b.sheet);
+    close(b.volume, 760. - 10. * (4. - std::f64::consts::PI), 1e-3, "outward plate");
+    close(b.bbox[3], 11., 1e-3, "grows past the sheet");
+    let (s, id) = thicken(-1.);
+    let b = info(&s, id);
+    assert!(!b.sheet);
+    close(b.volume, 680., 1e-3, "inward plate");
+    close(b.bbox[3], 10., 1e-3, "stays inside the sheet");
+    // Zero and values past the app's range are refused, the document unchanged.
+    let (mut s, sheet) = fresh();
+    let side = faces(&mut s, sheet)[1];
+    let before = serde_json::to_string(s.project()).unwrap();
+    for t in [0., 1e-12, 100_001., -100_001.] {
+        let e = refused(s.thicken(Some(sheet), &Sel::Ids(vec![side]), &v(t), None));
+        assert!(e.contains("sheet") && e.contains("either sign"), "{t}: {e}");
+    }
+    assert_eq!(serde_json::to_string(s.project()).unwrap(), before);
+}
+
+/// A solid keeps F-150: positive only. And a sheet's thicken edits to a negative value through `dimension_set` and a parameter.
+#[test]
+fn only_a_sheets_thicken_may_be_edited_negative_and_a_solids_stays_positive() {
+    let (mut s, sheet) = fresh();
+    let side = faces(&mut s, sheet)[1];
+    s.param_set("t", &v(1.)).unwrap();
+    let (id, _) = s.thicken(Some(sheet), &Sel::Ids(vec![side]), &Num::Expr("t".into()), None).unwrap();
+    let r = s.param_set("t", &v(-2.)).unwrap();
+    assert!(r.errors.is_empty(), "{:?}", r.errors);
+    close(info(&s, id).volume, (320. - 16. * 12.) * 10., 1e-3, "inward 2 mm");
+    s.dimension_set(&DimensionTarget::Feature { feature: id, key: "thickness".into() }, Some(&v(-1.)), None).unwrap();
+    assert!(s.dimension_set(&DimensionTarget::Feature { feature: id, key: "thickness".into() }, Some(&v(0.)), None).is_err());
+    // The solid case.
+    let mut s = Session::new_part();
+    let solid = block(&mut s, 20., 10.);
+    let top = s.topology(Some(solid), false).unwrap().faces.iter().find(|f| f.normal.is_some_and(|n| n[2] > 0.9)).unwrap().id;
+    let e = refused(s.thicken(Some(solid), &Sel::Ids(vec![top]), &v(-1.), None));
+    assert!(e.contains("F-150"), "{e}");
+}

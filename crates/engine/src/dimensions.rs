@@ -214,7 +214,10 @@ impl Session {
                         // `dist` is signed on a pushed face or a plane, a size only on a chamfer.
                         let thread = s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Thread { .. }));
                         let chamfer = s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Chamfer { .. }));
-                        ((!thread && ["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str()))
+                        // A sheet's Thicken runs either way, as in the app; the rebuild refuses a zero or a value past its range.
+                        let sheet_thicken = key == "thickness"
+                            && s.p.timeline.iter().any(|n| n.id == *node && matches!(n.kind, FeatureKind::Thicken { src, .. } if s.is_sheet(src)));
+                        ((!thread && !sheet_thicken && ["diameter", "depth", "radius", "thickness", "dia2", "depth2"].contains(&key.as_str()))
                             || (chamfer && key == "dist"))
                             .then(|| key.clone())
                     }

@@ -4887,7 +4887,7 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
 
 ## thicken
 
-Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
+Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (an open surface, body sheet:true) is thickened whole into a solid from one face, as the app does, and takes either sign: positive grows along the face normal, negative against it (only 0 and |t| > 100000 are refused). A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`. Returns the new body id (the part's current body from now on); face/edge ids read from earlier bodies are stale — call topology again before picking more.
 
 ```json
 {
@@ -4985,7 +4985,7 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
         }
       ],
       "default": null,
-      "description": "Plate thickness, mm (number or expression), > 0, outward along the face normal; also checked on later\nevaluated edits. Required without `feature`."
+      "description": "Plate thickness, mm (number or expression), > 0, outward along the face normal; also checked on later\nevaluated edits. A sheet takes either sign (negative: against the normal). Required without `feature`."
     }
   },
   "required": [

@@ -397,7 +397,7 @@ pub struct ThickenArgs {
     #[schemars(transform = super::topology::with_sel_brief)]
     pub face: SelArg,
     /// Plate thickness, mm (number or expression), > 0, outward along the face normal; also checked on later
-    /// evaluated edits. Required without `feature`.
+    /// evaluated edits. A sheet takes either sign (negative: against the normal). Required without `feature`.
     #[serde(default)]
     pub thickness: Option<Num>,
     /// Existing Thicken feature id/name to re-pick. With this set, `body`, `thickness` and `name` are refused.
@@ -874,7 +874,7 @@ pub fn tools() -> Vec<Tool> {
         ),
         tool(
             "thicken",
-            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`.", stale!()),
+            concat!("Grow a plate of `thickness` on one face (planar or curved) outward along its normal using native Thicken, as the app's Thicken command; the plate is united with the part (one body). A planar face is extruded along its normal, a curved one offset (cylinder side +2 = radius +2). The face is frozen to its persistent id at creation. thickness must be > 0 on creation and on every later edit. A SHEET (an open surface, body sheet:true) is thickened whole into a solid from one face, as the app does, and takes either sign: positive grows along the face normal, negative against it (only 0 and |t| > 100000 are refused). A plate into a cavity is not clipped. Give `feature` to replace the face of an existing thicken; its thickness formula stays, values via `dimension_set` key `thickness`.", stale!()),
             |st, a: ThickenArgs| {
                 let s = st.doc()?;
                 let face = a.face.resolve(s)?;
