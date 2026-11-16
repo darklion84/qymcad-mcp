@@ -287,18 +287,18 @@ selection/axis values as native JSON. Malformed structured JSON and nesting beyo
 argument path; the normal deserializer still rejects unknown fields and invalid values.
 
 ## Testing
-- `tests/smoke.rs` — the kernel links and builds.
-- `tests/golden_*.rs` (`golden_plate`, `golden_features`: every 3B operation) — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
+- `crates/engine/tests/it/smoke.rs` — the kernel links and builds.
+- `crates/engine/tests/it/golden_*.rs` (`golden_plate`, `golden_features`: every 3B operation) — parts with hand-computed volume/bbox; parameter edits; save/open round trip; **the GUI
   rebuild path** (`common::gui_edit_param` reproduces QymCAD.app's open → edit parameter → rebuild sequence).
-- `tests/golden_export.rs` — every export format read back (STEP volume via `read_exact`, STL/3MF mesh volume and
+- `crates/engine/tests/it/golden_export.rs` — every export format read back (STEP volume via `read_exact`, STL/3MF mesh volume and
   bbox, GLB binary positions/indices with asymmetric metres/+Y-up and outward-winding checks, OBJ per-object
   global offsets and geometric read-back), `finer_quality_never_loses_accuracy`, body selection;
   the placed-part test verifies world-space render/export geometry, and staging-directory tests verify safe
   output creation and hard-link replacement. Renders are decoded with the `png`
   crate (size, coverage, plate aspect 1.5, holes show background).
-- `tests/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
-- `tests/golden_assembly_frames.rs` — local/world owner reporting, anchored 10×20×30 box placement, translated/rotated B-rep and mesh render bounds, STEP/3MF geometry readback and legacy bbox compatibility.
-- `tests/golden_assembly_app.rs` — saved native cached/forced open, parameter-window formula0→300→0 with no B-rep rebuild, released/numeric drag persistence, and three Parts/twenty plates/two Sliders with exactly six moving drawer bodies. `common::native_assembly_*` uses only native Project/kernel operations, with no Session repairs; this is not visible-app acceptance.
+- `crates/engine/tests/it/session_behaviour.rs` — API contract: atomicity, errors, parameter bookkeeping.
+- `crates/engine/tests/it/golden_assembly_frames.rs` — local/world owner reporting, anchored 10×20×30 box placement, translated/rotated B-rep and mesh render bounds, STEP/3MF geometry readback and legacy bbox compatibility.
+- `crates/engine/tests/it/golden_assembly_app.rs` — saved native cached/forced open, parameter-window formula0→300→0 with no B-rep rebuild, released/numeric drag persistence, and three Parts/twenty plates/two Sliders with exactly six moving drawer bodies. `common::native_assembly_*` uses only native Project/kernel operations, with no Session repairs; this is not visible-app acceptance.
 - `crates/mcp/tests/it/protocol.rs` — spawns the real binary: initialize/list/errors, builds, saves, reopens and
   edits the golden plate purely through tool calls.
 - `crates/mcp/tests/it/docs_fresh.rs` — docs/TOOLS.md equals the generated registry docs.

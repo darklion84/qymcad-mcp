@@ -42,7 +42,9 @@ behavior or adding dependencies to the synchronous transport (ADR 0002).
   reserving room for one final timestamped `log_limit` record before disabling further writes. Report the
   limit once on stderr.
 - Before opening the new file, remove matching regular `qymcad-mcp-*.jsonl` files whose mtime is older than
-  30 days, then delete the oldest above a cap of 200 previous files. The new file is not counted. Never
+  30 days, then delete the oldest above a cap of 200 previous files, then the oldest until the rest plus a
+  full new file fit in 1 GiB. The walk runs newest first and, once one file is rejected, removes every older
+  one. The new file is not counted. Never
   remove foreign files, directories or symlinks. Ignore deletion errors and report them at most once.
 - Directory/file creation or write failure reports `qymcad-mcp: call log disabled: <reason>` once on stderr
   and disables logging for the process while serving continues. Print `off` on stderr when explicitly disabled;

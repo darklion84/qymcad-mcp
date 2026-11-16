@@ -223,13 +223,16 @@ const TOTAL_LIMIT: u64 = 1024 * 1024 * 1024;
 /// oldest until the rest plus a full new file (`FILE_LIMIT`) fit in `TOTAL_LIMIT`. `files` are (name, mtime, bytes).
 fn retention_selection(files: &[(String, SystemTime, u64)], now: SystemTime) -> Vec<String> {
     let mut candidates: Vec<_> = files.iter().filter(|(name, _, _)| retention_name(name)).collect();
-    // Newest first: the walk keeps files until a limit is reached and deletes everything older.
-    candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.cmp(&a.0)));
-    let (mut kept, mut bytes) = (0usize, FILE_LIMIT);
+    // Newest first: the walk keeps files until a limit is reached and deletes everything older. A future mtime
+    // counts as now, so a skewed clock cannot pin a file ahead of the real newest logs.
+    candidates.sort_by(|a, b| b.1.min(now).cmp(&a.1.min(now)).then_with(|| b.0.cmp(&a.0)));
+    let (mut kept, mut bytes, mut full) = (0usize, FILE_LIMIT, false);
     let mut deleted: Vec<String> = candidates
         .into_iter()
         .filter(|(_, mtime, size)| {
-            let keep = now.duration_since(*mtime).unwrap_or_default() <= MAX_AGE && kept < 200 && bytes + size <= TOTAL_LIMIT;
+            // Once one log is rejected, every older one goes too: a newer large log never yields to an older small one.
+            full = full || now.duration_since(*mtime).unwrap_or_default() > MAX_AGE || kept >= 200 || bytes + size > TOTAL_LIMIT;
+            let keep = !full;
             if keep {
                 kept += 1;
                 bytes += size;
@@ -606,6 +609,18 @@ mod tests {
         assert_eq!(deleted, (0..5).map(|i| format!("qymcad-mcp-{i:02}.jsonl")).collect::<Vec<_>>());
         let kept: u64 = files.iter().filter(|(name, _, _)| !deleted.contains(name)).map(|(_, _, size)| size).sum();
         assert!(kept + FILE_LIMIT <= TOTAL_LIMIT);
+    }
+
+    #[test]
+    fn retention_by_size_never_keeps_an_older_log_after_dropping_a_newer_one() {
+        let now = UNIX_EPOCH + Duration::from_secs(100 * 86400);
+        // Newest first: 14 full files fit with the new one, the 15th full file does not; the older small one goes too.
+        let mut files: Vec<_> =
+            (0..15).map(|i| (format!("qymcad-mcp-big{i:02}.jsonl"), now - Duration::from_secs(10 + i), FILE_LIMIT)).collect();
+        files.push(("qymcad-mcp-small.jsonl".into(), now - Duration::from_secs(100), 1));
+        let mut deleted = retention_selection(&files, now);
+        deleted.sort();
+        assert_eq!(deleted, ["qymcad-mcp-big14.jsonl", "qymcad-mcp-small.jsonl"]);
     }
 
     #[test]

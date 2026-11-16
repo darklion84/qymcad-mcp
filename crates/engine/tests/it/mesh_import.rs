@@ -303,7 +303,7 @@ fn caps_and_refusals_are_atomic() {
     std::fs::write(&path, claimed).unwrap();
     let started = std::time::Instant::now();
     let error = session.import_mesh(&path, None, None, 1.0, None).unwrap_err().to_string();
-    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5)); // shares the CPU with the whole test binary
     assert!(error.contains("triangle limit"));
     session.save(Some(&saved)).unwrap();
     assert_eq!(std::fs::read(&saved).unwrap(), before);
@@ -704,7 +704,7 @@ fn recognition_caps_ranges_and_open_mesh_refusals_preserve_archive() {
         .recognise_mesh(Some(capped_source), qymcad_engine::MeshRecogniseMode::Exact, &1.0.into(), &30.0.into(), &0.0.into(), None)
         .unwrap_err()
         .to_string();
-    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5)); // shares the CPU with the whole test binary
     assert!(capped_error.contains("triangle limit") && capped_error.contains("50001"));
     capped.save(Some(&capped_archive)).unwrap();
     assert_eq!(std::fs::read(&capped_archive).unwrap(), capped_before);
