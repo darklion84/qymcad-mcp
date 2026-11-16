@@ -53,8 +53,9 @@ Items closed without a code change in backlog round J (2026-10-09), with the rea
   recipe (sketch at the top, cut in reverse) is documented in the extrude/plane_offset descriptions (F-061).
 - **Project clone in the rebuild guard** — measured on the shelf: ~0.15 ms per clone (~0.07% of a parameter
   edit); ~0.9 ms for an 8× scaled payload. Negligible; the safety snapshot stays.
-- **`Patch` edge queries and the unrestorable-edge guard** — the engine never creates Patch features. The guard
-  carries a comment saying what to add if it ever does.
+- **`Patch` edge queries and the unrestorable-edge guard** — the engine creates Patch features since ADR 0063, but
+  stores the edges as `Ref::picks` (ids), never as a query (F-024), so the guard needs no change. Only a Patch that
+  a GUI file wrote with a recorded edge query is not judged (not probed).
 - **Duplicate EDGE ids after seam repair** — not reproduced (the F-068 fixture and rebuilds at 0.25/0.5/0.75 mm
   have unique edge ids). A reproducing fixture would justify mirroring the face policy.
 - **MiMo client observations (stale render images, truncated doc_save arguments)** — not reproducible through

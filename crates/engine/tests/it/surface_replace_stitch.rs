@@ -185,7 +185,7 @@ fn surface_replace_can_be_repicked() {
     // The other sheet: 40 x 30 x 12.
     let (body, ids, r) = s.repick_surface_replace(out, None, Some(low)).unwrap();
     assert!(r.errors.is_empty(), "{:?}", r.errors);
-    assert_eq!((body, ids.len()), (out, 0));
+    assert_eq!((body, ids.len()), (out, 1), "only the sheet changed: the stored face is reported, not an empty list");
     common::assert_close(info(&s, out).volume, 14400., 1.0, "2 over");
     assert!(consumed(&s, low) && !consumed(&s, high), "the old sheet is free again");
     // The faces again, by ids: the same top.

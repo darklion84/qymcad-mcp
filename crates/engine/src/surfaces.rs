@@ -289,11 +289,11 @@ impl Session {
     }
 
     /// Re-pick the faces and/or the sheet of an existing SurfaceReplace node, rebuilding what depends on it (the app's edit mode
-    /// changes either). `ids` are empty when only the sheet changes.
+    /// changes either). `ids` are the faces the node holds afterwards: the stored ones when only the sheet changes.
     pub fn repick_surface_replace(&mut self, feature: Id, faces: Option<&Sel>, surface: Option<Id>) -> Result<(Id, Vec<u32>, Rebuild)> {
         self.ensure_topology()?;
-        let (src, body) = self.feature_as(feature, "surface_replace", |kind| match kind {
-            FeatureKind::SurfaceReplace { src, body, .. } => Some((*src, *body)),
+        let (src, body, stored_faces) = self.feature_as(feature, "surface_replace", |kind| match kind {
+            FeatureKind::SurfaceReplace { src, body, faces, .. } => Some((*src, *body, faces.query.picked_descs())),
             _ => None,
         })?;
         let (ids, picks) = match faces {
@@ -301,7 +301,7 @@ impl Session {
                 let (ids, picks) = self.surface_faces(src, sel, "replace")?;
                 (ids, Some(picks))
             }
-            None => (Vec::new(), None),
+            None => (stored_faces, None),
         };
         let surface = surface.map(|b| self.sheet_input(b, Some(feature), "`surface`")).transpose()?;
         let bodies = self.repick_rebuild(feature, "surface_replace", |kind, _| {

@@ -31,6 +31,7 @@ Rules: only `engine` touches QymCAD (ADR 0001); the process is single-threaded a
 | `export.rs` | `Session::export`: STEP/3MF/GLB via native tree writers with flat per-body colour nodes; STL/OBJ colourless; existing weld/quality and world placement once, opt-in visibility filtering shared with render (F-020/F-133, ADR 0045) |
 | `render.rs` | `Session::render`: CPU orthographic rasterizer over the body display meshes, face-id edges, 2× supersampling |
 | `pngfile.rs` | minimal PNG writer (zlib via `flate2`, ADR 0004) |
+| `surfaces.rs` | the surface tools over sheet bodies (ADR 0059-0063): `face_copy`, `offset_surface`, `surface_replace`, `stitch`, `trim`, `patch` and their re-picks; the app's `patch_boundary` pre-check and the F-199 one-boundary guard; the F-198 `stitch_refusals` check against the exact reporting mesh (`collapsed_solid`) |
 | `topology.rs` | faces/edges of a body (kinds, geometry, adjacency, seams); `Sel` selections → `refs::Query` (ids checked recursively, edge `largest` by true length F-030, balanced unions and a size/depth budget F-032); `select`; `ensure_topology` after open (F-023; a failed rebuild is reported and undone); `source_body` (only unconsumed bodies, F-009) |
 | `hole_sketch.rs` | Native sketch-point holes, persisted coordinate/name dependency reads, bounded support ordering, directed through span and per-site bore acceptance (F-118/F-119, ADR 0034) |
 | `modifiers.rs` | fillet, chamfer (symmetric/TwoDist/DistAngle, support adjacency guards, picked edges F-024), shell, push face, hole |
@@ -58,7 +59,7 @@ Before regeneration, reconcile persisted datum ancestry barriers and run scope-i
 4. Compare rebuilt shell counts with previous/source bodies, retaining session advisory diagnostics (ADR 0009).
    Check every rebuilt fillet: a non-tangent join between the blends of two edges that share no vertex
    (overlapping blends) is a rebuild error, kept in `regen_errors`; `Session::open` checks fillets kept from the file too (F-074, ADR 0021).
-5. Report errors, warnings (`regen_warnings` plus session advisories), result bodies (unconsumed, with volume and explicit local/world bounds) and separate native assembly diagnostics. Assembly health additionally checks actual anchors, joint faults, solve errors, violated/conflict state, finite rigid transforms and requested-versus-read slot values (ADR 0051).
+5. Report errors, warnings (`regen_warnings` plus session advisories), result bodies (unconsumed, with volume, `sheet`, `area_mm2` from the exact reporting mesh, and explicit local/world bounds) and separate native assembly diagnostics. Assembly health additionally checks actual anchors, joint faults, solve errors, violated/conflict state, finite rigid transforms and requested-versus-read slot values (ADR 0051).
 
 ## Edits are atomic
 

@@ -97,7 +97,7 @@ fn surface_replace_feature_repicks_the_sheet() {
     assert!(refused(&mut r, "surface_replace", json!({"feature": "swap"})).contains("give `faces` and/or `surface`"));
     let again = call(&mut r, "surface_replace", json!({"surface": "low", "feature": "swap"}));
     assert_eq!(again["feature"], out["feature"]);
-    assert!(again.get("selected_faces").is_some_and(|f| f.as_array().unwrap().is_empty()), "{again}");
+    assert!(again.get("selected_faces").is_some_and(|f| f.as_array().unwrap().len() == 1), "the stored face, not []: {again}");
     close(body(&call(&mut r, "doc_info", json!({})), &out["body"])["volume_mm3"].as_f64().unwrap(), 14400., "40 x 30 x 12");
     let e = refused(&mut r, "surface_replace", json!({"surface": "block", "feature": "swap"}));
     assert!(e.contains("is a solid"), "{e}");
