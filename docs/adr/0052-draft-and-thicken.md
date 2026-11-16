@@ -37,7 +37,7 @@ QymCAD has native Draft (`FeatureKind::Draft`) and Thicken (`FeatureKind::Thicke
 ### Protective refusal (ours; upstream issue candidate)
 
 - **Thickness > 0 (F-150):** the app allows negative thickness; on a solid a negative value either adds nothing (native refusal) or, deeper than the part, builds material on its far side without an error. The server accepts positive thickness only, at creation and on every evaluated edit. `dimension_set` already refused non-positive `thickness`.
-- Sheet sources (the app's whole-sheet offset path) are out of scope: the server creates no sheet bodies.
+- Sheet sources (the app's whole-sheet offset path) take either sign and are tested; the server does create sheet bodies (`loft` with `surface`, or a GUI file): see ADR 0059. The F-150 refusal above is for solids only.
 
 ## Consequences
 

@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Added
+- Sheet bodies (ADR 0059): `doc_info`, rebuild/tool results, `export` per-body entries and the assembly `local_metrics` report `sheet` and `area_mm2` (the sum of the face areas, from the kernel's faces) for every body. A sheet is an open surface: `volume_mm3` is 0 and `export` leaves out `mesh_volume_mm3` for it and says so in a per-body `note`.
+- `thicken` of a sheet takes either sign (the app's command does; positive along the face normal, negative against it; only 0 and a value past 100000 are refused). Solids keep F-150 (positive only). `dimension_set` and parameter edits follow the same rule for a sheet's Thicken node.
+
+### Fixed
+- A sheet no longer raises the false warning "result body has N shells and 0 solids; may contain a sealed internal void" on rebuild and on `doc_open` (a void needs a solid; real solids still warn).
+- A tool that takes no body never defaults to a sheet: `extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others take the part's last solid, as the app does. `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
+
+### Changed
+- `shell` of a sheet is refused (QymCAD returns a cut-back sheet instead of a wall, F-196) and so is a `chamfer` whose selection holds a one-sided boundary edge of a sheet (QymCAD leaves it unchamfered silently, F-197). The other tools were probed on a loft sheet (body_boolean, move, mirror, arrays, hole, draft, remove_face, fillet, push_face, thicken): the table is in ADR 0059.
+
 ## 0.1.1-dev.20261026.19 — rest of the external review (B1, M4, M8, C6)
 
 ### Fixed
