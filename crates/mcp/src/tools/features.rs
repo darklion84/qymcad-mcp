@@ -424,6 +424,43 @@ pub struct RemoveFaceArgs {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FaceCopyArgs {
+    /// Body id or name (a sheet too; a sheet is never the default). Default: the part's current solid; not accepted with `feature`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Faces to copy, at least one, as topology ids or a description such as {"facing": "+z"}. Frozen to the matched ids. With `feature`, replaces them.
+    #[schemars(transform = super::topology::with_sel_brief)]
+    pub faces: SelArg,
+    /// Existing Copy faces feature id/name to re-pick. With this set, `body` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OffsetSurfaceArgs {
+    /// Body id or name (a sheet too; a sheet is never the default). Default: the part's current solid; not accepted with `feature`.
+    #[serde(default)]
+    pub body: Option<ObjRef>,
+    /// Faces to offset, at least one, as topology ids or a description such as {"facing": "+z"}. Frozen to the matched ids. With `feature`, replaces them.
+    #[schemars(transform = super::topology::with_sel_brief)]
+    pub faces: SelArg,
+    /// Distance along the face normals, mm (number or expression), -10000..10000, 0 = copy in place; outward of a solid is positive. Required without `feature`; later edits via `dimension_set` key `dist`.
+    #[serde(default)]
+    pub distance: Option<Num>,
+    /// Existing Offset surface feature id/name to re-pick. With this set, `body`, `distance` and `name` are refused.
+    #[serde(default)]
+    pub feature: Option<ObjRef>,
+    /// Name for the new feature (timeline node). Not accepted with `feature`.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
 fn zero() -> Num {
     Num::Value(0.0)
 }
@@ -906,6 +943,47 @@ pub fn tools() -> Vec<Tool> {
                     let (feature, selected, rebuild) = s.remove_face(opt_body(s, &a.body)?, &faces, a.name.as_deref()).map_err(err)?;
                     let body = feature;
                     Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                }
+            },
+        ),
+        tool(
+            "face_copy",
+            "Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 0, area_mm2), as the app's Copy faces; several faces make one sheet. The source stays and is not consumed; the sheet lies on its face and follows later edits of the source. The sheet is never the default body of other tools: pass its id as `body`. Give `feature` to replace the faces of an existing node. Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
+            |st, a: FaceCopyArgs| {
+                let s = st.doc()?;
+                let faces = a.faces.resolve(s)?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body` and `name` are not accepted".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_face_copy(feature, &faces).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let body = opt_body(s, &a.body)?;
+                    let (feature, selected, rebuild) = s.face_copy(body, &faces, a.name.as_deref()).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                }
+            },
+        ),
+        tool(
+            "offset_surface",
+            "Move faces of a body (solid or sheet) along their normals into a NEW SHEET body, as the app's Offset surface: top lifted 5 gives a sheet 5 above it. Faces meeting smoothly move as one piece, faces at a sharp edge move apart (still one body). The source stays. A distance that turns a cylinder inside out fails natively (OffsetPastRadius). Same sheet rules as face_copy. Give `feature` to replace the faces; `distance` stays (its formula, values via `dimension_set` key `dist`). Returns `feature` (also the sheet's id), `selected_faces`, `rebuild`.",
+            |st, a: OffsetSurfaceArgs| {
+                let s = st.doc()?;
+                let faces = a.faces.resolve(s)?;
+                if let Some(feature) = a.feature {
+                    if a.body.is_some() || a.distance.is_some() || a.name.is_some() {
+                        return Err("with `feature`, `body`, `distance` and `name` are not accepted; change the distance with `dimension_set`".into());
+                    }
+                    let feature = feature.resolve(s)?;
+                    let (body, selected, rebuild) = s.repick_offset_surface(feature, &faces).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": body, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
+                } else {
+                    let body = opt_body(s, &a.body)?;
+                    let distance = a.distance.ok_or("`distance` is required unless `feature` is given")?;
+                    let (feature, selected, rebuild) = s.offset_surface(body, &faces, &distance, a.name.as_deref()).map_err(err)?;
+                    Ok(json!({ "feature": feature, "body": feature, "name": s.node_name(feature), "selected_faces": selected, "rebuild": rebuild_json(&rebuild) }))
                 }
             },
         ),

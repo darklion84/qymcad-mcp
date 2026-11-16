@@ -192,6 +192,8 @@ const MODELLING_TOOLS: &[&str] = &[
     "draft",
     "thicken",
     "remove_face",
+    "face_copy",
+    "offset_surface",
     "move",
     "linear_array",
     "circular_array",

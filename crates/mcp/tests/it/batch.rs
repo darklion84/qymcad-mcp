@@ -226,6 +226,8 @@ fn limits_allowlist_and_outer_schema() {
         "draft",
         "thicken",
         "remove_face",
+        "face_copy",
+        "offset_surface",
         "move",
         "linear_array",
         "circular_array",
