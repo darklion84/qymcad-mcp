@@ -122,6 +122,7 @@ mod surface_replace_stitch;
 mod t0_probes;
 mod t2_probes;
 mod timeline_kinds;
+mod trim;
 mod usability_info;
 mod usability_undo;
 mod usability_warnings;
