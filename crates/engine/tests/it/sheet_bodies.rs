@@ -578,7 +578,7 @@ fn tetra_without_faces() -> (Session, Id, f64) {
 /// (a file saved without `faces/`: `export` said 0 where `doc_info` summed the triangles) and for a freshly imported one.
 #[test]
 fn export_reports_the_triangle_area_of_a_mesh_body_like_doc_info() {
-    let (mut s, mesh, expected) = tetra_without_faces();
+    let (s, mesh, expected) = tetra_without_faces();
     assert!(s.project().bodies.iter().find(|b| b.id == mesh).unwrap().faces.is_empty(), "setup: no cached faces");
     close(info(&s, mesh).area, expected, 1e-3, "doc_info");
     for (format, name) in [(ExportFormat::Stl, "mesh.stl"), (ExportFormat::ThreeMf, "mesh.3mf")] {
