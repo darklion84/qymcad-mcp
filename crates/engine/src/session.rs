@@ -689,6 +689,7 @@ impl Session {
         self.check_chamfer_values()?;
         self.check_draft_thicken_values()?;
         self.check_offset_values()?;
+        self.check_stitch_values()?;
         self.check_hole_values()
     }
 
@@ -967,6 +968,9 @@ impl Session {
             self.refuse(&mut errors, node, message);
         }
         for (node, message) in self.draft_refusals(|n| rebuilt.contains(&n) && !errors.iter().any(|e| e.node == n)) {
+            self.refuse(&mut errors, node, message);
+        }
+        for (node, message) in self.stitch_refusals(|n| rebuilt.contains(&n) && !errors.iter().any(|e| e.node == n)) {
             self.refuse(&mut errors, node, message);
         }
         for (node, message) in self.split_identity_refusals(&split_identities, &rebuilt) {

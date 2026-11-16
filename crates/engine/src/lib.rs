@@ -106,6 +106,7 @@ pub use sketch::{
 pub use sketch_import::{SketchImportFormat, SketchImportResult};
 pub use split::{SplitOptions, SplitResult};
 pub use split_face::{FaceCounts, SplitFaceOptions, SplitFaceResult};
+pub use surfaces::STITCH_TOLERANCE_DEFAULT;
 pub use sweep::{Loft, LoftSection, Sweep, SweepPath};
 pub use thread::{ThreadOptions, ThreadResult};
 pub use topology::{Axis, EdgeInfo, EdgeKind, Element, FaceInfo, FaceKind, Role, Sel, SelectionKind, Topology};
