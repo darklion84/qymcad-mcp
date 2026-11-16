@@ -172,7 +172,7 @@ impl Session {
     }
 
     /// Solve only reached sketch expressions, including names refreshed by driven dimensions after a solve.
-    /// Rebuild scheduling retains blanket native dirtying and face-derived datum barriers (F-002, F-017).
+    /// Rebuild scheduling marks what the changed names reach, face-derived datum barriers (F-002, F-017) and derived datums (ADR 0064).
     /// Names match exactly, as QymCAD evaluates them. Returns reached sketches left unsolved.
     pub(crate) fn propagate_params(&mut self, before: &std::collections::HashMap<String, f64>) -> Result<Vec<(Id, f64)>> {
         let mut solved = HashSet::new();
@@ -256,7 +256,7 @@ impl Session {
             }
             previous = values;
         }
-        // Native inputs() omits datum-hosted sketches. Blanket dirtying alone can still prepare a solid
+        // Native inputs() omits datum-hosted sketches. Marking by names alone can still prepare a solid
         // on the old frame, so dirty face-derived datum sketches as barriers without solving them.
         let mut barriers = Vec::new();
         for sketch in &self.p.sketches {
@@ -281,19 +281,24 @@ impl Session {
     }
 
     /// Native `inputs` omit what a derived datum is read off (a two-point axis's points, an edge or face axis's body,
-    /// a vertex point's body, a face-offset plane's body and an offset plane's parent) and a revolve's datum axis, so a targeted edit would leave them, and what turns about
-    /// them, on the old geometry. Mark them dirty while their source is in the regeneration plan (ADR 0064).
+    /// a vertex point's body, a face-offset plane's body and an offset plane's parent) and a revolve's datum axis, so a
+    /// targeted edit would leave them, and what turns about them, on the old geometry. Mark them dirty while their
+    /// source is in the rebuild set (ADR 0064). The set is `rebuild_nodes`, not the native plan: a source reached
+    /// through a projection, a sketch-placed hole or a suppressed modifier is rebuilt too, and the native plan misses it.
+    /// Each node is marked at most once; suppressed nodes and nodes past the rollback bar are never built, so never marked.
     fn mark_derived_datums_dirty(&mut self) {
         use qymcad_core::feature::FeatureKind;
         use qymcad_core::model::{AxisDef, PlaneDef, PointDef};
-        for _ in 0..=self.p.timeline.len() {
-            let plan: HashSet<Id> = self.p.regen_plan().nodes.into_iter().collect();
-            let planned = |declared: Id| self.p.timeline.iter().any(|n| plan.contains(&n.id) && n.kind.declares().contains(&declared));
+        let mut marked: HashSet<Id> = HashSet::new();
+        loop {
+            let plan = crate::dependencies::rebuild_nodes(&self.p);
+            let planned = |source: Id| plan.contains(&source);
             let stale: Vec<Id> = self
                 .p
                 .timeline
                 .iter()
-                .filter(|n| !plan.contains(&n.id))
+                .take(self.p.rollback_place())
+                .filter(|n| !n.suppressed && !plan.contains(&n.id) && !marked.contains(&n.id))
                 .filter(|n| match n.kind {
                     FeatureKind::DatumAxis { axis } => self.p.datum_axes.iter().find(|a| a.id == axis).is_some_and(|a| match a.def {
                         AxisDef::TwoPoints { a, b } => planned(a) || planned(b),
@@ -320,6 +325,7 @@ impl Session {
                 return;
             }
             for id in stale {
+                marked.insert(id);
                 self.p.mark_node_dirty(id);
             }
         }

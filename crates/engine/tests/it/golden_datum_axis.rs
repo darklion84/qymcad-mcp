@@ -486,3 +486,87 @@ fn an_axis_through_vertex_points_follows_the_vertices_on_a_parameter_edit() {
     assert_eq!([axis_state(&s, axis.id).0[0], axis_state(&s, axis.id).0[1]], [40.0, 5.0], "the axis moved with the vertices");
     assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the vertices");
 }
+
+/// The vertical edge of `body` at x > 30, y > 0 (on block D: x = 30 + w / 2, y = 5).
+fn d_vertical_edge(s: &mut Session, body: u64) -> u32 {
+    s.topology(Some(body), false)
+        .unwrap()
+        .edges
+        .into_iter()
+        .find(|e| e.kind == EdgeKind::Line && (e.a[2] - e.b[2]).abs() > 5.0 && e.a[0] > 30.0 && e.a[1] > 0.0)
+        .unwrap()
+        .id
+}
+
+/// An edge axis on the body of a suppressed fillet of block D and an array of B about it (D 25..35, so the axis at x = 35).
+fn suppressed_fillet_axis_array(s: &mut Session) -> (u64, u64) {
+    let b = block_b(s);
+    let d = block_d(s);
+    let (f, _) = s.fillet(Some(d), &Sel::EdgesOf(Box::new(Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. })), &1.0.into(), None).unwrap();
+    s.feature_suppress(f, true).unwrap();
+    let body = s.result_bodies().into_iter().map(|x| x.id).find(|id| *id != b).unwrap();
+    let edge = d_vertical_edge(s, body);
+    let (axis, _) = s.datum_axis(&AxisSpec::Edge { edge, body: Some(body) }, None).unwrap();
+    assert_eq!(axis.origin[0], 35.0);
+    array(s, b, axis.id);
+    (d, axis.id)
+}
+
+/// ADR 0064: an edge axis on an extrusion of a projection of block D, and an array about it, follow D when a parameter
+/// widens it. The native plan does not reach the projecting sketch; the engine's rebuild set does.
+#[test]
+fn an_axis_on_an_extruded_projection_follows_the_projected_block_on_a_parameter_edit() {
+    use qymcad_core::model::ProjSource;
+    let mut s = Session::new_part();
+    let b = block_b(&mut s);
+    let d = block_d(&mut s);
+    let bottom: Vec<ProjSource> = s
+        .topology(Some(d), false)
+        .unwrap()
+        .edges
+        .iter()
+        .filter(|e| e.kind == EdgeKind::Line && e.a[2].abs() < 1e-6 && e.b[2].abs() < 1e-6)
+        .map(|e| ProjSource::Edge(e.id))
+        .collect();
+    assert_eq!(bottom.len(), 4);
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_project(sk, d, &bottom).unwrap();
+    let e = extrude_new(&mut s, sk, 10.0);
+    let edge = d_vertical_edge(&mut s, e);
+    let (axis, _) = s.datum_axis(&AxisSpec::Edge { edge, body: Some(e) }, None).unwrap();
+    assert_eq!(axis.origin[0], 35.0);
+    array(&mut s, b, axis.id);
+    s.param_set("w", &20.0.into()).unwrap();
+    assert_box(bbox_of(&s, e), [20.0, -5.0, 0.0, 40.0, 5.0, 10.0], "the extruded projection follows D");
+    assert_eq!(axis_state(&s, axis.id).0[0], 40.0, "the axis moved with the edge");
+    assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the edge");
+}
+
+/// ADR 0064: an edge axis on the body of a suppressed fillet (a copy of D), and an array about it, follow D when a
+/// parameter widens it. The native plan skips the suppressed node and so the body it passes through.
+#[test]
+fn an_axis_on_a_suppressed_modifier_body_follows_its_source_on_a_parameter_edit() {
+    let mut s = Session::new_part();
+    let (_, axis) = suppressed_fillet_axis_array(&mut s);
+    s.param_set("w", &20.0.into()).unwrap();
+    assert_eq!(axis_state(&s, axis).0[0], 40.0, "the axis moved with the edge");
+    assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the edge");
+}
+
+/// ADR 0064: `dimension_set` shares the rule with `param_set` (`propagate_params_unsettled`): the same axis and array
+/// follow D when its width dimension is set directly.
+#[test]
+fn an_axis_on_a_suppressed_modifier_body_follows_its_source_on_a_dimension_edit() {
+    let mut s = Session::new_part();
+    let (d, axis) = suppressed_fillet_axis_array(&mut s);
+    let sketch = match s.project().timeline.iter().find(|n| n.id == d).unwrap().kind {
+        qymcad_core::feature::FeatureKind::Extrude { sketch, .. } => sketch,
+        _ => unreachable!(),
+    };
+    let si = s.project().sketch_index(sketch).unwrap();
+    let constraint = s.project().sketches[si].constraints.iter().position(|c| c.expr() == Some("w")).unwrap();
+    s.dimension_set(&DimensionTarget::Sketch { sketch, constraint }, Some(&20.0.into()), None).unwrap();
+    assert_box(bbox_of(&s, d), [20.0, -5.0, 0.0, 40.0, 5.0, 10.0], "D widened");
+    assert_eq!(axis_state(&s, axis).0[0], 40.0, "the axis moved with the edge");
+    assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the edge");
+}
