@@ -528,3 +528,60 @@ fn area_does_not_depend_on_the_face_cache() {
     close(t.faces.iter().map(|f| f.area).sum::<f64>(), before, 1e-3, "the same once the faces are read");
     assert_eq!(info(&opened, solid).area, before);
 }
+
+// ---- (h) a mesh body's area in export ----
+
+/// The faces of an imported mesh body written to a `.qcad`, left out again: what a file saved without `faces/` looks like.
+fn tetra_without_faces() -> (Session, Id, f64) {
+    use std::io::{Read, Write};
+    let dir = std::env::temp_dir().join(format!("qymcad-tr6-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stl = dir.join("tetra.stl");
+    // Three right-angled faces of 50 and one equilateral face of side 10 sqrt 2: 150 + 86.6025 mm2.
+    std::fs::write(
+        &stl,
+        "solid t\n facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 10 0 0\n   vertex 0 10 0\n  endloop\n endfacet\n \
+         facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 10 0\n   vertex 0 0 10\n  endloop\n endfacet\n \
+         facet normal 0 0 0\n  outer loop\n   vertex 0 0 0\n   vertex 0 0 10\n   vertex 10 0 0\n  endloop\n endfacet\n \
+         facet normal 0 0 0\n  outer loop\n   vertex 10 0 0\n   vertex 0 0 10\n   vertex 0 10 0\n  endloop\n endfacet\nendsolid t\n",
+    )
+    .unwrap();
+    let mut s = Session::new_part();
+    let mesh = s.import_mesh(&stl, None, None, 1.0, None).unwrap().pieces[0].body;
+    let expected = 150. + 3f64.sqrt() / 4. * 200.;
+    close(info(&s, mesh).area, expected, 1e-3, "doc_info of the import");
+    let original = common::scratch("tr6-with-faces.qcad");
+    s.save(Some(&original)).unwrap();
+    let legacy = common::scratch("tr6-no-faces.qcad");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&legacy).unwrap());
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&original).unwrap()).unwrap();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).unwrap();
+        if entry.name().starts_with("faces/") {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        zip.start_file(entry.name().to_string(), zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(&bytes).unwrap();
+    }
+    zip.finish().unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+    let (opened, _) = Session::open(&legacy).unwrap();
+    (opened, mesh, expected)
+}
+
+/// TR 6: `export` and `doc_info` give a mesh body the same `area_mm2`, the sum of its triangles, also when the body has no cached faces
+/// (a file saved without `faces/`: `export` said 0 where `doc_info` summed the triangles) and for a freshly imported one.
+#[test]
+fn export_reports_the_triangle_area_of_a_mesh_body_like_doc_info() {
+    let (mut s, mesh, expected) = tetra_without_faces();
+    assert!(s.project().bodies.iter().find(|b| b.id == mesh).unwrap().faces.is_empty(), "setup: no cached faces");
+    close(info(&s, mesh).area, expected, 1e-3, "doc_info");
+    for (format, name) in [(ExportFormat::Stl, "mesh.stl"), (ExportFormat::ThreeMf, "mesh.3mf")] {
+        let report = s.export(format, &common::scratch(name), Quality::Standard, None).unwrap();
+        let body = report.bodies.iter().find(|b| b.id == mesh).unwrap();
+        close(body.area_mm2, expected, 1e-3, &format!("export {name}"));
+        assert!(!body.sheet);
+    }
+}

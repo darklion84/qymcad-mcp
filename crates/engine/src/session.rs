@@ -284,6 +284,11 @@ pub(crate) fn edges_with_ends(shape: &Shape) -> Result<Vec<qymcad_core::geom::Me
     Ok(kernel.edges(0))
 }
 
+/// The area of a mesh body: the sum of its triangles, mm2.
+fn mesh_triangle_area(mesh: &qymcad_core::geom::Mesh) -> f64 {
+    (0..mesh.tris.len()).map(|i| mesh.tri_normal_area(i).1).sum()
+}
+
 /// Reporting bounds must not depend on the live shape's triangulation state (F-066).
 /// Tessellate an independent copy: the native tessellator cleans/replaces triangulations even via &Shape.
 /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
@@ -1384,7 +1389,7 @@ impl Session {
                     color_source,
                     volume: mesh.volume(),
                     sheet: self.is_sheet(b),
-                    area: (0..mesh.tris.len()).map(|i| mesh.tri_normal_area(i).1).sum(),
+                    area: mesh_triangle_area(mesh),
                     bbox,
                     bbox_frame: "world",
                     bbox_local,
@@ -1413,6 +1418,10 @@ impl Session {
     /// independent of the face cache and of the document's `GeomQuality`; the cached faces only when that mesh is partial.
     /// Precondition: the current thread must not hold `qymcad_kernel::kernel_gate()`.
     pub(crate) fn body_face_area(&self, body: Id) -> f64 {
+        if let Some(index) = self.p.mesh_index(body).filter(|_| self.p.mesh_born(body)) {
+            // A mesh body has no B-rep and, in a file saved without `faces/`, no cached faces: its area is its triangles', as `doc_info` reports.
+            return mesh_triangle_area(&self.p.bodies[index].mesh);
+        }
         self.shapes.get(&body).and_then(|sh| reporting_metrics(sh).area).or_else(|| self.cached_face_area(body)).unwrap_or(0.0)
     }
 

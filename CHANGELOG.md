@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 - `thicken` of a sheet takes either sign (the app's command does; positive along the face normal, negative against it; only 0 and a value past 100000 are refused). Solids keep F-150 (positive only). `dimension_set` and parameter edits follow the same rule for a sheet's Thicken node.
 
 ### Fixed
+- `export` reported `area_mm2` 0 for an imported mesh body that has no cached faces (a file saved without `faces/`) while `doc_info` gave its triangle area; both give the triangle area now. A freshly imported mesh body was already right.
 - The F-197 guard (a chamfer whose selection holds a one-sided boundary edge of a sheet) holds on a `chamfer` re-pick (`feature`) too: it went through and QymCAD bevelled the shared edges only, silently.
 - A sheet no longer raises the false warning "result body has N shells and 0 solids; may contain a sealed internal void" on rebuild and on `doc_open` (a void needs a solid; real solids still warn).
 - A tool that takes no body defaults to the part's last solid and skips sheets, as the app does (`extrude`/`revolve`/`sweep` with `op add` and no target, `fillet`, `hole`, `topology`, `sketch_project` and the others); a sheet is the default only when it is the only body of the document (a part holding nothing else). `extrude op:add` after a loft sheet used to fail with "Boolean" and roll back.
