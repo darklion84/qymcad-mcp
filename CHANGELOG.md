@@ -3,9 +3,10 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.1-dev.20261026.21 — targeted parameter rebuild, smaller tools/list
 
 ### Changed
+- `body_boolean` with a sheet as A is still refused; the message now names what QymCAD does with it (GUI check: union fails, intersect is refused, cut gives an empty body or drops B; FINDINGS F-200).
 - `param_set` rebuilds only what the changed names reach (ADR 0064): an edit of a parameter nothing reads took as long as a whole-history rebuild (134 ms → 11 ms on a 31-node plate). Datums read off a body or off other datums (two-point, edge and face axes, vertex points, face-offset and offset planes) and a revolve about a datum axis follow their source, which the app's own dependency list omits (F-202), also when the source is reached through a projection, a sketch-placed hole or a suppressed modifier; `dimension_set` follows the same rule.
 - `tools/list` is 7.3 KB smaller (219 540 → 212 228 bytes): tool schemas drop the generator's `format` annotations on numbers, `"default": null`, and an `anyOf` of plain scalars becomes one `type` list (`ObjRef` is `["integer","string"]`, `Num` is `["number","string"]`). Arguments are decoded and validated as before; `docs/TOOLS.md` regenerated.
 - `batch` no longer measures the bodies after every step: a step's body report is dropped unless `verbose` is set, and the exact bounding box and area came from a fresh 0.005 mm tessellation each time (review item E2.5; a quarter of a 50-step batch on an 8-body assembly). The final report, a verbose step's result and every call after the batch measure as before.
