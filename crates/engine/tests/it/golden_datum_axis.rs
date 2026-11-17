@@ -499,7 +499,7 @@ fn d_vertical_edge(s: &mut Session, body: u64) -> u32 {
 }
 
 /// An edge axis on the body of a suppressed fillet of block D and an array of B about it (D 25..35, so the axis at x = 35).
-fn suppressed_fillet_axis_array(s: &mut Session) -> (u64, u64) {
+fn suppressed_fillet_axis_array(s: &mut Session) -> (u64, u64, u64) {
     let b = block_b(s);
     let d = block_d(s);
     let (f, _) = s.fillet(Some(d), &Sel::EdgesOf(Box::new(Sel::Facing { dir: [0., 0., 1.], tol_deg: 1. })), &1.0.into(), None).unwrap();
@@ -509,7 +509,7 @@ fn suppressed_fillet_axis_array(s: &mut Session) -> (u64, u64) {
     let (axis, _) = s.datum_axis(&AxisSpec::Edge { edge, body: Some(body) }, None).unwrap();
     assert_eq!(axis.origin[0], 35.0);
     array(s, b, axis.id);
-    (d, axis.id)
+    (d, body, axis.id)
 }
 
 /// ADR 0064: an edge axis on an extrusion of a projection of block D, and an array about it, follow D when a parameter
@@ -547,7 +547,7 @@ fn an_axis_on_an_extruded_projection_follows_the_projected_block_on_a_parameter_
 #[test]
 fn an_axis_on_a_suppressed_modifier_body_follows_its_source_on_a_parameter_edit() {
     let mut s = Session::new_part();
-    let (_, axis) = suppressed_fillet_axis_array(&mut s);
+    let (_, _, axis) = suppressed_fillet_axis_array(&mut s);
     s.param_set("w", &20.0.into()).unwrap();
     assert_eq!(axis_state(&s, axis).0[0], 40.0, "the axis moved with the edge");
     assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the edge");
@@ -558,7 +558,7 @@ fn an_axis_on_a_suppressed_modifier_body_follows_its_source_on_a_parameter_edit(
 #[test]
 fn an_axis_on_a_suppressed_modifier_body_follows_its_source_on_a_dimension_edit() {
     let mut s = Session::new_part();
-    let (d, axis) = suppressed_fillet_axis_array(&mut s);
+    let (d, body, axis) = suppressed_fillet_axis_array(&mut s);
     let sketch = match s.project().timeline.iter().find(|n| n.id == d).unwrap().kind {
         qymcad_core::feature::FeatureKind::Extrude { sketch, .. } => sketch,
         _ => unreachable!(),
@@ -566,7 +566,7 @@ fn an_axis_on_a_suppressed_modifier_body_follows_its_source_on_a_dimension_edit(
     let si = s.project().sketch_index(sketch).unwrap();
     let constraint = s.project().sketches[si].constraints.iter().position(|c| c.expr() == Some("w")).unwrap();
     s.dimension_set(&DimensionTarget::Sketch { sketch, constraint }, Some(&20.0.into()), None).unwrap();
-    assert_box(bbox_of(&s, d), [20.0, -5.0, 0.0, 40.0, 5.0, 10.0], "D widened");
+    assert_box(bbox_of(&s, body), [20.0, -5.0, 0.0, 40.0, 5.0, 10.0], "D widened");
     assert_eq!(axis_state(&s, axis).0[0], 40.0, "the axis moved with the edge");
     assert_box(last_bbox(&s), [-5.0, -40.0, 0.0, 85.0, 50.0, 4.0], "array follows the edge");
 }
