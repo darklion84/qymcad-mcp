@@ -3,6 +3,11 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+- `bbox_world` of a body in a turned Part (doc_info, tool results; `render` fits its frame to it) bounds the body's own mesh carried by the Part's placement. It was the box of the eight turned corners of the local box, which over-bounds a turned curved body: a cylinder R10 turned by 60 degrees reported x 4.34..31.66 instead of 8..28 (found checking a GUI file with a component pattern, FINDINGS F-204). Unturned Parts and `bbox_local` are unchanged.
+
 ## 0.1.1-dev.20261026.21 — targeted parameter rebuild, smaller tools/list
 
 ### Changed

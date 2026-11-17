@@ -303,6 +303,9 @@ fn reporting_bbox(shape: &Shape) -> Option<[f64; 6]> {
 pub(crate) struct Reported {
     /// The bounds; the kernel's own when the mesh is partial.
     pub bbox: Option<[f64; 6]>,
+    /// The bounds of the same mesh carried by the placement given to `reporting_metrics_placed`; `None` without one or
+    /// when the mesh is partial (a box of the eight carried corners of `bbox` is then the caller's fallback).
+    pub bbox_placed: Option<[f64; 6]>,
     /// The sum of the face areas of the mesh; `None` when the mesh is partial.
     pub area: Option<f64>,
     /// The volume the mesh encloses (absolute value); `None` when the mesh is partial. Meaningless for an open surface.
@@ -313,6 +316,12 @@ pub(crate) struct Reported {
 
 /// The reporting bounds, face area and enclosed volume, from one tessellation. Same preconditions as [`reporting_bbox`].
 pub(crate) fn reporting_metrics(shape: &Shape) -> Reported {
+    reporting_metrics_placed(shape, None)
+}
+
+/// `reporting_metrics`, plus the bounds of the mesh's vertices carried by `placement` (a Part's world transform): the
+/// eight corners of a turned local box would over-bound a turned Part, by up to 41% of a side at 45 degrees.
+pub(crate) fn reporting_metrics_placed(shape: &Shape, placement: Option<&[f64; 12]>) -> Reported {
     let mut deflection = 0.005_f64;
     let mut measured = || {
         let copy = copy_shapes([(0, shape)]).ok()?.remove(&0)?;
@@ -330,6 +339,7 @@ pub(crate) fn reporting_metrics(shape: &Shape) -> Reported {
             return None;
         }
         let mut bbox = [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        let mut placed = bbox;
         for v in &mesh.verts {
             for (i, coordinate) in [v.x, v.y, v.z].into_iter().enumerate() {
                 if !coordinate.is_finite() {
@@ -338,14 +348,23 @@ pub(crate) fn reporting_metrics(shape: &Shape) -> Reported {
                 bbox[i] = bbox[i].min(coordinate);
                 bbox[i + 3] = bbox[i + 3].max(coordinate);
             }
+            if let Some(m) = placement {
+                let point = qymcad_core::feature::apply12(m, [v.x, v.y, v.z]);
+                for i in 0..3 {
+                    placed[i] = placed[i].min(point[i]);
+                    placed[i + 3] = placed[i + 3].max(point[i]);
+                }
+            }
         }
-        Some((bbox, faces.iter().map(|f| f.area).sum::<f64>(), mesh.volume()))
+        Some((bbox, placement.map(|_| placed), faces.iter().map(|f| f.area).sum::<f64>(), mesh.volume()))
     };
     match measured() {
-        Some((bbox, area, volume)) => Reported { bbox: Some(bbox), area: Some(area), mesh_volume: Some(volume), deflection },
+        Some((bbox, bbox_placed, area, volume)) => {
+            Reported { bbox: Some(bbox), bbox_placed, area: Some(area), mesh_volume: Some(volume), deflection }
+        }
         None => {
             let _gate = qymcad_kernel::kernel_gate();
-            Reported { bbox: shape.bbox(), area: None, mesh_volume: None, deflection }
+            Reported { bbox: shape.bbox(), bbox_placed: None, area: None, mesh_volume: None, deflection }
         }
     }
 }
@@ -1337,7 +1356,8 @@ impl Session {
                 let owner_part = self.p.body_owner(b);
                 let world_transform = self.p.body_world_transform(b);
                 if let Some(sh) = self.shapes.get(&b) {
-                    let measured = if self.metrics_deferred { Reported::default() } else { reporting_metrics(sh) };
+                    let measured =
+                        if self.metrics_deferred { Reported::default() } else { reporting_metrics_placed(sh, Some(&world_transform)) };
                     let bbox_local = measured.bbox.unwrap_or([0.0; 6]);
                     let mut bbox_world =
                         [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
@@ -1352,6 +1372,9 @@ impl Session {
                             bbox_world[axis] = bbox_world[axis].min(point[axis]);
                             bbox_world[axis + 3] = bbox_world[axis + 3].max(point[axis]);
                         }
+                    }
+                    if let Some(placed) = measured.bbox_placed {
+                        bbox_world = placed;
                     }
                     return Some(BodyInfo {
                         id: b,

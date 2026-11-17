@@ -228,3 +228,23 @@ fn assembly_cabinet_three_parts_twenty_plates_two_sliders_moves_exactly_six_bodi
         }
     }
 }
+
+/// `bbox_world` of a turned Part bounds the body's own mesh carried by the placement, not the eight turned corners of
+/// its local box: a cylinder R10 turned by 60 degrees about Z and placed at (18, -31.18), as copy (2) of a component
+/// pattern in a GUI-made file (FINDINGS F-204 check), spans x 8..28, not the 4.34..31.66 of the turned corners.
+#[test]
+fn the_world_bounds_of_a_turned_part_follow_its_body_not_its_turned_local_box() {
+    let mut s = Session::new_part();
+    let part = s.part_new("turned").unwrap()["part"]["id"].as_u64().unwrap();
+    let sk = s.sketch_create(&PlaneRef::Base(BaseName::XY), None).unwrap();
+    s.sketch_circle(sk, &0.0.into(), &0.0.into(), &20.0.into(), false).unwrap();
+    let ex: Extrude = serde_json::from_value(json!({"sketch":sk,"height":20.0,"op":"new_body"})).unwrap();
+    let (body, _) = s.extrude(&ex).unwrap();
+    let rotation = PartRotation { axis: [0., 0., 1.], angle_deg: 60. };
+    s.part_place(&PartRef::Id(part), [18., -31.176914536239792, 0.], Some(&rotation)).unwrap();
+    let info = s.result_bodies().into_iter().find(|b| b.id == body).unwrap();
+    let want = [8., -41.1769, 0., 28., -21.1769, 20.];
+    for (got, want) in info.bbox_world.into_iter().zip(want) {
+        assert!((got - want).abs() < 0.01, "bbox_world {:?}, want {want:?}", info.bbox_world);
+    }
+}
