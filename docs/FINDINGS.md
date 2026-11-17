@@ -3319,7 +3319,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-204 The copies of a component pattern are drawn at the origin, though their placements are right
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed; awaiting the owner's approval.
+- **Upstream:** QymIs-Tech/QymCAD#413.
 - **Executed (GUI, 2026-11-17, tester session, installed QymCAD.app 0.1.1-dev.20261026):** Part 1 a block 36×18×10, Part 2 a cylinder R10 H20 at the origin, a circular component pattern of Part 2 about an axis on the block's vertical edge at (36, 0), 6 copies over 360°. Nothing is drawn round the edge; with the original hidden a cylinder is still drawn at (0, 0). Copy (2) shows «Размещение в сборке» X 18, Y −31.1769 (the right turn of (0, 0) about (36, 0) by 60°) and its gizmo there, with no body. The same after save, reopen and «Пересобрать всё». No parameter was changed.
 - **In the saved file** (`document.ron`, read by the tester): the copies' component transforms are right (copy (4): a 180° turn and a shift of (72, 0)); their meshes are in the source's local frame, as the original's; `ComponentPattern(src:19, Circular(origin:(0,0,0), dir:(0,0,1), angle:360, count:6, axis:21), copies:[23..31], bodies:[24..32])`. [inferred, not traced: the drawing of the copies' bodies does not apply their component transform]
 - **Server:** the server creates no component patterns. Whether `render` and `export` of such a document place the copies was not checked.
@@ -3327,6 +3327,6 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-205 A cut with a sheet as A whose B misses reports success and B is gone
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed; awaiting the owner's approval.
+- **Upstream:** QymIs-Tech/QymCAD#414.
 - **Executed (GUI, 2026-11-17, tester session):** a sheet from «Смещение поверхности» 5 mm above a 20×10×10 block as A (picked through its tree node), the block as B, «Вырез A-B»: «Булева тел создана», no error, the block disappears from the tree and only the sheet is left. With a solid A the same miss is the error «Вырез не снял ничего…» and A stays (F-200 entry).
 - **Server policy:** a sheet as A of `body_boolean` is refused (F-200), so the server cannot reach this.
