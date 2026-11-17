@@ -69,8 +69,9 @@ impl Session {
                 if s.is_sheet(a) {
                     return Err(crate::modifiers::sheet_refusal(
                         a,
-                        "QymCAD cannot take a sheet as the boolean's body A (FINDINGS F-200); A must be a solid, thicken it first \
-                         (a sheet as B is the app's own native failure and stays as it is)",
+                        "QymCAD builds no result with a sheet as the boolean's body A (FINDINGS F-200: union fails, intersect is \
+                         refused, cut gives an empty body or drops B); A must be a solid, thicken it first (a sheet as B is the \
+                         app's own native failure and stays as it is)",
                     ));
                 }
                 if s.p.body_owner(a) != s.p.body_owner(b) {
