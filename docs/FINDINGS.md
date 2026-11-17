@@ -3311,7 +3311,7 @@ The same gap applies to a pattern whose source is a projection: the source moves
 ## F-203 A component pattern about an assembly datum axis stays where it was when a parameter moves the axis
 
 - **Version:** v0.1.1-dev.20261026, source f25f27d.
-- **Upstream:** not filed; reproduced in the GUI, awaiting the owner's approval to file.
+- **Upstream:** QymIs-Tech/QymCAD#412.
 - **Executed (GUI, 2026-11-17, by the tester on the installed QymCAD 0.1.1, binary of 2026-10-23):** an assembly axis on the vertical edge x=`w` of a Part's block, and a circular component pattern of another Part about it. Changing `w` moved the axis at once (origin [30,0,5] to [20,0,5]), but the pattern copies stayed at (15,-25.98) and (45,-25.98) instead of (10,-17.32) and (30,-17.32), after two full rebuilds and a re-entered count as well.
-- **Source:** `resolve_comp_patterns` reads the axis before the datums are resolved in a regeneration (`run.rs:202`). [read by the W reviewer, not re-checked]
+- **Source:** not traced. `regen/run.rs` resolves the patterns before the node pass (line 202) and again after it (line 745, "the copies of a pattern turned about a datum axis follow the axis this pass resolved"), so the order of the passes is not the cause. [read in source]
 - **Server policy:** the server creates no component patterns; it reads them in opened documents only.
