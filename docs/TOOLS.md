@@ -127,7 +127,6 @@ Save the document as .qcad; the directory must exist. An explicit path permits r
       "type": "boolean"
     },
     "path": {
-      "default": null,
       "description": "Where to write the `.qcad`. Default: the file the document came from or was last saved to.",
       "type": [
         "string",
@@ -165,7 +164,6 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
           "properties": {
             "constraint": {
               "description": "Current constraint index; the edit applies to exactly this row. A row whose native references another row shares cannot be named.",
-              "format": "uint",
               "minimum": 0,
               "type": "integer"
             },
@@ -203,29 +201,18 @@ Set a native sketch, feature or sketch-item driving dimension's value/formula an
       "description": "Exactly one native sketch dimension or feature/item numeric field."
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -269,16 +256,11 @@ Create or change a named parameter and rebuild everything that depends on it. Us
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -336,17 +318,11 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
       "type": "string"
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PlaneArg": {
       "anyOf": [
@@ -373,7 +349,6 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
-              "format": "uint32",
               "minimum": 0,
               "type": "integer"
             }
@@ -391,7 +366,6 @@ Create an empty sketch on a plane: "XY", "XZ", "YZ", {"plane": <datum plane>} or
   "additionalProperties": false,
   "properties": {
     "name": {
-      "default": null,
       "description": "Name to refer to the sketch later. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
@@ -422,7 +396,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
       "description": "A geometric description of curves in one sketch.",
       "properties": {
         "construction": {
-          "default": null,
           "description": "Limit to construction or profile geometry.",
           "type": [
             "boolean",
@@ -438,11 +411,9 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
               "type": "null"
             }
           ],
-          "default": null,
           "description": "Native curve kind. A kind or nearest point is required."
         },
         "nearest": {
-          "default": null,
           "description": "A point in sketch coordinates; chooses the unique nearest analytic curve.",
           "items": {
             "$ref": "#/$defs/Num"
@@ -463,7 +434,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
               "type": "null"
             }
           ],
-          "default": null,
           "description": "Positive maximum distance in mm; required exactly when nearest is supplied."
         }
       },
@@ -508,13 +478,11 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
             "angle": {
               "default": 0.0,
               "description": "Rotation in degrees about the anchor, a fixed number. Default 0; no native angle formula path.",
-              "format": "double",
               "type": "number"
             },
             "at": {
               "description": "Anchor [x, y] in sketch mm, fixed numbers. Native text has no placement formula path.",
               "items": {
-                "format": "double",
                 "type": "number"
               },
               "maxItems": 2,
@@ -535,12 +503,10 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
                   "type": "null"
                 }
               ],
-              "default": null,
               "description": "Exact font path and face index. Default Arial face 0 at /System/Library/Fonts/Supplemental/Arial.ttf; missing fonts are errors, without substitution."
             },
             "height": {
               "description": "Positive em height in mm, a fixed number. Recreate text to resize: app height edits can swap letters and counters.",
-              "format": "double",
               "type": "number"
             },
             "text": {
@@ -956,7 +922,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
                   "type": "null"
                 }
               ],
-              "default": null,
               "description": "End point `[x, y]`; must lie on the circle through `start`."
             },
             "end_angle": {
@@ -968,7 +933,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
                   "type": "null"
                 }
               ],
-              "default": null,
               "description": "End angle, degrees counter-clockwise from +x (with `r`)."
             },
             "r": {
@@ -980,7 +944,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
                   "type": "null"
                 }
               ],
-              "default": null,
               "description": "Radius (with `start_angle` and `end_angle`)."
             },
             "start": {
@@ -992,7 +955,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
                   "type": "null"
                 }
               ],
-              "default": null,
               "description": "Start point `[x, y]` (instead of `r` and the angles; the radius is |start − centre|)."
             },
             "start_angle": {
@@ -1004,7 +966,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
                   "type": "null"
                 }
               ],
-              "default": null,
               "description": "Start angle, degrees counter-clockwise from +x (with `r`)."
             },
             "type": {
@@ -1141,29 +1102,18 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "RectAnchor": {
       "description": "The anchor retained by the native rectangle figure.",
@@ -1219,14 +1169,12 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
       "anyOf": [
         {
           "description": "One native curve id.",
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         {
           "description": "A nonempty set of native curve ids; duplicates are removed.",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -1246,7 +1194,6 @@ Add entities to a sketch (all or nothing): point, rect, circle, circle_tangent, 
         "index": {
           "default": 0,
           "description": "Face within the file or collection (default 0).",
-          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
@@ -1409,7 +1356,6 @@ Add a geometric constraint or a driving dimension between existing points/entiti
       "description": "A geometric description of curves in one sketch.",
       "properties": {
         "construction": {
-          "default": null,
           "description": "Limit to construction or profile geometry.",
           "type": [
             "boolean",
@@ -1425,11 +1371,9 @@ Add a geometric constraint or a driving dimension between existing points/entiti
               "type": "null"
             }
           ],
-          "default": null,
           "description": "Native curve kind. A kind or nearest point is required."
         },
         "nearest": {
-          "default": null,
           "description": "A point in sketch coordinates; chooses the unique nearest analytic curve.",
           "items": {
             "$ref": "#/$defs/Num"
@@ -1450,7 +1394,6 @@ Add a geometric constraint or a driving dimension between existing points/entiti
               "type": "null"
             }
           ],
-          "default": null,
           "description": "Positive maximum distance in mm; required exactly when nearest is supplied."
         }
       },
@@ -1497,29 +1440,18 @@ Add a geometric constraint or a driving dimension between existing points/entiti
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PointRole": {
       "description": "Which owned point of a curve is requested.",
@@ -1565,9 +1497,7 @@ Add a geometric constraint or a driving dimension between existing points/entiti
           "description": "Select exactly one native curve."
         },
         "node_index": {
-          "default": null,
           "description": "Zero-based spline node index; required for node and forbidden otherwise.",
-          "format": "uint",
           "minimum": 0,
           "type": [
             "integer",
@@ -1624,14 +1554,12 @@ Add a geometric constraint or a driving dimension between existing points/entiti
       "anyOf": [
         {
           "description": "One native curve id.",
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         {
           "description": "A nonempty set of native curve ids; duplicates are removed.",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -1648,7 +1576,6 @@ Add a geometric constraint or a driving dimension between existing points/entiti
       "anyOf": [
         {
           "description": "A point id or an entity id (line, arc, circle) from `sketch_info`.",
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -1704,7 +1631,6 @@ Add a geometric constraint or a driving dimension between existing points/entiti
           "type": "null"
         }
       ],
-      "default": null,
       "description": "The dimension: mm or degrees, a number or an expression over parameters (e.g. \"w/2\"). Positive."
     }
   },
@@ -1725,25 +1651,17 @@ Delete one entity (with the points only it used and the constraints on them), on
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
   "properties": {
     "constraint": {
-      "default": null,
       "description": "A constraint index to delete (later indices shift down by one).",
-      "format": "uint",
       "minimum": 0,
       "type": [
         "integer",
@@ -1751,9 +1669,7 @@ Delete one entity (with the points only it used and the constraints on them), on
       ]
     },
     "entity": {
-      "default": null,
       "description": "A curve entity id (with its unused points and constraints) or a text id from sketch_info.texts.",
-      "format": "uint64",
       "minimum": 0,
       "type": [
         "integer",
@@ -1761,9 +1677,7 @@ Delete one entity (with the points only it used and the constraints on them), on
       ]
     },
     "point": {
-      "default": null,
       "description": "An isolated non-system point id from sketch_info.isolated_points. Refuses points used by any entity. Exclusive with entity and constraint.",
-      "format": "uint64",
       "minimum": 0,
       "type": [
         "integer",
@@ -1790,17 +1704,11 @@ Project edges or a hosted face outline into a sketch. Give exactly one of edges 
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -1902,17 +1810,11 @@ A sketch's plane (named datums show name and plane id) and world_frame (origin m
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -2070,7 +1972,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
       "description": "A geometric description of curves in one sketch.",
       "properties": {
         "construction": {
-          "default": null,
           "description": "Limit to construction or profile geometry.",
           "type": [
             "boolean",
@@ -2086,11 +1987,9 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
               "type": "null"
             }
           ],
-          "default": null,
           "description": "Native curve kind. A kind or nearest point is required."
         },
         "nearest": {
-          "default": null,
           "description": "A point in sketch coordinates; chooses the unique nearest analytic curve.",
           "items": {
             "$ref": "#/$defs/Num"
@@ -2111,36 +2010,24 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
               "type": "null"
             }
           ],
-          "default": null,
           "description": "Positive maximum distance in mm; required exactly when nearest is supplied."
         }
       },
       "type": "object"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "OriginRef": {
       "description": "The named sketch origin.",
@@ -2196,9 +2083,7 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
           "description": "Select exactly one native curve."
         },
         "node_index": {
-          "default": null,
           "description": "Zero-based spline node index; required for node and forbidden otherwise.",
-          "format": "uint",
           "minimum": 0,
           "type": [
             "integer",
@@ -2220,7 +2105,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
       "anyOf": [
         {
           "description": "A point id belonging to the sketch.",
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -2274,14 +2158,12 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
       "anyOf": [
         {
           "description": "One native curve id.",
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         {
           "description": "A nonempty set of native curve ids; duplicates are removed.",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2370,7 +2252,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
               "type": "null"
             }
           ],
-          "default": null,
           "description": "The boundary to reach; default: the nearest one along the end."
         }
       },
@@ -2387,7 +2268,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
       "description": "Split a curve at `at`, or at all its intersections with `intersections: true`.",
       "properties": {
         "at": {
-          "default": null,
           "description": "The split point; give it or `intersections: true`, not both.",
           "items": {
             "$ref": "#/$defs/Num"
@@ -2439,7 +2319,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
         "entities": {
           "description": "Non-empty curve entity ids in this sketch.",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2478,7 +2357,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
         "entities": {
           "description": "Non-empty curve entity ids in this sketch.",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2522,7 +2400,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
         "entities": {
           "description": "Non-empty curve entity ids in this sketch.",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2555,7 +2432,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
           "description": "The curves to offset."
         },
         "dimension_name": {
-          "default": null,
           "description": "Name the distance (only when the offset makes exactly one dimension).",
           "type": [
             "string",
@@ -2639,7 +2515,6 @@ Edit sketch curves, atomically, the way the QymCAD app does: op trim, extend, br
         "entities": {
           "description": "Non-empty curve entity ids in this sketch (from sketch_info).",
           "items": {
-            "format": "uint64",
             "minimum": 0,
             "type": "integer"
           },
@@ -2708,29 +2583,18 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PatternKindArg": {
       "enum": [
@@ -2751,11 +2615,9 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Circular total angle in degrees. Full circles use total/count spacing; sectors use total/max(count,2)."
     },
     "centre": {
-      "default": null,
       "description": "Circular centre [x,y], evaluated once and not a native formula.",
       "items": {
         "$ref": "#/$defs/Num"
@@ -2780,7 +2642,6 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Optional second linear-direction count; omitted means one row."
     },
     "dx": {
@@ -2792,7 +2653,6 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Linear step along x, required for linear patterns."
     },
     "dx2": {
@@ -2804,7 +2664,6 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Optional second linear step along x."
     },
     "dy": {
@@ -2816,7 +2675,6 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Linear step along y, required for linear patterns."
     },
     "dy2": {
@@ -2828,14 +2686,11 @@ Create or update a native linked sketch pattern. Linear patterns use count, dx, 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Optional second linear step along y."
     },
     "entities": {
-      "default": null,
       "description": "Non-empty source curve ids on create. On update, omit or repeat the stored source exactly.",
       "items": {
-        "format": "uint64",
         "minimum": 0,
         "type": "integer"
       },
@@ -2897,29 +2752,18 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PlaneArg": {
       "anyOf": [
@@ -2946,7 +2790,6 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
-              "format": "uint32",
               "minimum": 0,
               "type": "integer"
             }
@@ -2968,7 +2811,6 @@ Import DXF or SVG curves into an editable native sketch. Files larger than 16 Mi
       "description": "Import format: dxf, svg, or auto. Auto uses the file extension."
     },
     "name": {
-      "default": null,
       "description": "Optional sketch name.",
       "type": [
         "string",
@@ -3013,36 +2855,24 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "RotationArgs": {
       "additionalProperties": false,
       "properties": {
         "angle": {
           "description": "Finite literal angle in degrees. Formula strings are refused; native Move stores no angle driver.",
-          "format": "double",
           "type": "number"
         },
         "axis": {
@@ -3050,10 +2880,8 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
           "description": "Right-handed rotation axis in the source part's local frame: x, y or z."
         },
         "pivot": {
-          "default": null,
           "description": "Finite literal point in the part's local frame. Default: current display mesh bbox centre, sampled once.",
           "items": {
-            "format": "double",
             "type": "number"
           },
           "maxItems": 3,
@@ -3093,7 +2921,6 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Incremental translation along part X, mm (number or expression); omitted axes default to zero. Excludes rotation."
     },
     "dy": {
@@ -3105,7 +2932,6 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Incremental translation along part Y, mm (number or expression); omitted axes default to zero. Excludes rotation."
     },
     "dz": {
@@ -3117,11 +2943,9 @@ Translate or rotate a body using native Move. Give at least one of dx/dy/dz (par
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Incremental translation along part Z, mm (number or expression); omitted axes default to zero. Excludes rotation."
     },
     "name": {
-      "default": null,
       "description": "Name for the native Move node; renames a reused node when supplied. Numeric-id names are refused.",
       "type": [
         "string",
@@ -3160,29 +2984,18 @@ Create a datum plane offset from a base or datum plane, with optional native Til
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PlaneArg": {
       "anyOf": [
@@ -3209,7 +3022,6 @@ Create a datum plane offset from a base or datum plane, with optional native Til
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
-              "format": "uint32",
               "minimum": 0,
               "type": "integer"
             }
@@ -3235,7 +3047,6 @@ Create a datum plane offset from a base or datum plane, with optional native Til
       "description": "Offset distance, mm (number or expression), finite within ±100000: toward +Z from XY, +Y from XZ, +X from YZ, or along a datum base's current (tilted) normal. Applied before this plane's own tilt. Later evaluated edits retain this limit."
     },
     "name": {
-      "default": null,
       "description": "Name for the new datum plane (timeline node), usable instead of its id later. Default: QymCAD's generic name. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
@@ -3294,29 +3105,18 @@ Extrude sketch contours: add material (the first add creates the part's body), c
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3360,7 +3160,6 @@ Extrude sketch contours: add material (the first add creates the part's body), c
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Second-side length in mm (number or expression), finite and greater than 1e-9. Gives native Two sides: normal spans [-down, height], reverse [-height, down]. Excludes symmetric and through; later parameter/dimension edits must keep it positive. Omit for one side."
     },
     "height": {
@@ -3372,11 +3171,9 @@ Extrude sketch contours: add material (the first add creates the part's body), c
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Distance, mm (number or expression). Not needed with `through`."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -3389,10 +3186,8 @@ Extrude sketch contours: add material (the first add creates the part's body), c
       "description": "add (default; creates the first body), cut, intersect, new_body."
     },
     "profiles": {
-      "default": null,
       "description": "Contour ids from sketch_info. Default: every top-level contour, including all text glyph outlines with counters kept as holes.",
       "items": {
-        "format": "uint64",
         "minimum": 0,
         "type": "integer"
       },
@@ -3402,7 +3197,6 @@ Extrude sketch contours: add material (the first add creates the part's body), c
       ]
     },
     "profiles_at": {
-      "default": null,
       "description": "Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost\nclosed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`. Picking both an outer contour and its nested contour extrudes both filled regions; it does not make a hole.",
       "items": {
         "items": {
@@ -3473,29 +3267,18 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3534,7 +3317,6 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Degrees, (0, 360] (number or expression). Default 360."
     },
     "axis": {
@@ -3561,7 +3343,6 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
       "description": "normal (default): right-hand rule about the axis direction (about sketch_y on XY, +X turns towards −Z); \\\nreverse; symmetric (half each way)."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -3574,10 +3355,8 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
       "description": "add (default; creates the first body), cut, intersect, new_body."
     },
     "profiles": {
-      "default": null,
       "description": "Contour ids from sketch_info. Default: every top-level contour, each minus the contours inside it.",
       "items": {
-        "format": "uint64",
         "minimum": 0,
         "type": "integer"
       },
@@ -3587,7 +3366,6 @@ Revolve sketch contours about an axis in the sketch plane: add material (the fir
       ]
     },
     "profiles_at": {
-      "default": null,
       "description": "Pick contours by points [[x, y], ...] in sketch coordinates instead of ids: each point takes the innermost\nclosed contour around it, as a click in the app does. Evaluated once. Excludes `profiles`. Picking both an outer contour and its nested contour extrudes both filled regions; it does not make a hole.",
       "items": {
         "items": {
@@ -3679,29 +3457,18 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
       "type": "object"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3745,9 +3512,7 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
       "additionalProperties": false,
       "properties": {
         "profile": {
-          "default": null,
           "description": "Path contour id from sketch_info; required when the sketch has more than one.",
-          "format": "uint64",
           "minimum": 0,
           "type": [
             "integer",
@@ -3768,7 +3533,6 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
   "additionalProperties": false,
   "properties": {
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -3785,10 +3549,8 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
       "description": "{\"sketch\": <path sketch>, \"profile\"?: <contour id>} or {\"body\"?: <body>, \"edges\": <selection>}."
     },
     "profiles": {
-      "default": null,
       "description": "Closed profile contour ids. Default: every top-level closed contour.",
       "items": {
-        "format": "uint64",
         "minimum": 0,
         "type": "integer"
       },
@@ -3798,7 +3560,6 @@ Sweep closed profile contours of a sketch along a path: a contour of another ske
       ]
     },
     "profiles_at": {
-      "default": null,
       "description": "Pick profile contours by points [[x, y], ...] in sketch coordinates instead of ids. Excludes `profiles`.",
       "items": {
         "items": {
@@ -3845,29 +3606,18 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Op": {
       "description": "What a sketch-based feature does to the part.",
@@ -3898,9 +3648,7 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
       "additionalProperties": false,
       "properties": {
         "profile": {
-          "default": null,
           "description": "Its closed contour id; required when the sketch has more than one. Excludes `profile_at`.",
-          "format": "uint64",
           "minimum": 0,
           "type": [
             "integer",
@@ -3908,7 +3656,6 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
           ]
         },
         "profile_at": {
-          "default": null,
           "description": "Pick the contour by a point [x, y] inside it, in sketch coordinates. Excludes `profile`.",
           "items": {
             "$ref": "#/$defs/Num"
@@ -3934,7 +3681,6 @@ Loft a solid (or, with surface and op new_body, a sheet) through closed section 
   "additionalProperties": false,
   "properties": {
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -3990,29 +3736,18 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -4065,7 +3800,6 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
       "description": "Existing Fillet feature id/name to re-pick. With this set, `edges` is required and all other value fields are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
@@ -4081,7 +3815,6 @@ Round edges of a body. `edges` is a selection: ids from topology, or a descripti
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Radius, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values."
     }
   },
@@ -4100,29 +3833,18 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -4136,7 +3858,6 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Native Leg and angle, degrees (number or expression), strictly between 0 and 90 on creation and every evaluated edit. Excludes d2; stored as native dimension key d2, whose unit is degrees in this mode."
     },
     "body": {
@@ -4159,7 +3880,6 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Second positive setback on the other face, mm: native Two distances. Excludes angle. Stored as native dimension key d2."
     },
     "dist": {
@@ -4171,7 +3891,6 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Setback, mm (number or expression). Required when `feature` is absent; with `feature`, use `dimension_set` for values."
     },
     "edges": {
@@ -4216,7 +3935,6 @@ Bevel edges of a body: `dist` alone is symmetric; `d2` gives Two distances; `ang
       "type": "boolean"
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
@@ -4292,38 +4010,25 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
   "properties": {
     "at": {
-      "default": null,
       "description": "Hole centre in WORLD coordinates [x, y, z], mm; projected onto the face along its normal, so only the\nin-plane position matters. Default: the face centroid. Plain numbers (QymCAD does not store a hole's\nposition parametrically; use sketch points for parametric positions). Face placement only.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -4353,7 +4058,6 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Depth from the face or sketch marker plane, mm (number or expression). Give `depth` or `through`."
     },
     "depth2": {
@@ -4365,7 +4069,6 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Counterbore/countersink only: depth of the recess, mm (number or expression); counterbore = depth of\nthe wide cylinder, countersink = depth of the cone. Must be less than the hole depth."
     },
     "dia2": {
@@ -4377,7 +4080,6 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Counterbore/countersink only: diameter at the face, mm (number or expression); must exceed `diameter`."
     },
     "diameter": {
@@ -4418,7 +4120,6 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
       "description": "The planar face to drill into; must match exactly one face, e.g. {\"facing\": \"+z\"} or a face id. The hole\ngoes into the body, against the face's outward normal. Give exactly one of face or sketch."
     },
     "flip": {
-      "default": null,
       "description": "Sketch placement only: reverse the drilling direction to the positive sketch normal. Default false;\neven an explicit false is refused with face placement.",
       "type": [
         "boolean",
@@ -4431,7 +4132,6 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
       "description": "plain (default), counterbore (dia2 × depth2 at the face), countersink (cone from dia2 at the face down to\nthe diameter over depth2)."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -4439,7 +4139,6 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
       ]
     },
     "offset": {
-      "default": null,
       "description": "Hole centre as a shift [u, v] from the face's area centroid (as the face stands: other cut-outs in it move\nthe centroid) along the face's axes, mm, numbers or expressions; it\nfollows parameters (QymCAD's off_u/off_v). Axes: on a face facing ±Z, u = +X and v = +Y on a top face (−Y\non a bottom face); otherwise u is horizontal (Z × normal) and v = normal × u. Excludes `at` and sketch placement.",
       "items": {
         "$ref": "#/$defs/Num"
@@ -4452,10 +4151,8 @@ Drill holes by planar `face` or `sketch` (exactly one): plain, counterbore or co
       ]
     },
     "points": {
-      "default": null,
       "description": "Isolated point ids of the sketch. Default every eligible point. Native drilling uses all points: an explicit\nlist must contain every currently eligible id exactly once; subsets, duplicates and foreign ids are refused.",
       "items": {
-        "format": "uint64",
         "minimum": 0,
         "type": "integer"
       },
@@ -4496,29 +4193,18 @@ Hollow a solid with walls of `thickness`, removing `open_faces` (a sheet is refu
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Side": {
       "description": "Which side of the faces a shell's wall goes.",
@@ -4566,7 +4252,6 @@ Hollow a solid with walls of `thickness`, removing `open_faces` (a sheet is refu
       "description": "Existing Shell feature id/name to re-pick. With this set, `body`, `thickness`, `side` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
@@ -4607,7 +4292,6 @@ Hollow a solid with walls of `thickness`, removing `open_faces` (a sheet is refu
           "type": "null"
         }
       ],
-      "default": null,
       "description": "inward (default: the outside stays), outward (the body becomes the cavity), centred."
     },
     "thickness": {
@@ -4619,7 +4303,6 @@ Hollow a solid with walls of `thickness`, removing `open_faces` (a sheet is refu
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Wall thickness, mm (number or expression); required without `feature`, otherwise use `dimension_set`."
     }
   },
@@ -4638,29 +4321,18 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -4685,7 +4357,6 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Distance along the outward normal, mm (number or expression); negative pulls the face in; required without `feature`."
     },
     "face": {
@@ -4725,7 +4396,6 @@ Move one planar face along its outward normal by `dist` (negative = into the bod
       "description": "Existing PushFace feature id/name to re-pick. With this set, `body`, `dist` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
@@ -4748,29 +4418,18 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -4784,7 +4443,6 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Degrees (number or expression), signed, 0 < |angle| <= 60 (the app's range), also on later evaluated\nedits. Positive widens the solid moving against the pull direction: on a part standing on its bottom face\n(neutral {\"facing\": \"-z\"}) a taper toward the top is negative. Required without `feature`."
     },
     "body": {
@@ -4835,7 +4493,6 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
       "description": "Existing Draft feature id/name to re-pick. With this set, `body`, `angle`, `flip` and `name` are refused."
     },
     "flip": {
-      "default": null,
       "description": "The app's flip switch: reverses the pull direction (same as negating the angle). Default false.",
       "type": [
         "boolean",
@@ -4843,7 +4500,6 @@ Tilt faces by `angle` about a planar neutral face using native Draft, as the app
       ]
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
@@ -4899,29 +4555,18 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -4974,7 +4619,6 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
       "description": "Existing Thicken feature id/name to re-pick. With this set, `body`, `thickness` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused; not accepted with `feature`.",
       "type": [
         "string",
@@ -4990,7 +4634,6 @@ Grow a plate of `thickness` on one face (planar or curved) outward along its nor
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Plate thickness, mm (number or expression), > 0, outward along the face normal; also checked on later\nevaluated edits. A sheet takes either sign (negative: against the normal). Required without `feature`."
     }
   },
@@ -5009,17 +4652,11 @@ Remove a non-empty set of faces and heal the body using native RemoveFace. Selec
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5072,7 +4709,6 @@ Remove a non-empty set of faces and heal the body using native RemoveFace. Selec
       "description": "Existing RemoveFace feature id/name to re-pick instead of creating a node. The whole face set is replaced."
     },
     "name": {
-      "default": null,
       "description": "Name for a new RemoveFace feature. Ignored when re-picking.",
       "type": [
         "string",
@@ -5095,17 +4731,11 @@ Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5158,7 +4788,6 @@ Copy faces of a body into a NEW SHEET body (an open surface, sheet:true, volume 
       "description": "Existing Copy faces feature id/name to re-pick. With this set, `body` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
@@ -5181,29 +4810,18 @@ Move faces of a body (solid or sheet) along their normals into a NEW SHEET body,
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5228,7 +4846,6 @@ Move faces of a body (solid or sheet) along their normals into a NEW SHEET body,
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Distance along the face normals, mm (number or expression), -10000..10000, 0 = copy in place; outward of a solid is positive. Required without `feature`; later edits via `dimension_set` key `dist`."
     },
     "faces": {
@@ -5268,7 +4885,6 @@ Move faces of a body (solid or sheet) along their normals into a NEW SHEET body,
       "description": "Existing Offset surface feature id/name to re-pick. With this set, `body`, `distance` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
@@ -5291,17 +4907,11 @@ Replace faces of a solid with a sheet that closes them, as the app's Replace fac
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5362,7 +4972,6 @@ Replace faces of a solid with a sheet that closes them, as the app's Replace fac
       "description": "Existing Replace face feature id/name to re-pick: give `faces` and/or `surface`. With this set, `body` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
@@ -5393,29 +5002,18 @@ Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is 
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5432,7 +5030,6 @@ Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is 
       "description": "Existing Stitch feature id/name to re-pick. With this set, `tolerance` and `name` are refused."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not accepted with `feature`.",
       "type": [
         "string",
@@ -5458,7 +5055,6 @@ Join two or more sheet bodies into ONE body, as the app's Stitch. Every part is 
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Edge coincidence tolerance, mm (number or expression), 1e-6..10, default 0.01; later edits via `dimension_set` key `tol`. Not accepted with `feature`."
     }
   },
@@ -5474,17 +5070,11 @@ Cut a SHEET by a body and keep one piece, as the app's Trim: the piece nearest `
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5512,10 +5102,8 @@ Cut a SHEET by a body and keep one piece, as the app's Trim: the piece nearest `
       "description": "Existing Trim feature id/name to re-pick `body`, `tool` and/or `keep`. `name` is refused with it."
     },
     "keep": {
-      "default": null,
       "description": "[x, y, z] mm, in the Part's own frame (as topology), not the world: the piece nearest to it stays. Required without `feature`.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -5526,7 +5114,6 @@ Cut a SHEET by a body and keep one piece, as the app's Trim: the piece nearest `
       ]
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -5557,17 +5144,11 @@ Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5640,7 +5221,6 @@ Span a surface over boundary edges into a NEW one-face SHEET, as the app's Patch
       ]
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused. Not with `feature`.",
       "type": [
         "string",
@@ -5689,29 +5269,18 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
       "type": "object"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5747,7 +5316,6 @@ Copy the WHOLE body `count` times along (dx, dy, dz), optionally also along a `s
       "description": "Step along Z between copies, mm (number or expression; default 0)."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -5781,29 +5349,18 @@ Copy the WHOLE body `count` times about an axis (default world Z), including all
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -5855,7 +5412,6 @@ Copy the WHOLE body `count` times about an axis (default world Z), including all
       "description": "Number of copies including the original (number or expression). At most 1000 copies per array in total\n(all directions multiplied), also when a parameter edit changes it."
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -5886,17 +5442,11 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
       "type": "string"
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PlaneArg": {
       "anyOf": [
@@ -5923,7 +5473,6 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
             },
             "face": {
               "description": "Planar face id from the body's current topology.",
-              "format": "uint32",
               "minimum": 0,
               "type": "integer"
             }
@@ -5957,7 +5506,6 @@ Mirror the whole body about a base plane, a datum plane or a planar face; `keep`
       "type": "boolean"
     },
     "name": {
-      "default": null,
       "description": "Name for the new feature, usable as its id; numeric names are refused.",
       "type": [
         "string",
@@ -5984,29 +5532,18 @@ Create a datum point, as the app's Datum point command does: by coordinates `at`
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "VertexArgs": {
       "additionalProperties": false,
@@ -6024,7 +5561,6 @@ Create a datum point, as the app's Datum point command does: by coordinates `at`
         },
         "edge": {
           "description": "Persistent edge id from `topology` of the body's current version.",
-          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
@@ -6050,7 +5586,6 @@ Create a datum point, as the app's Datum point command does: by coordinates `at`
   "additionalProperties": false,
   "properties": {
     "at": {
-      "default": null,
       "description": "Coordinates [x, y, z] in the active Part's frame, mm: numbers or expressions (kept as formulas on x, y and z,\neditable with dimension_set), each finite within ±1e7 including later evaluated edits. Give this or `vertex`.",
       "items": {
         "$ref": "#/$defs/Num"
@@ -6063,7 +5598,6 @@ Create a datum point, as the app's Datum point command does: by coordinates `at`
       ]
     },
     "name": {
-      "default": null,
       "description": "Name for the point (timeline node and the app's tree row), usable instead of its id later.",
       "type": [
         "string",
@@ -6109,7 +5643,6 @@ Create a datum axis, as the app's Datum axis command does. Exactly one of: `edge
         },
         "edge": {
           "description": "Persistent edge id from `topology` of the body's current version.",
-          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         }
@@ -6135,7 +5668,6 @@ Create a datum axis, as the app's Datum axis command does. Exactly one of: `edge
         },
         "face": {
           "description": "Persistent face id from `topology` of the body's current version.",
-          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         }
@@ -6146,26 +5678,18 @@ Create a datum axis, as the app's Datum axis command does. Exactly one of: `edge
       "type": "object"
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
   "properties": {
     "dir": {
-      "default": null,
       "description": "By hand, with `origin`: the direction [x, y, z], not zero. Replies and doc_info report it as a unit vector.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -6198,7 +5722,6 @@ Create a datum axis, as the app's Datum axis command does. Exactly one of: `edge
       "description": "A cylindrical or conical face of a current body of the active Part: the axis follows the face."
     },
     "name": {
-      "default": null,
       "description": "Name for the axis (timeline node and the app's tree row), usable instead of its id later.",
       "type": [
         "string",
@@ -6206,10 +5729,8 @@ Create a datum axis, as the app's Datum axis command does. Exactly one of: `edge
       ]
     },
     "origin": {
-      "default": null,
       "description": "By hand, with `dir`: a point on the axis [x, y, z], mm, within ±1e7. NUMBERS ONLY, not formulas.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -6244,29 +5765,18 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PlaceArgs": {
       "additionalProperties": false,
@@ -6313,7 +5823,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
         },
         "edge": {
           "description": "Persistent edge id from `topology` of the body's current version.",
-          "format": "uint32",
           "minimum": 0,
           "type": "integer"
         },
@@ -6358,7 +5867,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "type": "string"
         },
         "name": {
-          "default": null,
           "description": "Name for the primitive's node (what `dimension_set` targets); the resulting body keeps the id in `body`.",
           "type": [
             "string",
@@ -6398,7 +5906,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "type": "string"
         },
         "name": {
-          "default": null,
           "description": "Name for the primitive's node (what `dimension_set` targets); the resulting body keeps the id in `body`.",
           "type": [
             "string",
@@ -6437,7 +5944,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "type": "string"
         },
         "name": {
-          "default": null,
           "description": "Name for the primitive's node (what `dimension_set` targets); the resulting body keeps the id in `body`.",
           "type": [
             "string",
@@ -6479,7 +5985,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "type": "string"
         },
         "name": {
-          "default": null,
           "description": "Name for the primitive's node (what `dimension_set` targets); the resulting body keeps the id in `body`.",
           "type": [
             "string",
@@ -6531,7 +6036,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "description": "Radius of the tube, mm: 0.1 up to max(major - 0.001, 0.1) (the app's field)."
         },
         "name": {
-          "default": null,
           "description": "Name for the primitive's node (what `dimension_set` targets); the resulting body keeps the id in `body`.",
           "type": [
             "string",
@@ -6574,7 +6078,6 @@ Create a primitive, as the app's Box, Cylinder, Sphere, Cone, Torus and Prism co
           "description": "Number of sides: a whole number 3..=64 (number or a formula that gives one, also after later edits)."
         },
         "name": {
-          "default": null,
           "description": "Name for the primitive's node (what `dimension_set` targets); the resulting body keeps the id in `body`.",
           "type": [
             "string",
@@ -6618,29 +6121,18 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
 {
   "$defs": {
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -6654,7 +6146,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Included flank angle, custom profile only, degrees (number or expression): greater than 1 and at most 148.969 (native ignores angles at or below 1 and clamps the half-angle at 1.3 rad). Default 60."
     },
     "body": {
@@ -6677,7 +6168,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Crest rounding radius, mm (number or expression). Default 0 uses the standard profile. Explicit radii must appear on their own crest/root arcs of the actual stock profile; clamped or missing arcs are refused."
     },
     "depth": {
@@ -6689,7 +6179,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Radial depth, custom profile only, mm (number or expression). Default 0 uses the native pitch-based depth. Refused when the profile cannot hold it (the flank angle would change) or when depth plus fit is so shallow that native would cut on the wrong side."
     },
     "edge": {
@@ -6726,7 +6215,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Modelling fit clearance, mm per side (number or expression). Default 0.2 is lowered to keep radial relief at most 0.13 pitch; explicit values beyond that limit are refused after every edit too. Result reports the fit and reason; no ISO tolerance class is implied."
     },
     "kind": {
@@ -6743,7 +6231,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Entry runout length, mm (number or expression). App default 1.5. 0, or above 1e-6; lead_in + lead_out at most 0.95 of length (native would drop or scale them)."
     },
     "lead_out": {
@@ -6755,7 +6242,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Exit runout length, mm (number or expression). App default 1.5. Same limits as lead_in."
     },
     "left": {
@@ -6768,7 +6254,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
       "description": "Required thread length, mm (number or expression), within the selected cylindrical stock span."
     },
     "name": {
-      "default": null,
       "description": "Name of the new thread feature/body, usable instead of its id later. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
@@ -6784,7 +6269,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Basic nominal diameter, mm (number or expression). Required unless size is supplied."
     },
     "pitch": {
@@ -6796,7 +6280,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Pitch, mm (number or expression). Default 0 selects the standard's coarse pitch. Excludes size."
     },
     "root_r": {
@@ -6808,11 +6291,9 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Root rounding radius, mm (number or expression). Default 0 uses the standard profile. Explicit radii must appear on their own crest/root arcs of the actual stock profile; clamped or missing arcs are refused."
     },
     "size": {
-      "default": null,
       "description": "Size alias: M8, M8x1.25 or Tr16x4. Excludes standard, nominal and pitch; never supplies length.",
       "type": [
         "string",
@@ -6820,7 +6301,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
       ]
     },
     "standard": {
-      "default": null,
       "description": "Native standard: metric_iso (default), trapezoidal_tr, acme, round_rd or custom. buttress is refused: native builds it as a symmetric 52 degree profile. Excludes size.",
       "type": [
         "string",
@@ -6836,7 +6316,6 @@ Cut a native parametric thread from exactly one circular rim of the current stoc
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Number of starts (number or expression): an integer 1..64, checked again after every edit. Default 1."
     }
   },
@@ -6856,17 +6335,11 @@ Apply a native parametric boolean between two distinct current bodies in the sam
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -6880,7 +6353,6 @@ Apply a native parametric boolean between two distinct current bodies in the sam
       "description": "Current tool body B, by id or name. Both inputs are consumed by the result."
     },
     "name": {
-      "default": null,
       "description": "Timeline feature name; numeric-looking names are refused.",
       "type": [
         "string",
@@ -6893,7 +6365,6 @@ Apply a native parametric boolean between two distinct current bodies in the sam
       "type": "string"
     },
     "piece_names": {
-      "default": null,
       "description": "Optional body names for every output piece, primary first. Names are returned and can be used by later tools. Later count/solid changes or ambiguous piece identities are refused atomically.",
       "items": {
         "type": "string"
@@ -6928,29 +6399,18 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "SplitPlaneArg": {
       "anyOf": [
@@ -7027,7 +6487,6 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
       "description": "Source body id or name. Default: the current unconsumed body. Use an explicit body after a split."
     },
     "name": {
-      "default": null,
       "description": "Split feature name, also used as the prefix for default native piece names. Names interpreted as numeric ids are refused.",
       "type": [
         "string",
@@ -7040,7 +6499,6 @@ Split one body into separate bodies using a base plane, datum plane or planar fa
       "description": "Offset in mm along the operation plane's normal (number or expression). Default 0; XZ points along +Y."
     },
     "piece_names": {
-      "default": null,
       "description": "Distinct native names of every resulting piece, in result order. Names interpreted as numeric ids (including +1 or leading zeroes) are refused. Default: <feature name> plus the next unused positive numbers in the document (1, 2, etc.), so successive unnamed splits stay addressable.",
       "items": {
         "type": "string"
@@ -7078,29 +6536,18 @@ Split faces, as the app's Split faces command: cut the faces of a body along a p
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "SplitPlaneArg": {
       "anyOf": [
@@ -7177,7 +6624,6 @@ Split faces, as the app's Split faces command: cut the faces of a body along a p
       "description": "Body to cut, by id or name. Default: the current unconsumed body of the active Part."
     },
     "name": {
-      "default": null,
       "description": "Name of the Split faces feature; names interpreted as numeric ids are refused.",
       "type": [
         "string",
@@ -7210,7 +6656,6 @@ Import exact STEP or IGES solids as QymCAD parts using the file's component tree
   "additionalProperties": false,
   "properties": {
     "name": {
-      "default": null,
       "description": "Optional import group/part name; empty or blank means the file's name. Numeric-looking names and leading/trailing whitespace are refused; internal spaces are allowed.",
       "type": [
         "string",
@@ -7224,14 +6669,11 @@ Import exact STEP or IGES solids as QymCAD parts using the file's component tree
     "scale": {
       "default": 1.0,
       "description": "Positive finite literal scale correction applied uniformly to imported geometry and component offsets. Default 1.",
-      "format": "double",
       "type": "number"
     },
     "solids": {
-      "default": null,
       "description": "Zero-based source solid indexes to import; default imports every solid. Names, tree structure and placements are preserved.",
       "items": {
-        "format": "uint32",
         "minimum": 0,
         "type": "integer"
       },
@@ -7288,7 +6730,6 @@ Import STL, OBJ, PLY, glTF/GLB, 3MF or AMF as native mesh pieces using the app's
       "description": "Format, or `auto` to use the exact extension rule. Explicit formats must agree with the extension."
     },
     "name": {
-      "default": null,
       "description": "Optional import group name.",
       "type": [
         "string",
@@ -7302,7 +6743,6 @@ Import STL, OBJ, PLY, glTF/GLB, 3MF or AMF as native mesh pieces using the app's
     "scale": {
       "default": 1.0,
       "description": "Positive finite one-shot scale stored in the native MeshPiece scale. Default 1.",
-      "format": "double",
       "type": "number"
     },
     "unit": {
@@ -7346,29 +6786,18 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -7389,7 +6818,6 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
       "description": "Recognition mode. Exact is the default; polyhedron preserves the faceted mesh."
     },
     "name": {
-      "default": null,
       "description": "Optional name for the recognised feature and body.",
       "type": [
         "string",
@@ -7405,7 +6833,6 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Sharp-edge angle in degrees, as a number or parameter formula. Range 5..=90."
     },
     "simplify": {
@@ -7422,7 +6849,6 @@ Recognise an imported mesh body as a closed B-rep solid. Exact mode uses the app
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Exact-surface fitting tolerance in mm, as a number or parameter formula. Range 0.1..=1000."
     }
   },
@@ -7468,17 +6894,11 @@ Write the result bodies to a STEP (exact) or mesh file (STL/3MF/GLB/OBJ) for pri
       ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Quality": {
       "description": "Mesh detail: the chordal deflection used to tessellate curved faces. The presets of QymCAD.app's mesh export\ndialog (`crates/qymcad/src/gui/panels_windows.rs` `mesh_quality_dialog`).",
@@ -7553,17 +6973,11 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "View": {
       "description": "A view direction. Orthographic; +Z is up in every side view.",
@@ -7621,7 +7035,6 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
     "height": {
       "default": 384,
       "description": "Image height in pixels, 64..=2048. Default 384.",
-      "format": "uint32",
       "maximum": 2048,
       "minimum": 64,
       "type": "integer"
@@ -7639,7 +7052,6 @@ Look at the model: a shaded orthographic PNG of the result bodies with dark edge
     "width": {
       "default": 512,
       "description": "Image width in pixels, 64..=2048. Default 512.",
-      "format": "uint32",
       "maximum": 2048,
       "minimum": 64,
       "type": "integer"
@@ -7657,17 +7069,11 @@ Move a single-output B-rep timeline feature up or down across its same-parent bo
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -7697,17 +7103,11 @@ Move the native history rollback marker with exactly one selector: after keeps t
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -7717,7 +7117,6 @@ Move the native history rollback marker with exactly one selector: after keeps t
       "description": "Timeline node id/name to keep active immediately before the marker. Includes sketches and datums; the last node means end."
     },
     "position": {
-      "default": null,
       "description": "Move to \"start\" (no active nodes) or \"end\" (entire timeline). Supply exactly one of after or position; no numeric indexes.",
       "type": "string"
     }
@@ -7734,17 +7133,11 @@ Suppress or enable a body-producing timeline feature through native checked rege
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -7774,17 +7167,11 @@ Delete a timeline feature, sketch or datum atomically and return deleted node id
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -7825,34 +7212,21 @@ Rename exactly one native feature, sketch, body, Part or joint label without reb
 {
   "$defs": {
     "JointRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
+      "type": [
+        "integer",
+        "string"
       ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -7971,17 +7345,11 @@ Set a current body's saved visibility and/or lineage colour without dirtying nod
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -7993,7 +7361,6 @@ Set a current body's saved visibility and/or lineage colour without dirtying nod
     "color": {
       "description": "Omitted leaves colour unchanged; [r,g,b] strictly integer bytes 0..=255 sets manual lineage colour; explicit null resets to the native palette. Imported face/triangle colours are kept.",
       "items": {
-        "format": "uint8",
         "maximum": 255,
         "minimum": 0,
         "type": "integer"
@@ -8047,7 +7414,6 @@ Select a Part by typed id/name, or {root:true} for assembly navigation. Root nav
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -8094,7 +7460,6 @@ Replace a free ungrounded root-child Part's parent-local rigid placement. Leaves
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -8121,13 +7486,11 @@ Replace a free ungrounded root-child Part's parent-local rigid placement. Leaves
       "properties": {
         "angle_deg": {
           "description": "Literal finite rotation angle in degrees.",
-          "format": "double",
           "type": "number"
         },
         "axis": {
           "description": "Finite nonzero parent-local rotation axis [x,y,z].",
           "items": {
-            "format": "double",
             "type": "number"
           },
           "maxItems": 3,
@@ -8162,7 +7525,6 @@ Replace a free ungrounded root-child Part's parent-local rigid placement. Leaves
     "translation_mm": {
       "description": "Replacement translation [x,y,z] in parent-local millimetres. Does not change local geometry.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -8188,7 +7550,6 @@ Set grounding on a root-child native Part, then solve and verify the mechanism a
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -8381,29 +7742,18 @@ Create a native Rigid or Slider between exactly one current planar face on each 
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -8494,28 +7844,17 @@ Set absolute Slider offset in mm or Revolute angle in degrees (within (-180, 180
 {
   "$defs": {
     "JointRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
+      "type": [
+        "integer",
+        "string"
       ]
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     },
     "Release": {
       "enum": [
@@ -8580,15 +7919,9 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
 {
   "$defs": {
     "JointRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
+      "type": [
+        "integer",
+        "string"
       ]
     },
     "JointSlot": {
@@ -8600,16 +7933,11 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
       "type": "string"
     },
     "Num": {
-      "anyOf": [
-        {
-          "format": "double",
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric)."
+      "description": "Number (mm or degrees) or parameter expression, e.g. `\"w/2\"` (keeps the part parametric).",
+      "type": [
+        "number",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -8627,7 +7955,6 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Upper bound: number or native formula ticks the bound on; null ticks it off (its formula stays dormant); omitted keeps it."
     },
     "min": {
@@ -8639,7 +7966,6 @@ The app's Limits section of the joint box for a Slider's offset (mm) or a Revolu
           "type": "null"
         }
       ],
-      "default": null,
       "description": "Lower bound: number or native formula ticks the bound on; null ticks it off (its formula stays dormant); omitted keeps it."
     },
     "slot": {
@@ -8669,15 +7995,9 @@ Delete one native joint and its unshared non-standalone auto-connectors while re
 {
   "$defs": {
     "JointRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
+      "type": [
+        "integer",
+        "string"
       ]
     }
   },
@@ -8705,7 +8025,6 @@ The app's tree action Make a clone: a new root-child Part whose one native PartI
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -8732,13 +8051,11 @@ The app's tree action Make a clone: a new root-child Part whose one native PartI
       "properties": {
         "angle_deg": {
           "description": "Literal finite rotation angle in degrees.",
-          "format": "double",
           "type": "number"
         },
         "axis": {
           "description": "Finite nonzero parent-local rotation axis [x,y,z].",
           "items": {
-            "format": "double",
             "type": "number"
           },
           "maxItems": 3,
@@ -8777,7 +8094,6 @@ The app's tree action Make a clone: a new root-child Part whose one native PartI
     "translation_mm": {
       "description": "Optional parent-local translation [x,y,z] in mm, as part_place. Omitted keeps the app's own placement.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -8806,7 +8122,6 @@ The app's tree Copy then Paste here of a Part: a deep copy of every body with an
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -8833,13 +8148,11 @@ The app's tree Copy then Paste here of a Part: a deep copy of every body with an
       "properties": {
         "angle_deg": {
           "description": "Literal finite rotation angle in degrees.",
-          "format": "double",
           "type": "number"
         },
         "axis": {
           "description": "Finite nonzero parent-local rotation axis [x,y,z].",
           "items": {
-            "format": "double",
             "type": "number"
           },
           "maxItems": 3,
@@ -8878,7 +8191,6 @@ The app's tree Copy then Paste here of a Part: a deep copy of every body with an
     "translation_mm": {
       "description": "Optional parent-local translation [x,y,z] in mm, as part_place. Omitted keeps the app's own placement.",
       "items": {
-        "format": "double",
         "type": "number"
       },
       "maxItems": 3,
@@ -8907,7 +8219,6 @@ The app's tree Delete of a Part: removes a root-child Part with its bodies, sket
     "PartRef": {
       "anyOf": [
         {
-          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
@@ -8996,17 +8307,11 @@ List a body's native localised body_name and its part-local faces and edges with
       "type": "string"
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -9052,7 +8357,6 @@ List a body's native localised body_name and its part-local faces and edges with
       "description": "Body id or name. Default: the part's current body (the result of the latest feature)."
     },
     "edge_kind": {
-      "default": null,
       "description": "Only edges of these kinds: line, circle, arc, other.",
       "items": {
         "$ref": "#/$defs/EdgeKind"
@@ -9068,7 +8372,6 @@ List a body's native localised body_name and its part-local faces and edges with
       "type": "boolean"
     },
     "face_kind": {
-      "default": null,
       "description": "Only faces of these kinds: plane, cylinder, cone, sphere, other.",
       "items": {
         "$ref": "#/$defs/FaceKind"
@@ -9108,9 +8411,7 @@ List a body's native localised body_name and its part-local faces and edges with
       "description": "Only planar faces whose outward normal points this way (within `tol_deg`)."
     },
     "limit": {
-      "default": null,
       "description": "At most this many faces and this many edges (default 60).",
-      "format": "uint",
       "minimum": 0,
       "type": [
         "integer",
@@ -9118,9 +8419,7 @@ List a body's native localised body_name and its part-local faces and edges with
       ]
     },
     "tol_deg": {
-      "default": null,
       "description": "Tolerance for `facing`/`along`, degrees (default 5).",
-      "format": "double",
       "type": [
         "number",
         "null"
@@ -9139,17 +8438,11 @@ Preview what a part-local face or edge selection resolves to on a body right now
 {
   "$defs": {
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     }
   },
   "additionalProperties": false,
@@ -9253,17 +8546,11 @@ Read-only native QymCAD measurement of one or two operands. Uses infinite suppor
       "type": "string"
     },
     "ObjRef": {
-      "anyOf": [
-        {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "An object id or the name it was given."
+      "description": "An object id or the name it was given.",
+      "type": [
+        "integer",
+        "string"
+      ]
     },
     "Operand": {
       "anyOf": [
@@ -9273,7 +8560,6 @@ Read-only native QymCAD measurement of one or two operands. Uses infinite suppor
             "point": {
               "description": "Finite world coordinates [x, y, z], in mm.",
               "items": {
-                "format": "double",
                 "type": "number"
               },
               "maxItems": 3,

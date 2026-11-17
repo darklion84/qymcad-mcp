@@ -5,7 +5,7 @@ use serde_json::json;
 
 /// Size of the serialized `tools/list` result when the budget was set (209135 bytes) plus about 5%.
 /// Raising it is a decision: shorten a description or a doc comment first.
-const BUDGET_BYTES: usize = 219_600;
+const BUDGET_BYTES: usize = 212_400;
 
 #[test]
 fn tools_list_stays_within_budget() {
@@ -59,4 +59,38 @@ fn selector_parse_error_carries_the_brief() {
     assert!(error.contains(SEL_BRIEF), "{error}");
     let error = registry.call("select", json!({"faces": true})).unwrap().expect_err("a boolean is not a selection");
     assert!(error.contains(SEL_BRIEF), "{error}");
+}
+
+/// The compaction pass (`compact_schema`): generator noise is gone from every schema and the meaning is kept.
+#[test]
+fn schemas_carry_no_generator_noise_and_keep_their_meaning() {
+    let list = Registry::new().list();
+    fn walk(v: &serde_json::Value, path: &str, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if o.get("format").is_some_and(|f| f.is_string()) && o.get("type").is_some_and(|t| t != "string") {
+                    out.push(format!("{path}: format"));
+                }
+                if o.get("default").is_some_and(|d| d.is_null()) {
+                    out.push(format!("{path}: default null"));
+                }
+                for (k, child) in o {
+                    walk(child, &format!("{path}/{k}"), out);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter().enumerate().for_each(|(i, child)| walk(child, &format!("{path}/{i}"), out)),
+            _ => {}
+        }
+    }
+    let mut noise = Vec::new();
+    for tool in &list {
+        walk(&tool["inputSchema"], tool["name"].as_str().unwrap(), &mut noise);
+    }
+    assert!(noise.is_empty(), "{}", noise.join("; "));
+    let fillet = &list.iter().find(|t| t["name"] == "fillet").unwrap()["inputSchema"];
+    assert_eq!(fillet["$defs"]["ObjRef"]["type"], json!(["integer", "string"]), "an id or a name");
+    assert!(fillet["$defs"]["ObjRef"]["description"].is_string());
+    assert_eq!(fillet["$defs"]["Num"]["type"], json!(["number", "string"]), "a number or an expression");
+    let extrude = &list.iter().find(|t| t["name"] == "extrude").unwrap()["inputSchema"];
+    assert!(extrude["required"].as_array().is_some_and(|r| r.contains(&json!("sketch"))), "{extrude}");
 }

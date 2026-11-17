@@ -297,6 +297,57 @@ fn decode_structured_strings(value: &mut Value, schemas: &[&Value], root: &Value
     Ok(())
 }
 
+/// Generator noise every client pays for on each session (tools/list budget, `tasks/tools-list-plan.md`): `format`
+/// annotations (`uint64`, `double`; arguments are validated by their serde structs, never by the schema), `"default":
+/// null` (optionality is `required`), and an `anyOf` of plain scalars, which becomes one `type` list (`ObjRef`, `Num`; the
+/// `minimum: 0` of an unsigned alternative goes with it, serde refuses a negative id as before).
+/// Objects and arrays keep their shape: `decode_structured_strings` reads them at run time.
+fn compact_schema(schema: &mut Value) {
+    match schema {
+        Value::Object(object) => {
+            if object.get("format").is_some_and(Value::is_string) && object.get("type").is_some_and(|t| t != "string") {
+                object.remove("format");
+            }
+            if object.get("default").is_some_and(Value::is_null) {
+                object.remove("default");
+            }
+            let scalar = |v: &Value| {
+                v.as_object().is_some_and(|o| {
+                    o.keys().all(|k| matches!(k.as_str(), "type" | "format" | "minimum"))
+                        && o.get("type")
+                            .and_then(Value::as_str)
+                            .is_some_and(|t| matches!(t, "integer" | "number" | "string" | "boolean" | "null"))
+                        && (o.get("minimum").is_none() || o.get("minimum") == Some(&json!(0)))
+                })
+            };
+            let merged = (!object.contains_key("type"))
+                .then(|| object.get("anyOf"))
+                .flatten()
+                .and_then(Value::as_array)
+                .filter(|alts| alts.len() > 1 && alts.iter().all(scalar))
+                .map(|alts| {
+                    let mut types: Vec<Value> = Vec::new();
+                    for alt in alts {
+                        let t = alt["type"].clone();
+                        if !types.contains(&t) {
+                            types.push(t);
+                        }
+                    }
+                    types
+                });
+            if let Some(types) = merged {
+                object.remove("anyOf");
+                object.insert("type".into(), Value::Array(types));
+            }
+            for child in object.values_mut() {
+                compact_schema(child);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(compact_schema),
+        _ => {}
+    }
+}
+
 /// The JSON schema of an argument struct, trimmed to what MCP clients need.
 fn input_schema<A: JsonSchema>() -> Value {
     let mut v = serde_json::to_value(schemars::schema_for!(A)).unwrap_or_else(|_| json!({}));
@@ -344,6 +395,9 @@ impl Registry {
         tools.extend(measure::tools());
         let modelling: Vec<&'static str> = tools.iter().filter(|t| t.mutating).map(|t| t.name).collect();
         tools.push(batch::tool(&modelling));
+        for tool in &mut tools {
+            compact_schema(&mut tool.schema);
+        }
         Registry { tools, state: State::default() }
     }
 
